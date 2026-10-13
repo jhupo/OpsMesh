@@ -32,9 +32,6 @@ class CreatedUserAPIToken:
     token: str
 
 
-
-
-
 class AuthenticationService:
     def __init__(self, session: Session) -> None:
         self._session = session

@@ -13,12 +13,9 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import FileAccessEvent
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.workspaces.projects.io.support import ProjectRunIOError
+from opsmesh.workspaces.projects.io.support import RunProjectIOError
 from opsmesh.workspaces.projects.models import AgentRunProjectIOState, AgentRunProjectSnapshot
-from opsmesh.workspaces.projects.snapshots.manifest import (
-    RunProjectManifest,
-    parse_run_project_manifest,
-)
+from opsmesh.workspaces.projects.snapshots.manifest import RunProjectManifest
 
 
 class ProjectIOStateService:
@@ -52,7 +49,7 @@ class ProjectIOStateService:
             or state.workspace_runtime_id != runtime.id
             or state.root_path != root_path
         ):
-            raise ProjectRunIOError(
+            raise RunProjectIOError(
                 code="project_io_state_conflict",
                 message="Run project I/O state does not match its immutable bindings",
                 stage=stage,
@@ -70,55 +67,6 @@ class ProjectIOStateService:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-
-    def get(self, run: AgentRun) -> AgentRunProjectIOState | None:
-        return self._session.scalar(
-            select(AgentRunProjectIOState).where(
-                AgentRunProjectIOState.workspace_id == run.workspace_id,
-                AgentRunProjectIOState.agent_run_id == run.id,
-            )
-        )
-
-    def snapshot_for_state(
-        self,
-        run: AgentRun,
-        state: AgentRunProjectIOState,
-        *,
-        stage: str,
-    ) -> AgentRunProjectSnapshot:
-        snapshot = self._session.scalar(
-            select(AgentRunProjectSnapshot).where(
-                AgentRunProjectSnapshot.workspace_id == run.workspace_id,
-                AgentRunProjectSnapshot.agent_run_id == run.id,
-                AgentRunProjectSnapshot.id == state.project_snapshot_id,
-            )
-        )
-        if snapshot is None:
-            raise ProjectRunIOError(
-                code="project_snapshot_missing",
-                message="Run project snapshot is unavailable",
-                stage=stage,
-                retryable=False,
-            )
-        return snapshot
-
-    @staticmethod
-    def manifest(
-        snapshot: AgentRunProjectSnapshot,
-        run: AgentRun,
-        *,
-        stage: str,
-    ) -> RunProjectManifest:
-        try:
-            return parse_run_project_manifest(snapshot, workspace_id=run.workspace_id)
-        except ValueError as exc:
-            raise ProjectRunIOError(
-                code="project_snapshot_invalid",
-                message="Run project snapshot failed integrity validation",
-                stage=stage,
-                retryable=False,
-                metadata={"boundary_denial": True},
-            ) from exc
 
     def mark_inputs_staged(
         self,
@@ -210,7 +158,7 @@ class ProjectIOStateService:
         self,
         run: AgentRun,
         state: AgentRunProjectIOState,
-        error: ProjectRunIOError,
+        error: RunProjectIOError,
     ) -> None:
         state.status = "failed"
         state.error = {
@@ -253,72 +201,6 @@ class ProjectIOStateService:
                 )
             )
         self._session.commit()
-
-    def harvested_artifacts(self, run: AgentRun) -> list[Artifact]:
-        return list(
-            self._session.scalars(
-                select(Artifact)
-                .where(
-                    Artifact.workspace_id == run.workspace_id,
-                    Artifact.agent_run_id == run.id,
-                    Artifact.workspace_project_output_id.is_not(None),
-                )
-                .order_by(Artifact.project_path.asc())
-            )
-        )
-
-    def begin_cleanup(self, run: AgentRun) -> AgentRunProjectIOState | None:
-        state = self.locked(run)
-        if state is None or state.cleanup_status in {"completed", "not_required"}:
-            return state
-        state.cleanup_status = "running"
-        state.cleanup_attempts += 1
-        state.cleanup_error = None
-        self._session.flush([state])
-        return state
-
-    def mark_cleanup_completed(
-        self,
-        run: AgentRun,
-        state: AgentRunProjectIOState,
-        *,
-        status: str = "completed",
-        error: dict[str, object] | None = None,
-    ) -> None:
-        state.cleanup_status = status
-        state.cleanup_error = error
-        state.cleaned_at = datetime.now(UTC) if status in {"completed", "not_required"} else None
-        RunEventRecorder(self._session).append_event(
-            run,
-            "project.runtime_cleanup.completed"
-            if status in {"completed", "not_required"}
-            else "project.runtime_cleanup.failed",
-            "Per-run runtime workspace cleanup completed"
-            if status in {"completed", "not_required"}
-            else "Per-run runtime workspace cleanup failed",
-            {
-                "cleanup_status": status,
-                "cleanup_attempts": state.cleanup_attempts,
-                "root_path": state.root_path,
-                **({"error_code": error.get("code")} if error else {}),
-            },
-        )
-        AuditService(self._session).record_system_action(
-            workspace_id=run.workspace_id,
-            action=(
-                "project.runtime_cleanup.completed"
-                if status in {"completed", "not_required"}
-                else "project.runtime_cleanup.failed"
-            ),
-            target_type="agent_run",
-            target_id=run.id,
-            metadata={
-                "cleanup_status": status,
-                "cleanup_attempts": state.cleanup_attempts,
-                "root_path": state.root_path,
-                **({"error_code": error.get("code")} if error else {}),
-            },
-        )
 
     @staticmethod
     def _bind_state_to_run(

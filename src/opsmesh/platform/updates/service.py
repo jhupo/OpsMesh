@@ -26,7 +26,7 @@ def maintenance_enabled(session: Session) -> bool:
     return installation.maintenance
 
 
-class UpdateService:
+class PlatformUpdateService:
     def __init__(self, session: Session) -> None:
         self.session = session
 

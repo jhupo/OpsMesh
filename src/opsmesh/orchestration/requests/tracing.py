@@ -1,4 +1,4 @@
-from opsmesh.agents.execution.contracts import AgentRuntimeProfile, AgentRunTracing
+from opsmesh.agents.execution.contracts import AgentProfileSnapshot, AgentTracingConfig
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
 
@@ -7,10 +7,10 @@ def agent_run_tracing(
     *,
     run: AgentRun,
     task: Task | None,
-    profile: AgentRuntimeProfile,
+    profile: AgentProfileSnapshot,
     allowed_tools: tuple[str, ...],
     metadata: dict[str, object],
-) -> AgentRunTracing:
+) -> AgentTracingConfig:
     trace_metadata = trace_metadata_for_agent_run(
         run=run,
         task=task,
@@ -18,7 +18,7 @@ def agent_run_tracing(
         allowed_tools=allowed_tools,
         metadata=metadata,
     )
-    return AgentRunTracing(
+    return AgentTracingConfig(
         workflow_name=agent_run_workflow_name(task),
         trace_id=optional_trace_string(metadata.get("trace_id")),
         group_id=agent_run_trace_group_id(run, task, metadata),
@@ -30,7 +30,7 @@ def trace_metadata_for_agent_run(
     *,
     run: AgentRun,
     task: Task | None,
-    profile: AgentRuntimeProfile,
+    profile: AgentProfileSnapshot,
     allowed_tools: tuple[str, ...],
     metadata: dict[str, object],
 ) -> dict[str, object]:

@@ -16,7 +16,9 @@ from opsmesh.agents.providers.model_api import (
     unsupported_agent_model_api,
 )
 from opsmesh.agents.providers.models import ModelProviderCredential
+from opsmesh.agents.providers.views import agent_model_provider_summary
 from opsmesh.shared.security.redaction import redact_sensitive_text
+from opsmesh.shared.utils import string_list
 from opsmesh.teams.management.models import AgentTeamMember
 from opsmesh.teams.provider_readiness.payloads import (
     _capability_provider,
@@ -25,11 +27,8 @@ from opsmesh.teams.provider_readiness.payloads import (
     _selected_model,
 )
 
-BLOCKING_HEALTH_STATUSES = {"unhealthy"}
-DEGRADED_HEALTH_STATUSES = {"degraded", "unknown"}
 
-
-class TeamProviderReadinessMemberBuilder:
+class TeamMemberProviderReadinessBuilder:
     """Build the provider readiness payload for one team member."""
 
     def __init__(self, session: Session) -> None:
@@ -49,8 +48,6 @@ class TeamProviderReadinessMemberBuilder:
         )
         selected_model = _selected_model(agent, credential)
         unsupported_model_api = self._unsupported_model_api(agent, credential)
-        if unsupported_model_api is not None:
-            reasons.append("model_api_override_unsupported")
         effective_model_api = self._effective_model_api(agent, credential)
         return {
             **_member_readiness_payload(
@@ -87,18 +84,12 @@ class TeamProviderReadinessMemberBuilder:
         if member.status != "active":
             reasons.append("team_member_not_active")
 
+        if agent is not None:
+            provider = agent_model_provider_summary(self._session, agent)
+            reasons.extend(string_list(provider["reasons"]))
+            warnings.extend(string_list(provider["warnings"]))
         if credential is None:
-            _append_missing_credential_reason(agent, reasons, warnings)
             return reasons, warnings, _empty_health_check_schedule()
-
-        if credential.status != "active":
-            reasons.append("model_provider_not_active")
-        if credential.health_status in BLOCKING_HEALTH_STATUSES:
-            reasons.append("model_provider_unhealthy")
-        elif credential.health_status in DEGRADED_HEALTH_STATUSES:
-            warnings.append(f"model_provider_{credential.health_status}")
-        if budget_is_exhausted(credential.budget_metadata):
-            reasons.append("model_provider_budget_exhausted")
 
         schedule = model_provider_health_check_schedule_summary(
             self._session,
@@ -134,19 +125,6 @@ class TeamProviderReadinessMemberBuilder:
             )
         except ValueError:
             return None
-
-
-def _append_missing_credential_reason(
-    agent: AgentProfile | None,
-    reasons: list[str],
-    warnings: list[str],
-) -> None:
-    if agent is not None and agent.model_provider_credential_id is not None:
-        reasons.append("model_provider_unavailable")
-    elif agent is not None and agent.model == "workspace-default":
-        reasons.append("workspace_default_model_provider_missing")
-    else:
-        warnings.append("model_provider_credential_not_configured")
 
 
 def _member_readiness_payload(

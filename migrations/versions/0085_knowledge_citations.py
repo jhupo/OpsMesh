@@ -95,4 +95,3 @@ def downgrade() -> None:
         table_name="knowledge_citations",
     )
     op.drop_table("knowledge_citations")
-

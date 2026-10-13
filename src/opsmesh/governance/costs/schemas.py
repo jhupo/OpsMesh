@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 
 
 class ModelPricingRuleCreateRequest(BaseModel):
@@ -21,7 +21,7 @@ class ModelPricingRuleCreateRequest(BaseModel):
     source: str = Field(default="operator", min_length=1, max_length=500)
 
 
-class ModelPricingRuleResponse(ORMModel):
+class ModelPricingRuleResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     provider: str
@@ -48,7 +48,7 @@ class WorkspaceCostBudgetRequest(BaseModel):
     enabled: bool = True
 
 
-class WorkspaceCostBudgetResponse(ORMModel):
+class WorkspaceCostBudgetResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     currency: str
@@ -60,7 +60,7 @@ class WorkspaceCostBudgetResponse(ORMModel):
     updated_at: datetime
 
 
-class ModelUsageRecordResponse(ORMModel):
+class ModelUsageRecordResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     agent_run_id: UUID

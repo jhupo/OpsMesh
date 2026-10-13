@@ -21,7 +21,9 @@ def test_waiting_rejects_foreign_task_before_changing_run() -> None:
     session.commit()
     with pytest.raises(ValueError, match="task not found"):
         ApprovalWaitingService(session).mark_waiting(
-            workspace_id=workspace.id, run_id=run.id, task_id=task.id,
+            workspace_id=workspace.id,
+            run_id=run.id,
+            task_id=task.id,
         )
     assert run.status == "running"
     assert task.status == "running"
@@ -36,9 +38,15 @@ def test_event_writer_scopes_orders_and_redacts_events() -> None:
     writer = RunEventWriter(session)
     with pytest.raises(ValueError, match="not found"):
         writer.append(workspace_id=uuid4(), run_id=run.id, event_type="test", message="test")
-    events = [writer.append(
-        workspace_id=workspace.id, run_id=run.id, event_type="test", message="test",
-        metadata={"api_key": "private-key"},
-    ) for _ in range(2)]
+    events = [
+        writer.append(
+            workspace_id=workspace.id,
+            run_id=run.id,
+            event_type="test",
+            message="test",
+            metadata={"api_key": "private-key"},
+        )
+        for _ in range(2)
+    ]
     assert [event.sequence for event in events] == [1, 2]
     assert events[0].event_metadata["api_key"] == "[redacted]"

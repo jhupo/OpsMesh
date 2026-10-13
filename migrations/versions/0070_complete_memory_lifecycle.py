@@ -270,7 +270,9 @@ def downgrade() -> None:
         op.drop_column("workspace_memory_entries", column_name)
 
 
-def _create_retrieval_events(uuid_type: sa.types.TypeEngine, json_type: sa.types.TypeEngine) -> None:
+def _create_retrieval_events(
+    uuid_type: sa.types.TypeEngine, json_type: sa.types.TypeEngine
+) -> None:
     op.create_table(
         "workspace_memory_retrieval_events",
         sa.Column("workspace_id", uuid_type, nullable=False),
@@ -284,7 +286,9 @@ def _create_retrieval_events(uuid_type: sa.types.TypeEngine, json_type: sa.types
         sa.Column("selected", json_type, nullable=False),
         sa.Column("candidate_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("deduplicated_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("id", uuid_type, nullable=False),
         sa.CheckConstraint("requested_limit > 0", name="ck_memory_retrieval_requested_limit"),
         sa.CheckConstraint("candidate_count >= 0", name="ck_memory_retrieval_candidate_count"),
@@ -308,7 +312,9 @@ def _create_retrieval_events(uuid_type: sa.types.TypeEngine, json_type: sa.types
     )
 
 
-def _create_lifecycle_events(uuid_type: sa.types.TypeEngine, json_type: sa.types.TypeEngine) -> None:
+def _create_lifecycle_events(
+    uuid_type: sa.types.TypeEngine, json_type: sa.types.TypeEngine
+) -> None:
     op.create_table(
         "workspace_memory_lifecycle_events",
         sa.Column("workspace_id", uuid_type, nullable=False),
@@ -318,7 +324,9 @@ def _create_lifecycle_events(uuid_type: sa.types.TypeEngine, json_type: sa.types
         sa.Column("policy_version", sa.Integer(), nullable=False),
         sa.Column("before", json_type, nullable=False),
         sa.Column("after", json_type, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("id", uuid_type, nullable=False),
         sa.CheckConstraint(
             "action IN ('archived', 'promoted')",
@@ -359,7 +367,9 @@ def _create_embedding_events(uuid_type: sa.types.TypeEngine) -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("input_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("error_code", sa.String(length=120), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("id", uuid_type, nullable=False),
         sa.CheckConstraint(
             "status IN ('completed', 'failed', 'recovered')",

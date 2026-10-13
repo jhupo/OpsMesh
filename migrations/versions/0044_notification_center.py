@@ -31,8 +31,12 @@ def upgrade() -> None:
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_notifications")),
     )
@@ -70,9 +74,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_workspace_notifications_workspace_type", table_name="workspace_notifications")
-    op.drop_index("ix_workspace_notifications_workspace_source", table_name="workspace_notifications")
-    op.drop_index("ix_workspace_notifications_workspace_severity", table_name="workspace_notifications")
+    op.drop_index(
+        "ix_workspace_notifications_workspace_source", table_name="workspace_notifications"
+    )
+    op.drop_index(
+        "ix_workspace_notifications_workspace_severity", table_name="workspace_notifications"
+    )
     op.drop_index("ix_workspace_notifications_workspace_read", table_name="workspace_notifications")
-    op.drop_index("ix_workspace_notifications_workspace_created", table_name="workspace_notifications")
-    op.drop_index("ix_workspace_notifications_workspace_archived", table_name="workspace_notifications")
+    op.drop_index(
+        "ix_workspace_notifications_workspace_created", table_name="workspace_notifications"
+    )
+    op.drop_index(
+        "ix_workspace_notifications_workspace_archived", table_name="workspace_notifications"
+    )
     op.drop_table("workspace_notifications")

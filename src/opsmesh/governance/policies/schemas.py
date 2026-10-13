@@ -6,11 +6,11 @@ from pydantic import (
     field_serializer,
 )
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AdminPlatformPolicyResponse(TimestampedModel):
+class AdminPlatformPolicyResponse(TimestampedContract):
     policy_key: str
     status: str
     value: dict[str, object]
@@ -18,7 +18,7 @@ class AdminPlatformPolicyResponse(TimestampedModel):
     updated_by: str | None
 
 
-class AdminPlatformPolicyEventResponse(ORMModel):
+class AdminPlatformPolicyEventResponse(FromAttributesContract):
     id: UUID
     platform_policy_id: UUID
     event_type: str
@@ -32,12 +32,6 @@ class AdminPlatformPolicyEventResponse(ORMModel):
 
 
 class AdminRiskyExecutionPolicyUpdateRequest(BaseModel):
-    value: dict[str, object]
-    description: str | None = None
-    updated_by: str | None = "platform_admin"
-
-
-class AdminWorkerControlPolicyUpdateRequest(BaseModel):
     value: dict[str, object]
     description: str | None = None
     updated_by: str | None = "platform_admin"

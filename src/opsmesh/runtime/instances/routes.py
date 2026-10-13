@@ -6,25 +6,20 @@ from sqlalchemy.orm import Session
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.runtime.instances.contracts import RuntimeLimits
-from opsmesh.runtime.instances.manager import DockerRuntimeManagerProvider
-from opsmesh.runtime.instances.policies.quotas import RuntimeQuotaExceededError
-from opsmesh.runtime.instances.policies.safety import RuntimeSafetyError
-from opsmesh.runtime.instances.queries import RuntimeControlQueryService
+from opsmesh.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from opsmesh.runtime.instances.schemas import (
-    RuntimeAllocationResponse,
     RuntimeCommandRequest,
     RuntimeCommandResponse,
-    RuntimeCreateRequest,
+    RuntimeEnvironmentCreateRequest,
     RuntimeEventResponse,
-    RuntimeLimitsRequest,
     RuntimeTemplateResponse,
     WorkspaceRuntimeResponse,
 )
-from opsmesh.runtime.instances.service import RuntimeControlService
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse
@@ -32,27 +27,14 @@ from opsmesh.shared.http.pagination import PageResponse
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 
 
-@router.get(
-    "/runtimes/{runtime_id}/allocations", response_model=PageResponse[RuntimeAllocationResponse]
-)
-def list_runtime_allocations(
+def _authorize_runtime(
+    session: Session,
+    context: WorkspaceContext,
     runtime_id: UUID,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
-    session: Session = Depends(get_db_session),
-) -> PageResponse[RuntimeAllocationResponse]:
-    items, total = RuntimeControlQueryService(session).list_allocations(
-        context.workspace.id,
-        runtime_id,
-        limit=limit,
-        offset=offset,
-    )
-    return PageResponse(
-        items=[RuntimeAllocationResponse.model_validate(item) for item in items],
-        total=total,
-        limit=limit,
-        offset=offset,
+    action: ResourceAction,
+) -> None:
+    ResourceAuthorizationService(session, context.user).require(
+        context.workspace.id, ResourceKind.RUNTIME, runtime_id, action
     )
 
 
@@ -62,8 +44,8 @@ def list_runtime_templates(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> list[RuntimeTemplateResponse]:
-    templates = _runtime_control_service(session, settings).list_templates()
-    return [RuntimeTemplateResponse.model_validate(template) for template in templates]
+    templates = RuntimeEnvironmentService(session, settings).list_templates()
+    return [RuntimeTemplateResponse.model_validate(item) for item in templates]
 
 
 @router.post(
@@ -72,61 +54,16 @@ def list_runtime_templates(
     status_code=status.HTTP_201_CREATED,
 )
 def create_runtime(
-    request: RuntimeCreateRequest,
+    request: RuntimeEnvironmentCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    limits = _to_runtime_limits(request.limits)
-    try:
-        runtime = _runtime_control_service(session, settings).queue_runtime_create(
-            workspace_id=context.workspace.id,
-            template_id=request.template_id,
-            name=request.name,
-            limits=limits,
-            runtime_space_id=request.runtime_space_id,
-            network_disabled=request.network_disabled,
-            execution_mode=request.execution_mode,
-            requested_by_user_id=context.user.user_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except RuntimeSafetyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=exc.message,
-        ) from exc
-    except RuntimeQuotaExceededError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    if runtime is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Runtime template not found",
-        )
-    _enqueue_runtime_control(
-        queue,
-        JobPayload(
-            workspace_id=context.workspace.id,
-            job_type=JobType.RUNTIME_CONTROL,
-            resource_id=runtime.id,
-            requested_by_user_id=context.user.user_id,
-            idempotency_key=f"runtime.create:{context.workspace.id}:{runtime.id}",
-            routing={
-                "action": "create",
-                "template_id": str(request.template_id),
-                "name": request.name,
-                "runtime_space_id": str(request.runtime_space_id)
-                if request.runtime_space_id is not None
-                else None,
-                "limits": _limits_routing(limits),
-                "network_disabled": request.network_disabled,
-                "execution_mode": request.execution_mode,
-            },
-        ),
+    runtime = RuntimeEnvironmentService(session, settings).create_runtime(
+        workspace_id=context.workspace.id,
+        template_id=request.template_id,
+        name=request.name,
+        runtime_space_id=request.runtime_space_id,
     )
     return WorkspaceRuntimeResponse.model_validate(runtime)
 
@@ -140,11 +77,8 @@ def list_runtimes(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[WorkspaceRuntimeResponse]:
-    items, total = _runtime_control_service(session, settings).list_runtimes(
-        context.workspace.id,
-        limit=limit,
-        offset=offset,
-        status=runtime_status,
+    items, total = RuntimeEnvironmentService(session, settings).list_runtimes(
+        context.workspace.id, limit=limit, offset=offset, status=runtime_status
     )
     return PageResponse(
         items=[WorkspaceRuntimeResponse.model_validate(item) for item in items],
@@ -154,52 +88,32 @@ def list_runtimes(
     )
 
 
-@router.post("/runtimes/{runtime_id}/start", response_model=WorkspaceRuntimeResponse)
-def start_runtime(
+@router.post("/runtimes/{runtime_id}/enable", response_model=WorkspaceRuntimeResponse)
+def enable_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = _runtime_control_service(session, settings)
-    runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
-    _enqueue_runtime_control(
-        queue,
-        JobPayload(
-            workspace_id=context.workspace.id,
-            job_type=JobType.RUNTIME_CONTROL,
-            resource_id=runtime_id,
-            requested_by_user_id=context.user.user_id,
-            idempotency_key=f"runtime.start:{context.workspace.id}:{runtime_id}",
-            routing={"action": "start"},
-        ),
+    _authorize_runtime(session, context, runtime_id, ResourceAction.CONTROL)
+    runtime = RuntimeEnvironmentService(session, settings).set_status(
+        context.workspace.id, runtime_id, "active"
     )
-    return runtime
+    return WorkspaceRuntimeResponse.model_validate(runtime)
 
 
-@router.post("/runtimes/{runtime_id}/stop", response_model=WorkspaceRuntimeResponse)
-def stop_runtime(
+@router.post("/runtimes/{runtime_id}/disable", response_model=WorkspaceRuntimeResponse)
+def disable_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = _runtime_control_service(session, settings)
-    runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
-    _enqueue_runtime_control(
-        queue,
-        JobPayload(
-            workspace_id=context.workspace.id,
-            job_type=JobType.RUNTIME_CONTROL,
-            resource_id=runtime_id,
-            requested_by_user_id=context.user.user_id,
-            idempotency_key=f"runtime.stop:{context.workspace.id}:{runtime_id}",
-            routing={"action": "stop"},
-        ),
+    _authorize_runtime(session, context, runtime_id, ResourceAction.CONTROL)
+    runtime = RuntimeEnvironmentService(session, settings).set_status(
+        context.workspace.id, runtime_id, "disabled"
     )
-    return runtime
+    return WorkspaceRuntimeResponse.model_validate(runtime)
 
 
 @router.delete("/runtimes/{runtime_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -208,32 +122,17 @@ def delete_runtime(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> None:
-    runtime = _runtime_control_service(session, settings).get_runtime(
-        context.workspace.id,
-        runtime_id,
-    )
-    if runtime is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    _enqueue_runtime_control(
-        queue,
-        JobPayload(
-            workspace_id=context.workspace.id,
-            job_type=JobType.RUNTIME_CONTROL,
-            resource_id=runtime_id,
-            requested_by_user_id=context.user.user_id,
-            idempotency_key=f"runtime.delete:{context.workspace.id}:{runtime_id}",
-            routing={"action": "delete"},
-        ),
-        force=True,
+    _authorize_runtime(session, context, runtime_id, ResourceAction.CONTROL)
+    RuntimeEnvironmentService(session, settings).set_status(
+        context.workspace.id, runtime_id, "deleted"
     )
 
 
 @router.post(
     "/runtimes/{runtime_id}/commands",
     response_model=RuntimeCommandResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def execute_runtime_command(
     runtime_id: UUID,
@@ -241,42 +140,20 @@ def execute_runtime_command(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> RuntimeCommandResponse:
-    try:
-        command = _runtime_control_service(session, settings).queue_command(
-            workspace_id=context.workspace.id,
-            runtime_id=runtime_id,
-            command=request.command,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    _authorize_runtime(session, context, runtime_id, ResourceAction.INVOKE)
+    command = RuntimeEnvironmentService(session, settings).queue_command(
+        workspace_id=context.workspace.id,
+        runtime_id=runtime_id,
+        command=request.command,
+        requested_by_user_id=context.user.user_id,
+    )
     if command is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    if command.status == "queued":
-        _enqueue_runtime_control(
-            queue,
-            JobPayload(
-                workspace_id=context.workspace.id,
-                job_type=JobType.RUNTIME_CONTROL,
-                resource_id=runtime_id,
-                requested_by_user_id=context.user.user_id,
-                idempotency_key=f"runtime.command:{context.workspace.id}:{command.id}",
-                routing={
-                    "action": "command",
-                    "runtime_command_id": str(command.id),
-                    "command": request.command,
-                },
-            ),
-            force=True,
-        )
+        raise HTTPException(status_code=404, detail="Execution environment not found")
     return RuntimeCommandResponse.model_validate(command)
 
 
-@router.get(
-    "/runtimes/{runtime_id}/commands",
-    response_model=PageResponse[RuntimeCommandResponse],
-)
+@router.get("/runtimes/{runtime_id}/commands", response_model=PageResponse[RuntimeCommandResponse])
 def list_runtime_commands(
     runtime_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),
@@ -285,15 +162,10 @@ def list_runtime_commands(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeCommandResponse]:
-    result = _runtime_control_service(session, settings).list_commands(
-        context.workspace.id,
-        runtime_id,
-        limit=limit,
-        offset=offset,
+    _authorize_runtime(session, context, runtime_id, ResourceAction.READ)
+    items, total = RuntimeEnvironmentService(session, settings).list_commands(
+        context.workspace.id, runtime_id, limit=limit, offset=offset
     )
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    items, total = result
     return PageResponse(
         items=[RuntimeCommandResponse.model_validate(item) for item in items],
         total=total,
@@ -311,76 +183,13 @@ def list_runtime_events(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeEventResponse]:
-    result = _runtime_control_service(session, settings).list_events(
-        context.workspace.id,
-        runtime_id,
-        limit=limit,
-        offset=offset,
+    _authorize_runtime(session, context, runtime_id, ResourceAction.READ)
+    items, total = RuntimeEnvironmentService(session, settings).list_events(
+        context.workspace.id, runtime_id, limit=limit, offset=offset
     )
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    items, total = result
     return PageResponse(
         items=[RuntimeEventResponse.model_validate(item) for item in items],
         total=total,
         limit=limit,
         offset=offset,
     )
-
-
-def _to_runtime_limits(request: RuntimeLimitsRequest | None) -> RuntimeLimits | None:
-    if request is None:
-        return None
-    return RuntimeLimits(
-        cpu_count=request.cpu_count,
-        memory_mb=request.memory_mb,
-        disk_mb=request.disk_mb,
-        timeout_seconds=request.timeout_seconds,
-        max_output_bytes=request.max_output_bytes,
-        max_processes=request.max_processes,
-        max_concurrent_executions=request.max_concurrent_executions,
-    )
-
-
-def _runtime_control_service(session: Session, settings: Settings) -> RuntimeControlService:
-    return RuntimeControlService(
-        session,
-        settings=settings,
-        manager_provider=DockerRuntimeManagerProvider(session, settings, None),
-    )
-
-
-def _runtime_or_404(runtime: object | None) -> WorkspaceRuntimeResponse:
-    if runtime is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Runtime not found")
-    return WorkspaceRuntimeResponse.model_validate(runtime)
-
-
-def _limits_routing(limits: RuntimeLimits | None) -> dict[str, object] | None:
-    if limits is None:
-        return None
-    return {
-        "cpu_count": limits.cpu_count,
-        "memory_mb": limits.memory_mb,
-        "disk_mb": limits.disk_mb,
-        "timeout_seconds": limits.timeout_seconds,
-        "max_output_bytes": limits.max_output_bytes,
-        "max_processes": limits.max_processes,
-        "max_concurrent_executions": limits.max_concurrent_executions,
-    }
-
-
-def _enqueue_runtime_control(
-    queue: RedisQueue,
-    job: JobPayload,
-    *,
-    force: bool = False,
-) -> None:
-    if job.routing.get("action") in {"start", "stop"}:
-        queue.enqueue_runtime_transition(job)
-        return
-    if not queue.enqueue(job, force=force):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Runtime control request is already queued",
-        )

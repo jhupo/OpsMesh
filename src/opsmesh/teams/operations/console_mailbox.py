@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.messages.models import AgentMessage
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from opsmesh.teams.sessions.service import TeamRuntimeState
+from opsmesh.teams.sessions.service import TeamOperationSnapshot
 
 
 class TeamOperationsMailboxReader:
@@ -46,7 +46,7 @@ class TeamOperationsMailboxReader:
     def team_payload(
         self,
         *,
-        runtime_state: TeamRuntimeState,
+        runtime_state: TeamOperationSnapshot,
         message_limit: int,
     ) -> dict[str, object]:
         if runtime_state.thread_id is None:

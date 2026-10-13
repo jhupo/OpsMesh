@@ -1,4 +1,5 @@
 """Expose a bounded failure annotation when public Actions log download needs authentication."""
+
 from __future__ import annotations
 
 import os

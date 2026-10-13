@@ -135,6 +135,7 @@ class IdempotencyService:
             f"http:{operation}:{idempotency_key.strip()}",
         )
 
+
 def _encode_idempotency_state(
     *,
     status: str,

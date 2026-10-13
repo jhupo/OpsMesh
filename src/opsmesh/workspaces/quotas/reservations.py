@@ -18,7 +18,9 @@ class WorkspaceReservationResult:
     blocked_reason: str | None = None
 
 
-class WorkspaceQuotaService:
+class WorkspaceQuotaReservationService:
+    """Reserve workspace/project capacity in the caller's transaction."""
+
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -33,6 +35,27 @@ class WorkspaceQuotaService:
         resource_usage: dict[str, int],
         ensure_active_run: bool = True,
     ) -> WorkspaceReservationResult:
+        """Reserve capacity using a workspace-scoped idempotency key.
+
+        An active reservation is reused only when task, step, project and
+        normalized usage match. Conflicts or exceeded quotas return a blocked
+        result. Relevant rows are locked and capacity is incremented using
+        conditional updates; failed increments are compensated in this Session.
+        Successful changes are flushed, never committed here. The caller owns
+        commit/rollback and the eventual release of the reservation.
+
+        Args:
+            workspace_id: Tenant scope of reservations and quotas.
+            task_id: Task charged for this reservation, if any.
+            task_step_id: Step charged for this reservation, if any.
+            project_id: Optional project whose quotas also apply.
+            reservation_key: Idempotency key unique within the workspace.
+            resource_usage: Resource amounts; nonpositive values are ignored.
+            ensure_active_run: Include at least one active-run slot when true.
+
+        Returns:
+            The active reservation, or a result with a blocked reason.
+        """
         usage = _normalize_usage(resource_usage, ensure_active_run=ensure_active_run)
         reservation = self._session.scalar(
             select(WorkspaceReservation)

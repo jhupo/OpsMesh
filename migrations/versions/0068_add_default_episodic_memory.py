@@ -80,9 +80,7 @@ def _rewrite_listing_snapshots(bind: sa.Connection, *, add_episodic: bool) -> No
             add_episodic=add_episodic,
         )
         metadata["agent_snapshot"] = snapshot
-        bind.execute(
-            listings.update().where(listings.c.id == listing_id).values(metadata=metadata)
-        )
+        bind.execute(listings.update().where(listings.c.id == listing_id).values(metadata=metadata))
 
 
 def _normalized_policy(raw_policy: object, *, add_episodic: bool) -> dict[str, object]:

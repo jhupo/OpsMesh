@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.auth.schemas import CurrentUserResponse
 from opsmesh.identity.invitations.schemas import AcceptUserInvitationRequest
 from opsmesh.identity.invitations.service import UserInvitationService
@@ -25,7 +25,7 @@ def accept_user_invitation(
         display_name=payload.display_name,
         username=payload.username,
     )
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_invitation_accepted",
         outcome="allowed",

@@ -12,11 +12,11 @@ from opsmesh.identity.authorization.resources import (
     ResourceKind,
 )
 from opsmesh.shared.db.base import Base
-from opsmesh.shared.db.read_service import AdminSessionService
+from opsmesh.shared.db.read_service import PagedQuerySupport
 from opsmesh.workspaces.members.models import WorkspaceMember
 
 
-class AdminResourceAuthorizationService(AdminSessionService):
+class AdminResourceAuthorizationService(PagedQuerySupport):
     def _resource_exists(
         self,
         workspace_id: UUID,
@@ -26,12 +26,15 @@ class AdminResourceAuthorizationService(AdminSessionService):
         table = Base.metadata.tables.get(RESOURCE_TABLES[kind])
         if table is None or "workspace_id" not in table.c or "id" not in table.c:
             return False
-        return self._session.scalar(
-            select(table.c.id).where(
-                table.c.workspace_id == workspace_id,
-                table.c.id == resource_id,
+        return (
+            self._session.scalar(
+                select(table.c.id).where(
+                    table.c.workspace_id == workspace_id,
+                    table.c.id == resource_id,
+                )
             )
-        ) is not None
+            is not None
+        )
 
     def _locked_resource(
         self,

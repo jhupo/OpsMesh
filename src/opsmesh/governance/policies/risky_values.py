@@ -9,7 +9,6 @@ RISKY_EXECUTION_POLICY_KEY = "global_risky_execution"
 class RiskyExecutionPolicy:
     allow_runtime_commands: bool = True
     allow_network_egress: bool = False
-    allow_self_hosted_runtimes: bool = True
     require_approval_for_high_risk_tools: bool = True
     high_risk_tool_mode: str = "require_workspace_approval"
 
@@ -18,7 +17,6 @@ def risky_execution_policy_from_value(value: dict[str, object]) -> RiskyExecutio
     return RiskyExecutionPolicy(
         allow_runtime_commands=_bool_value(value, "allow_runtime_commands", True),
         allow_network_egress=_bool_value(value, "allow_network_egress", False),
-        allow_self_hosted_runtimes=_bool_value(value, "allow_self_hosted_runtimes", True),
         require_approval_for_high_risk_tools=_bool_value(
             value,
             "require_approval_for_high_risk_tools",
@@ -33,7 +31,6 @@ def default_risky_execution_policy_value() -> dict[str, object]:
     return {
         "allow_runtime_commands": policy.allow_runtime_commands,
         "allow_network_egress": policy.allow_network_egress,
-        "allow_self_hosted_runtimes": policy.allow_self_hosted_runtimes,
         "require_approval_for_high_risk_tools": policy.require_approval_for_high_risk_tools,
         "high_risk_tool_mode": policy.high_risk_tool_mode,
     }

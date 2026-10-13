@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -53,12 +54,12 @@ class AgentTeamCommandCenterApplyResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
-class AgentTeamExecutionLoopFinalizeRequest(BaseModel):
+class AgentTeamOrchestrationFinalizeRequest(BaseModel):
     dry_run: bool = True
     max_tasks: int = Field(default=50, ge=1, le=200)
 
 
-class AgentTeamExecutionLoopRunRequest(BaseModel):
+class AgentTeamOrchestrationAdvanceRequest(BaseModel):
     dry_run: bool = True
     apply_command_center_actions: bool = True
     enqueue_runs: bool = True
@@ -74,19 +75,41 @@ class AgentTeamExecutionLoopRunRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class AgentTeamExecutionLoopEnqueueRequest(BaseModel):
-    priority: int = Field(default=0, ge=-100, le=100)
-    reason: str | None = Field(default=None, max_length=1_000)
-    metadata: dict[str, object] = Field(default_factory=dict)
+class AgentTeamOrchestrationSubmitRequest(AgentTeamOrchestrationAdvanceRequest):
+    dry_run: Literal[False] = False
 
 
-class AgentTeamExecutionLoopEnqueueResponse(BaseModel):
+class AgentTeamOrchestrationReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["completed", "failed"]
+    reason: str = Field(min_length=1, max_length=1_000)
+    evidence: dict[str, object] = Field(min_length=1)
+    observed_result: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_confirmation(self) -> AgentTeamOrchestrationReconcileRequest:
+        if not self.reason.strip():
+            raise ValueError("Reconciliation requires a reason")
+        if len(self.model_dump_json().encode("utf-8")) > 65_536:
+            raise ValueError("Reconciliation evidence exceeds 64 KiB")
+        return self
+
+
+class TeamOrchestrationResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
+    request_id: UUID
+    workflow_id: str
     status: str
-    queued: bool
-    job_type: str
-    queue_name: str
+    result: dict[str, object] | None = None
+    last_error_code: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    @field_serializer("result")
+    def _serialize_result(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
 
 
 class AgentTeamRuntimeControlRequest(BaseModel):
@@ -101,27 +124,15 @@ class AgentTeamRuntimeBindRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class AgentTeamRuntimeEnsureLimitsRequest(BaseModel):
-    cpu_count: float = Field(gt=0, le=8)
-    memory_mb: int = Field(ge=128, le=32_768)
-    disk_mb: int = Field(ge=256, le=102_400)
-    timeout_seconds: int = Field(ge=1, le=3_600)
-    max_output_bytes: int = Field(default=256_000, ge=1, le=2_000_000)
-    max_processes: int = Field(default=256, ge=1, le=512)
-    max_concurrent_executions: int = Field(default=16, ge=1, le=128)
-
-
 class AgentTeamRuntimeEnsureRequest(BaseModel):
     template_id: UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=160)
-    limits: AgentTeamRuntimeEnsureLimitsRequest | None = None
-    network_disabled: bool = True
     start: bool = True
     reason: str | None = Field(default=None, max_length=1_000)
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class AgentTeamRuntimeResponse(ORMModel):
+class AgentTeamRuntimeResponse(FromAttributesContract):
     workspace_id: UUID
     team_id: UUID
     generated_at: datetime
@@ -132,7 +143,7 @@ class AgentTeamRuntimeResponse(ORMModel):
     workspace_runtime_id: UUID | None
     runtime_status: str | None
     runtime_space_id: UUID | None
-    last_iteration: dict[str, object] | None
+    last_advancement: dict[str, object] | None
     last_message_at: datetime | None
     runtime_health: str
     member_session_count: int
@@ -141,7 +152,7 @@ class AgentTeamRuntimeResponse(ORMModel):
     memory_summary: dict[str, object]
     metadata: dict[str, object]
 
-    @field_serializer("operating_policy", "memory_summary", "metadata", "last_iteration")
+    @field_serializer("operating_policy", "memory_summary", "metadata", "last_advancement")
     def _serialize_metadata(
         self,
         value: dict[str, object] | None,
@@ -149,7 +160,7 @@ class AgentTeamRuntimeResponse(ORMModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class AgentTeamExecutionLoopFinalizeResponse(BaseModel):
+class AgentTeamOrchestrationFinalizeResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
     generated_at: datetime
@@ -168,7 +179,7 @@ class AgentTeamExecutionLoopFinalizeResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
-class AgentTeamExecutionLoopRunResponse(BaseModel):
+class AgentTeamOrchestrationAdvanceResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
     generated_at: datetime

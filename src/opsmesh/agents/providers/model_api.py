@@ -1,11 +1,9 @@
-from opsmesh.agents.providers.classification import is_anthropic_provider
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 
-ANTHROPIC_MESSAGES_API = "anthropic_messages"
 OPENAI_CHAT_COMPLETIONS_API = "chat_completions"
 OPENAI_RESPONSES_API = "responses"
 KNOWN_MODEL_APIS = frozenset(
     {
-        ANTHROPIC_MESSAGES_API,
         OPENAI_CHAT_COMPLETIONS_API,
         OPENAI_RESPONSES_API,
     }
@@ -45,14 +43,12 @@ def require_provider_model_api(provider: str | None, value: object) -> str | Non
 
 
 def default_model_api(provider: str | None) -> str | None:
-    if is_anthropic_provider(provider):
-        return ANTHROPIC_MESSAGES_API
     return None
 
 
 def model_api_options_for_provider(provider: str | None) -> tuple[str, ...]:
-    if is_anthropic_provider(provider):
-        return (ANTHROPIC_MESSAGES_API,)
+    if not is_openai_compatible_provider(provider):
+        return ()
     return (OPENAI_RESPONSES_API, OPENAI_CHAT_COMPLETIONS_API)
 
 
@@ -60,8 +56,6 @@ def model_api_for_provider(
     provider: str | None,
     metadata: dict[str, object],
 ) -> str | None:
-    if is_anthropic_provider(provider):
-        return ANTHROPIC_MESSAGES_API
     return configured_model_api(metadata) or default_model_api(provider)
 
 
@@ -84,7 +78,7 @@ def unsupported_agent_model_api(
     agent_metadata: dict[str, object] | None,
 ) -> str | None:
     agent_model_api = configured_model_api(agent_metadata or {})
-    if agent_model_api is None:
+    if agent_model_api is None or not provider:
         return None
     if agent_model_api in model_api_options_for_provider(provider):
         return None

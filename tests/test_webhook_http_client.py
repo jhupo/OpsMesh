@@ -1,6 +1,6 @@
 import httpx
 
-from opsmesh.orchestration.webhooks.http_client import HttpxWebhookHttpClient
+from opsmesh.orchestration.webhooks.http_client import HttpxWebhookHTTPClient
 from opsmesh.orchestration.webhooks.policy import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
 
 
@@ -15,7 +15,7 @@ def test_httpx_webhook_client_streams_bounded_non_success_response() -> None:
             headers={"X-Upstream": "gateway"},
         )
 
-    response = HttpxWebhookHttpClient(transport=httpx.MockTransport(handle)).post(
+    response = HttpxWebhookHTTPClient(transport=httpx.MockTransport(handle)).post(
         url="https://hooks.example.test/events",
         body=b'{"event":"task.failed"}',
         headers={"X-OpsMesh-Event-Id": "evt-1"},
@@ -34,7 +34,7 @@ def test_httpx_webhook_client_does_not_follow_redirects() -> None:
         calls.append(str(request.url))
         return httpx.Response(307, headers={"Location": "https://internal.example.test/secret"})
 
-    response = HttpxWebhookHttpClient(transport=httpx.MockTransport(handle)).post(
+    response = HttpxWebhookHTTPClient(transport=httpx.MockTransport(handle)).post(
         url="https://hooks.example.test/events",
         body=b"{}",
         headers={},

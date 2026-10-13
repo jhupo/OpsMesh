@@ -1,15 +1,13 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import (
-    field_serializer,
-)
+from pydantic import field_serializer
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AdminSystemLogResponse(ORMModel):
+class AuditEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     actor_type: str
@@ -32,3 +30,24 @@ class AdminSystemLogResponse(ORMModel):
     @field_serializer("audit_metadata")
     def _serialize_audit_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class AuditIntegrityCheckResponse(FromAttributesContract):
+    id: UUID
+    workspace_id: UUID
+    checked_events: int
+    valid: bool
+    broken_event_id: UUID | None
+    reason: str | None
+    created_at: datetime
+
+
+class AuditIntegrityStatusResponse(FromAttributesContract):
+    status: str
+    stale: bool
+    latest: AuditIntegrityCheckResponse | None
+
+
+class AuditIntegrityVerificationQueuedResponse(FromAttributesContract):
+    execution_id: UUID
+    status: str

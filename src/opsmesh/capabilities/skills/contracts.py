@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -26,7 +26,7 @@ class WorkspaceSkillRollbackRequest(BaseModel):
     config: dict[str, object] | None = None
 
 
-class WorkspaceSkillInstallResponse(TimestampedModel):
+class WorkspaceSkillInstallResponse(TimestampedContract):
     workspace_id: UUID
     skill_id: UUID
     installed_by_user_id: UUID | None

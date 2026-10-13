@@ -9,8 +9,6 @@ from opsmesh.capabilities.governance.policy import TeamCapabilityPolicyService
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.idempotency import (
@@ -44,7 +42,7 @@ from opsmesh.teams.management.service import (
 )
 from opsmesh.teams.operations.command_center import TeamCommandCenterService
 from opsmesh.teams.operations.console import TeamOperationsConsoleService
-from opsmesh.teams.operations.schemas import AgentTeamOperationsConsoleResponse
+from opsmesh.teams.operations.schemas import TeamOperationsConsoleResponse
 from opsmesh.teams.operations.workspace import WorkspaceCommandCenterService
 from opsmesh.teams.projects.dashboard import TeamProjectDashboardService
 from opsmesh.teams.projects.service import TeamProjectSpaceService
@@ -232,7 +230,7 @@ def get_team_project_space(
 
 @router.get(
     "/teams/{team_id}/operations-console",
-    response_model=AgentTeamOperationsConsoleResponse,
+    response_model=TeamOperationsConsoleResponse,
 )
 def get_team_operations_console(
     team_id: UUID,
@@ -242,12 +240,10 @@ def get_team_operations_console(
     session_limit: int = Query(default=100, ge=1, le=500),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-) -> AgentTeamOperationsConsoleResponse:
+) -> TeamOperationsConsoleResponse:
     console = TeamOperationsConsoleService(session).get_console(
         workspace_id=context.workspace.id,
         team_id=team_id,
-        queue=queue,
         include_completed=include_completed,
         queue_limit=queue_limit,
         message_limit=message_limit,
@@ -255,7 +251,7 @@ def get_team_operations_console(
     )
     if console is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    return AgentTeamOperationsConsoleResponse.model_validate(console)
+    return TeamOperationsConsoleResponse.model_validate(console)
 
 
 @router.get(

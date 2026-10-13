@@ -1,1 +1,1 @@
-"""Asynchronous execution infrastructure: runtimes, workers, operations, and self-hosted jobs."""
+"""Native sandbox environments, Temporal execution and product capacity policies."""

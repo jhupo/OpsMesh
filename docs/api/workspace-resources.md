@@ -67,9 +67,6 @@
 | PATCH | `/api/v1/workspaces/{workspace_id}/teams/{team_id}` | Update Team |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/command-center` | Get Team Command Center |
 | POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/command-center/actions/apply` | Apply Team Command Center Actions |
-| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/enqueue` | Enqueue Team Execution Loop |
-| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/finalize` | Finalize Team Execution Loop Tasks |
-| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/run` | Run Team Execution Loop Iteration |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-overview` | Get Team Execution Overview |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/members` | List Team Members |
 | POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/members` | Create Team Member |
@@ -77,6 +74,12 @@
 | POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/members/{member_id}/model-provider` | Update Team Member Model Provider |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/operations-console` | Get Team Operations Console |
 | POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/operator-actions` | Apply Team Operator Action |
+| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/finalize` | Finalize Team Tasks |
+| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/preview` | Preview Team Orchestration |
+| GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests` | List Team Orchestration Requests |
+| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests` | Submit Team Orchestration Request |
+| GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests/{request_id}` | Get Team Orchestration Request |
+| POST | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests/{request_id}/reconcile` | Reconcile Team Orchestration Request |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/org-chart` | Get Team Org Chart |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/project-dashboard` | Get Team Project Dashboard |
 | GET | `/api/v1/workspaces/{workspace_id}/teams/{team_id}/project-space` | Get Team Project Space |
@@ -1297,11 +1300,11 @@ Operation ID：`stream_task_events_api_v1_workspaces__workspace_id__tasks__task_
 | `task_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `after_sequence` | query | 否 | integer | `default=0`; `minimum=0` |
-| `event_cursor` | query | 否 | string | `default="$"`; `maxLength=64`; `minLength=1` |
+| `event_cursor` | query | 否 | string | `default="0"`; `maxLength=36`; `minLength=1` |
 | `message_limit` | query | 否 | integer | `default=50`; `maximum=200`; `minimum=1` |
-| `poll_seconds` | query | 否 | number | `default=1.0`; `maximum=10.0`; `minimum=0.25` |
 | `heartbeat_seconds` | query | 否 | number | `default=15.0`; `maximum=60.0`; `minimum=1.0` |
 | `once` | query | 否 | boolean | `default=false` |
+| `last-event-id` | header | 否 | string anyOf null | `anyOf=[{"maxLength": 36, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 
@@ -2231,132 +2234,6 @@ Content-Type：`application/json`。
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
-## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/enqueue`
-
-Enqueue Team Execution Loop
-
-Operation ID：`enqueue_team_execution_loop_api_v1_workspaces__workspace_id__teams__team_id__execution_loop_enqueue_post`。
-
-实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `enqueue_team_execution_loop`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/AgentTeamExecutionLoopEnqueueRequest"
-}
-```
-
-模型：[AgentTeamExecutionLoopEnqueueRequest](schemas.md#schema-AgentTeamExecutionLoopEnqueueRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AgentTeamExecutionLoopEnqueueResponse](schemas.md#schema-AgentTeamExecutionLoopEnqueueResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/finalize`
-
-Finalize Team Execution Loop Tasks
-
-Operation ID：`finalize_team_execution_loop_tasks_api_v1_workspaces__workspace_id__teams__team_id__execution_loop_finalize_post`。
-
-实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `finalize_team_execution_loop_tasks`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/AgentTeamExecutionLoopFinalizeRequest"
-}
-```
-
-模型：[AgentTeamExecutionLoopFinalizeRequest](schemas.md#schema-AgentTeamExecutionLoopFinalizeRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AgentTeamExecutionLoopFinalizeResponse](schemas.md#schema-AgentTeamExecutionLoopFinalizeResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-loop/run`
-
-Run Team Execution Loop Iteration
-
-Operation ID：`run_team_execution_loop_iteration_api_v1_workspaces__workspace_id__teams__team_id__execution_loop_run_post`。
-
-实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `run_team_execution_loop_iteration`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/AgentTeamExecutionLoopRunRequest"
-}
-```
-
-模型：[AgentTeamExecutionLoopRunRequest](schemas.md#schema-AgentTeamExecutionLoopRunRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AgentTeamExecutionLoopRunResponse](schemas.md#schema-AgentTeamExecutionLoopRunResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
 ## GET `/api/v1/workspaces/{workspace_id}/teams/{team_id}/execution-overview`
 
 Get Team Execution Overview
@@ -2572,7 +2449,7 @@ Operation ID：`get_team_operations_console_api_v1_workspaces__workspace_id__tea
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AgentTeamOperationsConsoleResponse](schemas.md#schema-AgentTeamOperationsConsoleResponse) |
+| 200 | Successful Response | application/json | [TeamOperationsConsoleResponse](schemas.md#schema-TeamOperationsConsoleResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -2615,6 +2492,235 @@ Content-Type：`application/json`。
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [AgentTeamOperatorActionResponse](schemas.md#schema-AgentTeamOperatorActionResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/finalize`
+
+Finalize Team Tasks
+
+Operation ID：`finalize_team_tasks_api_v1_workspaces__workspace_id__teams__team_id__orchestration_finalize_post`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `finalize_team_tasks`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/AgentTeamOrchestrationFinalizeRequest"
+}
+```
+
+模型：[AgentTeamOrchestrationFinalizeRequest](schemas.md#schema-AgentTeamOrchestrationFinalizeRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [AgentTeamOrchestrationFinalizeResponse](schemas.md#schema-AgentTeamOrchestrationFinalizeResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/preview`
+
+Preview Team Orchestration
+
+Operation ID：`preview_team_orchestration_api_v1_workspaces__workspace_id__teams__team_id__orchestration_preview_post`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `preview_team_orchestration`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/AgentTeamOrchestrationAdvanceRequest"
+}
+```
+
+模型：[AgentTeamOrchestrationAdvanceRequest](schemas.md#schema-AgentTeamOrchestrationAdvanceRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [AgentTeamOrchestrationAdvanceResponse](schemas.md#schema-AgentTeamOrchestrationAdvanceResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests`
+
+List Team Orchestration Requests
+
+Operation ID：`list_team_orchestration_requests_api_v1_workspaces__workspace_id__teams__team_id__orchestration_requests_get`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `list_team_orchestration_requests`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `request_status` | query | 否 | string anyOf null | `anyOf=[{"enum": ["queued", "running", "completed", "failed", "unknown"], "type": "string"}, {"type": "null"}]` |
+| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
+| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [PageResponse_TeamOrchestrationResponse_](schemas.md#schema-PageResponse_TeamOrchestrationResponse_) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests`
+
+Submit Team Orchestration Request
+
+Operation ID：`submit_team_orchestration_request_api_v1_workspaces__workspace_id__teams__team_id__orchestration_requests_post`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `submit_team_orchestration_request`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/AgentTeamOrchestrationSubmitRequest"
+}
+```
+
+模型：[AgentTeamOrchestrationSubmitRequest](schemas.md#schema-AgentTeamOrchestrationSubmitRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 202 | Successful Response | application/json | [TeamOrchestrationResponse](schemas.md#schema-TeamOrchestrationResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests/{request_id}`
+
+Get Team Orchestration Request
+
+Operation ID：`get_team_orchestration_request_api_v1_workspaces__workspace_id__teams__team_id__orchestration_requests__request_id__get`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `get_team_orchestration_request`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `request_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [TeamOrchestrationResponse](schemas.md#schema-TeamOrchestrationResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/teams/{team_id}/orchestration/requests/{request_id}/reconcile`
+
+Reconcile Team Orchestration Request
+
+Operation ID：`reconcile_team_orchestration_request_api_v1_workspaces__workspace_id__teams__team_id__orchestration_requests__request_id__reconcile_post`。
+
+实现：[src/opsmesh/teams/execution/routes.py](../../src/opsmesh/teams/execution/routes.py) · `reconcile_team_orchestration_request`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=operate, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `team_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `request_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/AgentTeamOrchestrationReconcileRequest"
+}
+```
+
+模型：[AgentTeamOrchestrationReconcileRequest](schemas.md#schema-AgentTeamOrchestrationReconcileRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [TeamOrchestrationResponse](schemas.md#schema-TeamOrchestrationResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

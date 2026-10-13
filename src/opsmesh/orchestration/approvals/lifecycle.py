@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.approvals.models import Approval, PendingToolInvocation
-from opsmesh.orchestration.approvals.run_gate import ApprovalRunGateService
-from opsmesh.orchestration.runs.models import AgentRunStateSnapshot
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovalExpirationSummary:
-    expired: int
+from opsmesh.orchestration.runs.models import AgentResumeStateSnapshot
 
 
 class AgentToolApprovalLifecycleService:
@@ -27,7 +19,7 @@ class AgentToolApprovalLifecycleService:
         *,
         workspace_id: UUID,
         run_id: UUID,
-        actor_user_id: UUID,
+        actor_user_id: UUID | None,
     ) -> int:
         rows = self._rows_for_run(workspace_id=workspace_id, run_id=run_id)
         cancelled = 0
@@ -65,62 +57,6 @@ class AgentToolApprovalLifecycleService:
         self._session.flush()
         return cancelled
 
-    def expire_pending(
-        self,
-        *,
-        timeout_seconds: int,
-        limit: int = 100,
-        now: datetime | None = None,
-    ) -> ApprovalExpirationSummary:
-        if timeout_seconds < 1:
-            raise ValueError("Approval timeout must be positive")
-        decided_at = now or datetime.now(UTC)
-        cutoff = decided_at - timedelta(seconds=timeout_seconds)
-        rows = self._session.execute(
-            select(Approval, PendingToolInvocation)
-            .join(
-                PendingToolInvocation,
-                PendingToolInvocation.approval_id == Approval.id,
-            )
-            .where(
-                Approval.workspace_id == PendingToolInvocation.workspace_id,
-                Approval.status == "pending",
-                PendingToolInvocation.status == "pending",
-                Approval.created_at < cutoff,
-            )
-            .order_by(Approval.created_at, Approval.id)
-            .limit(limit)
-        ).all()
-        for approval, invocation in rows:
-            approval.status = "timed_out"
-            approval.decision_reason = "approval_timeout"
-            approval.decided_at = decided_at
-            invocation.status = "timed_out"
-            invocation.completed_at = decided_at
-            self._mark_snapshot(
-                workspace_id=approval.workspace_id,
-                run_id=invocation.agent_run_id,
-                status="timed_out",
-            )
-            ApprovalRunGateService(self._session).fail_run(
-                approval,
-                code="approval_timeout",
-                message="Tool approval timed out",
-            )
-            AuditService(self._session).record_system_action(
-                workspace_id=approval.workspace_id,
-                action="approval.timed_out",
-                target_type="approval",
-                target_id=approval.id,
-                metadata={
-                    "agent_run_id": str(invocation.agent_run_id),
-                    "tool_call_id": invocation.tool_call_id,
-                    "tool_name": invocation.tool_name,
-                },
-            )
-        self._session.flush()
-        return ApprovalExpirationSummary(expired=len(rows))
-
     def _rows_for_run(
         self,
         *,
@@ -152,9 +88,9 @@ class AgentToolApprovalLifecycleService:
         status: str,
     ) -> None:
         snapshot = self._session.scalar(
-            select(AgentRunStateSnapshot).where(
-                AgentRunStateSnapshot.workspace_id == workspace_id,
-                AgentRunStateSnapshot.agent_run_id == run_id,
+            select(AgentResumeStateSnapshot).where(
+                AgentResumeStateSnapshot.workspace_id == workspace_id,
+                AgentResumeStateSnapshot.agent_run_id == run_id,
             )
         )
         if snapshot is not None:

@@ -21,7 +21,9 @@ def upgrade() -> None:
     bind = op.get_bind()
     dialect_name = bind.dialect.name
     uuid_type = postgresql.UUID(as_uuid=True) if dialect_name == "postgresql" else sa.Uuid()
-    json_type = postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    json_type = (
+        postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    )
 
     op.add_column(
         "agent_profiles",
@@ -40,7 +42,9 @@ def upgrade() -> None:
         sa.Column("snapshot", json_type, nullable=False),
         sa.Column("changed_by_user_id", uuid_type, nullable=True),
         sa.Column("change_reason", sa.String(length=1_000), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("id", uuid_type, nullable=False),
         sa.ForeignKeyConstraint(["agent_profile_id"], ["agent_profiles.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["changed_by_user_id"], ["users.id"], ondelete="SET NULL"),

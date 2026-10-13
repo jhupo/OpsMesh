@@ -9,7 +9,7 @@ import httpx
 from opsmesh.orchestration.webhooks.policy import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
 
 
-class WebhookHttpClient(Protocol):
+class WebhookHTTPClient(Protocol):
     def post(
         self,
         *,
@@ -17,17 +17,17 @@ class WebhookHttpClient(Protocol):
         body: bytes,
         headers: Mapping[str, str],
         timeout_seconds: int,
-    ) -> WebhookHttpResponse: ...
+    ) -> WebhookHTTPResponse: ...
 
 
 @dataclass(frozen=True)
-class WebhookHttpResponse:
+class WebhookHTTPResponse:
     status_code: int
     body: str
     headers: dict[str, str]
 
 
-class HttpxWebhookHttpClient:
+class HttpxWebhookHTTPClient:
     def __init__(self, *, transport: httpx.BaseTransport | None = None) -> None:
         self._transport = transport
 
@@ -38,18 +38,21 @@ class HttpxWebhookHttpClient:
         body: bytes,
         headers: Mapping[str, str],
         timeout_seconds: int,
-    ) -> WebhookHttpResponse:
-        with httpx.Client(
-            follow_redirects=False,
-            transport=self._transport,
-        ) as client, client.stream(
-            "POST",
-            url,
-            content=body,
-            headers=headers,
-            timeout=timeout_seconds,
-        ) as response:
-            return WebhookHttpResponse(
+    ) -> WebhookHTTPResponse:
+        with (
+            httpx.Client(
+                follow_redirects=False,
+                transport=self._transport,
+            ) as client,
+            client.stream(
+                "POST",
+                url,
+                content=body,
+                headers=headers,
+                timeout=timeout_seconds,
+            ) as response,
+        ):
+            return WebhookHTTPResponse(
                 status_code=response.status_code,
                 body=_response_body_snippet(response),
                 headers=dict(response.headers.items()),

@@ -5,24 +5,29 @@ from typing import Any
 from agents.lifecycle import RunHooksBase
 
 from opsmesh.agents.execution.cancellation import raise_if_cancelled
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRuntimeCancellation
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
-from opsmesh.agents.execution.observer import AgentRuntimeExecutionObserver
+from opsmesh.agents.execution.contracts import AgentCancellation, AgentRunRequest
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
+from opsmesh.agents.execution.observer import AgentExecutionObserver
+from opsmesh.agents.execution.providers.openai.model_errors import active_model_request
 from opsmesh.agents.execution.providers.openai.model_usage import record_model_usage
+from opsmesh.agents.execution.providers.openai.sandbox import ProjectFilesCapability
 
 
-class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
+class AgentExecutionHooks(RunHooksBase[Any, Any]):
     def __init__(
         self,
-        observer: AgentRuntimeExecutionObserver,
-        cancellation: AgentRuntimeCancellation | None,
+        observer: AgentExecutionObserver,
+        cancellation: AgentCancellation | None,
+        *,
+        collect_project_outputs: bool = False,
     ) -> None:
         self._observer = observer
         self._cancellation = cancellation
+        self._collect_project_outputs = collect_project_outputs
 
     @classmethod
-    def for_request(cls, request: AgentRunRequest) -> OpenAIRuntimeHooks:
-        return cls(AgentRuntimeExecutionObserver(request), request.cancellation)
+    def for_request(cls, request: AgentRunRequest) -> AgentExecutionHooks:
+        return cls(AgentExecutionObserver(request), request.cancellation)
 
     async def on_llm_start(
         self,
@@ -33,6 +38,9 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
     ) -> None:
         await self._checkpoint()
         request = getattr(agent, "runtime_request", None)
+        active = active_model_request.get()
+        if request is not None and active is not None:
+            active[:] = [request]
         if request is not None and request.tool_executor is not None:
             await request.tool_executor.authorize_agent(context=request.context)
         await self._record("agent.llm.started", agent)
@@ -52,12 +60,16 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
         await self._checkpoint()
         request = getattr(agent, "runtime_request", None)
         if request is not None and request.require_handoff:
-            raise AgentRuntimePolicyError(
+            raise AgentExecutionPolicyError(
                 code="router_handoff_required",
                 message="Routing-only agent must hand off the response",
                 event_type="runtime.authorization_blocked",
                 metadata={"agent_profile_id": str(request.agent_profile.id)},
             )
+        if self._collect_project_outputs:
+            for capability in getattr(agent, "capabilities", ()):
+                if isinstance(capability, ProjectFilesCapability):
+                    await capability.harvest()
         await self._record("agent.completed", agent)
 
     async def on_handoff(self, context: Any, from_agent: Any, to_agent: Any) -> None:
@@ -85,7 +97,7 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
         context: Any,
         agent: Any,
         tool: Any,
-        result: str,
+        result: object,
     ) -> None:
         await self._checkpoint()
         await self._record(

@@ -15,7 +15,7 @@ from opsmesh.runtime.spaces.models import (
 )
 from opsmesh.runtime.spaces.reservations import (
     RuntimeSpaceCapacityReservationService,
-    RuntimeSpaceReservationAttachmentService,
+    RuntimeSpaceReservationBindingService,
     RuntimeSpaceReservationReleaseService,
     RuntimeSpaceReservationResult,
 )
@@ -40,9 +40,8 @@ class RuntimeSpaceService:
         created_by_user_id: UUID | None,
         default_runtime_template_id: UUID | None,
         policy: dict[str, object],
-        network_policy: dict[str, object],
-        storage_policy: dict[str, object],
-        cleanup_policy: dict[str, object],
+        storage_metadata: dict[str, object],
+        cleanup_metadata: dict[str, object],
         quota_limits: dict[str, int],
     ) -> RuntimeSpace:
         return RuntimeSpaceLifecycleService(self._session).create_runtime_space(
@@ -53,9 +52,8 @@ class RuntimeSpaceService:
             created_by_user_id=created_by_user_id,
             default_runtime_template_id=default_runtime_template_id,
             policy=policy,
-            network_policy=network_policy,
-            storage_policy=storage_policy,
-            cleanup_policy=cleanup_policy,
+            storage_metadata=storage_metadata,
+            cleanup_metadata=cleanup_metadata,
             quota_limits=quota_limits,
         )
 
@@ -104,9 +102,8 @@ class RuntimeSpaceService:
         name: str | None,
         status: str | None,
         policy: dict[str, object] | None,
-        network_policy: dict[str, object] | None,
-        storage_policy: dict[str, object] | None,
-        cleanup_policy: dict[str, object] | None,
+        storage_metadata: dict[str, object] | None,
+        cleanup_metadata: dict[str, object] | None,
         quota_limits: dict[str, int] | None,
     ) -> RuntimeSpace | None:
         runtime_space = self.get_runtime_space(workspace_id, runtime_space_id)
@@ -118,9 +115,8 @@ class RuntimeSpaceService:
             name=name,
             status=status,
             policy=policy,
-            network_policy=network_policy,
-            storage_policy=storage_policy,
-            cleanup_policy=cleanup_policy,
+            storage_metadata=storage_metadata,
+            cleanup_metadata=cleanup_metadata,
             quota_limits=quota_limits,
         )
 
@@ -241,7 +237,7 @@ class RuntimeSpaceService:
         reservation: RuntimeSpaceReservation,
         agent_run_id: UUID,
     ) -> None:
-        RuntimeSpaceReservationAttachmentService(self._session).attach_reservation_to_run(
+        RuntimeSpaceReservationBindingService(self._session).attach_reservation_to_run(
             reservation,
             agent_run_id,
         )
@@ -252,7 +248,7 @@ class RuntimeSpaceService:
         workspace_id: UUID,
         agent_run_id: UUID,
     ) -> dict[str, int]:
-        return RuntimeSpaceReservationAttachmentService(
+        return RuntimeSpaceReservationBindingService(
             self._session
         ).active_reservation_usage_for_run(
             workspace_id=workspace_id,

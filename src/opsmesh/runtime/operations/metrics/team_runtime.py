@@ -6,13 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.operations.runtimes.team_health import (
+from opsmesh.shared.telemetry.metrics import GaugeMetric
+from opsmesh.teams.execution.health import (
     team_runtime_health_for_metrics,
     team_runtime_metadata,
     team_runtime_workspace_runtime_id,
 )
-from opsmesh.shared.telemetry.metrics import GaugeMetric
-from opsmesh.shared.utils import non_negative_int
 from opsmesh.teams.management.models import AgentTeam
 
 
@@ -46,8 +45,6 @@ class TeamRuntimePrometheusMetrics:
             "paused": 0,
             "stopped": 0,
         }
-        iteration_count = 0
-        scheduled_loop_enabled = 0
         for team in teams:
             runtime_metadata = team_runtime_metadata(team)
             if not runtime_metadata:
@@ -56,15 +53,8 @@ class TeamRuntimePrometheusMetrics:
             health = team_runtime_health_for_metrics(
                 runtime_metadata=runtime_metadata,
                 runtime=runtimes.get(runtime_id) if runtime_id is not None else None,
-                generated_at=now,
             )
             health_counts[health] = health_counts.get(health, 0) + 1
-            iteration_count += non_negative_int(runtime_metadata.get("iteration_count"))
-            scheduling_policy = runtime_metadata.get("scheduling_policy")
-            if not isinstance(scheduling_policy, dict) or (
-                scheduling_policy.get("scheduled_loop_enabled") is not False
-            ):
-                scheduled_loop_enabled += 1
         return [
             *[
                 GaugeMetric(
@@ -75,16 +65,4 @@ class TeamRuntimePrometheusMetrics:
                 )
                 for health, count in sorted(health_counts.items())
             ],
-            GaugeMetric(
-                "opsmesh_team_runtime_iterations_total",
-                iteration_count,
-                labels={},
-                help_text="Total persisted team runtime iterations across active teams.",
-            ),
-            GaugeMetric(
-                "opsmesh_team_runtime_scheduled_loops",
-                scheduled_loop_enabled,
-                labels={"state": "enabled"},
-                help_text="Active team runtimes with scheduled loop cadence enabled.",
-            ),
         ]

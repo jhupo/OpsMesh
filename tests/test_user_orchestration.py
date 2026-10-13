@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import os
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -13,8 +14,8 @@ from opsmesh.orchestration.definitions.application import (
     OrchestrationDefinitionApplicationService,
 )
 from opsmesh.orchestration.definitions.commands import (
-    OrchestrationDefinitionCreate,
-    OrchestrationDefinitionUpdate,
+    OrchestrationDefinitionCreateCommand,
+    OrchestrationDefinitionUpdateCommand,
     OrchestrationEditScope,
 )
 from opsmesh.orchestration.definitions.conditions import (
@@ -29,6 +30,7 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
+from tests.fixtures.agent_product import _seed_workspace, _session
 from tests.test_capability_resources import (
     _client as _api_client,
 )
@@ -38,7 +40,6 @@ from tests.test_capability_resources import (
 from tests.test_capability_resources import (
     _seed_workspace as _seed_api_workspace,
 )
-from tests.test_worker_run_execution import _seed_workspace, _session
 
 
 def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
@@ -69,7 +70,7 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     )
     session.flush()
 
-    request = OrchestrationDefinitionCreate(
+    request = OrchestrationDefinitionCreateCommand(
         key="release-flow",
         name="Release flow",
         nodes=[
@@ -94,7 +95,7 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     service.update_definition(
         workspace.id,
         definition.id,
-        OrchestrationDefinitionUpdate(expected_version=1, name="Unpublished changes"),
+        OrchestrationDefinitionUpdateCommand(expected_version=1, name="Unpublished changes"),
         user.id,
     )
 
@@ -158,7 +159,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
     service = OrchestrationDefinitionService(session)
     definition = service.create_definition(
         workspace.id,
-        OrchestrationDefinitionCreate(
+        OrchestrationDefinitionCreateCommand(
             key="plain", name="Plain", nodes=[WorkflowNode(package_id="plain", title="Plain")]
         ),
         user.id,
@@ -169,7 +170,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
     service.update_definition(
         workspace.id,
         definition.id,
-        OrchestrationDefinitionUpdate(expected_version=1, name="Draft two"),
+        OrchestrationDefinitionUpdateCommand(expected_version=1, name="Draft two"),
         user.id,
     )
     revision = session.scalar(select(OrchestrationRevision))
@@ -181,7 +182,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
         service.update_definition(
             workspace.id,
             definition.id,
-            OrchestrationDefinitionUpdate(expected_version=1, name="Stale edit"),
+            OrchestrationDefinitionUpdateCommand(expected_version=1, name="Stale edit"),
             user.id,
         )
 
@@ -269,7 +270,7 @@ def test_condition_reference_rejects_missing_and_self_dependencies(target: str) 
     with pytest.raises(ValueError):
         OrchestrationDefinitionService(session).create_definition(
             workspace.id,
-            OrchestrationDefinitionCreate(
+            OrchestrationDefinitionCreateCommand(
                 key="invalid",
                 name="Invalid",
                 nodes=[
@@ -522,35 +523,16 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
 def test_configured_automation_admits_workflow_and_delivers_reply(
     trigger_type: str,
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
-    import base64
-    import hashlib
-    import socket
-    from datetime import UTC, datetime, timedelta
-    from uuid import uuid4
 
-    import httpx
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from opsmesh_plugin_sdk.packaging.distribution import (
-        CatalogEntry,
-        PluginCatalog,
-        PluginReleaseDescriptor,
-        sign_release,
-    )
-    from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
-    from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage, sign_package
-    from sqlalchemy.orm import sessionmaker
+    from temporalio.openai_agents.testing import TestModel, TestModelProvider
 
-    from opsmesh.capabilities.plugins.downloads import PluginDownloadWorker
-    from opsmesh.capabilities.plugins.models import PluginDownload
-    from opsmesh.capabilities.plugins.transport import PluginHttpFetcher
-    from opsmesh.orchestration.automations.service import AutomationService
-    from opsmesh.orchestration.webhooks.delivery import WebhookDeliveryService
-    from opsmesh.orchestration.webhooks.http_client import WebhookHttpResponse
-    from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt
+    from opsmesh.orchestration.webhooks.http_client import WebhookHTTPResponse
     from opsmesh.shared.config import get_settings
     from opsmesh.shared.security.secrets import SecretEncryptionService
-    from tests.test_webhooks import _RecordingHttpClient
+    from tests.fixtures.native_automation_worker import native_automation_worker
+    from tests.test_webhooks import _RecordingHTTPClient
 
     client, session = _api_client()
     owner, workspace = _seed_api_workspace(session, "automation@example.com", "automation")
@@ -594,521 +576,92 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
         ).status_code
         == 200
     )
-    subscription = client.post(
-        f"{base}/webhook-subscriptions",
-        headers=headers,
-        json={
-            "name": "Connector replies",
-            "target_url": "https://hooks.example.test/replies",
-            "event_types": ["automation.reply"],
-            "signing_secret": "connector-signing-secret",
-        },
+    from opsmesh.messaging.channels.models import ChannelDelivery
+    from tests.fixtures.channels import seed_channel
+
+    settings = client.app.dependency_overrides[get_settings]()
+    connection, _, _ = seed_channel(
+        session,
+        owner,
+        workspace,
+        secret_service=SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
     )
-    assert subscription.status_code == 201, subscription.text
     config = {
         "name": "Order assistance",
         "trigger_type": trigger_type,
         "orchestration_definition_id": workflow.json()["id"],
         "orchestration_version": 1,
         "agent_team_id": team.json()["id"],
-        "reply_subscription_id": subscription.json()["id"],
+        "reply_connection_id": str(connection.id),
     }
     if trigger_type == "message":
+        config["channel_connection_id"] = str(connection.id)
         config["allowed_senders"] = ["employee-1"]
     else:
         config["schedule_type"] = "one_shot"
-        config["schedule_config"] = {"run_at": "2026-01-01T00:00:00Z"}
+        config["schedule_config"] = {
+            "run_at": (datetime.now(UTC) + timedelta(seconds=10)).isoformat()
+        }
     created = client.post(f"{base}/automations", headers=headers, json=config)
     assert created.status_code == 201, created.text
     path = f"{base}/automations/{created.json()['id']}/events"
     if trigger_type == "message":
-        from opsmesh.identity.users.models import User
-        from opsmesh.workspaces.members.models import WorkspaceMember
-
-        employee = User(email="message-user@example.com", display_name="Message user")
-        session.add(employee)
-        session.flush()
-        session.add(
-            WorkspaceMember(workspace_id=workspace.id, user_id=employee.id, role="operator")
-        )
-        session.commit()
-        for kind, response in (
-            ("agent", agent),
-            ("team", team),
-            ("workflow", workflow),
-            ("automation", created),
-        ):
-            granted = client.put(
-                f"{base}/access/{kind}/{response.json()['id']}/grants/{employee.id}",
-                headers=headers,
-                json={"actions": ["read", "invoke"]},
-            )
-            assert granted.status_code == 200, granted.text
         bound = client.put(
             f"{base}/automations/{created.json()['id']}/identities/employee-1",
             headers=headers,
-            json={"user_id": str(employee.id)},
+            json={"user_id": str(owner.id)},
         )
         assert bound.status_code == 200, bound.text
-    private = Ed25519PrivateKey.generate()
-    publisher = client.post(
-        f"{base}/plugins/trust-keys",
-        headers=headers,
-        json={
-            "key_id": "connector-publisher",
-            "plugin_key": "order.connector",
-            "public_key": base64.b64encode(private.public_key().public_bytes_raw()).decode(),
-        },
-    )
-    assert publisher.status_code == 201, publisher.text
-    capabilities = [
-        {
-            "key": "reply",
-            "kind": "reply_channel",
-            "title": "Reply",
-            "required_permissions": ["messages.send"],
-        }
-    ]
-    bindings = {"reply": {"resource_id": subscription.json()["id"]}}
-    if trigger_type == "message":
-        capabilities.append({"key": "receive", "kind": "message_trigger", "title": "Receive"})
-        bindings["receive"] = {"resource_id": created.json()["id"]}
-    manifest = PluginManifest.model_validate(
-        {
-            "key": "order.connector",
-            "version": "1.0.0",
-            "name": "Order connector",
-            "capabilities": capabilities,
-        }
-    )
-    package = sign_package(manifest, "connector-publisher", private.private_bytes_raw()).model_dump(
-        mode="json"
-    )
-    installation = {
-        "package": package,
-        "bindings": bindings,
-        "approved_permissions": ["messages.send"],
-    }
-    invalid = {**package, "signature": base64.b64encode(bytes(64)).decode()}
-    assert (
-        client.post(
-            f"{base}/plugins", headers=headers, json={**installation, "package": invalid}
-        ).status_code
-        == 400
-    )
-    assert (
-        client.post(
-            f"{base}/plugins", headers=headers, json={**installation, "approved_permissions": []}
-        ).status_code
-        == 403
-    )
-    other_owner, other_workspace = _seed_api_workspace(
-        session, "other-plugin@example.com", "other-plugin"
-    )
-    foreign = client.post(
-        f"/api/v1/workspaces/{other_workspace.id}/webhook-subscriptions",
-        headers=_api_headers(other_owner.id),
-        json={
-            "name": "Foreign",
-            "target_url": "https://hooks.example.test/foreign",
-            "event_types": ["automation.reply"],
-            "signing_secret": "foreign-signing-secret",
-        },
-    )
-    assert foreign.status_code == 201
-    assert (
-        client.post(
-            f"{base}/plugins",
-            headers=headers,
-            json={
-                **installation,
-                "bindings": {**bindings, "reply": {"resource_id": foreign.json()["id"]}},
-            },
-        ).status_code
-        == 400
-    )
-    remote_content: dict[str, bytes] = {}
-    catalog_entries: list[CatalogEntry] = []
-    source = None
-    redirect_to_private = False
-    original_resolve = socket.getaddrinfo
-
-    def resolve(host, port, *args, **kwargs):
-        if host == "plugins.example.test":
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
-        return original_resolve(host, port, *args, **kwargs)
-
-    monkeypatch.setattr(socket, "getaddrinfo", resolve)
-
-    def download(request: httpx.Request) -> httpx.Response:
-        assert request.url.host == "8.8.8.8"
-        assert request.headers["host"] == "plugins.example.test"
-        assert request.extensions["sni_hostname"] == "plugins.example.test"
-        if redirect_to_private:
-            return httpx.Response(302, headers={"location": "https://127.0.0.1/release.json"})
-        return httpx.Response(200, stream=httpx.ByteStream(remote_content[request.url.path]))
-
-    worker = PluginDownloadWorker(
-        sessionmaker(bind=session.get_bind(), expire_on_commit=False),
-        PluginHttpFetcher(httpx.MockTransport(download)),
-    )
-
-    def prepare_candidate(signed_package):
-        nonlocal source, redirect_to_private
-        descriptor = sign_release(
-            PluginReleaseDescriptor(
-                package=SignedPluginPackage.model_validate(signed_package),
-                platform_requires=">=0.1.0rc1,<1",
-                sdk_requires=">=0.2,<1",
-                license="Apache-2.0",
-                source_repository="https://github.com/example/connector",
-                source_commit="a" * 40,
-            ),
-            private.private_bytes_raw(),
-        )
-        version = descriptor.release.package.manifest.version
-        release_path = f"/{version}.json"
-        remote_content[release_path] = descriptor.model_dump_json().encode()
-        catalog_entries.append(
-            CatalogEntry(
-                plugin_key="order.connector",
-                version=version,
-                publisher_key_id="connector-publisher",
-                release_url="https://plugins.example.test" + release_path,
-                sha256=hashlib.sha256(remote_content[release_path]).hexdigest(),
-            )
-        )
-        remote_content["/catalog.json"] = (
-            PluginCatalog(entries=catalog_entries).model_dump_json().encode()
-        )
-        settings = {
-            "name": "Approved connectors",
-            "url": "https://plugins.example.test/catalog.json",
-            "sha256": hashlib.sha256(remote_content["/catalog.json"]).hexdigest(),
-            "allowed_hosts": ["plugins.example.test", "127.0.0.1"],
-        }
-        if source is None:
-            configured = client.post(f"{base}/plugins/sources", headers=headers, json=settings)
-            assert configured.status_code == 201, configured.text
-        else:
-            configured = client.put(
-                f"{base}/plugins/sources/{source['id']}",
-                headers=headers,
-                json={**settings, "expected_generation": source["generation"]},
-            )
-            assert configured.status_code == 200, configured.text
-        source = configured.json()
-        sync_url = f"{base}/plugins/sources/{source['id']}/sync"
-        installed_before_sync = client.get(f"{base}/plugins", headers=headers).json()["items"]
-        queued = client.post(sync_url, headers=headers, json={"request_key": "sync-" + version})
-        assert queued.status_code == 202, queued.text
-        assert (
-            client.post(sync_url, headers=headers, json={"request_key": "sync-" + version}).json()[
-                "id"
-            ]
-            == queued.json()["id"]
-        )
-        # Recover a process that died after durable claim, before making its network request.
-        job = session.get(PluginDownload, UUID(queued.json()["id"]))
-        job.status, job.lease_token = "fetching", uuid4()
-        job.lease_until = datetime.now(UTC) - timedelta(seconds=1)
-        job.attempts = 1
-        session.commit()
-        assert worker.run_once()
-        status = client.get(f"{base}/plugins/downloads/{job.id}", headers=headers)
-        assert status.json()["status"] == "succeeded", status.text
-        candidates = client.get(f"{base}/plugins/candidates", headers=headers).json()["items"]
-        installed_after_sync = client.get(f"{base}/plugins", headers=headers).json()["items"]
-        assert installed_after_sync == installed_before_sync
-        candidate = next(item for item in candidates if item["version"] == version)
-        candidate_path = f"{base}/plugins/candidates/{candidate['id']}"
-        foreign_read = client.post(
-            f"/api/v1/workspaces/{other_workspace.id}/plugins/candidates/{candidate['id']}/download",
-            headers=_api_headers(other_owner.id),
-            json={"request_key": "foreign"},
-        )
-        assert foreign_read.status_code == 404
-        queued = client.post(
-            candidate_path + "/download",
-            headers=headers,
-            json={"request_key": "release-" + version},
-        )
-        assert queued.status_code == 202, queued.text
-        # A corrupted asset fails without modifying installation; retry uses the same pinned intent.
-        job_url = f"{base}/plugins/downloads/{queued.json()['id']}"
-        redirect_to_private = True
-        assert worker.run_once()
-        assert client.get(job_url, headers=headers).json()["error_code"] == "non_public_address"
-        redirect_to_private = False
-        assert client.post(job_url + "/retry", headers=headers).status_code == 202
-        expected = remote_content[release_path]
-        remote_content[release_path] = b"corrupt asset"
-        assert worker.run_once()
-        assert client.get(job_url, headers=headers).json()["error_code"] == "checksum_mismatch"
-        active = client.get(f"{base}/plugins", headers=headers).json()["items"]
-        assert not active or active[0]["current_version"] == "1.0.0"
-        remote_content[release_path] = expected
-        assert client.post(job_url + "/retry", headers=headers).status_code == 202
-        assert worker.run_once()
-        status = client.get(job_url, headers=headers)
-        assert status.json()["status"] == "succeeded", status.text
-        return candidate_path
-
-    candidate_path = prepare_candidate(package)
-    preview = client.post(candidate_path + "/preview", headers=headers, json={"bindings": bindings})
-    assert preview.status_code == 200, preview.text
-    approval = {
-        "bindings": bindings,
-        "approved_permissions": ["messages.send"],
-        "preview_digest": preview.json()["preview_digest"],
-    }
-    assert (
-        client.post(
-            candidate_path + "/install",
-            headers=headers,
-            json={**approval, "preview_digest": "0" * 64},
-        ).status_code
-        == 409
-    )
-    assert (
-        client.post(
-            candidate_path + "/install",
-            headers=headers,
-            json={**approval, "approved_permissions": []},
-        ).status_code
-        == 403
-    )
-    installed = client.post(candidate_path + "/install", headers=headers, json=approval)
-    assert installed.status_code == 201, installed.text
-    assert (
-        client.post(candidate_path + "/install", headers=headers, json=approval).status_code == 409
-    )
-    action_path = f"{base}/plugins/{installed.json()['id']}/actions"
-    disabled = client.post(
-        action_path, headers=headers, json={"action": "disable", "expected_generation": 1}
-    )
-    assert disabled.status_code == 200, disabled.text
-    if trigger_type == "message":
         message = {
-            "event_id": "message-1",
-            "conversation_id": "conversation-1",
+            "event_id": "order-1",
+            "conversation_id": "private-1",
             "sender_id": "employee-1",
-            "occurred_at": "2026-09-18T00:00:00Z",
-            "text": "Check order 123",
-            "data": {"order_id": "123"},
+            "occurred_at": datetime.now(UTC).isoformat(),
+            "text": "Assist this order",
         }
-        assert client.post(path, headers=headers, json=message).status_code == 403
-        enabled = client.post(
-            action_path, headers=headers, json={"action": "enable", "expected_generation": 2}
-        )
-        assert enabled.status_code == 200, enabled.text
         accepted = client.post(path, headers=headers, json=message)
         assert accepted.status_code == 202, accepted.text
-        duplicate = client.post(path, headers=headers, json=message)
-        assert duplicate.json()["id"] == accepted.json()["id"]
         assert (
-            client.post(path, headers=headers, json={**message, "text": "Changed"}).status_code
-            == 400
+            client.post(path, headers=headers, json=message).json()["id"] == accepted.json()["id"]
         )
-        assert (
-            client.post(
-                path,
-                headers=headers,
-                json={
-                    **message,
-                    "event_id": "denied",
-                    "sender_id": "untrusted",
-                },
-            ).status_code
-            == 400
+    transport = _RecordingHTTPClient(WebhookHTTPResponse(status_code=200, body="ok", headers={}))
+    with native_automation_worker(
+        session, settings, TestModelProvider(TestModel.returning_responses([])), transport=transport
+    ) as driver:
+        events = driver.until(
+            lambda: (
+                (values := client.get(path, headers=headers).json())
+                and values[0]["status"] == "completed"
+                and values
+            )
         )
-
-    if trigger_type == "schedule":
-        assert (
-            client.post(
-                action_path, headers=headers, json={"action": "enable", "expected_generation": 2}
-            ).status_code
-            == 200
-        )
-
-    AutomationService(session).maintain()
-    events = client.get(path, headers=headers).json()
-    assert len(events) == 1
-    assert events[0]["status"] == "reply_pending", events
+    session.expire_all()
     task = session.get(Task, UUID(events[0]["task_id"]))
     assert task is not None and task.status == "completed"
-    if trigger_type == "message":
-        assert task.created_by_user_id == employee.id
-        assert task.execution_identity["user_id"] == str(employee.id)
     assert task.orchestration_version == 1
-    AutomationService(session).maintain()
     assert session.query(Task).count() == 1
-    assert session.query(WebhookDeliveryAttempt).count() == 1
-    transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
-    settings = client.app.dependency_overrides[get_settings]()
-    delivery_service = WebhookDeliveryService(
-        session,
-        SecretEncryptionService(
-            secret=settings.credential_encryption_secret,
-            key_id=settings.credential_encryption_key_id,
-        ),
-        transport,
-    )
-    delivery = delivery_service.deliver(
-        workspace_id=workspace.id, delivery_attempt_id=UUID(events[0]["reply_delivery_id"])
-    )
-    assert delivery.status == "succeeded"
+    assert session.query(ChannelDelivery).count() == 1
+    assert session.get(ChannelDelivery, UUID(events[0]["reply_delivery_id"])).status == "delivered"
     assert len(transport.calls) == 1
-    assert str(task.id).encode() in transport.calls[0]["body"]
-    AutomationService(session).maintain()
-    assert client.get(path, headers=headers).json()[0]["status"] == "completed"
-    blocked = client.post(
-        action_path, headers=headers, json={"action": "uninstall", "expected_generation": 3}
-    )
-    assert blocked.status_code == 409
-    subscription_v2 = client.post(
-        f"{base}/webhook-subscriptions",
-        headers=headers,
-        json={
-            "name": "Connector replies v2",
-            "target_url": "https://hooks.example.test/v2",
-            "event_types": ["automation.reply"],
-            "signing_secret": "connector-signing-secret-v2",
-        },
-    )
-    v2 = manifest.model_copy(update={"version": "2.0.0", "capabilities": manifest.capabilities[:1]})
-    candidate_path = prepare_candidate(
-        sign_package(v2, "connector-publisher", private.private_bytes_raw()).model_dump(mode="json")
-    )
-    next_bindings = {"reply": {"resource_id": subscription_v2.json()["id"]}}
-    preview = client.post(
-        candidate_path + "/preview", headers=headers, json={"bindings": next_bindings}
-    )
-    assert preview.status_code == 200, preview.text
-    upgraded = client.post(
-        candidate_path + "/install",
-        headers=headers,
-        json={
-            "bindings": next_bindings,
-            "preview_digest": preview.json()["preview_digest"],
-            "approved_permissions": ["messages.send"],
-            "expected_generation": 3,
-        },
-    )
-    assert upgraded.status_code == 201, upgraded.text
-    assert upgraded.json()["current_version"] == "2.0.0"
-    # Withdrawing a catalog version blocks new installation, not the installed release or rollback.
-    catalog_entries[-1] = catalog_entries[-1].model_copy(update={"withdrawn": True})
-    remote_content["/catalog.json"] = (
-        PluginCatalog(entries=catalog_entries).model_dump_json().encode()
-    )
-    source_update = client.put(
-        f"{base}/plugins/sources/{source['id']}",
-        headers=headers,
-        json={
-            "name": source["name"],
-            "url": source["url"],
-            "sha256": hashlib.sha256(remote_content["/catalog.json"]).hexdigest(),
-            "allowed_hosts": source["allowed_hosts"],
-            "expected_generation": source["generation"],
-        },
-    )
-    assert source_update.status_code == 200, source_update.text
-    assert (
-        client.post(
-            f"{base}/plugins/sources/{source['id']}/sync",
-            headers=headers,
-            json={"request_key": "withdraw-version"},
-        ).status_code
-        == 202
-    )
-    assert worker.run_once()
-    assert (
-        client.post(
-            candidate_path + "/preview", headers=headers, json={"bindings": next_bindings}
-        ).status_code
-        == 403
-    )
-    assert (
-        client.get(f"{base}/plugins", headers=headers).json()["items"][0]["current_version"]
-        == "2.0.0"
-    )
-    rollback = client.post(
-        action_path,
-        headers=headers,
-        json={
-            "action": "switch_version",
-            "version": "1.0.0",
-            "expected_generation": 4,
-        },
-    )
-    assert rollback.status_code == 200, rollback.text
-    retired = client.post(
-        action_path,
-        headers=headers,
-        json={
-            "action": "retire_version",
-            "version": "2.0.0",
-            "expected_generation": 5,
-        },
-    )
-    assert retired.status_code == 200, retired.text
-    pending_reply = delivery_service.enqueue_event(
-        workspace_id=workspace.id,
-        event_type="automation.reply",
-        payload={"task_id": str(task.id)},
-        subscription_id=UUID(subscription.json()["id"]),
-    )[0]
-    session.commit()
-    revoked = client.post(
-        f"{base}/plugins/trust-keys/{publisher.json()['id']}/revoke", headers=headers
-    )
-    assert revoked.status_code == 200
-    denied_reply = delivery_service.deliver(
-        workspace_id=workspace.id,
-        delivery_attempt_id=pending_reply.id,
-    )
-    assert denied_reply.status == "dead_lettered"
-    assert len(transport.calls) == 1
-    assert (
-        client.post(
-            action_path,
-            headers=headers,
-            json={
-                "action": "enable",
-                "expected_generation": 6,
-            },
-        ).status_code
-        == 403
-    )
-    if trigger_type == "message":
-        assert (
-            client.post(
-                path, headers=headers, json={**message, "event_id": "after-revoke"}
-            ).status_code
-            == 403
-        )
 
 
+@pytest.mark.skipif(os.getenv("OPSMESH_TEST_TEMPORAL") != "1", reason="Real Temporal required")
 def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     from datetime import UTC, datetime
 
     from opsmesh_plugin_sdk.messaging.client import AutomationClient
     from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
-    from opsmesh_plugin_sdk.messaging.webhooks import parse_automation_delivery
+    from temporalio.openai_agents.testing import TestModel, TestModelProvider
 
-    from opsmesh.orchestration.automations.service import AutomationService
-    from opsmesh.orchestration.webhooks.delivery import WebhookDeliveryService
-    from opsmesh.orchestration.webhooks.http_client import WebhookHttpResponse
-    from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt
-    from opsmesh.runtime.queues.contracts import JobPayload, JobType
+    from opsmesh.orchestration.webhooks.http_client import WebhookHTTPResponse
     from opsmesh.shared.config import get_settings
-    from opsmesh.shared.security.secrets import SecretEncryptionService
-    from tests.test_webhooks import _RecordingHttpClient
-    from tests.test_worker_run_execution import (
-        _execute_run,
-        _seed_default_model_provider,
-    )
+    from tests.fixtures.agent_product import _seed_default_model_provider
+    from tests.fixtures.native_agent_worker import answer
+    from tests.fixtures.native_automation_worker import native_automation_worker
+    from tests.test_webhooks import _RecordingHTTPClient
 
     client, session = _api_client()
     owner, workspace = _seed_api_workspace(session, "conversation@example.com", "conversation")
@@ -1133,6 +686,15 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
         },
     )
     assert team.status_code == 201, team.text
+    member = client.post(
+        f"{base}/teams/{team.json()['id']}/members",
+        json={
+            "agent_profile_id": agent.json()["id"],
+            "team_role": "project_manager",
+            "max_concurrent_tasks": 4,
+        },
+    )
+    assert member.status_code == 201, member.text
     workflow = client.post(
         f"{base}/orchestrations",
         json={
@@ -1152,23 +714,27 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     )
     assert workflow.status_code == 201, workflow.text
     assert client.post(f"{base}/orchestrations/{workflow.json()['id']}/publish").status_code == 200
-    subscription = client.post(
-        f"{base}/webhook-subscriptions",
-        json={
-            "name": "Replies",
-            "target_url": "https://hooks.example.test/reply",
-            "event_types": ["automation.reply"],
-            "signing_secret": "message-signing-secret",
-        },
+    from opsmesh.shared.security.secrets import SecretEncryptionService
+    from tests.fixtures.channels import seed_channel
+
+    settings = client.app.dependency_overrides[get_settings]()
+    connection, _, _ = seed_channel(
+        session,
+        owner,
+        workspace,
+        secret_service=SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
     )
-    assert subscription.status_code == 201, subscription.text
     config = {
         "name": "Message collaboration",
         "trigger_type": "message",
         "orchestration_definition_id": workflow.json()["id"],
         "orchestration_version": 1,
         "agent_team_id": team.json()["id"],
-        "reply_subscription_id": subscription.json()["id"],
+        "reply_connection_id": str(connection.id),
+        "channel_connection_id": str(connection.id),
         "allowed_senders": ["member-1", "member-2"],
         "notify_progress": True,
         "allowed_message_actions": [
@@ -1198,34 +764,66 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     )
     accepted = sdk.submit(message)
     assert sdk.submit(message).id == accepted.id
-    service = AutomationService(session)
-    service.maintain()
-    state = sdk.state(accepted.id)
-    assert state.event.task_id is not None, state
-    task_id = state.event.task_id
-    run = session.scalar(
-        select(AgentRun).where(AgentRun.task_id == task_id, AgentRun.status == "queued")
-    )
-    assert run is not None
     settings = client.app.dependency_overrides[get_settings]()
-    _execute_run(
+    transport = _RecordingHTTPClient(WebhookHTTPResponse(status_code=200, body="ok", headers={}))
+    with native_automation_worker(
         session,
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=owner.id,
-            idempotency_key=f"run:{run.id}",
-        ),
-        settings=settings,
-    )
-    service.maintain()
-    waiting = sdk.state(accepted.id)
-    assert waiting.pending_actions, waiting
-    approval_id = waiting.pending_actions[0].id
-    count_before = session.query(WebhookDeliveryAttempt).count()
-    service.maintain()
-    assert session.query(WebhookDeliveryAttempt).count() == count_before
+        settings,
+        TestModelProvider(TestModel.returning_responses([answer("Done")])),
+        transport=transport,
+    ) as driver:
+        waiting = driver.until(lambda: (state := sdk.state(accepted.id)).pending_actions and state)
+        task_id = waiting.event.task_id
+        assert task_id is not None
+        approval_id = waiting.pending_actions[0].id
+        run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
+        assert run is not None and run.status == "waiting_approval"
+        session.rollback()
+        _assert_message_conversation_controls(
+            client,
+            session,
+            sdk,
+            driver,
+            owner,
+            workspace,
+            agent,
+            base,
+            config,
+            automation_id,
+            message,
+            accepted,
+            task_id,
+            approval_id,
+            run,
+            transport,
+            settings,
+        )
+
+
+def _assert_message_conversation_controls(
+    client,
+    session,
+    sdk,
+    driver,
+    owner,
+    workspace,
+    agent,
+    base,
+    config,
+    automation_id,
+    message,
+    accepted,
+    task_id,
+    approval_id,
+    run,
+    transport,
+    settings,
+):
+    import json
+
+    from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
+
+    from opsmesh.shared.security.secrets import SecretEncryptionService
 
     def control(action: str, event_id: str) -> object:
         response = sdk.submit(
@@ -1239,8 +837,14 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
                 reply_to_event_id=accepted.id,
             )
         )
-        service.maintain()
-        assert sdk.state(response.id).event.task_id == task_id
+
+        def applied():
+            state = sdk.state(response.id)
+            assert state.event.status != "rejected", state
+            return state if state.event.task_id else None
+
+        state = driver.until(applied)
+        assert state.event.task_id == task_id
         return response
 
     denied = client.post(
@@ -1265,7 +869,6 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
             reply_to_event_id=accepted.id,
         )
     )
-    service.maintain()
     assert sdk.state(followup.id).event.status == "pending"
     assert sdk.state(followup.id).event.task_id is None
     control("pause", "takeover")
@@ -1273,21 +876,13 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     assert session.get(Approval, approval_id).status == "cancelled"
     assert sdk.state(accepted.id).task_status == "blocked"
     control("resume", "resume")
-    assert (
-        session.scalar(
-            select(AgentRun.id).where(
-                AgentRun.task_id == task_id,
-                AgentRun.status == "queued",
-            )
-        )
-        is not None
-    )
+    driver.until(lambda: sdk.state(accepted.id).pending_actions)
     control("cancel", "cancel")
     assert sdk.state(accepted.id).task_status == "cancelled"
     assert session.query(Task).count() == 2
 
-    service.maintain()
-    next_state = sdk.state(followup.id)
+    next_state = driver.until(lambda: (state := sdk.state(followup.id)).pending_actions and state)
+    session.expire_all()
     assert next_state.event.task_id != task_id
     next_task = session.get(Task, next_state.event.task_id)
     assert "previous_context" not in next_task.input
@@ -1320,8 +915,15 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
                 text="Independent work",
             )
         )
-        service.maintain()
-        independent_task = session.get(Task, sdk.state(independent.id).event.task_id)
+
+        def independent_waiting(event_id=independent.id):
+            state = sdk.state(event_id)
+            assert state.event.status not in {"rejected", "skipped"}, state
+            return state if state.pending_actions else None
+
+        independent_state = driver.until(independent_waiting)
+        session.expire_all()
+        independent_task = session.get(Task, independent_state.event.task_id)
         assert independent_task is not None
         # This approval workflow may not launch a Run before the human gate;
         # Session scope is derived from its admitted task and durable event.
@@ -1342,40 +944,49 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
         )
     assert isolated_refs[0].session_key != isolated_refs[1].session_key
 
-    transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
-    delivery_service = WebhookDeliveryService(
+    settled = driver.until(
+        lambda: (state := sdk.state(accepted.id)).event.status == "completed" and state
+    )
+    from opsmesh.messaging.channels.delivery import ChannelDeliveryService
+    from opsmesh.messaging.channels.models import ChannelDelivery
+
+    delivery_service = ChannelDeliveryService(
         session,
         SecretEncryptionService(
             secret=settings.credential_encryption_secret,
             key_id=settings.credential_encryption_key_id,
         ),
-        transport,
     )
-    attempt_id = sdk.state(accepted.id).event.reply_delivery_id
-    assert attempt_id is not None
-    delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=attempt_id)
-    delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=attempt_id)
-    assert len(transport.calls) == 1
-    parsed = parse_automation_delivery(
-        transport.calls[0]["body"],
-        transport.calls[0]["headers"],
-        secret="message-signing-secret",
-        workspace_id=workspace.id,
-        automation_id=automation_id,
+    calls_before = len(transport.calls)
+    assert delivery_service.send(workspace.id, settled.event.reply_delivery_id) == "delivered"
+    assert not any(
+        json.loads(call["body"])["delivery_id"] == str(settled.event.reply_delivery_id)
+        for call in transport.calls[calls_before:]
     )
-    assert parsed.data.kind == "result"
-    assert parsed.data.sender_id == "member-1"
-    assert parsed.data.status == "cancelled"
-    service.maintain()
-    assert sdk.state(accepted.id).event.status == "completed"
-
-    pending = next(
+    final_calls = [
+        call
+        for call in transport.calls
+        if json.loads(call["body"])["reply"]["event_id"] == str(accepted.id)
+        and json.loads(call["body"])["reply"]["kind"] == "result"
+    ]
+    assert len(final_calls) == 1
+    reply = json.loads(final_calls[0]["body"])["reply"]
+    assert reply["sender_id"] == "member-1" and reply["status"] == "cancelled"
+    source = next(
         attempt
-        for attempt in session.scalars(
-            select(WebhookDeliveryAttempt).where(WebhookDeliveryAttempt.status == "pending")
-        )
+        for attempt in session.scalars(select(ChannelDelivery))
         if attempt.payload.get("event_id") == str(followup.id)
     )
+    pending = ChannelDelivery(
+        workspace_id=workspace.id,
+        connection_id=source.connection_id,
+        event_id=source.event_id,
+        sequence=source.sequence + 100,
+        connection_revision=source.connection_revision,
+        payload=dict(source.payload),
+    )
+    session.add(pending)
+    session.commit()
     updated = client.put(
         f"{base}/automations/{automation_id}",
         json={
@@ -1385,11 +996,13 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
         },
     )
     assert updated.status_code == 200, updated.text
-    refused = delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=pending.id)
-    assert refused.status == "dead_lettered"
-    assert len(transport.calls) == 1
+    assert delivery_service.send(workspace.id, pending.id) == "failed"
+    assert not any(
+        json.loads(call["body"])["delivery_id"] == str(pending.id) for call in transport.calls
+    )
 
 
+@pytest.mark.skipif(os.getenv("OPSMESH_TEST_TEMPORAL") != "1", reason="Real Temporal required")
 @pytest.mark.parametrize("valid_output", [True, False])
 def test_structured_messages_stream_before_model_completion_and_replay(
     monkeypatch: pytest.MonkeyPatch, valid_output: bool
@@ -1398,56 +1011,59 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     import base64
     from datetime import UTC, datetime
 
-    import httpx
+    import httpx2 as httpx
+    from agents import Model
+    from agents.items import TResponseInputItem
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from openai.types.responses import (
+        Response,
+        ResponseCompletedEvent,
+        ResponseFunctionToolCall,
+        ResponseOutputItemDoneEvent,
+    )
     from opsmesh_plugin_sdk.client import PluginClient
     from opsmesh_plugin_sdk.messaging.client import AsyncAutomationClient, AutomationClient
-    from opsmesh_plugin_sdk.messaging.contracts import (
-        ApprovalDecision,
-        AttachmentUpload,
-        IncomingMessage,
-    )
+    from opsmesh_plugin_sdk.messaging.contracts import AttachmentUpload, IncomingMessage
     from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
     from opsmesh_plugin_sdk.packaging.packages import sign_package
     from opsmesh_plugin_sdk.services.identity import PermissionQuery
     from opsmesh_plugin_sdk.services.observability import PluginLog
     from opsmesh_plugin_sdk.services.storage import StoreWrite
+    from pydantic import TypeAdapter
+    from sqlalchemy.orm import sessionmaker
+    from temporalio import activity
 
-    from opsmesh.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
-    from opsmesh.agents.execution.observer import AgentRuntimeExecutionObserver
-    from opsmesh.governance.reviews.model_request import (
-        ModelRequestReview,
-        ModelRequestReviewService,
+    from opsmesh.governance.reviews.tool_execution import (
+        ToolExecutionReview,
+        ToolExecutionReviewService,
     )
     from opsmesh.identity.users.models import User
-    from opsmesh.orchestration.automations.service import AutomationService
-    from opsmesh.runtime.queues.contracts import JobPayload, JobType
-    from opsmesh.runtime.queues.dependencies import get_worker_queue
+    from opsmesh.orchestration.webhooks.http_client import WebhookHTTPResponse
     from opsmesh.shared.config import get_settings
-    from opsmesh.shared.redis.dependencies import get_redis_client
     from opsmesh.workspaces.members.models import WorkspaceMember
-    from tests.test_webhooks import _queue
-    from tests.test_worker_run_execution import (
-        _execute_run,
-        _seed_default_model_provider,
+    from tests.fixtures.agent_product import _seed_default_model_provider
+    from tests.fixtures.native_agent_worker import (
+        OfflineModelProvider,
+        stream_completed,
+        stream_delta,
+        stream_item,
     )
+    from tests.fixtures.native_automation_worker import native_automation_worker
+    from tests.test_webhooks import _RecordingHTTPClient
 
     client, session = _api_client()
     owner, workspace = _seed_api_workspace(session, "stream@example.com", "stream")
     monkeypatch.setattr(
-        ModelRequestReviewService,
-        "review_request",
-        lambda self, **kwargs: ModelRequestReview(
-            required=False, risk_level="low", reasons=[], signals={}
+        ToolExecutionReviewService,
+        "review_product_tool_call",
+        lambda self, **kwargs: ToolExecutionReview(
+            required=True, blocked=False, risk_level="high", reasons=["flow approval"], signals={}
         ),
     )
     client.app.state.settings.credential_encryption_secret = (
         "change-me-credential-encryption-secret"
     )
     _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
-    queue = _queue()
-    client.app.dependency_overrides[get_redis_client] = lambda: queue.redis
-    client.app.dependency_overrides[get_worker_queue] = lambda: queue
     headers = _api_headers(owner.id)
     client.headers.update(headers)
     client.base_url = "http://testserver/api/v1/"
@@ -1459,6 +1075,17 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             "role": "project_manager",
             "runtime_policy": {"execution_mode": "none"},
             "tool_policy": {"allowed_tools": ["get_agent_inbox"]},
+            "model_settings": {
+                "output_schema": {
+                    "name": "message_answer",
+                    "schema": {
+                        "type": "object",
+                        "required": ["answer"],
+                        "properties": {"answer": {"type": "string"}},
+                        "additionalProperties": False,
+                    },
+                }
+            },
         },
     )
     assert agent.status_code == 201, agent.text
@@ -1583,7 +1210,8 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 "capabilities": [
                     {
                         "key": "receive",
-                        "kind": "message_trigger",
+                        "kind": "channel",
+                        "features": ["receive", "send", "attachments"],
                         "title": "Receive",
                         "required_permissions": permissions,
                     }
@@ -1597,12 +1225,31 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         f"{base}/plugins",
         json={
             "package": package.model_dump(mode="json"),
-            "bindings": {"receive": {"resource_id": str(automation_id)}},
+            "instance_name": "stream",
+            "bindings": [],
             "approved_permissions": permissions,
         },
     )
     assert installed.status_code == 201, installed.text
     install_id = UUID(installed.json()["id"])
+    channel_response = client.post(
+        f"{base}/channels",
+        json={
+            "install_id": str(install_id),
+            "capability_key": "receive",
+            "name": "Stream robot",
+            "account_id": "stream-robot",
+            "endpoint_url": "https://example.com/deliveries",
+            "signing_secret": "stream-signing-secret-with-required-length",
+        },
+    )
+    assert channel_response.status_code == 201, channel_response.text
+    config["channel_connection_id"] = channel_response.json()["id"]
+    rebound = client.put(
+        f"{base}/automations/{automation_id}",
+        json={"expected_version": 1, "status": "active", "configuration": config},
+    )
+    assert rebound.status_code == 200, rebound.text
     credential_url = f"{base}/plugins/{install_id}/credentials"
     issued = client.post(credential_url, json={"permissions": permissions})
     assert issued.status_code == 201, issued.text
@@ -1695,7 +1342,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             assert forbidden_scope.value.response.status_code == 403
             assert await host.configuration.read() == {"poll_seconds": 3}
             saved = await host.storage.write(
-                "delivery:1", StoreWrite(expected_revision=0, value={"cursor": "0-0"})
+                "delivery:1", StoreWrite(expected_revision=0, value={"cursor": "0"})
             )
             assert (await host.storage.read("delivery:1")).revision == saved.revision
             with pytest.raises(httpx.HTTPStatusError) as conflict:
@@ -1734,14 +1381,19 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 filename="order.txt",
                 content_type="text/plain",
             )
-            attachment = await host.messages.upload_attachment(
-                automation_id, upload, b"order 123: timeout"
+            channel = host.channel(UUID(channel_response.json()["id"]))
+            attachment = await channel.upload_attachment(
+                upload, b"order 123: timeout", conversation_id="thread-1"
             )
             assert (
-                await host.messages.upload_attachment(automation_id, upload, b"order 123: timeout")
+                await channel.upload_attachment(
+                    upload, b"order 123: timeout", conversation_id="thread-1"
+                )
             ) == attachment
             with pytest.raises(httpx.HTTPStatusError) as conflict:
-                await host.messages.upload_attachment(automation_id, upload, b"different content")
+                await channel.upload_attachment(
+                    upload, b"different content", conversation_id="thread-1"
+                )
             assert conflict.value.response.status_code == 409
             return attachment
 
@@ -1761,28 +1413,36 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         sdk.submit(message.model_copy(update={"data": {"question": 123}}))
 
     async def submit_plugin():
+        from opsmesh_plugin_sdk.messaging.contracts import ChannelEvent
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=client.app),
             base_url="http://testserver/api/v1/",
             headers=plugin_headers,
         ) as http:
-            connector = PluginClient(http, workspace.id, install_id).automation(automation_id)
+            connection_id = UUID(channel_response.json()["id"])
+            connector = PluginClient(http, workspace.id, install_id).channel(connection_id)
+
+            async def ingest(value):
+                return await connector.ingest(
+                    ChannelEvent(
+                        id=value.event_id,
+                        source=f"opsmesh://channels/{connection_id}",
+                        data=value,
+                    )
+                )
+
             with pytest.raises(httpx.HTTPStatusError) as wrong_event:
-                await connector.submit(message.model_copy(update={"event_id": "different-event"}))
+                await ingest(message.model_copy(update={"event_id": "different-event"}))
             assert wrong_event.value.response.status_code == 403
-            accepted = await connector.submit(message)
-            assert (await connector.submit(message)).id == accepted.id
+            accepted = await ingest(message)
+            assert (await ingest(message)).id == accepted.id
             return accepted
 
     accepted = asyncio.run(submit_plugin())
-    service = AutomationService(session)
-    service.maintain()
-    task_id = sdk.state(accepted.id).event.task_id
-    task = session.get(Task, task_id)
-    assert task.input["event"]["data"] == {"question": "What is the result?"}
     observed = []
 
-    async def read_stream(cursor: str = "0-0") -> list:
+    async def read_stream(cursor: str = "0") -> list:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=client.app),
             base_url="http://testserver/api/v1/",
@@ -1795,114 +1455,125 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 frame async for frame in subscriber.events(accepted.id, cursor=cursor, once=True)
             ]
 
-    class StreamingModel:
-        async def run(self, request):
-            assert len(request.attachments) == 1
-            assert request.attachments[0].content == b"order 123: timeout"
-            assert request.context.user_id == employee.id
-            assert "private-name" not in request.input_text
-            assert request.event_sink is not None
-            observer = AgentRuntimeExecutionObserver(request)
-            observer.start()
-            observer.stream("output.text.delta", delta="Working on your question")
-            before = await read_stream()
-            assert any(frame.kind == "output.text" for frame in before)
-            assert not any(frame.kind == "stream.completed" for frame in before)
-            observed.extend(before)
-            result = await request.tool_executor.execute_tool(
-                context=request.context,
-                tool_name="get_agent_inbox",
-                arguments={},
-                tool_call_id="inbox-1",
-            )
-            assert result.status == "completed", result
-            observer.stream("output.text.delta", delta=". Finished.")
-            answer = AgentRunResult(
-                final_output='{"answer":"Done"}',
-                structured_output=AgentRuntimeStructuredOutput(
-                    value={"answer": "Done"}, validated=True
-                ),
-            )
-            observer.finish(answer)
-            return answer
+    from threading import Event
+    from uuid import uuid4
 
-    run = session.scalar(
-        select(AgentRun).where(AgentRun.task_id == task_id, AgentRun.status == "queued")
-    )
-    assert run is not None
+    calls = []
+    finish_response = Event()
+
+    class StreamingModel(Model):
+        def __init__(self, reference):
+            self.reference = reference
+
+        async def get_response(self, **kwargs):
+            raise AssertionError("This scenario must execute the native streaming Model Activity")
+
+        async def stream_response(self, **kwargs):
+            assert activity.in_activity()
+            inputs = TypeAdapter(list[TResponseInputItem]).dump_python(kwargs["input"], mode="json")
+            serialized = str(inputs)
+            assert "private-name" not in serialized
+            assert "order 123: timeout" in serialized
+            calls.append(self.reference.run_id)
+            with sessionmaker(session.get_bind())() as read:
+                run = read.get(AgentRun, self.reference.run_id)
+                task = read.get(Task, run.task_id)
+                assert task.execution_identity["user_id"] == str(employee.id)
+            if len(calls) == 1:
+                yield stream_delta("Unvalidated text must stay private")
+                call = ResponseFunctionToolCall(
+                    id="inbox-call",
+                    call_id="inbox-1",
+                    name="get_agent_inbox",
+                    arguments="{}",
+                    type="function_call",
+                )
+                yield ResponseOutputItemDoneEvent(
+                    type="response.output_item.done", sequence_number=1, output_index=0, item=call
+                )
+                yield ResponseCompletedEvent(
+                    type="response.completed",
+                    sequence_number=2,
+                    response=Response.model_validate(
+                        {
+                            "id": "inbox-response",
+                            "created_at": 0,
+                            "model": "gpt-4.1",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [call],
+                            "parallel_tool_calls": False,
+                            "tool_choice": "auto",
+                            "tools": [],
+                        }
+                    ),
+                )
+            else:
+                yield stream_delta('{"answer":"Done"}')
+                assert await asyncio.to_thread(finish_response.wait, 45)
+                yield stream_item('{"answer":"Done"}')
+                yield stream_completed('{"answer":"Done"}')
+
     settings = client.app.dependency_overrides[get_settings]()
-    monkeypatch.setattr(
-        ModelRequestReviewService,
-        "review_request",
-        lambda self, **kwargs: ModelRequestReview(
-            required=True, risk_level="high", reasons=["flow approval"], signals={}
-        ),
-    )
-    waiting = _execute_run(
+    transport = _RecordingHTTPClient(WebhookHTTPResponse(status_code=200, body="ok", headers={}))
+    with native_automation_worker(
         session,
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=employee.id,
-            idempotency_key=f"approval-gate:{run.id}",
-        ),
-        agent_runner=StreamingModel(),
-        settings=settings,
-        queue=queue,
-    )
-    assert waiting.status == "waiting_approval"
-    approval = sdk.state(accepted.id).pending_actions[0]
+        settings,
+        OfflineModelProvider(StreamingModel),
+        transport=transport,
+        stream=True,
+    ) as driver:
 
-    async def approve_message():
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=client.app),
-            base_url="http://testserver/api/v1/",
-            headers=plugin_headers,
-        ) as http:
-            host = PluginClient(http, workspace.id, install_id)
-            with pytest.raises(httpx.HTTPStatusError) as wrong_sender:
-                await host.messages.decide_approval(
-                    automation_id,
-                    accepted.id,
-                    approval.id,
-                    ApprovalDecision(sender_id="unbound", decision="approve"),
-                )
-            assert wrong_sender.value.response.status_code == 403
-            for _ in range(2):
-                result = await host.messages.decide_approval(
-                    automation_id,
-                    accepted.id,
-                    approval.id,
-                    ApprovalDecision(sender_id="user-1", decision="approve"),
-                )
-                assert result.status == "approved"
-            with pytest.raises(httpx.HTTPStatusError) as conflict:
-                await host.messages.decide_approval(
-                    automation_id,
-                    accepted.id,
-                    approval.id,
-                    ApprovalDecision(sender_id="user-1", decision="reject"),
-                )
-            assert conflict.value.response.status_code == 409
+        def awaiting_approval():
+            state = sdk.state(accepted.id)
+            if state.task_status in {"completed", "failed", "cancelled"}:
+                with sessionmaker(session.get_bind())() as read:
+                    runs = read.scalars(
+                        select(AgentRun).where(
+                            AgentRun.workspace_id == workspace.id,
+                            AgentRun.task_id == state.event.task_id,
+                        )
+                    ).all()
+                    pytest.fail(str([(run.status, run.error) for run in runs]))
+            assert state.event.status not in {"rejected", "skipped"}, state
+            return state if state.pending_actions else None
 
-    asyncio.run(approve_message())
-    executed = _execute_run(
-        session,
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=owner.id,
-            idempotency_key=f"stream:{run.id}",
-        ),
-        agent_runner=StreamingModel(),
-        settings=settings,
-        queue=queue,
-    )
-    assert executed.status == "completed", executed.error
-    assert str(employee.id) in executed.session_key
-    service.maintain()
+        waiting = driver.until(awaiting_approval)
+        approval = waiting.pending_actions[0]
+        task_id = waiting.event.task_id
+        session.expire_all()
+        task = session.get(Task, task_id)
+        assert task.input["event"]["data"] == {"question": "What is the result?"}
+        session.rollback()
+        asyncio.run(
+            _approve_plugin_message(
+                client, workspace, install_id, automation_id, accepted, approval, plugin_headers
+            )
+        )
+
+        def live_progress():
+            frames = asyncio.run(read_stream())
+            return frames if any(frame.kind == "tool.completed" for frame in frames) else None
+
+        try:
+            before = driver.until(live_progress)
+            assert any(frame.kind == "tool.started" for frame in before)
+            assert not any(frame.kind in {"output.text", "stream.completed"} for frame in before), [
+                (frame.kind, frame.data.get("task_status")) for frame in before
+            ]
+            observed.extend(before)
+        finally:
+            finish_response.set()
+        completed = driver.until(
+            lambda: (state := sdk.state(accepted.id)).task_status == "completed" and state
+        )
+        assert completed.event.task_id == task_id
+        session.expire_all()
+        executed = session.get(AgentRun, calls[0])
+        assert executed.status == "completed", executed.error
+        assert str(employee.id) in executed.session_key
+        session.rollback()
+
     frames = asyncio.run(read_stream(observed[-1].cursor))
     observer_user = User(email="stream-observer@example.com", display_name="Observer")
     session.add(observer_user)
@@ -1919,10 +1590,8 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         == 200
     )
     event_path = f"{base}/automations/{automation_id}/events"
-    assert (
-        client.get(f"{event_path}/{accepted.id}", headers=_api_headers(employee.id)).status_code
-        == 200
-    )
+    sender_state = client.get(f"{event_path}/{accepted.id}", headers=_api_headers(employee.id))
+    assert sender_state.status_code == 200, sender_state.text
     assert client.get(
         f"{event_path}/{accepted.id}", headers=_api_headers(observer_user.id)
     ).status_code in {403, 404}
@@ -1934,9 +1603,10 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         == 403
     )
     assert any(
-        frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1" for frame in frames
+        frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1"
+        for frame in [*observed, *frames]
     )
-    assert any(frame.kind == "tool.completed" for frame in frames)
+    assert any(frame.kind == "tool.completed" for frame in [*observed, *frames])
     state = next(frame for frame in frames if frame.kind == "state")
     assert state.data["output"] == ({"answer": "Done"} if valid_output else {}), state
     assert state.data["output_error"] == (None if valid_output else "output_contract_rejected")
@@ -1950,7 +1620,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         frame.kind in {"output.text", "output.reset"}
         for frame in asyncio.run(read_stream(frames[-1].cursor))
     )
-    reset = asyncio.run(read_stream("1-0"))
+    reset = asyncio.run(read_stream(str(uuid4())))
     assert reset[0].kind == "stream.reset"
     old_headers = plugin_headers
     rotated = client.post(credential_url, json={"permissions": permissions})
@@ -1978,7 +1648,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     updated = client.put(
         f"{base}/automations/{automation_id}",
         json={
-            "expected_version": 1,
+            "expected_version": 2,
             "status": "active",
             "configuration": {**config, "allowed_senders": ["other"]},
         },
@@ -1988,13 +1658,52 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         asyncio.run(read_stream())
 
 
+async def _approve_plugin_message(
+    client, workspace, install_id, automation_id, accepted, approval, plugin_headers
+):
+    import httpx2 as httpx
+    from opsmesh_plugin_sdk.client import PluginClient
+    from opsmesh_plugin_sdk.messaging.contracts import ApprovalDecision
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=client.app),
+        base_url="http://testserver/api/v1/",
+        headers=plugin_headers,
+    ) as http:
+        host = PluginClient(http, workspace.id, install_id)
+        with pytest.raises(httpx.HTTPStatusError) as forbidden:
+            await host.messages.decide_approval(
+                automation_id,
+                accepted.id,
+                approval.id,
+                ApprovalDecision(sender_id="unbound", decision="approve"),
+            )
+        assert forbidden.value.response.status_code == 403
+        for _ in range(2):
+            decision = await host.messages.decide_approval(
+                automation_id,
+                accepted.id,
+                approval.id,
+                ApprovalDecision(sender_id="user-1", decision="approve"),
+            )
+            assert decision.status == "approved"
+        with pytest.raises(httpx.HTTPStatusError) as conflict:
+            await host.messages.decide_approval(
+                automation_id,
+                accepted.id,
+                approval.id,
+                ApprovalDecision(sender_id="user-1", decision="reject"),
+            )
+        assert conflict.value.response.status_code == 409
+
+
 def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = OrchestrationDefinitionService(session)
     definition = service.create_definition(
         workspace.id,
-        OrchestrationDefinitionCreate(
+        OrchestrationDefinitionCreateCommand(
             key="locked-flow",
             name="Locked flow",
             nodes=[
@@ -2009,7 +1718,7 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
         service.update_definition(
             workspace.id,
             definition.id,
-            OrchestrationDefinitionUpdate(
+            OrchestrationDefinitionUpdateCommand(
                 expected_version=1,
                 nodes=[
                     WorkflowNode(package_id="source", title="Changed", locked=True),
@@ -2024,7 +1733,7 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
         service.update_definition(
             workspace.id,
             definition.id,
-            OrchestrationDefinitionUpdate(
+            OrchestrationDefinitionUpdateCommand(
                 expected_version=1,
                 nodes=[
                     WorkflowNode(package_id="source", title="Changed", locked=True),
@@ -2040,7 +1749,7 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
     updated = service.update_definition(
         workspace.id,
         definition.id,
-        OrchestrationDefinitionUpdate(
+        OrchestrationDefinitionUpdateCommand(
             expected_version=1,
             nodes=[
                 WorkflowNode(package_id="source", title="Source", locked=True),
@@ -2057,7 +1766,7 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
         service.update_definition(
             workspace.id,
             definition.id,
-            OrchestrationDefinitionUpdate(
+            OrchestrationDefinitionUpdateCommand(
                 expected_version=2,
                 nodes=[
                     WorkflowNode(package_id="source", title="Changed", locked=True),
@@ -2217,7 +1926,7 @@ def test_task_api_can_apply_a_published_orchestration_without_queueing() -> None
     definition_service = OrchestrationDefinitionService(session)
     definition = definition_service.create_definition(
         workspace.id,
-        OrchestrationDefinitionCreate(
+        OrchestrationDefinitionCreateCommand(
             key="apply-flow",
             name="Apply flow",
             nodes=[

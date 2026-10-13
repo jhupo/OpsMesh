@@ -33,34 +33,22 @@ class DatabasePoolSnapshot:
 
 
 def create_database_engine(settings: Settings) -> Engine:
-    engine_kwargs: dict[str, object] = {
-        "pool_pre_ping": True,
-        "future": True,
-    }
-    if not _is_sqlite_url(settings.database_url):
-        engine_kwargs.update(
-            {
-                "pool_size": settings.database_pool_size,
-                "max_overflow": settings.database_max_overflow,
-                "pool_timeout": settings.database_pool_timeout_seconds,
-                "pool_recycle": settings.database_pool_recycle_seconds,
-            }
-        )
-        if _is_postgres_url(settings.database_url):
-            engine_kwargs["connect_args"] = {
-                "options": (
-                    f"-c statement_timeout={settings.database_statement_timeout_ms}"
-                )
-            }
-    return create_engine(settings.database_url, **engine_kwargs)
-
-
-def _is_sqlite_url(database_url: str) -> bool:
-    return make_url(database_url).get_backend_name() == "sqlite"
-
-
-def _is_postgres_url(database_url: str) -> bool:
-    return make_url(database_url).get_backend_name().startswith("postgresql")
+    database_url = make_url(settings.database_url)
+    if database_url.get_backend_name() != "postgresql":
+        raise ValueError("OpsMesh requires PostgreSQL")
+    options = database_url.query.get("options", "")
+    if not isinstance(options, str):
+        raise ValueError("PostgreSQL options must have a single value")
+    statement_timeout = f"-c statement_timeout={settings.database_statement_timeout_ms}"
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout_seconds,
+        pool_recycle=settings.database_pool_recycle_seconds,
+        connect_args={"options": f"{options} {statement_timeout}".strip()},
+    )
 
 
 def database_pool_snapshot(target_engine: Engine | None = None) -> DatabasePoolSnapshot:

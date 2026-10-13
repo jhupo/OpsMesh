@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.definitions.authoring import WorkflowEditorMetadata
 from opsmesh.orchestration.definitions.commands import (
-    OrchestrationDefinitionCreate,
-    OrchestrationDefinitionUpdate,
+    OrchestrationDefinitionCreateCommand,
+    OrchestrationDefinitionUpdateCommand,
     OrchestrationEditScope,
 )
 from opsmesh.orchestration.definitions.conditions import condition_step_references
@@ -77,7 +77,7 @@ class OrchestrationDefinitionService:
     def create_definition(
         self,
         workspace_id: UUID,
-        request: OrchestrationDefinitionCreate,
+        request: OrchestrationDefinitionCreateCommand,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
@@ -90,7 +90,8 @@ class OrchestrationDefinitionService:
             name=request.name,
             description=request.description,
             definition={
-                "definition_version": 1, "nodes": nodes,
+                "definition_version": 1,
+                "nodes": nodes,
                 "editor": request.editor.model_dump(mode="json"),
             },
             version=1,
@@ -149,7 +150,7 @@ class OrchestrationDefinitionService:
         self,
         workspace_id: UUID,
         orchestration_definition_id: UUID,
-        request: OrchestrationDefinitionUpdate,
+        request: OrchestrationDefinitionUpdateCommand,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
@@ -242,8 +243,7 @@ class OrchestrationDefinitionService:
         authorized_edges = set(scope.edge_ids) if scope is not None else set()
         missing_nodes = changed_locked_nodes - authorized_nodes
         missing_edges = {
-            self._edge_key(source, target)
-            for source, target in changed_incident_edges
+            self._edge_key(source, target) for source, target in changed_incident_edges
         } - authorized_edges
         if missing_nodes or missing_edges:
             details: list[str] = []

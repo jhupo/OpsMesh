@@ -1,11 +1,8 @@
-"""Public SDK MCPServer extension for governed calls into an OpsMesh Runtime.
-
-SDK transports cannot open an OpsMesh Runtime RPC connection. This extension supplies that
-connection; the SDK owns tool conversion, approvals, output conversion and its execution loop.
-"""
+"""Use official durable MCP proxies; add only product authorization callbacks."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 from agents import Agent, FunctionTool, RunContextWrapper
@@ -15,149 +12,97 @@ from agents.mcp import MCPServer
 from agents.mcp.util import MCPToolMetaContext
 from agents.sandbox import SandboxAgent
 from agents.tool_context import ToolContext
-from mcp.types import CallToolResult, GetPromptResult, ListPromptsResult, Tool
+from temporalio.common import RetryPolicy
+from temporalio.openai_agents.workflow import temporal_mcp_server
+from temporalio.workflow import ActivityCancellationType
 
-from opsmesh.agents.execution.cancellation import raise_if_cancelled
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRuntimeAgentRef
+from opsmesh.agents.execution.contracts import AgentReference, AgentRunRequest
+from opsmesh.agents.execution.providers.openai.tools import tool_provenance_guardrail
 
 
-class RuntimeMCPServer(MCPServer):
-    def __init__(self, request: AgentRunRequest) -> None:
-        self.request = request
-        self.definitions = {
-            tool.name: tool for tool in request.context.tool_definitions if tool.source == "mcp"
-        }
-        self.approval_reviews: dict[str, dict[str, object]] = {}
-        super().__init__(
-            require_approval="never",
-            tool_meta_resolver=self.invocation_meta,
-            failure_error_function=None,
-        )
-
-    @property
-    def name(self) -> str:
-        return "opsmesh-runtime"
-
-    async def connect(self) -> None:
-        # Runtime allocation and connection policy were checked before the SDK run.
-        await raise_if_cancelled(self.request.cancellation)
-
-    async def cleanup(self) -> None:
-        # OpsMesh owns Runtime leases and cleanup, not SDK transport teardown.
-        pass
-
-    async def list_tools(
-        self, run_context: RunContextWrapper[Any] | None = None, agent: AgentBase[Any] | None = None
-    ) -> list[Tool]:
-        return [
-            Tool(
-                name=tool.name,
-                title=tool.title or None,
-                description=tool.description,
-                inputSchema=tool.input_schema,
-                outputSchema=tool.output_schema or None,
-            )
-            for tool in self.definitions.values()
-        ]
-
-    async def review(self, tool_name: str, arguments: dict[str, Any], call_id: str) -> bool:
-        if self.request.tool_executor is None:
-            raise ValueError("MCP review requires a governed tool executor")
-        review = await self.request.tool_executor.review_tool_call(
-            context=self.request.context, tool_name=tool_name, arguments=arguments
-        )
-        self.approval_reviews[call_id] = review
-        if review.get("decision") == "deny":
-            raise ValueError("MCP tool was denied by policy")
-        if review.get("decision") not in {"allow", "require_approval"}:
-            raise ValueError("Invalid MCP tool approval decision")
-        return review["decision"] == "require_approval"
-
-    def invocation_meta(self, context: MCPToolMetaContext) -> dict[str, Any]:
-        if not isinstance(context.run_context, ToolContext):
-            raise ValueError("MCP invocation requires the SDK tool call identity")
-        return {"opsmesh_tool_call_id": context.run_context.tool_call_id}
-
-    async def call_tool(
-        self, tool_name: str, arguments: dict[str, Any] | None, meta: dict[str, Any] | None = None
-    ) -> CallToolResult:
-        await raise_if_cancelled(self.request.cancellation)
-        if tool_name not in self.definitions or self.request.tool_executor is None:
-            raise ValueError("MCP tool is outside the frozen capability catalog")
-        call_id = (meta or {}).get("opsmesh_tool_call_id")
-        if not isinstance(call_id, str) or not call_id:
-            raise ValueError("MCP invocation is missing its SDK tool call identity")
-        result = await self.request.tool_executor.execute_tool(
-            context=self.request.context,
-            tool_name=tool_name,
-            arguments=arguments or {},
-            tool_call_id=call_id,
-            approval_granted=True,
-        )
-        await raise_if_cancelled(self.request.cancellation)
-        if (
-            result.status == "failed"
-            and result.output is not None
-            and result.output.get("isError") is True
-        ):
-            return CallToolResult.model_validate(result.output)
-        if result.status != "completed":
-            raise RuntimeError("MCP Runtime execution failed")
-        return CallToolResult.model_validate(result.output)
-
-    async def list_prompts(self) -> ListPromptsResult:
-        return ListPromptsResult(prompts=[])
-
-    async def get_prompt(
-        self, name: str, arguments: dict[str, Any] | None = None
-    ) -> GetPromptResult:
-        raise ValueError("MCP prompts are outside the frozen capability catalog")
+def invocation_meta(context: MCPToolMetaContext) -> dict[str, Any]:
+    if not isinstance(context.run_context, ToolContext):
+        raise ValueError("MCP invocation requires the SDK tool call identity")
+    return {"opsmesh_tool_call_id": context.run_context.tool_call_id}
 
 
 def runtime_mcp_servers(request: AgentRunRequest) -> list[MCPServer]:
-    if request.tool_executor is None:
-        return []
-    return (
-        [RuntimeMCPServer(request)]
-        if any(tool.source == "mcp" for tool in request.context.tool_definitions)
-        else []
-    )
+    grouped: dict[str, list[str]] = {}
+    for tool in request.context.tool_definitions:
+        if tool.source != "mcp":
+            continue
+        if tool.mcp_server_id is None:
+            raise ValueError("MCP tool has no authorized server reference")
+        grouped.setdefault(str(tool.mcp_server_id), []).append(tool.name)
+    return [
+        temporal_mcp_server(
+            "opsmesh",
+            factory_argument={
+                "workspace_id": str(request.context.workspace_id),
+                "run_id": str(request.context.run_id),
+                "server_id": server_id,
+                "agent_profile_id": str(request.agent_profile.id),
+                "capability_catalog_fingerprint": request.context.metadata.get(
+                    "capability_catalog_fingerprint"
+                ),
+            },
+            activity_config={
+                "start_to_close_timeout": timedelta(minutes=30),
+                "retry_policy": RetryPolicy(maximum_attempts=1),
+                "cancellation_type": ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+            },
+            tool_filter=_allowlisted_tools(tuple(grouped[server_id])),
+            tool_meta_resolver=invocation_meta,
+            require_approval="never",
+            failure_error_function=None,
+        )
+        for server_id in grouped
+    ]
+
+
+def _allowlisted_tools(names: tuple[str, ...]) -> Callable[[Any, Any], bool]:
+    allowed = frozenset(names)
+
+    def include_tool(_: Any, tool: Any) -> bool:
+        return getattr(tool, "name", None) in allowed
+
+    return include_tool
 
 
 def governed_mcp_tools(agent: AgentBase[Any], tools: list[AgentTool]) -> list[AgentTool]:
-    # SDK MCP approval omits arguments/call_id. Use its public agent extension to
-    # attach argument-dependent governance to tools converted by the SDK.
-    from opsmesh.agents.execution.providers.openai.tools import tool_provenance_guardrail
-
+    if not isinstance(agent, GovernedAgent | GovernedSandboxAgent):
+        raise ValueError("MCP agent is outside the authorized graph")
+    request = agent.runtime_request
+    if request is None:
+        raise ValueError("MCP agent has no authorized definition")
+    definitions = {item.name for item in request.context.tool_definitions if item.source == "mcp"}
     for tool in tools:
-        if not isinstance(tool, FunctionTool):
-            continue
-        server = next(
-            (
-                item
-                for item in agent.mcp_servers
-                if isinstance(item, RuntimeMCPServer) and tool.name in item.definitions
-            ),
-            None,
-        )
-        if server is None:
-            continue
-
-        tool.needs_approval = _approval_callback(server, tool.name)
+        if not isinstance(tool, FunctionTool) or tool.name not in definitions:
+            raise ValueError("MCP tool is outside the frozen capability catalog")
+        tool.needs_approval = _approval_callback(agent, request, tool.name)
         tool.tool_input_guardrails = [
-            tool_provenance_guardrail(tool.name, runtime_context=server.request.context)
+            tool_provenance_guardrail(tool.name, runtime_context=request.context)
         ]
     return tools
 
 
 def _approval_callback(
-    server: RuntimeMCPServer,
+    agent: "GovernedAgent | GovernedSandboxAgent",
+    request: AgentRunRequest,
     name: str,
 ) -> Callable[[RunContextWrapper[Any], dict[str, Any], str], Awaitable[bool]]:
     async def needs_approval(
         context: RunContextWrapper[Any], arguments: dict[str, Any], call_id: str
     ) -> bool:
-        return await server.review(name, arguments, call_id)
+        if request.tool_executor is None:
+            raise ValueError("MCP approval requires an authorized tool Activity")
+        review = await request.tool_executor.review_tool_call(
+            context=request.context, tool_name=name, arguments=arguments
+        )
+        agent.mcp_approval_reviews[call_id] = review
+        if review.get("decision") not in {"allow", "require_approval"}:
+            raise ValueError("MCP tool was denied by policy")
+        return review["decision"] == "require_approval"
 
     return needs_approval
 
@@ -165,7 +110,8 @@ def _approval_callback(
 @dataclass
 class GovernedAgent(Agent[Any]):
     runtime_request: AgentRunRequest | None = field(default=None, repr=False)
-    runtime_ref: AgentRuntimeAgentRef | None = None
+    runtime_ref: AgentReference | None = None
+    mcp_approval_reviews: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
 
     async def get_mcp_tools(self, run_context: RunContextWrapper[Any]) -> list[AgentTool]:
         return governed_mcp_tools(self, await super().get_mcp_tools(run_context))
@@ -174,7 +120,9 @@ class GovernedAgent(Agent[Any]):
 @dataclass
 class GovernedSandboxAgent(SandboxAgent[Any]):
     runtime_request: AgentRunRequest | None = field(default=None, repr=False)
-    runtime_ref: AgentRuntimeAgentRef | None = None
+    runtime_ref: AgentReference | None = None
+    mcp_approval_reviews: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
+    sandbox_approval_reviews: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
 
     async def get_mcp_tools(self, run_context: RunContextWrapper[Any]) -> list[AgentTool]:
         return governed_mcp_tools(self, await super().get_mcp_tools(run_context))

@@ -5,7 +5,6 @@ from typing import Any
 
 from pytest import MonkeyPatch, raises
 from sqlalchemy import select
-from test_admin_api import _admin_headers, _client
 
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.auth.service import AuthenticationService
@@ -14,6 +13,7 @@ from opsmesh.identity.users.models import User
 from opsmesh.messaging.email.models import PlatformMailSettings
 from opsmesh.messaging.email.routes import router as email_router
 from opsmesh.messaging.email.smtp import send_smtp_message
+from tests.fixtures.admin_api import _admin_headers, _client
 
 MAIL_SETTINGS = {
     "enabled": True,

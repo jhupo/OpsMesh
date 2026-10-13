@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer, model_validator
 
 from opsmesh.capabilities.mcp.catalog.redaction import redacted_connection
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from opsmesh.shared.security.secrets import (
     external_vault_reference_metadata,
@@ -14,28 +14,28 @@ from opsmesh.shared.security.secrets import (
 )
 
 
-class McpServerCreateRequest(BaseModel):
+class MCPServerCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     server_type: Literal["stdio", "streamable_http", "sse", "hosted"] = "stdio"
     connection: dict[str, object] = Field(default_factory=dict)
     visibility: str = Field(default="private", pattern="^(private|public)$")
 
 
-class McpServerUpdateRequest(BaseModel):
+class MCPServerUpdateRequest(BaseModel):
     connection: dict[str, object] | None = None
     visibility: str | None = Field(default=None, pattern="^(private|public)$")
 
 
-class McpServerHealthCheckRequest(BaseModel):
+class MCPServerHealthCheckRequest(BaseModel):
     health_status: str = Field(pattern="^(healthy|unhealthy|unknown)$")
     error_code: str | None = Field(default=None, max_length=120)
 
 
-class McpServerDiscoveryRequest(BaseModel):
+class MCPServerDiscoveryRequest(BaseModel):
     credential_id: UUID | None = None
 
 
-class McpServerDiscoveryResponse(BaseModel):
+class MCPServerDiscoveryResponse(BaseModel):
     workspace_id: UUID
     mcp_server_id: UUID
     status: str
@@ -49,7 +49,7 @@ class McpServerDiscoveryResponse(BaseModel):
     error: str | None = None
 
 
-class McpServerResponse(TimestampedModel):
+class MCPServerResponse(TimestampedContract):
     workspace_id: UUID
     name: str
     server_type: str
@@ -79,7 +79,7 @@ class McpServerResponse(TimestampedModel):
         return redact_sensitive_text(value) if value is not None else None
 
 
-class McpToolAllowRequest(BaseModel):
+class MCPToolAllowRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
     title: str = Field(default="", max_length=240)
     description: str = Field(default="", max_length=2_000)
@@ -91,7 +91,7 @@ class McpToolAllowRequest(BaseModel):
     policy: dict[str, object] = Field(default_factory=dict)
 
 
-class McpToolAllowUpdateRequest(BaseModel):
+class MCPToolAllowUpdateRequest(BaseModel):
     tool_name: str | None = Field(default=None, min_length=1, max_length=160)
     title: str | None = Field(default=None, max_length=240)
     description: str | None = Field(default=None, max_length=2_000)
@@ -103,7 +103,7 @@ class McpToolAllowUpdateRequest(BaseModel):
     policy: dict[str, object] | None = None
 
     @model_validator(mode="after")
-    def require_change(self) -> "McpToolAllowUpdateRequest":
+    def require_change(self) -> "MCPToolAllowUpdateRequest":
         if not self.model_fields_set:
             raise ValueError("At least one MCP tool field is required")
         null_fields = sorted(
@@ -116,7 +116,7 @@ class McpToolAllowUpdateRequest(BaseModel):
         return self
 
 
-class McpToolAllowResponse(TimestampedModel):
+class MCPToolAllowResponse(TimestampedContract):
     workspace_id: UUID
     mcp_server_id: UUID
     tool_name: str
@@ -140,7 +140,7 @@ class McpToolAllowResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class McpCredentialReferenceCreateRequest(BaseModel):
+class MCPCredentialReferenceCreateRequest(BaseModel):
     mcp_server_id: UUID | None = None
     name: str = Field(min_length=1, max_length=160)
     provider: str = Field(min_length=1, max_length=80)
@@ -149,18 +149,18 @@ class McpCredentialReferenceCreateRequest(BaseModel):
     scopes: list[str] = Field(default_factory=list)
 
 
-class McpCredentialReferenceUpdateRequest(BaseModel):
+class MCPCredentialReferenceUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     scopes: list[str] | None = None
 
 
-class McpCredentialReferenceRotateRequest(BaseModel):
+class MCPCredentialReferenceRotateRequest(BaseModel):
     provider: str | None = Field(default=None, min_length=1, max_length=80)
     external_ref: str | None = Field(default=None, max_length=512)
     secret_payload: dict[str, object] | None = None
 
     @model_validator(mode="after")
-    def validate_rotation_source(self) -> "McpCredentialReferenceRotateRequest":
+    def validate_rotation_source(self) -> "MCPCredentialReferenceRotateRequest":
         has_external_ref = bool(self.external_ref and self.external_ref.strip())
         has_secret_payload = self.secret_payload is not None
         if has_external_ref == has_secret_payload:
@@ -172,7 +172,7 @@ class McpCredentialReferenceRotateRequest(BaseModel):
         return self
 
 
-class McpCredentialReferenceResponse(TimestampedModel):
+class MCPCredentialReferenceResponse(TimestampedContract):
     workspace_id: UUID
     mcp_server_id: UUID | None
     name: str

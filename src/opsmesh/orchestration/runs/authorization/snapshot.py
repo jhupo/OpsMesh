@@ -13,14 +13,14 @@ from opsmesh.agents.profiles.routing import agent_target_policy, require_handoff
 from opsmesh.agents.providers.metadata import budget_is_exhausted
 from opsmesh.agents.providers.model_api import canonical_model_api, model_api_for_agent_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.snapshots import ModelProviderResolutionService
+from opsmesh.agents.providers.selection import ModelProviderSelectionQuery
 from opsmesh.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from opsmesh.governance.reviews.approval_config import approval_configuration
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.orchestration.definitions.graph import is_pm_summary_step
+from opsmesh.orchestration.definitions.snapshot import node_definition_snapshot
 from opsmesh.orchestration.planning.acceptance_contract import acceptance_output_schema
 from opsmesh.orchestration.planning.agent_plan import (
     is_agent_planning_step,
@@ -78,14 +78,6 @@ class RunAuthorizationSnapshotService:
         workspace = self.session.get(Workspace, task.workspace_id)
         if workspace is None:
             raise ValueError("Execution workspace is unavailable")
-        profile_settings = dict_or_empty(runtime_profile.get("model_settings"))
-        runtime_profile["model_settings"] = {
-            **profile_settings,
-            "claude_permission_mode": approval_configuration(
-                workspace.settings or {}
-            ).claude_permission_mode,
-        }
-        fallback_policy = self._model_provider_fallback_snapshot(task.workspace_id)
         runtime_policy = profile.runtime_policy if profile is not None else {}
         frozen_runtime_policy = runtime_policy_snapshot(runtime_policy)
         runtime_controls = self._runtime_controls(profile, step, frozen_runtime_policy)
@@ -93,7 +85,6 @@ class RunAuthorizationSnapshotService:
             task=task,
             step=step,
             capability_catalog=catalog_snapshot,
-            runtime_policy=frozen_runtime_policy,
         )
         graph_size = [0]
         agent_tools = self._agent_tools(
@@ -120,7 +111,6 @@ class RunAuthorizationSnapshotService:
             step=step,
             profile=profile,
             runtime_profile=runtime_profile,
-            fallback_policy=fallback_policy,
             catalog_snapshot=catalog_snapshot,
             allowed_tools=allowed_tools,
             model_provider=model_provider,
@@ -130,6 +120,8 @@ class RunAuthorizationSnapshotService:
             agent_tools=agent_tools,
         )
         snapshot["handoffs"] = handoffs
+        if step is not None:
+            snapshot["node_definition"] = node_definition_snapshot(step)
         handoff_policy = agent_target_policy(profile.tool_policy, "handoffs") if profile else None
         snapshot["max_turns"] = handoff_policy.max_turns if handoff_policy else 10
         snapshot["require_handoff"] = (
@@ -213,7 +205,6 @@ class RunAuthorizationSnapshotService:
         step: TaskStep | None,
         profile: AgentProfile | None,
         runtime_profile: dict[str, object],
-        fallback_policy: dict[str, object] | None,
         catalog_snapshot: dict[str, object] | None,
         allowed_tools: list[str],
         model_provider: dict[str, object],
@@ -249,7 +240,6 @@ class RunAuthorizationSnapshotService:
                 profile,
             ),
             "model_provider": model_provider,
-            "model_provider_fallback": fallback_policy,
             "runtime_policy": frozen_runtime_policy,
             "memory_policy": dict_or_empty(memory_policy),
             "approval_policy": dict_or_empty(approval_policy),
@@ -293,7 +283,7 @@ class RunAuthorizationSnapshotService:
             else None
         )
         snapshot = (
-            ModelProviderResolutionService(self.session)
+            ModelProviderSelectionQuery(self.session)
             .resolve_snapshot_for_agent(
                 workspace_id=workspace_id,
                 agent_credential_id=credential_id,
@@ -307,62 +297,6 @@ class RunAuthorizationSnapshotService:
             {"model_api": snapshot.get("model_api")},
         )
         return snapshot
-
-    def _model_provider_fallback_snapshot(
-        self,
-        workspace_id: UUID,
-    ) -> dict[str, object] | None:
-        workspace = self.session.get(Workspace, workspace_id)
-        if workspace is None:
-            raise ValueError("Workspace not found while freezing model provider fallback")
-        settings = workspace.settings if isinstance(workspace.settings, dict) else {}
-        raw_policy = settings.get("model_provider_fallback")
-        if not isinstance(raw_policy, dict) or raw_policy.get("enabled") is not True:
-            return None
-        retry_codes = raw_policy.get("retry_error_codes")
-        frozen: dict[str, object] = {
-            "enabled": True,
-            "retry_error_codes": [item for item in retry_codes if isinstance(item, str) and item]
-            if isinstance(retry_codes, list)
-            else [],
-            "candidates": [],
-        }
-        candidates = raw_policy.get("candidates")
-        if not isinstance(candidates, list):
-            return frozen
-        frozen_candidates: list[dict[str, object]] = []
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                continue
-            credential_id = uuid_or_none(candidate.get("credential_id"))
-            model = optional_string(candidate.get("model"))
-            if credential_id is None or model is None:
-                continue
-            agent_settings = (
-                {"model_api": candidate.get("model_api")} if "model_api" in candidate else {}
-            )
-            try:
-                provider = self.model_provider_snapshot(
-                    workspace_id,
-                    None,
-                    agent_snapshot={
-                        "model": model,
-                        "model_provider_credential_id": str(credential_id),
-                        "model_settings": agent_settings,
-                    },
-                )
-            except ValueError:
-                continue
-            frozen_candidates.append(
-                {
-                    "credential_id": provider.get("credential_id"),
-                    "model": provider.get("selected_model"),
-                    "provider": provider.get("provider"),
-                    "model_api": provider.get("model_api"),
-                }
-            )
-        frozen["candidates"] = frozen_candidates
-        return frozen
 
     def model_provider_blocked_details(
         self,
@@ -508,14 +442,7 @@ def runtime_policy_snapshot(value: object) -> dict[str, object]:
     policy = dict_or_empty(value)
     raw_mcp = policy.get("mcp")
     mcp_policy = dict_or_empty(raw_mcp)
-    if "network_mode" in mcp_policy:
-        raise ValueError("MCP policy requires network_policy")
     policy["mcp"] = {
-        **(
-            {"network_policy": mcp_policy["network_policy"]}
-            if "network_policy" in mcp_policy
-            else {}
-        ),
         "timeout_seconds": positive_int_or_default(mcp_policy.get("timeout_seconds"), 30),
         "max_input_bytes": positive_int_or_default(mcp_policy.get("max_input_bytes"), 64_000),
         "max_output_bytes": positive_int_or_default(

@@ -3,6 +3,7 @@ from datetime import datetime
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.skills.models import WorkspaceSkillInstall
 from opsmesh.governance.audit.models import AuditEvent
+from opsmesh.orchestration.runs.evidence import public_run_event_metadata
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.resources.artifacts.models import Artifact
@@ -195,7 +196,7 @@ def _run_event_payload(event: RunEvent) -> dict[str, object]:
         "event_type": event.event_type,
         "sequence": event.sequence,
         "message": event.message,
-        "metadata": event.event_metadata,
+        "metadata": public_run_event_metadata(event.event_metadata),
         "created_at": _dt(event.created_at),
     }
 
@@ -250,9 +251,8 @@ def _runtime_space_payload(runtime_space: RuntimeSpace) -> dict[str, object]:
         "scope": runtime_space.scope,
         "status": runtime_space.status,
         "policy": runtime_space.policy,
-        "network_policy": runtime_space.network_policy,
-        "storage_policy": runtime_space.storage_policy,
-        "cleanup_policy": runtime_space.cleanup_policy,
+        "storage_metadata": runtime_space.storage_metadata,
+        "cleanup_metadata": runtime_space.cleanup_metadata,
         "created_at": _dt(runtime_space.created_at),
         "updated_at": _dt(runtime_space.updated_at),
     }

@@ -4,12 +4,7 @@ from dataclasses import replace
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.types import JSON
 
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
 from opsmesh.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
@@ -17,8 +12,8 @@ from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
 from opsmesh.resources.memory.configuration import WorkspaceMemoryConfigurationService
 from opsmesh.resources.memory.semantic import (
-    AgentSemanticMemoryService,
     SemanticMemoryConflictError,
+    SemanticMemoryService,
     SemanticMemoryUpsert,
 )
 from opsmesh.shared.config import Settings, get_settings
@@ -29,6 +24,7 @@ from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-internal-token"
 
@@ -39,7 +35,7 @@ def test_semantic_memory_is_scoped_versioned_idempotent_and_searchable() -> None
     team = AgentTeam(workspace_id=workspace.id, name="Operations", team_type="operations")
     session.add(team)
     session.flush()
-    service = AgentSemanticMemoryService(session)
+    service = SemanticMemoryService(session)
     first_command = SemanticMemoryUpsert(
         workspace_id=workspace.id,
         scope_type="team",
@@ -99,7 +95,7 @@ def test_semantic_memory_rejects_stale_revision_and_foreign_scope() -> None:
     )
     session.add(foreign_team)
     session.flush()
-    service = AgentSemanticMemoryService(session)
+    service = SemanticMemoryService(session)
     command = SemanticMemoryUpsert(
         workspace_id=workspace.id,
         scope_type="workspace",
@@ -216,7 +212,7 @@ def test_memory_configuration_api_versions_policy_and_retries_failed_embeddings(
         base_url=None,
         is_default=False,
     )
-    entry = AgentSemanticMemoryService(session).upsert(
+    entry = SemanticMemoryService(session).upsert(
         SemanticMemoryUpsert(
             workspace_id=workspace.id,
             scope_type="workspace",
@@ -295,30 +291,13 @@ def test_memory_configuration_api_versions_policy_and_retries_failed_embeddings(
 
 
 def _session() -> Session:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = JSON()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
 def _client() -> tuple[TestClient, Session]:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = JSON()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
     session = session_factory()
@@ -333,9 +312,7 @@ def _client() -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_redis_client] = lambda: fakeredis.FakeRedis(
-        decode_responses=True
-    )
+    app.dependency_overrides[get_redis_client] = lambda: fakeredis.FakeRedis(decode_responses=True)
     return TestClient(app), session
 
 

@@ -4,20 +4,16 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.resources.storage.storage import ObjectStorage
-from opsmesh.resources.transfers.archive_builder import WorkspaceArchiveExportBuilder
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.transfers.archive_jobs import WorkspaceArchiveExportJobService
 from opsmesh.resources.transfers.builder import WorkspaceExportBuilder
 from opsmesh.resources.transfers.contracts import (
     WorkspaceArchiveExportRequest,
-    WorkspaceArchiveExportResult,
-    WorkspaceArchiveRestoreDrillRequest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
 )
 from opsmesh.resources.transfers.models import WorkspaceExportJob
-from opsmesh.runtime.queues.contracts import JobPayload
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionRequest
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -38,34 +34,17 @@ class WorkspaceExportService:
             request=request,
         )
 
-    def build_archive_export(
-        self,
-        *,
-        workspace: Workspace,
-        user_id: UUID,
-        request: WorkspaceArchiveExportRequest,
-        storage: ObjectStorage,
-    ) -> WorkspaceArchiveExportResult:
-        return WorkspaceArchiveExportBuilder(self._session).build_archive_export(
-            workspace=workspace,
-            user_id=user_id,
-            request=request,
-            storage=storage,
-        )
-
     def create_archive_export_job(
         self,
         *,
         workspace: Workspace,
         user_id: UUID,
         request: WorkspaceArchiveExportRequest,
-        queue: RedisQueue,
     ) -> WorkspaceExportJob:
         return self._jobs().create_archive_export_job(
             workspace=workspace,
             user_id=user_id,
             request=request,
-            queue=queue,
         )
 
     def get_export_job(self, *, workspace_id: UUID, job_id: UUID) -> WorkspaceExportJob | None:
@@ -84,53 +63,20 @@ class WorkspaceExportService:
             storage=storage,
         )
 
-    def fail_archive_export_job(
+    def settle_interrupted_export(
         self,
         *,
-        job: JobPayload,
-        error: str,
+        request: ExecutionRequest,
     ) -> WorkspaceExportJob | None:
-        return self._jobs().fail_archive_export_job(job=job, error=error)
-
-    def verify_archive_export_job(
-        self,
-        *,
-        workspace_id: UUID,
-        job_id: UUID,
-        user_id: UUID,
-        storage: ObjectStorage,
-    ) -> dict[str, object]:
-        return self._jobs().verify_archive_export_job(
-            workspace_id=workspace_id,
-            job_id=job_id,
-            user_id=user_id,
-            storage=storage,
-        )
-
-    def run_archive_restore_drill(
-        self,
-        *,
-        workspace: Workspace,
-        user_id: UUID,
-        job_id: UUID,
-        request: WorkspaceArchiveRestoreDrillRequest,
-        storage: ObjectStorage,
-    ) -> dict[str, object]:
-        return self._jobs().run_archive_restore_drill(
-            workspace=workspace,
-            user_id=user_id,
-            job_id=job_id,
-            request=request,
-            storage=storage,
-        )
+        return self._jobs().settle_interrupted_export(request=request)
 
     def run_archive_export_job(
         self,
         *,
-        job: JobPayload,
+        request: ExecutionRequest,
         storage: ObjectStorage,
     ) -> WorkspaceExportJob:
-        return self._jobs().run_archive_export_job(job=job, storage=storage)
+        return self._jobs().run_archive_export_job(request=request, storage=storage)
 
     def _jobs(self) -> WorkspaceArchiveExportJobService:
         return WorkspaceArchiveExportJobService(self._session)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import UUID
@@ -8,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.shared.utils import dict_list, dict_or_empty, ensure_aware_utc, string_list
+from opsmesh.shared.utils import dict_list, dict_or_empty, string_list
 from opsmesh.workspaces.management.health.collector import WorkspaceHealthCollector
 from opsmesh.workspaces.management.health.metrics import (
     delivery_summary,
@@ -19,10 +18,6 @@ from opsmesh.workspaces.management.health.metrics import (
     risk_items,
     task_summary,
 )
-from opsmesh.workspaces.management.health.policy import (
-    health_snapshot_policy,
-    snapshot_due,
-)
 from opsmesh.workspaces.management.health.trends import (
     recommendation_changes,
     risk_changes,
@@ -30,7 +25,7 @@ from opsmesh.workspaces.management.health.trends import (
     snapshot_payload,
     status_change,
 )
-from opsmesh.workspaces.management.models import Workspace, WorkspaceHealthSnapshot
+from opsmesh.workspaces.management.models import WorkspaceHealthSnapshot
 
 
 class WorkspaceHealthResult(TypedDict):
@@ -42,14 +37,6 @@ class WorkspaceHealthResult(TypedDict):
     risk_items: list[dict[str, object]]
     recommended_actions: list[str]
     trend_basis: dict[str, object]
-
-
-@dataclass(frozen=True)
-class WorkspaceHealthSnapshotMaintenanceSummary:
-    workspaces_scanned: int = 0
-    snapshots_created: int = 0
-    snapshots_skipped: int = 0
-    snapshots_disabled: int = 0
 
 
 class WorkspaceHealthService:
@@ -149,54 +136,3 @@ class WorkspaceHealthService:
             "risk_changes": risk_changes(latest, previous),
             "recommendation_changes": recommendation_changes(latest, previous),
         }
-
-    def run_scheduled_snapshots(
-        self,
-        *,
-        limit: int = 100,
-        now: datetime | None = None,
-    ) -> WorkspaceHealthSnapshotMaintenanceSummary:
-        current_time = ensure_aware_utc(now or datetime.now(UTC))
-        workspaces = list(
-            self._session.scalars(
-                select(Workspace)
-                .where(Workspace.status == "active")
-                .order_by(Workspace.created_at.asc(), Workspace.id.asc())
-                .limit(max(1, limit))
-            ).all()
-        )
-        created = 0
-        skipped = 0
-        disabled = 0
-        for workspace in workspaces:
-            policy = health_snapshot_policy(workspace.settings)
-            if policy is None:
-                disabled += 1
-                continue
-            latest = self._latest_snapshot(workspace.id)
-            if latest is not None and not snapshot_due(
-                latest.created_at,
-                current_time,
-                policy.interval,
-            ):
-                skipped += 1
-                continue
-            self.record_snapshot(workspace.id)
-            created += 1
-        return WorkspaceHealthSnapshotMaintenanceSummary(
-            workspaces_scanned=len(workspaces),
-            snapshots_created=created,
-            snapshots_skipped=skipped,
-            snapshots_disabled=disabled,
-        )
-
-    def _latest_snapshot(self, workspace_id: UUID) -> WorkspaceHealthSnapshot | None:
-        return self._session.scalar(
-            select(WorkspaceHealthSnapshot)
-            .where(WorkspaceHealthSnapshot.workspace_id == workspace_id)
-            .order_by(
-                WorkspaceHealthSnapshot.created_at.desc(),
-                WorkspaceHealthSnapshot.id.desc(),
-            )
-            .limit(1)
-        )

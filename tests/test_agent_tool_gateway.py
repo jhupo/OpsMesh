@@ -1,23 +1,25 @@
+import os
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.orm import Session, sessionmaker
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeResourceGrant,
-    AgentRuntimeToolDefinition,
+    AgentExecutionContext,
+    AgentResourceGrant,
+    AgentToolSpec,
 )
-from opsmesh.agents.execution.tools.executor import BackendToolExecutor
-from opsmesh.agents.execution.tools.gateway import AgentToolGateway, ToolGatewayDenied
+from opsmesh.agents.execution.tools.authorization import (
+    AgentToolAccessDeniedError,
+    AgentToolAuthorizer,
+)
+from opsmesh.agents.execution.tools.executor import AgentToolExecutionService
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.catalog.effective import EffectiveCapabilityCatalogService
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.auth.service import AuthenticationService
@@ -25,21 +27,25 @@ from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.users.models import User
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.platform.settings.policy import (
+from opsmesh.platform.settings.configuration import (
     OperationalConfigurationService,
     operational_configuration,
 )
 from opsmesh.resources.files.models import WorkspaceFile
-from opsmesh.resources.storage.storage import LocalStorage
+from opsmesh.resources.storage.backends import LocalObjectStorage
 from opsmesh.shared.config import Settings
-from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 from tests.fixtures.tools import execute_tool
 
+pytest_plugins = ["tests.fixtures.agent_database"]
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL required"
+)
 
-def test_effective_catalog_hides_product_tool_without_required_resource() -> None:
-    session = _session()
+
+def test_effective_catalog_hides_product_tool_without_required_resource(agent_database) -> None:
+    session = agent_database
     user, workspace = _seed_workspace(session)
     profile = AgentProfile(
         workspace_id=workspace.id,
@@ -86,8 +92,10 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
     assert with_resource.tools[0].descriptor.required_access_modes == ["read"]
 
 
-def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status() -> None:
-    session = _session()
+def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
+    agent_database,
+) -> None:
+    session = agent_database
     _, workspace = _seed_workspace(session)
     task = Task(
         workspace_id=workspace.id,
@@ -110,14 +118,14 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
     )
     session.add_all([run, resource])
     session.commit()
-    context = AgentRuntimeContext(
+    context = AgentExecutionContext(
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
         user_id=workspace.owner_user_id,
         allowed_tools=("list_workspace_files",),
         tool_definitions=(
-            AgentRuntimeToolDefinition(
+            AgentToolSpec(
                 name="list_workspace_files",
                 source="product",
                 description="List authorized files.",
@@ -133,7 +141,7 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
             ),
         ),
         resource_grants=(
-            AgentRuntimeResourceGrant(
+            AgentResourceGrant(
                 resource_id=resource.id,
                 resource_type="file_collection",
                 access_mode="read",
@@ -143,7 +151,7 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
             ),
         ),
     )
-    gateway = AgentToolGateway(session)
+    gateway = AgentToolAuthorizer(session)
 
     prepared = gateway.prepare(context=context, tool_name="list_workspace_files", arguments={})
     assert prepared.arguments == {"limit": 5}
@@ -154,7 +162,7 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
             tool_name="list_workspace_files",
             arguments={"limit": 8},
         )
-    except ToolGatewayDenied as exc:
+    except AgentToolAccessDeniedError as exc:
         assert exc.code == "tool_parameter_locked"
     else:
         raise AssertionError("Expected a locked parameter override to be denied")
@@ -163,16 +171,17 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
     session.commit()
     try:
         gateway.prepare(context=context, tool_name="list_workspace_files", arguments={})
-    except ToolGatewayDenied as exc:
+    except AgentToolAccessDeniedError as exc:
         assert exc.code == "capability_resource_disabled"
     else:
         raise AssertionError("Expected disabled resource to be denied at execution time")
 
 
 def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
+    agent_database,
     tmp_path: Path,
 ) -> None:
-    session = _session()
+    session = agent_database
     user, workspace = _seed_workspace(session)
     allowed_file = _workspace_file(workspace, "allowed.txt", user)
     blocked_file = _workspace_file(workspace, "blocked.txt", user)
@@ -201,7 +210,7 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     session.flush()
     resource.locator = {"file_ids": [str(allowed_file.id), str(oversized_file.id)]}
     session.commit()
-    grant = AgentRuntimeResourceGrant(
+    grant = AgentResourceGrant(
         resource_id=resource.id,
         resource_type="file_collection",
         access_mode="read",
@@ -213,7 +222,7 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
         _file_tool("list_workspace_files"),
         _file_tool("read_workspace_file"),
     )
-    context = AgentRuntimeContext(
+    context = AgentExecutionContext(
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -234,13 +243,13 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
         ),
         actor_id="test",
     )
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
     storage.write(allowed_file.storage_key, b"safe")
     storage.write(blocked_file.storage_key, b"safe")
     storage.write(oversized_file.storage_key, b"large")
-    executor = BackendToolExecutor(
+    executor = AgentToolExecutionService(
         session,
-        settings=Settings(environment="test", agent_file_read_max_bytes=4),
+        settings=Settings(environment="test"),
         storage=storage,
     )
 
@@ -309,13 +318,13 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     assert blocked_event.event_metadata["reason"] == "workspace_file_not_in_resource_scope"
 
 
-def _file_tool(name: str) -> AgentRuntimeToolDefinition:
+def _file_tool(name: str) -> AgentToolSpec:
     properties: dict[str, object] = {}
     required: list[str] = []
     if name == "read_workspace_file":
         properties["file_id"] = {"type": "string", "format": "uuid"}
         required.append("file_id")
-    return AgentRuntimeToolDefinition(
+    return AgentToolSpec(
         name=name,
         source="product",
         description=f"Execute {name}.",
@@ -342,24 +351,17 @@ def _workspace_file(workspace: Workspace, filename: str, user: User) -> Workspac
     )
 
 
-class _UnusedMcpAdapter:
+class _UnusedMCPAdapter:
     def call(
         self,
         *,
-        server: McpServer,
+        server: MCPServer,
         tool_name: str,
         arguments: dict[str, object],
-        credential_refs: list[McpCredentialReference],
+        credential_refs: list[MCPCredentialReference],
         timeout_seconds: int,
     ) -> dict[str, object]:
         raise AssertionError("MCP adapter must not be called for product tools")
-
-
-def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
 def _seed_workspace(session: Session) -> tuple[User, Workspace]:
@@ -369,12 +371,3 @@ def _seed_workspace(session: Session) -> tuple[User, Workspace]:
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

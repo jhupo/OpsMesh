@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from opsmesh.messaging.email.schemas import EmailRecipient
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 
 
 class UserInvitationRequest(EmailRecipient):
@@ -12,7 +12,7 @@ class UserInvitationRequest(EmailRecipient):
     platform_admin: bool = False
 
 
-class UserInvitationResponse(ORMModel):
+class UserInvitationResponse(FromAttributesContract):
     id: UUID
     user_id: UUID
     delivery_status: str

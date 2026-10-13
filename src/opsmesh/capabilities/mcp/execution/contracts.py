@@ -4,12 +4,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from opsmesh.capabilities.mcp.execution.diagnostics import public_error, public_response
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.capabilities.mcp.execution.diagnostics import (
+    MCPErrorDiagnostic,
+    public_error,
+    public_response,
+)
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class McpToolCallLogRequest(BaseModel):
+class MCPToolCallLogRequest(BaseModel):
     mcp_server_id: UUID | None = None
     agent_run_id: UUID | None = None
     approval_id: UUID | None = None
@@ -20,7 +24,7 @@ class McpToolCallLogRequest(BaseModel):
     error: dict[str, object] | None = None
 
 
-class McpToolCallLogResponse(ORMModel):
+class MCPToolCallLogResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     mcp_server_id: UUID | None
@@ -62,13 +66,29 @@ class McpToolCallLogResponse(ORMModel):
         return redact_sensitive_payload(public_error(error)) if error is not None else None
 
 
-class McpToolCallDiagnosticResponse(McpToolCallLogResponse):
+class MCPToolCallDiagnosticResponse(MCPToolCallLogResponse):
+    @field_serializer("response")
+    def _serialize_response(self, response: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(response) if response is not None else None
+
     @field_serializer("error")
     def _serialize_error(self, error: dict[str, object] | None) -> dict[str, object] | None:
         return redact_sensitive_payload(error) if error is not None else None
 
 
-class McpExecutionError(Exception):
+class MCPDiagnosticNotificationResponse(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    agent_run_id: UUID
+    mcp_server_id: UUID
+    scope: str
+    mcp_tool_call_log_id: UUID | None = None
+    diagnostic: MCPErrorDiagnostic | None = None
+    diagnostic_expired: bool = False
+    created_at: datetime
+
+
+class MCPExecutionError(Exception):
     def __init__(
         self, message: str, *, code: str = "mcp_execution_failed", diagnostic: object = None
     ) -> None:
@@ -77,21 +97,8 @@ class McpExecutionError(Exception):
         self.diagnostic = diagnostic
 
 
-class McpExecutionPending(Exception):
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str,
-        response: dict[str, object],
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.response = response
-
-
 @dataclass(frozen=True)
-class McpExecutionRequest:
+class MCPExecutionRequest:
     workspace_id: UUID
     agent_run_id: UUID
     tool_name: str
@@ -99,18 +106,7 @@ class McpExecutionRequest:
     agent_profile_id: UUID | None = None
     capability_catalog_fingerprint: str | None = None
     mcp_server_id: UUID | None = None
-    runtime_allowed_tools: tuple[str, ...] | None = None
-    approval_granted: bool = False
     tool_call_id: str | None = None
-
-
-@dataclass(frozen=True)
-class McpExecutionResult:
-    status: str
-    response: dict[str, object] | None
-    error: dict[str, object] | None
-    log_id: UUID
-    latency_ms: int
 
 
 def snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:

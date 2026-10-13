@@ -54,7 +54,6 @@ class WorkspaceInvite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "email",
             unique=True,
             postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
         ),
         Index("ix_workspace_invites_workspace_status", "workspace_id", "status"),
         Index("ix_workspace_invites_email_status", "email", "status"),

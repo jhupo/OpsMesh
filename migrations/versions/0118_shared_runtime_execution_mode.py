@@ -47,7 +47,9 @@ def downgrade() -> None:
         "workspace_runtimes",
         type_="check",
     )
-    op.execute("UPDATE workspace_runtimes SET execution_mode = 'pooled' WHERE execution_mode = 'shared'")
+    op.execute(
+        "UPDATE workspace_runtimes SET execution_mode = 'pooled' WHERE execution_mode = 'shared'"
+    )
     op.alter_column("workspace_runtimes", "execution_mode", server_default="none")
     op.create_check_constraint(
         "workspace_runtime_execution_mode_valid",

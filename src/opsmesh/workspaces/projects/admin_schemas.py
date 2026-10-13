@@ -9,11 +9,11 @@ from pydantic import (
     field_serializer,
 )
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AdminProjectResponse(ORMModel):
+class AdminProjectResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -49,7 +49,7 @@ class AdminProjectQuotaUpsertRequest(BaseModel):
     quotas: list[AdminProjectQuotaUpsertItem] = Field(min_length=1, max_length=64)
 
 
-class AdminProjectQuotaResponse(TimestampedModel):
+class AdminProjectQuotaResponse(TimestampedContract):
     workspace_id: UUID
     project_id: UUID
     quota_key: str

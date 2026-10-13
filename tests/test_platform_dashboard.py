@@ -1,24 +1,86 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.bootstrap.worker import build_worker_runner
+from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from opsmesh.governance.costs.models import ModelUsageRecord
+from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.runtime.operations.admin_requests import AdminOperationService
-from opsmesh.runtime.operations.history import PlatformHistoryService
-from opsmesh.runtime.operations.models import AdminOperationRequest, PlatformMetricSnapshot
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.workers.models import WorkerRunnerConfig
+from opsmesh.orchestration.tasks.models import Task
+from opsmesh.platform.operations.activities import AdminOperationActivities
+from opsmesh.platform.operations.history import PlatformHistoryService
+from opsmesh.platform.operations.models import AdminOperationRecord, PlatformMetricSnapshot
+from opsmesh.platform.operations.service import AdminOperationService
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
 from opsmesh.workspaces.members.models import WorkspaceMember
-from tests.test_admin_api import TOKEN, _admin_headers, _client, _seed_workspace
+from tests.fixtures.admin_api import TOKEN, _admin_headers, _client, _seed_workspace
+from tests.fixtures.execution import test_agent_id as _test_agent_id
+
+
+def test_platform_execution_summary_preserves_attention_and_failure_products():
+    client, session, _ = _client()
+    user, workspace = _seed_workspace(session)
+    agent_id = _test_agent_id(session, workspace.id)
+    session.add_all(
+        [
+            AgentRun(
+                workspace_id=workspace.id, agent_profile_id=agent_id, status="waiting_approval"
+            ),
+            AgentRun(
+                workspace_id=workspace.id,
+                agent_profile_id=agent_id,
+                status="failed",
+                error={"code": "model_unavailable"},
+            ),
+            Task(
+                workspace_id=workspace.id,
+                created_by_user_id=user.id,
+                title="Blocked task",
+                status="waiting_approval",
+            ),
+            Approval(
+                workspace_id=workspace.id,
+                approval_type="workflow.node",
+                risk_level="high",
+                payload={"reason": "Pending approval"},
+                created_at=datetime.now(UTC),
+            ),
+            SecurityEvent(
+                workspace_id=workspace.id,
+                action="tool.blocked",
+                outcome="denied",
+                severity="warning",
+                reason="tool_policy_denied",
+                path="/tool",
+                method="POST",
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    session.commit()
+    path = "/api/v1/admin/operations/summary"
+    response = client.get(path, headers=_admin_headers())
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["pending_approvals"] == 1
+    assert payload["waiting_runs"] == 1
+    assert payload["blocked_tasks"] == 1
+    assert payload["top_failure_codes"] == [{"code": "model_unavailable", "count": 1}]
+    assert payload["top_security_reasons"] == [{"reason": "tool_policy_denied", "count": 1}]
+    assert (
+        client.get(
+            path, headers={"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user.id)}
+        ).status_code
+        == 401
+    )
 
 
 def _token(client, session, user, scopes=None):
@@ -109,7 +171,7 @@ def test_durable_audit_request_idempotency_and_execution_authorization(revocatio
         ).status_code
         == 409
     )
-    assert session.query(AdminOperationRequest).count() == 1
+    assert session.query(AdminOperationRecord).count() == 1
     listing = client.get(
         "/api/v1/admin/operations/requests", headers=headers, params={"workspace_id": str(other.id)}
     ).json()
@@ -119,8 +181,16 @@ def test_durable_audit_request_idempotency_and_execution_authorization(revocatio
     elif revocation == "token":
         token.revoked_at = datetime.now(UTC)
     session.commit()
-    queue = client.app.dependency_overrides[get_worker_queue]()
-    assert AdminOperationService(session).process_one(queue)
+    activities = AdminOperationActivities(
+        ActivityDependencies(sessionmaker(session.get_bind()), client.app.state.settings)
+    )
+    execution = ExecutionRequest(
+        execution_id=UUID(body["request_id"]),
+        workspace_id=workspace.id,
+        resource_id=UUID(body["request_id"]),
+        kind=ExecutionKind.ADMIN_OPERATION,
+    )
+    activities.execute(execution)
     response = client.get(
         f"/api/v1/admin/operations/requests/{body['request_id']}", headers=_admin_headers()
     )
@@ -128,7 +198,7 @@ def test_durable_audit_request_idempotency_and_execution_authorization(revocatio
     assert response.json()["status"] == ("completed" if revocation is None else "failed"), (
         response.text
     )
-    assert not AdminOperationService(session).process_one(queue)
+    activities.execute(execution)
     integrity = client.get(
         "/api/v1/admin/operations/audit-integrity", headers=_admin_headers()
     ).json()
@@ -148,10 +218,13 @@ def test_market_review_tenant_version_and_idempotent_decision(talent, decision):
     session.commit()
     headers, _ = _token(client, session, user)
     if talent:
+        profile = AgentProfile(workspace_id=workspace.id, name="Listed Agent", role="researcher")
+        session.add(profile)
+        session.flush()
         listing = TalentListing(
             source_workspace_id=workspace.id,
             owner_user_id=user.id,
-            source_agent_profile_id=uuid4(),
+            source_agent_profile_id=profile.id,
             title="Agent",
             role="researcher",
             status="pending_approval",
@@ -235,7 +308,12 @@ def test_history_deduplicates_samples_retains_window_and_paginates():
     assert result.status_code == 200, result.text
     assert result.json()["total"] == 2
     assert len(result.json()["items"]) == 1
-    assert set(result.json()["items"][0]["values"]) == {"runs", "workers", "runtimes", "approvals"}
+    assert set(result.json()["items"][0]["values"]) == {
+        "runs",
+        "temporal_dispatch",
+        "runtimes",
+        "approvals",
+    }
 
 
 def test_global_costs_respect_currency_tenant_and_pagination():
@@ -249,10 +327,22 @@ def test_global_costs_respect_currency_tenant_and_pagination():
         (workspace, "EUR", 90),
         (workspace, None, 5),
     ]:
+        profile = AgentProfile(workspace_id=tenant.id, name="Metered", role="expert")
+        session.add(profile)
+        session.flush()
+        run = AgentRun(
+            workspace_id=tenant.id,
+            agent_profile_id=profile.id,
+            model="test",
+            input={},
+            status="completed",
+        )
+        session.add(run)
+        session.flush()
         session.add(
             ModelUsageRecord(
                 workspace_id=tenant.id,
-                agent_run_id=uuid4(),
+                agent_run_id=run.id,
                 provider="test",
                 model="test",
                 currency=currency,
@@ -275,7 +365,7 @@ def test_global_costs_respect_currency_tenant_and_pagination():
     assert euros.json()["totals"]["total_tokens"] == 95
 
 
-def test_admin_recovery_is_deferred_and_scoped_to_target_workspace():
+def test_admin_cancellation_is_deferred_and_scoped_to_target_workspace():
     client, session, _ = _client()
     user, workspace = _seed_workspace(session)
     _, other = _seed_workspace(session, email="other@example.com", slug="other")
@@ -283,41 +373,45 @@ def test_admin_recovery_is_deferred_and_scoped_to_target_workspace():
     session.commit()
     headers, _ = _token(client, session, user)
     stale = datetime.now(UTC) - timedelta(hours=2)
-    runs = [
-        AgentRun(
-            workspace_id=tenant.id,
-            agent_profile_id=uuid4(),
-            model="test",
-            input={},
-            status="running",
-            started_at=stale,
-            updated_at=stale,
+    runs = []
+    for tenant in (workspace, other):
+        profile = AgentProfile(workspace_id=tenant.id, name="Expert", role="expert")
+        session.add(profile)
+        session.flush()
+        runs.append(
+            AgentRun(
+                workspace_id=tenant.id,
+                agent_profile_id=profile.id,
+                model="test",
+                input={},
+                status="running",
+                started_at=stale,
+                updated_at=stale,
+            )
         )
-        for tenant in (workspace, other)
-    ]
     session.add_all(runs)
     session.commit()
-    diagnostic = client.get(
-        "/api/v1/admin/operations/runs",
-        headers=headers,
-        params={"kind": "stale", "workspace_id": str(workspace.id)},
-    )
-    assert diagnostic.status_code == 200, diagnostic.text
-    assert [row["id"] for row in diagnostic.json()["items"]] == [str(runs[0].id)]
     response = client.post(
-        f"/api/v1/admin/workspaces/{workspace.id}/operations/stale-runs/recover",
+        f"/api/v1/admin/workspaces/{workspace.id}/operations/runs/{runs[0].id}/cancel",
         headers=headers,
-        json={"request_id": str(uuid4()), "reason": "recover stale execution"},
+        json={"request_id": str(uuid4()), "reason": "Cancel target execution"},
     )
     assert response.status_code == 202, response.text
     session.refresh(runs[0])
     assert runs[0].status == "running"
-    assert AdminOperationService(session).process_one(
-        client.app.dependency_overrides[get_worker_queue]()
+    AdminOperationActivities(
+        ActivityDependencies(sessionmaker(session.get_bind()), client.app.state.settings)
+    ).execute(
+        ExecutionRequest(
+            execution_id=UUID(response.json()["id"]),
+            workspace_id=workspace.id,
+            resource_id=UUID(response.json()["id"]),
+            kind=ExecutionKind.ADMIN_OPERATION,
+        )
     )
     session.refresh(runs[0])
     session.refresh(runs[1])
-    assert runs[0].status == "failed"
+    assert runs[0].status == "cancelled"
     assert runs[1].status == "running"
     result = client.get(
         f"/api/v1/admin/operations/requests/{response.json()['id']}", headers=headers
@@ -325,7 +419,7 @@ def test_admin_recovery_is_deferred_and_scoped_to_target_workspace():
     assert result.json()["status"] == "completed", result.text
 
 
-def test_worker_maintenance_consumes_persisted_intents_and_samples_history():
+def test_admin_activity_consumes_persisted_intent_once():
     client, session, _ = _client()
     user, workspace = _seed_workspace(session)
     user.platform_admin = True
@@ -337,14 +431,18 @@ def test_worker_maintenance_consumes_persisted_intents_and_samples_history():
         operation="verify_audit",
         parameters={"reason": "Worker integration"},
     )
-    queue = client.app.dependency_overrides[get_worker_queue]()
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=sessionmaker(bind=session.get_bind(), expire_on_commit=False),
-        config=WorkerRunnerConfig(worker_id="dashboard-test"),
-        settings=client.app.state.settings,
+    session.commit()
+    activities = AdminOperationActivities(
+        ActivityDependencies(sessionmaker(session.get_bind()), client.app.state.settings)
     )
-    runner.run_maintenance()
+    request = ExecutionRequest(
+        execution_id=row.id,
+        workspace_id=workspace.id,
+        resource_id=row.id,
+        kind=ExecutionKind.ADMIN_OPERATION,
+    )
+    activities.execute(request)
+    activities.execute(request)
     session.refresh(row)
     assert row.status == "completed"
-    assert session.query(PlatformMetricSnapshot).count() == 1
+    assert row.result["valid"] is True

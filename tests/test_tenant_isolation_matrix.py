@@ -10,12 +10,7 @@ from uuid import UUID
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.messages.models import AgentMessage, AgentMessageThread
 from opsmesh.agents.profiles.models import AgentProfile
@@ -28,28 +23,18 @@ from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import WorkspaceFile
-from opsmesh.resources.storage.storage import LocalStorage
+from opsmesh.resources.storage.backends import LocalObjectStorage
 from opsmesh.resources.transfers.models import WorkspaceExportJob
-from opsmesh.runtime.instances.contracts import (
-    DockerRuntimeClient,
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-    RuntimeCreateRequest,
-)
-from opsmesh.runtime.instances.dependencies import get_docker_runtime_client
 from opsmesh.runtime.instances.models import RuntimeEvent, WorkspaceRuntime
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
-from tests.fixtures.runtime_host import runtime_host
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-token"
 SOURCE_MARKER = "source-secret-marker"
@@ -161,7 +146,7 @@ ID_SCOPED_CASES = [
             f"/api/v1/workspaces/{data.target_workspace.id}"
             f"/runtimes/{data.source_runtime.id}/events"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="runtime start",
@@ -387,29 +372,17 @@ def test_non_member_workspace_access_is_forbidden(tmp_path: Path) -> None:
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     seed_session = session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        blocking_timeout_seconds=0,
-    )
     app = create_app(
         Settings(
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=engine.url.render_as_string(hide_password=False),
             storage_root=str(tmp_path),
             credential_encryption_secret="test-credential-secret",
         )
@@ -425,8 +398,6 @@ def _client(tmp_path: Path) -> tuple[TestClient, Session]:
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
-    app.dependency_overrides[get_worker_queue] = lambda: queue
-    app.dependency_overrides[get_docker_runtime_client] = lambda: FakeDockerClient()
     return TestClient(app), seed_session
 
 
@@ -567,19 +538,17 @@ def _seed_isolation_data(session: Session, tmp_path: Path) -> SeededIsolationDat
         workspace_id=source_workspace.id,
         runtime_space_id=source_runtime_space.id,
         name=f"{SOURCE_MARKER} runtime",
-        host=runtime_host(
-            source_workspace.id, "source-container", capacity=16, node_id="test-node"
-        ),
-        status="running",
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "python:3.13"},
+        status="active",
     )
     target_runtime = WorkspaceRuntime(
         workspace_id=target_workspace.id,
         runtime_space_id=target_runtime_space.id,
         name="target runtime",
-        host=runtime_host(
-            target_workspace.id, "target-container", capacity=16, node_id="test-node"
-        ),
-        status="running",
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "python:3.13"},
+        status="active",
     )
     source_webhook = WebhookSubscription(
         workspace_id=source_workspace.id,
@@ -764,12 +733,12 @@ def _seed_isolation_data(session: Session, tmp_path: Path) -> SeededIsolationDat
             ),
         ]
     )
-    LocalStorage(str(tmp_path)).write(source_file.storage_key, b"source file")
-    LocalStorage(str(tmp_path)).write(target_file.storage_key, b"target file")
-    LocalStorage(str(tmp_path)).write(source_artifact.storage_key, b"source artifact")
-    LocalStorage(str(tmp_path)).write(target_artifact.storage_key, b"target artifact")
-    LocalStorage(str(tmp_path)).write(source_export_job.storage_key or "", b"source archive")
-    LocalStorage(str(tmp_path)).write(target_export_job.storage_key or "", b"target archive")
+    LocalObjectStorage(str(tmp_path)).write(source_file.storage_key, b"source file")
+    LocalObjectStorage(str(tmp_path)).write(target_file.storage_key, b"target file")
+    LocalObjectStorage(str(tmp_path)).write(source_artifact.storage_key, b"source artifact")
+    LocalObjectStorage(str(tmp_path)).write(target_artifact.storage_key, b"target artifact")
+    LocalObjectStorage(str(tmp_path)).write(source_export_job.storage_key or "", b"source archive")
+    LocalObjectStorage(str(tmp_path)).write(target_export_job.storage_key or "", b"target archive")
     session.commit()
     return SeededIsolationData(
         user=user,
@@ -885,51 +854,3 @@ def _headers(user_id: object) -> dict[str, str]:
         "Authorization": f"Bearer {TOKEN}",
         "X-User-ID": str(user_id),
     }
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
-
-
-class FakeDockerClient(DockerRuntimeClient):
-    def configure_execution(self, container_id, identity):
-        pass
-
-    def revoke_execution(self, container_id, identity):
-        pass
-
-    def node_identity(self) -> str:
-        return "test-node"
-
-    def create_container(self, request: RuntimeCreateRequest) -> str:
-        return "container"
-
-    def start_container(self, container_id: str) -> None:
-        return None
-
-    def stop_container(self, container_id: str) -> None:
-        return None
-
-    def remove_container(self, container_id: str) -> None:
-        return None
-
-    def remove_volume(self, volume_name: str) -> None:
-        return None
-
-    def exec_command(
-        self,
-        container_id: str,
-        command: list[str],
-        timeout_seconds: int,
-        *,
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir=None,
-        identity=None,
-    ) -> RuntimeCommandResult:
-        _ = input_file
-        return RuntimeCommandResult(exit_code=0, stdout="", stderr="")

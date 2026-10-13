@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,7 +7,8 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.providers.audit import ModelProviderUsageAuditResponse, usage_audit_response
 from opsmesh.agents.providers.contracts import provider_health_probes
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
-from opsmesh.agents.providers.health import ModelProviderHealthService
+from opsmesh.agents.providers.health import ModelProviderHealthService, ModelProviderHealthSnapshot
+from opsmesh.agents.providers.probes import ModelProviderHealthCheckResult, probe_model_provider
 from opsmesh.agents.providers.queries import ModelProviderCredentialQueryService
 from opsmesh.agents.providers.schemas import (
     ModelProviderCredentialCreateRequest,
@@ -19,11 +21,12 @@ from opsmesh.agents.providers.schemas import (
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.egress import EgressUrlValidationError
+from opsmesh.shared.security.egress import EgressURLValidationError
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 router = APIRouter(
@@ -104,7 +107,7 @@ def create_model_provider_credential(
             if request.model_capabilities is not None
             else None,
         )
-    except EgressUrlValidationError as exc:
+    except EgressURLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         raise _model_provider_http_error(exc) from exc
@@ -140,7 +143,7 @@ def update_model_provider_credential(
             if request.model_capabilities is not None
             else None,
         )
-    except EgressUrlValidationError as exc:
+    except EgressURLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         raise _model_provider_http_error(exc) from exc
@@ -190,36 +193,71 @@ async def check_model_provider_credential_health(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    health = _health(session, settings)
-    queries = _queries(session, settings)
+    workspace_id = context.workspace.id
+    actor_user_id = context.user.user_id
     try:
-        result = await health.run_health_check(
-            workspace_id=context.workspace.id,
-            credential_id=credential_id,
-            actor_user_id=context.user.user_id,
+        snapshot = await asyncio.to_thread(
+            _prepare_health_check, session, settings, workspace_id, credential_id
+        )
+        result = await probe_model_provider(
+            snapshot.target,
             probes=probes,
             timeout_seconds=request.timeout_seconds,
         )
-        credential = queries.get(
-            workspace_id=context.workspace.id,
-            credential_id=credential_id,
+        return await asyncio.to_thread(
+            _complete_health_check,
+            session,
+            settings,
+            workspace_id,
+            credential_id,
+            actor_user_id,
+            snapshot,
+            result,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    if credential is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Model provider credential not found",
+        raise _model_provider_http_error(exc) from exc
+
+
+def _prepare_health_check(
+    session: Session, settings: Settings, workspace_id: UUID, credential_id: UUID
+) -> ModelProviderHealthSnapshot:
+    try:
+        return _health(session, settings).prepare_health_check(
+            workspace_id=workspace_id, credential_id=credential_id
         )
-    return ModelProviderHealthCheckResponse(
+    finally:
+        # Release the request's read transaction before awaiting the remote provider.
+        session.rollback()
+
+
+def _complete_health_check(
+    session: Session,
+    settings: Settings,
+    workspace_id: UUID,
+    credential_id: UUID,
+    actor_user_id: UUID,
+    snapshot: ModelProviderHealthSnapshot,
+    result: ModelProviderHealthCheckResult,
+) -> ModelProviderHealthCheckResponse:
+    WorkspaceAuthorizationService(session).require_workspace(
+        user_id=actor_user_id, workspace_id=workspace_id, action=WorkspaceAction.WRITE
+    )
+    credential = _health(session, settings).complete_health_check(
+        workspace_id=workspace_id,
+        credential_id=credential_id,
+        actor_user_id=actor_user_id,
+        snapshot=snapshot,
+        result=result,
+    )
+    response = ModelProviderHealthCheckResponse(
         credential=_credential_response(
-            queries,
-            workspace_id=context.workspace.id,
-            credential=credential,
+            _queries(session, settings), workspace_id=workspace_id, credential=credential
         ),
         status=result.status,
         checks=[check.as_dict() for check in result.checks],
     )
+    session.commit()
+    return response
 
 
 @router.post("/{credential_id}/set-default", response_model=ModelProviderCredentialResponse)

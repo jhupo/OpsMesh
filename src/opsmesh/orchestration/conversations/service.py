@@ -24,17 +24,16 @@ from opsmesh.orchestration.conversations.models import (
     turn_event,
 )
 from opsmesh.orchestration.conversations.schemas import (
-    ConversationCreate,
-    ExecutionResponse,
-    ExecutionRunResponse,
+    ConversationCreateRequest,
+    ConversationExecutionResponse,
+    ConversationRunResponse,
 )
 from opsmesh.orchestration.runs.control import RunControlService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.orchestration.tasks.service import TaskCreateCommand, WorkspaceTaskService
-from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher, stage_job
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.shared.pagination import PageParams
@@ -78,7 +77,7 @@ class ConversationService:
             page,
         )
 
-    def create(self, context: WorkspaceContext, data: ConversationCreate) -> Conversation:
+    def create(self, context: WorkspaceContext, data: ConversationCreateRequest) -> Conversation:
         values = data.model_dump()
         if data.mode == "auto" and data.agent_profile_id is None:
             config = context.workspace.settings.get("conversations", {})
@@ -131,8 +130,6 @@ class ConversationService:
         conversation_id: UUID,
         body: str,
         key: str,
-        *,
-        queue: RedisQueue,
     ) -> ConversationTurn:
         conversation = self.get(context, conversation_id, lock=True)
         existing = self.session.scalar(
@@ -146,6 +143,9 @@ class ConversationService:
             if existing.body != body:
                 raise ConflictError("Idempotency-Key was already used for different content")
             return existing
+        from opsmesh.platform.updates.admission import require_execution_admission
+
+        require_execution_admission(self.session)
         pending = (
             self.session.scalar(
                 select(func.count())
@@ -178,9 +178,6 @@ class ConversationService:
         self.session.add(turn_event(turn))
         request_advance(self.session, context.workspace.id, conversation.id, context.user.user_id)
         self.session.commit()
-        QueueDispatchPublisher(self.session, queue).publish_pending(
-            workspace_id=context.workspace.id
-        )
         return turn
 
     def turns(
@@ -204,7 +201,7 @@ class ConversationService:
         conversation_id: UUID,
         page: PageParams,
         turn_id: UUID | None = None,
-    ) -> tuple[list[ExecutionResponse], int]:
+    ) -> tuple[list[ConversationExecutionResponse], int]:
         self.get(context, conversation_id)
         links, total = page_scalars(
             self.session,
@@ -237,14 +234,14 @@ class ConversationService:
             else []
         )
         return [
-            ExecutionResponse(
+            ConversationExecutionResponse(
                 id=link.id,
                 created_at=link.created_at,
                 updated_at=link.updated_at,
                 turn_id=link.turn_id,
                 task_id=link.task_id,
                 runs=[
-                    ExecutionRunResponse.model_validate(run)
+                    ConversationRunResponse.model_validate(run)
                     for run in runs
                     if run.task_id == link.task_id
                 ],
@@ -279,7 +276,7 @@ class ConversationService:
         return errors
 
     def cancel(
-        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID, *, queue: RedisQueue
+        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID
     ) -> ConversationTurn:
         self.get(context, conversation_id, lock=True)
         turn = self.session.scalar(
@@ -295,7 +292,7 @@ class ConversationService:
             raise NotFoundError("Turn not found")
         if turn.status in TERMINAL:
             return turn
-        control = RunControlService(self.session, RunOrchestrationService(self.session).enqueue_run)
+        control = RunControlService(self.session)
         tasks = self.session.scalars(
             select(Task)
             .join(
@@ -321,9 +318,6 @@ class ConversationService:
         request_advance(self.session, context.workspace.id, conversation_id, context.user.user_id)
         self._audit(context, "conversation.turn.cancelled", turn.id)
         self.session.commit()
-        QueueDispatchPublisher(self.session, queue).publish_pending(
-            workspace_id=context.workspace.id
-        )
         return turn
 
     def _audit(self, context: WorkspaceContext, action: str, identifier: UUID) -> None:
@@ -337,8 +331,11 @@ class ConversationService:
         )
 
     def retry(
-        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID, *, queue: RedisQueue
+        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID
     ) -> ConversationTurn:
+        from opsmesh.platform.updates.admission import require_execution_admission
+
+        require_execution_admission(self.session)
         self.get(context, conversation_id, lock=True)
         turn = self.session.scalar(
             select(ConversationTurn)
@@ -393,9 +390,7 @@ class ConversationService:
                 link.task_id,
                 ResourceAction.INVOKE,
             )
-            RunControlService(
-                self.session, RunOrchestrationService(self.session).enqueue_run
-            ).retry_failed_run(
+            RunControlService(self.session).retry_failed_run(
                 workspace_id=context.workspace.id,
                 run_id=run.id,
                 actor_user_id=context.user.user_id,
@@ -411,9 +406,6 @@ class ConversationService:
         request_advance(self.session, context.workspace.id, conversation_id, context.user.user_id)
         self._audit(context, "conversation.turn.retry_requested", turn.id)
         self.session.commit()
-        QueueDispatchPublisher(self.session, queue).publish_pending(
-            workspace_id=context.workspace.id
-        )
         return turn
 
     def events(
@@ -484,4 +476,4 @@ def stage_task_runs(session: Session, workspace_id: UUID, task_id: UUID, user_id
             AgentRun.status == "queued",
         )
     ):
-        stage_job(session, orchestration.job_for_run(run, user_id))
+        stage_execution(session, orchestration.execution_for_run(run, user_id))

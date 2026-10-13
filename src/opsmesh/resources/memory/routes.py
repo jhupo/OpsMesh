@@ -12,7 +12,7 @@ from opsmesh.resources.memory.configuration import (
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from opsmesh.resources.memory.retrieval_evidence import WorkspaceMemoryEvidenceService
+from opsmesh.resources.memory.evidence import WorkspaceMemoryEvidenceService
 from opsmesh.resources.memory.schemas import (
     MemoryEmbeddingEventListResponse,
     MemoryEmbeddingEventResponse,
@@ -31,8 +31,8 @@ from opsmesh.resources.memory.schemas import (
     WorkspaceMemoryConfigurationUpdateRequest,
 )
 from opsmesh.resources.memory.semantic import (
-    AgentSemanticMemoryService,
     SemanticMemoryConflictError,
+    SemanticMemoryService,
     SemanticMemoryUpsert,
 )
 from opsmesh.shared.db.session import get_db_session
@@ -165,7 +165,7 @@ def upsert_semantic_memory(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> SemanticMemoryResponse:
-    service = AgentSemanticMemoryService(session)
+    service = SemanticMemoryService(session)
     try:
         entry = service.upsert(
             SemanticMemoryUpsert(
@@ -216,7 +216,7 @@ def list_semantic_memory(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> SemanticMemoryListResponse:
-    entries, total = AgentSemanticMemoryService(session).list(
+    entries, total = SemanticMemoryService(session).list(
         workspace_id=context.workspace.id,
         scope_type=scope_type,
         scope_id=scope_id,
@@ -241,7 +241,7 @@ def list_semantic_memory_versions(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> list[SemanticMemoryVersionResponse]:
-    service = AgentSemanticMemoryService(session)
+    service = SemanticMemoryService(session)
     if (
         service.get(
             workspace_id=context.workspace.id,
@@ -272,7 +272,7 @@ def archive_semantic_memory(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> SemanticMemoryResponse:
-    service = AgentSemanticMemoryService(session)
+    service = SemanticMemoryService(session)
     entry = service.get(
         workspace_id=context.workspace.id,
         memory_entry_id=memory_entry_id,

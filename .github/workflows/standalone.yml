@@ -92,6 +92,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
       OPSMESH_REDIS_URL: redis://127.0.0.1:6379/0
+      OPSMESH_TEMPORAL_ADDRESS: 127.0.0.1:7233
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
@@ -108,7 +109,14 @@ jobs:
       - name: Build self-contained server from locked wheels and CPython
         run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocation, real migrations, API, worker and updater without system Python
-        run: uv run --no-project python scripts/check_standalone.py --kind server --tag "$RELEASE_TAG" --archive "dist/opsmesh-server-$RELEASE_TAG-linux-amd64.tar.gz"
+        # Namespace initialization is a one-shot job; the server and its DB persist for acceptance.
+        run: |
+          docker compose -f deploy/temporal/compose.yml up -d temporal-namespace
+          uv run python -m opsmesh_operator.compose --timeout 180 -- docker compose -f deploy/temporal/compose.yml
+          uv run --no-project python scripts/check_standalone.py --kind server --tag "$RELEASE_TAG" --archive "dist/opsmesh-server-$RELEASE_TAG-linux-amd64.tar.gz"
+      - name: Remove only this acceptance Temporal project
+        if: always()
+        run: docker compose -f deploy/temporal/compose.yml down --volumes
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: standalone-server-linux-amd64-${{ github.run_id }}

@@ -4,28 +4,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from opsmesh.capabilities.mcp.execution.contracts import MCPExecutionError
 from opsmesh.capabilities.mcp.transport.stdio_credentials import _merge_environment
-from opsmesh.shared.contracts import TimestampedModel
-
-
-class McpRestartPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    max_restarts: int = Field(default=5, ge=0, le=10000)
-    stable_after_seconds: float = Field(default=300, gt=0)
-    initial_backoff_seconds: float = Field(default=2, gt=0)
-    max_backoff_seconds: float = Field(default=60, gt=0)
-
-    @model_validator(mode="after")
-    def validate_backoff(self) -> "McpRestartPolicy":
-        if self.max_backoff_seconds < self.initial_backoff_seconds:
-            raise ValueError("Maximum backoff must not be smaller than initial backoff")
-        return self
+from opsmesh.shared.contracts import TimestampedContract
 
 
 class StdioProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    restart_policy: McpRestartPolicy = Field(default_factory=McpRestartPolicy)
     command: str = Field(min_length=1, max_length=512)
     type: Literal["stdio"] = Field(default="stdio", exclude=True)
     args: list[str] = Field(default_factory=list, max_length=128)
@@ -54,36 +40,38 @@ class StdioProjectConfig(BaseModel):
                 name: value for name, value in self.env.items()
             }
             _merge_environment({}, raw_environment)
-        except RuntimeError as exc:
+        except MCPExecutionError as exc:
             raise ValueError("Invalid MCP environment mapping") from exc
         if sum(len(arg.encode()) for arg in self.args) > 64_000:
             raise ValueError("MCP command is too large")
         return self
 
 
-class ManagedMcpCreateRequest(BaseModel):
+class ManagedMCPCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     runtime_id: UUID
-    mcpServers: dict[str, StdioProjectConfig] = Field(min_length=1, max_length=20)
+    mcp_servers: dict[str, StdioProjectConfig] = Field(
+        alias="mcpServers", min_length=1, max_length=20
+    )
 
     @model_validator(mode="after")
-    def validate_names(self) -> "ManagedMcpCreateRequest":
-        if any(not name.strip() or len(name) > 160 for name in self.mcpServers):
+    def validate_names(self) -> "ManagedMCPCreateRequest":
+        if any(not name.strip() or len(name) > 160 for name in self.mcp_servers):
             raise ValueError("MCP names must contain 1 to 160 characters")
         return self
 
 
-class ManagedMcpActionRequest(BaseModel):
+class ManagedMCPActionRequest(BaseModel):
     action: Literal["start", "stop", "restart", "refresh"]
 
 
-class ManagedMcpHostRequest(BaseModel):
+class ManagedMCPEnvironmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     runtime_id: UUID
 
 
-class ManagedMcpResponse(TimestampedModel):
+class ManagedMCPResponse(TimestampedContract):
     workspace_id: UUID
     mcp_server_id: UUID
     runtime_id: UUID

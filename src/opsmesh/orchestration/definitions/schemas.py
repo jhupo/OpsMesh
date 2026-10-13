@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -17,7 +17,7 @@ class OrchestrationApplyRequest(BaseModel):
     enqueue: bool = False
 
 
-class OrchestrationDefinitionResponse(TimestampedModel):
+class OrchestrationDefinitionResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID | None
     key: str
@@ -33,7 +33,7 @@ class OrchestrationDefinitionResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class OrchestrationRevisionResponse(TimestampedModel):
+class OrchestrationRevisionResponse(TimestampedContract):
     workspace_id: UUID
     definition_id: UUID
     version: int

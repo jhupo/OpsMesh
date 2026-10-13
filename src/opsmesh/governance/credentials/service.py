@@ -8,14 +8,15 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.capabilities.mcp.models import McpCredentialReference
+from opsmesh.capabilities.mcp.models import MCPCredentialReference
 from opsmesh.governance.security_events.models import SecurityEvent
+from opsmesh.messaging.channels.models import ChannelConnection
 from opsmesh.orchestration.webhooks.models import WebhookSubscription
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 
 @dataclass(frozen=True)
-class SecretReencryptResourceSummary:
+class ResourceReencryptionSummary:
     scanned: int = 0
     reencrypted: int = 0
     skipped_current: int = 0
@@ -24,12 +25,13 @@ class SecretReencryptResourceSummary:
 
 
 @dataclass(frozen=True)
-class SecretReencryptSummary:
+class SecretReencryptionSummary:
     workspace_id: UUID | None
     current_key_id: str
-    model_provider_credentials: SecretReencryptResourceSummary
-    mcp_credential_references: SecretReencryptResourceSummary
-    webhook_subscriptions: SecretReencryptResourceSummary
+    model_provider_credentials: ResourceReencryptionSummary
+    mcp_credential_references: ResourceReencryptionSummary
+    webhook_subscriptions: ResourceReencryptionSummary
+    channel_connections: ResourceReencryptionSummary
 
     @property
     def scanned(self) -> int:
@@ -60,14 +62,16 @@ class SecretReencryptSummary:
                 "model_provider_credentials": _resource_metadata(self.model_provider_credentials),
                 "mcp_credential_references": _resource_metadata(self.mcp_credential_references),
                 "webhook_subscriptions": _resource_metadata(self.webhook_subscriptions),
+                "channel_connections": _resource_metadata(self.channel_connections),
             },
         }
 
-    def _resources(self) -> tuple[SecretReencryptResourceSummary, ...]:
+    def _resources(self) -> tuple[ResourceReencryptionSummary, ...]:
         return (
             self.model_provider_credentials,
             self.mcp_credential_references,
             self.webhook_subscriptions,
+            self.channel_connections,
         )
 
 
@@ -79,8 +83,8 @@ class _MutableResourceSummary:
     failed: int = 0
     from_key_ids: set[str] = field(default_factory=set)
 
-    def freeze(self) -> SecretReencryptResourceSummary:
-        return SecretReencryptResourceSummary(
+    def freeze(self) -> ResourceReencryptionSummary:
+        return ResourceReencryptionSummary(
             scanned=self.scanned,
             reencrypted=self.reencrypted,
             skipped_current=self.skipped_current,
@@ -89,7 +93,7 @@ class _MutableResourceSummary:
         )
 
 
-class HostedSecretReencryptService:
+class SecretReencryptionService:
     def __init__(
         self,
         session: Session,
@@ -98,8 +102,8 @@ class HostedSecretReencryptService:
         self._session = session
         self._secret_service = secret_service
 
-    def reencrypt(self, *, workspace_id: UUID | None = None) -> SecretReencryptSummary:
-        summary = SecretReencryptSummary(
+    def reencrypt(self, *, workspace_id: UUID | None = None) -> SecretReencryptionSummary:
+        summary = SecretReencryptionSummary(
             workspace_id=workspace_id,
             current_key_id=self._secret_service.current_key_id,
             model_provider_credentials=self._reencrypt_model_provider_credentials(
@@ -111,6 +115,7 @@ class HostedSecretReencryptService:
             webhook_subscriptions=self._reencrypt_webhook_subscriptions(
                 workspace_id=workspace_id,
             ),
+            channel_connections=self._reencrypt_channel_connections(workspace_id=workspace_id),
         )
         self._record_security_event(summary)
         return summary
@@ -119,7 +124,7 @@ class HostedSecretReencryptService:
         self,
         *,
         workspace_id: UUID | None,
-    ) -> SecretReencryptResourceSummary:
+    ) -> ResourceReencryptionSummary:
         statement = select(ModelProviderCredential)
         if workspace_id is not None:
             statement = statement.where(ModelProviderCredential.workspace_id == workspace_id)
@@ -150,16 +155,16 @@ class HostedSecretReencryptService:
         self,
         *,
         workspace_id: UUID | None,
-    ) -> SecretReencryptResourceSummary:
-        statement = select(McpCredentialReference).where(
-            McpCredentialReference.encrypted_secret_payload.is_not(None),
+    ) -> ResourceReencryptionSummary:
+        statement = select(MCPCredentialReference).where(
+            MCPCredentialReference.encrypted_secret_payload.is_not(None),
             or_(
-                McpCredentialReference.provider == "hosted",
-                McpCredentialReference.external_ref == "",
+                MCPCredentialReference.provider == "hosted",
+                MCPCredentialReference.external_ref == "",
             ),
         )
         if workspace_id is not None:
-            statement = statement.where(McpCredentialReference.workspace_id == workspace_id)
+            statement = statement.where(MCPCredentialReference.workspace_id == workspace_id)
         rows = self._session.scalars(statement).all()
         summary = _MutableResourceSummary()
         for credential in rows:
@@ -188,7 +193,7 @@ class HostedSecretReencryptService:
         self,
         *,
         workspace_id: UUID | None,
-    ) -> SecretReencryptResourceSummary:
+    ) -> ResourceReencryptionSummary:
         statement = select(WebhookSubscription)
         if workspace_id is not None:
             statement = statement.where(WebhookSubscription.workspace_id == workspace_id)
@@ -218,7 +223,33 @@ class HostedSecretReencryptService:
     def _needs_reencrypt(self, key_id: str | None) -> bool:
         return key_id != self._secret_service.current_key_id
 
-    def _record_security_event(self, summary: SecretReencryptSummary) -> None:
+    def _reencrypt_channel_connections(
+        self, *, workspace_id: UUID | None
+    ) -> ResourceReencryptionSummary:
+        statement = select(ChannelConnection).with_for_update()
+        if workspace_id is not None:
+            statement = statement.where(ChannelConnection.workspace_id == workspace_id)
+        summary = _MutableResourceSummary()
+        for connection in self._session.scalars(statement):
+            summary.scanned += 1
+            if not self._needs_reencrypt(connection.encryption_key_id):
+                summary.skipped_current += 1
+                continue
+            summary.from_key_ids.add(connection.encryption_key_id)
+            try:
+                payload = self._secret_service.decrypt_payload(
+                    connection.encrypted_signing_secret, key_id=connection.encryption_key_id
+                )
+            except ValueError:
+                summary.failed += 1
+                continue
+            encrypted = self._secret_service.encrypt_payload(payload)
+            connection.encrypted_signing_secret = encrypted.ciphertext
+            connection.encryption_key_id = encrypted.key_id
+            summary.reencrypted += 1
+        return summary.freeze()
+
+    def _record_security_event(self, summary: SecretReencryptionSummary) -> None:
         event = SecurityEvent(
             workspace_id=summary.workspace_id,
             user_id=None,
@@ -237,7 +268,7 @@ class HostedSecretReencryptService:
         self._session.add(event)
 
 
-def _resource_metadata(summary: SecretReencryptResourceSummary) -> dict[str, object]:
+def _resource_metadata(summary: ResourceReencryptionSummary) -> dict[str, object]:
     return {
         "scanned": summary.scanned,
         "reencrypted": summary.reencrypted,

@@ -7,6 +7,7 @@ from queue import Full, Queue
 from traceback import format_exception
 from typing import cast
 
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from pythonjsonlogger.json import JsonFormatter
 
 from opsmesh.shared.config import Settings
@@ -98,6 +99,13 @@ class RequestContextFilter(logging.Filter):
 
 def configure_logging(settings: Settings) -> None:
     global _listener
+    instrumentor = LoggingInstrumentor()
+    if not instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.instrument(
+            inject_trace_context=True,
+            set_logging_format=False,
+            enable_log_auto_instrumentation=False,
+        )
     shutdown_logging()
     root_logger = logging.getLogger()
     root_logger.handlers.clear()

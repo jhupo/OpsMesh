@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from hashlib import sha256
 
+from opentelemetry import propagate, trace
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -25,12 +26,7 @@ from opsmesh.shared.telemetry.trace_context import (
     SPAN_ID_HEADER,
     TRACE_ID_HEADER,
     TRACEPARENT_HEADER,
-    TraceContext,
-    reset_trace_context,
-    set_trace_context,
-    trace_context_from_current_span,
-    trace_context_from_headers,
-    traceparent_header,
+    current_trace_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,14 +71,13 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             else uuid.uuid4().hex
         )
         request_id_token = request_id_var.set(request_id)
-        trace_context = trace_context_from_current_span() or trace_context_from_headers(
-            request.headers
-        )
-        trace_tokens = set_trace_context(trace_context)
+        trace_metadata = current_trace_metadata()
+        parent = trace.get_current_span(propagate.extract(dict(request.headers))).get_span_context()
+        parent_span_id = format(parent.span_id, "016x") if parent.is_valid else None
         request.state.request_id = request_id
-        request.state.trace_id = trace_context.trace_id
-        request.state.span_id = trace_context.span_id
-        request.state.parent_span_id = trace_context.parent_span_id
+        request.state.trace_id = trace_metadata.get("trace_id")
+        request.state.span_id = trace_metadata.get("span_id")
+        request.state.parent_span_id = parent_span_id
         started_at = time.perf_counter()
         status_code = 500
 
@@ -92,7 +87,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             duration_ms = _elapsed_ms(started_at)
             response.headers["X-Process-Time-Ms"] = str(duration_ms)
             response.headers[REQUEST_ID_HEADER] = request_id
-            _set_trace_response_headers(response, trace_context)
+            _set_trace_response_headers(response, trace_metadata, parent_span_id)
             record_http_request(request.method, _metrics_path(request), status_code, duration_ms)
             log_level = (
                 logging.WARNING
@@ -113,7 +108,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
             raise
         finally:
-            reset_trace_context(trace_tokens)
             request_id_var.reset(request_id_token)
 
 
@@ -261,9 +255,15 @@ def _request_log_extra(request: Request, status_code: int, duration_ms: int) -> 
     }
 
 
-def _set_trace_response_headers(response: Response, context: TraceContext) -> None:
-    response.headers[TRACE_ID_HEADER] = context.trace_id
-    response.headers[SPAN_ID_HEADER] = context.span_id
-    if context.parent_span_id is not None:
-        response.headers[PARENT_SPAN_ID_HEADER] = context.parent_span_id
-    response.headers[TRACEPARENT_HEADER] = traceparent_header(context)
+def _set_trace_response_headers(
+    response: Response, metadata: dict[str, str], parent_span_id: str | None
+) -> None:
+    if not metadata:
+        return
+    response.headers[TRACE_ID_HEADER] = metadata["trace_id"]
+    response.headers[SPAN_ID_HEADER] = metadata["span_id"]
+    if parent_span_id is not None:
+        response.headers[PARENT_SPAN_ID_HEADER] = parent_span_id
+    carrier: dict[str, str] = {}
+    propagate.inject(carrier)
+    response.headers[TRACEPARENT_HEADER] = carrier[TRACEPARENT_HEADER]

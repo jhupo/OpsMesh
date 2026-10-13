@@ -4,11 +4,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.utils import ensure_aware_utc
 
 
-class CurrentUserResponse(ORMModel):
+class CurrentUserResponse(FromAttributesContract):
     user_id: UUID
     email: str
     display_name: str
@@ -171,7 +171,7 @@ class UserAPITokenRotateRequest(BaseModel):
         return value
 
 
-class UserAPITokenResponse(TimestampedModel):
+class UserAPITokenResponse(TimestampedContract):
     user_id: UUID
     name: str
     fingerprint: str

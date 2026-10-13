@@ -126,7 +126,6 @@ class WorkspaceProjectFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "project_path",
             unique=True,
             postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
         ),
         Index(
             "uq_project_files_active_project_file",
@@ -134,7 +133,6 @@ class WorkspaceProjectFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "workspace_file_id",
             unique=True,
             postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
         ),
         UniqueConstraint(
             "project_id",
@@ -172,7 +170,6 @@ class WorkspaceProjectOutput(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "project_path",
             unique=True,
             postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
         ),
         Index("ix_project_outputs_workspace_project", "workspace_id", "project_id"),
     )
@@ -230,12 +227,8 @@ class AgentRunProjectIOState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("agent_run_id", name="uq_agent_run_project_io_states_run"),
         UniqueConstraint("project_snapshot_id", name="uq_agent_run_project_io_states_snapshot"),
         CheckConstraint(
-            "status in ('pending', 'staged', 'harvesting', 'harvested', 'failed')",
+            "status in ('pending', 'staged', 'harvested', 'failed')",
             name="status_valid",
-        ),
-        CheckConstraint(
-            "cleanup_status in ('pending', 'running', 'completed', 'failed', 'not_required')",
-            name="cleanup_status_valid",
         ),
         CheckConstraint(
             "staged_file_count >= 0 and staged_bytes >= 0 and "
@@ -266,7 +259,3 @@ class AgentRunProjectIOState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     staged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     harvested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cleanup_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
-    cleanup_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    cleanup_error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    cleaned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

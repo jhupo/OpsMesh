@@ -1,3 +1,5 @@
+"""Freeze agent-target permissions and restore them against current authorization."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -10,10 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeAgentDefinition,
-    AgentRuntimeAgentRef,
-    AgentRuntimeAgentTarget,
-    AgentRuntimeContext,
+    AgentExecutionContext,
+    AgentInvocationConfig,
+    AgentReference,
+    AgentTargetProfile,
 )
 from opsmesh.agents.execution.guardrails import (
     runtime_controls_from_snapshot,
@@ -29,10 +31,7 @@ from opsmesh.agents.profiles.routing import (
     bounded_target_int,
     require_handoff_policy,
 )
-from opsmesh.agents.providers.classification import (
-    is_anthropic_provider,
-    is_openai_compatible_provider,
-)
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
@@ -52,7 +51,6 @@ from opsmesh.orchestration.runs.authorization.validation import (
 )
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.resources.memory.policy import agent_memory_policy
-from opsmesh.runtime.instances.policies.runtime import policy_disables_network
 from opsmesh.shared.utils import dict_or_empty, string_list, uuid_or_none
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 
@@ -268,10 +266,20 @@ def hydrate_agent_targets(
     *,
     session: Session,
     snapshot: dict[str, object],
-    root_context: AgentRuntimeContext,
+    root_context: AgentExecutionContext,
     resolve_model_provider: Callable[..., dict[str, Any]],
     kind: str = "agent_tools",
-) -> tuple[AgentRuntimeAgentTarget, ...]:
+) -> tuple[AgentInvocationConfig, ...]:
+    """Restore an admitted target graph within the caller's Session and run scope.
+
+    Each target must still be active and invocable by the run's current identity.
+    Provider, capability and parent resource scopes are checked against the frozen
+    snapshot; agent instructions remain frozen. This function performs queries but
+    does not commit, roll back or close the caller-owned Session.
+
+    Raises:
+        ValueError: A frozen definition or graph scope is invalid or has changed.
+    """
     raw_items = snapshot.get(kind)
     if raw_items is None:
         return ()
@@ -290,70 +298,24 @@ def _hydrate_level(
     *,
     session: Session,
     raw_items: list[object],
-    root_context: AgentRuntimeContext,
+    root_context: AgentExecutionContext,
     resolve_model_provider: Callable[..., dict[str, Any]],
     path: tuple[UUID, ...],
-) -> tuple[AgentRuntimeAgentTarget, ...]:
-    hydrated: list[AgentRuntimeAgentTarget] = []
+) -> tuple[AgentInvocationConfig, ...]:
+    """Authorize one graph level, build invocation scopes and recurse into children."""
+    hydrated: list[AgentInvocationConfig] = []
     for raw_item in raw_items:
         if not isinstance(raw_item, dict):
             raise ValueError("Authorization snapshot agent tool entry is invalid")
         target = dict_or_empty(raw_item.get("target"))
-        profile_id = uuid_or_none(target.get("profile_id"))
-        workspace_id = uuid_or_none(target.get("workspace_id"))
-        if profile_id is None or workspace_id != root_context.workspace_id:
-            raise ValueError("Authorization snapshot agent tool target is invalid")
-        user = ExecutionIdentityService(session).for_run(workspace_id, root_context.run_id)
-        ResourceAuthorizationService(session, user).require(
-            workspace_id,
-            ResourceKind.AGENT,
-            profile_id,
-            ResourceAction.INVOKE,
+        profile_id = _authorize_target_profile(session, target, root_context, path)
+        resolved, selected_model, credential_id = _resolve_frozen_target_provider(
+            raw_item, root_context, resolve_model_provider
         )
-        if profile_id in path:
-            raise ValueError("Authorization snapshot agent tool graph contains a cycle")
-        active_profile = session.scalar(
-            select(AgentProfile.id).where(
-                AgentProfile.workspace_id == root_context.workspace_id,
-                AgentProfile.id == profile_id,
-                AgentProfile.status == "active",
-            )
+        catalog, scoped_snapshot = _validate_target_catalog(
+            session, raw_item, root_context.workspace_id, profile_id
         )
-        if active_profile is None:
-            raise ValueError("Authorized agent tool target is no longer active")
-        provider_snapshot = dict_or_empty(raw_item.get("model_provider"))
-        selected_model = provider_snapshot.get("selected_model")
-        if not isinstance(selected_model, str) or not selected_model:
-            raise ValueError("Authorization snapshot agent tool model is invalid")
-        credential_id = uuid_or_none(provider_snapshot.get("credential_id"))
-        model_api = provider_snapshot.get("model_api")
-        resolved = resolve_model_provider(
-            workspace_id=root_context.workspace_id,
-            credential_id=credential_id,
-            agent_model=selected_model,
-            model_api=model_api if isinstance(model_api, str) else None,
-            prefer_model_api=isinstance(model_api, str),
-        )
-        if (
-            resolved.get("provider") != provider_snapshot.get("provider")
-            or resolved.get("model_provider_credential_id") != credential_id
-        ):
-            raise ValueError("Agent tool model provider no longer matches the frozen snapshot")
-        catalog = dict_or_empty(raw_item.get("capability_catalog"))
-        fingerprint = catalog.get("fingerprint")
-        if not isinstance(fingerprint, str) or fingerprint != effective_catalog_fingerprint(
-            catalog
-        ):
-            raise ValueError("Agent tool capability catalog fingerprint mismatch")
-        if uuid_or_none(catalog.get("workspace_id")) != root_context.workspace_id:
-            raise ValueError("Agent tool capability catalog workspace mismatch")
-        if uuid_or_none(catalog.get("agent_profile_id")) != profile_id:
-            raise ValueError("Agent tool capability catalog profile mismatch")
-        scoped_snapshot: dict[str, object] = {"capability_catalog": catalog}
-        scoped_snapshot["installed_skills"] = raw_item.get("installed_skills", [])
-        RunAuthorizationService(session).validate_capability_scope(
-            root_context.workspace_id, scoped_snapshot
-        )
+        fingerprint = catalog["fingerprint"]
         tool_definitions = tool_definitions_for_snapshot(scoped_snapshot)
         resource_grants = resource_grants_for_snapshot(scoped_snapshot)
         allowed_tools = tuple(item.name for item in tool_definitions)
@@ -375,36 +337,17 @@ def _hydrate_level(
         )
         tool_name = raw_item.get("tool_name")
         description = raw_item.get("description")
-        name = target.get("name")
-        role = target.get("role")
-        instructions = target.get("instructions")
-        model_settings = target.get("model_settings")
         if not isinstance(tool_name, str) or not tool_name:
             raise ValueError("Authorization snapshot agent tool name is invalid")
         if not isinstance(description, str) or not description:
             raise ValueError("Authorization snapshot agent tool description is invalid")
-        if not isinstance(name, str) or not name:
-            raise ValueError("Authorization snapshot agent tool target name is invalid")
-        if not isinstance(role, str) or not role:
-            raise ValueError("Authorization snapshot agent tool target role is invalid")
-        if not isinstance(instructions, str) or not instructions:
-            raise ValueError("Authorization snapshot agent tool instructions are invalid")
-        if not isinstance(model_settings, dict):
-            raise ValueError("Authorization snapshot agent tool definition is invalid")
-        handoff_description = target.get("handoff_description")
+        target_profile = _build_frozen_target_profile(
+            target, profile_id, root_context.workspace_id, selected_model
+        )
         runtime_policy = dict_or_empty(raw_item.get("runtime_policy"))
-        _, target_runtime_ids, target_space_ids = runtime_resource_grants(catalog)
-        binding = root_context.runtime_binding
-        if target_runtime_ids and (
-            binding is None or target_runtime_ids != {binding.workspace_runtime_id}
-        ):
-            raise ValueError("Agent target requires a different execution Runtime")
-        if policy_disables_network(runtime_policy) and binding and not binding.network_disabled:
-            raise ValueError("Agent target requires a network-disabled execution Runtime")
-        if target_space_ids and (binding is None or target_space_ids != {binding.runtime_space_id}):
-            raise ValueError("Agent target requires a different Runtime space")
+        _require_parent_runtime_scope(catalog, root_context)
         output_schema, guardrails = runtime_controls_from_snapshot(raw_item)
-        context = AgentRuntimeContext(
+        context = AgentExecutionContext(
             workspace_id=root_context.workspace_id,
             task_id=root_context.task_id,
             run_id=root_context.run_id,
@@ -425,7 +368,7 @@ def _hydrate_level(
                 "capability_catalog_fingerprint": fingerprint,
                 "agent_profile_id": str(profile_id),
                 "agent_profile_version": target.get("profile_version"),
-                "agent_role": role,
+                "agent_role": target_profile.ref.role,
                 "run_model": selected_model,
                 "model_provider_provider": resolved.get("provider"),
                 "model_provider_model_api": resolved.get("model_api"),
@@ -458,24 +401,8 @@ def _hydrate_level(
             path=(*path, profile_id),
         )
         hydrated.append(
-            AgentRuntimeAgentTarget(
-                target=AgentRuntimeAgentDefinition(
-                    ref=AgentRuntimeAgentRef(
-                        name=name,
-                        profile_id=profile_id,
-                        role=role,
-                    ),
-                    workspace_id=root_context.workspace_id,
-                    instructions=instructions,
-                    version=bounded_target_int(
-                        target.get("profile_version"), "profile_version", 1, 2_147_483_647
-                    ),
-                    model=selected_model,
-                    model_settings=dict(model_settings),
-                    handoff_description=handoff_description
-                    if isinstance(handoff_description, str)
-                    else None,
-                ),
+            AgentInvocationConfig(
+                target=target_profile,
                 tool_name=tool_name,
                 description=description,
                 context=context,
@@ -496,6 +423,133 @@ def _hydrate_level(
             )
         )
     return tuple(hydrated)
+
+
+def _authorize_target_profile(
+    session: Session,
+    target: dict[str, object],
+    root_context: AgentExecutionContext,
+    path: tuple[UUID, ...],
+) -> UUID:
+    """Require a same-workspace, active, currently invocable target outside this path."""
+    profile_id = uuid_or_none(target.get("profile_id"))
+    workspace_id = uuid_or_none(target.get("workspace_id"))
+    if profile_id is None or workspace_id != root_context.workspace_id:
+        raise ValueError("Authorization snapshot agent tool target is invalid")
+    user = ExecutionIdentityService(session).for_run(workspace_id, root_context.run_id)
+    ResourceAuthorizationService(session, user).require(
+        workspace_id,
+        ResourceKind.AGENT,
+        profile_id,
+        ResourceAction.INVOKE,
+    )
+    if profile_id in path:
+        raise ValueError("Authorization snapshot agent tool graph contains a cycle")
+    active_profile = session.scalar(
+        select(AgentProfile.id).where(
+            AgentProfile.workspace_id == root_context.workspace_id,
+            AgentProfile.id == profile_id,
+            AgentProfile.status == "active",
+        )
+    )
+    if active_profile is None:
+        raise ValueError("Authorized agent tool target is no longer active")
+    return profile_id
+
+
+def _resolve_frozen_target_provider(
+    raw_item: dict[str, object],
+    root_context: AgentExecutionContext,
+    resolve_model_provider: Callable[..., dict[str, Any]],
+) -> tuple[dict[str, Any], str, UUID | None]:
+    """Resolve current model credentials while retaining the frozen provider binding."""
+    provider_snapshot = dict_or_empty(raw_item.get("model_provider"))
+    selected_model = provider_snapshot.get("selected_model")
+    if not isinstance(selected_model, str) or not selected_model:
+        raise ValueError("Authorization snapshot agent tool model is invalid")
+    credential_id = uuid_or_none(provider_snapshot.get("credential_id"))
+    model_api = provider_snapshot.get("model_api")
+    resolved = resolve_model_provider(
+        workspace_id=root_context.workspace_id,
+        credential_id=credential_id,
+        agent_model=selected_model,
+        model_api=model_api if isinstance(model_api, str) else None,
+        prefer_model_api=isinstance(model_api, str),
+    )
+    if (
+        resolved.get("provider") != provider_snapshot.get("provider")
+        or resolved.get("model_provider_credential_id") != credential_id
+    ):
+        raise ValueError("Agent tool model provider no longer matches the frozen snapshot")
+    return resolved, selected_model, credential_id
+
+
+def _validate_target_catalog(
+    session: Session,
+    raw_item: dict[str, object],
+    workspace_id: UUID,
+    profile_id: UUID,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Check frozen catalog integrity and current capability/installed-skill grants."""
+    catalog = dict_or_empty(raw_item.get("capability_catalog"))
+    fingerprint = catalog.get("fingerprint")
+    if not isinstance(fingerprint, str) or fingerprint != effective_catalog_fingerprint(catalog):
+        raise ValueError("Agent tool capability catalog fingerprint mismatch")
+    if uuid_or_none(catalog.get("workspace_id")) != workspace_id:
+        raise ValueError("Agent tool capability catalog workspace mismatch")
+    if uuid_or_none(catalog.get("agent_profile_id")) != profile_id:
+        raise ValueError("Agent tool capability catalog profile mismatch")
+    scoped_snapshot: dict[str, object] = {"capability_catalog": catalog}
+    scoped_snapshot["installed_skills"] = raw_item.get("installed_skills", [])
+    RunAuthorizationService(session).validate_capability_scope(workspace_id, scoped_snapshot)
+    return catalog, scoped_snapshot
+
+
+def _build_frozen_target_profile(
+    target: dict[str, object],
+    profile_id: UUID,
+    workspace_id: UUID,
+    selected_model: str,
+) -> AgentTargetProfile:
+    """Validate and materialize the frozen agent definition without rereading its text."""
+    name = target.get("name")
+    role = target.get("role")
+    instructions = target.get("instructions")
+    model_settings = target.get("model_settings")
+    if not isinstance(name, str) or not name:
+        raise ValueError("Authorization snapshot agent tool target name is invalid")
+    if not isinstance(role, str) or not role:
+        raise ValueError("Authorization snapshot agent tool target role is invalid")
+    if not isinstance(instructions, str) or not instructions:
+        raise ValueError("Authorization snapshot agent tool instructions are invalid")
+    if not isinstance(model_settings, dict):
+        raise ValueError("Authorization snapshot agent tool definition is invalid")
+    handoff_description = target.get("handoff_description")
+    return AgentTargetProfile(
+        ref=AgentReference(name=name, profile_id=profile_id, role=role),
+        workspace_id=workspace_id,
+        instructions=instructions,
+        version=bounded_target_int(
+            target.get("profile_version"), "profile_version", 1, 2_147_483_647
+        ),
+        model=selected_model,
+        model_settings=dict(model_settings),
+        handoff_description=handoff_description if isinstance(handoff_description, str) else None,
+    )
+
+
+def _require_parent_runtime_scope(
+    catalog: dict[str, object], root_context: AgentExecutionContext
+) -> None:
+    """Reject targets whose Runtime or space differs from the parent run binding."""
+    _, target_runtime_ids, target_space_ids = runtime_resource_grants(catalog)
+    binding = root_context.runtime_binding
+    if target_runtime_ids and (
+        binding is None or target_runtime_ids != {binding.workspace_runtime_id}
+    ):
+        raise ValueError("Agent target requires a different execution Runtime")
+    if target_space_ids and (binding is None or target_space_ids != {binding.runtime_space_id}):
+        raise ValueError("Agent target requires a different Runtime space")
 
 
 def _intersect_catalog(
@@ -630,8 +684,5 @@ def _require_same_provider_family(
     same_openai_family = is_openai_compatible_provider(source_provider) and (
         is_openai_compatible_provider(target_provider)
     )
-    same_anthropic_family = is_anthropic_provider(source_provider) and is_anthropic_provider(
-        target_provider
-    )
-    if not same_openai_family and not same_anthropic_family:
+    if not same_openai_family:
         raise ValueError("Agent tools cannot cross model-provider runtime families")

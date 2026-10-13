@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class McpDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class MCPDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_deployments"
     __table_args__ = (UniqueConstraint("mcp_server_id"),)
 
@@ -18,14 +18,13 @@ class McpDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="stopped")
     action: Mapped[str] = mapped_column(String(32), default="stop")
     generation: Mapped[int] = mapped_column(Integer, default=0)
-    execution_identity: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     last_error: Mapped[str | None] = mapped_column(String(120))
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     server_version: Mapped[int | None] = mapped_column(Integer)
     credential_version: Mapped[int | None] = mapped_column(Integer)
 
 
-class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class MCPServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_servers"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name", name="uq_mcp_servers_workspace_name"),
@@ -54,7 +53,7 @@ class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     discovery_error: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
-class McpToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class MCPToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_tool_allowlist"
     __table_args__ = (
         UniqueConstraint("mcp_server_id", "tool_name", name="uq_mcp_tool_allowlist_tool"),
@@ -88,7 +87,7 @@ class McpToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class MCPCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_credential_references"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name", name="uq_mcp_credential_refs_workspace_name"),
@@ -114,7 +113,7 @@ class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     configuration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
-class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
+class MCPToolCallLog(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "mcp_tool_call_logs"
     __table_args__ = (
         Index("ix_mcp_tool_call_logs_workspace_run", "workspace_id", "agent_run_id"),

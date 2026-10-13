@@ -199,7 +199,7 @@ def _resolution_template(conflict: WorkspaceImportConflict) -> dict[str, object]
     if action == "add_runtime_policy":
         return {
             "action": action,
-            "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+            "policy": {"resource_requirements": {"cpu": 1, "memory_mb": 256}},
         }
     if action == "increase_quota_limit":
         return {

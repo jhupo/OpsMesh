@@ -1,4 +1,6 @@
 import json
+from contextlib import closing
+from zipfile import BadZipFile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -6,7 +8,8 @@ from sqlalchemy.orm import Session
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.resources.storage.storage import create_storage
+from opsmesh.resources.storage.backends import create_storage
+from opsmesh.resources.transfers.archive_limits import compressed_archive_limit
 from opsmesh.resources.transfers.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
@@ -29,9 +32,9 @@ class ArchiveImportForm:
         import_memory: bool = Form(default=True),
         import_projects: bool = Form(default=True),
         name_prefix: str = Form(default="Imported "),
-        max_items_per_collection: int = Form(default=500),
-        max_bytes_per_object: int = Form(default=25 * 1024 * 1024),
-        max_total_bytes: int = Form(default=100 * 1024 * 1024),
+        max_items_per_collection: int = Form(default=500, ge=1, le=5_000),
+        max_bytes_per_object: int = Form(default=25 * 1024 * 1024, ge=1, le=100 * 1024 * 1024),
+        max_total_bytes: int = Form(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024),
         resolutions: str | None = Form(default=None),
     ) -> None:
         self.import_agents = import_agents
@@ -66,7 +69,7 @@ class ArchiveImportForm:
 
 
 @router.post("/archive/import", response_model=WorkspaceImportResponse)
-async def import_workspace_archive(
+def import_workspace_archive(
     file: UploadFile = File(...),
     dry_run: bool = Form(default=True),
     form: ArchiveImportForm = Depends(),
@@ -74,7 +77,7 @@ async def import_workspace_archive(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> WorkspaceImportResponse:
-    return await run_archive_import(
+    return run_archive_import(
         file=file,
         request=form.request(dry_run=dry_run),
         context=context,
@@ -84,14 +87,14 @@ async def import_workspace_archive(
 
 
 @router.post("/archive/import/preview", response_model=WorkspaceImportResponse)
-async def preview_workspace_archive_import(
+def preview_workspace_archive_import(
     file: UploadFile = File(...),
     form: ArchiveImportForm = Depends(),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> WorkspaceImportResponse:
-    return await run_archive_import(
+    return run_archive_import(
         file=file,
         request=form.request(dry_run=True),
         context=context,
@@ -100,7 +103,7 @@ async def preview_workspace_archive_import(
     )
 
 
-async def run_archive_import(
+def run_archive_import(
     *,
     file: UploadFile,
     request: WorkspaceArchiveImportRequest,
@@ -108,16 +111,27 @@ async def run_archive_import(
     session: Session,
     settings: Settings,
 ) -> WorkspaceImportResponse:
-    content = await file.read()
-    try:
-        return WorkspaceArchiveImportService(session).import_archive(
-            workspace=context.workspace,
-            user_id=context.user.user_id,
-            archive_bytes=content,
-            request=request,
-            storage=create_storage(settings),
+    limit = compressed_archive_limit(request.max_total_bytes)
+    if file.size is not None and file.size > limit:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Archive too large"
         )
-    except ValueError as exc:
+    # Sync routes run upload reads, ZIP work and SQL in FastAPI's worker thread.
+    content = file.file.read(limit + 1)
+    if len(content) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Archive too large"
+        )
+    try:
+        with closing(create_storage(settings)) as storage:
+            return WorkspaceArchiveImportService(session).import_archive(
+                workspace=context.workspace,
+                user_id=context.user.user_id,
+                archive_bytes=content,
+                request=request,
+                storage=storage,
+            )
+    except (ValueError, BadZipFile) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 

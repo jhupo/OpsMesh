@@ -8,7 +8,7 @@ from opsmesh.capabilities.plugins.admin_schemas import (
     AdminPluginGovernanceResponse,
     AdminPluginPublisherTrustResponse,
 )
-from opsmesh.capabilities.plugins.service import PluginService
+from opsmesh.capabilities.plugins.lifecycle import PluginLifecycleService
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.shared.db.session import get_db_session
 
@@ -25,7 +25,9 @@ def disable_plugin(
     request: AdminPluginGovernanceRequest,
     session: Session = Depends(get_db_session),
 ) -> object:
-    return PluginService(session).platform_disable(workspace_id, install_id, reason=request.reason)
+    return PluginLifecycleService(session).platform_disable(
+        workspace_id, install_id, reason=request.reason
+    )
 
 
 @router.post(
@@ -38,7 +40,9 @@ def release_plugin(
     request: AdminPluginGovernanceRequest,
     session: Session = Depends(get_db_session),
 ) -> object:
-    return PluginService(session).platform_release(workspace_id, install_id, reason=request.reason)
+    return PluginLifecycleService(session).platform_release(
+        workspace_id, install_id, reason=request.reason
+    )
 
 
 @router.post(
@@ -51,4 +55,6 @@ def revoke_publisher_key(
     request: AdminPluginGovernanceRequest,
     session: Session = Depends(get_db_session),
 ) -> object:
-    return PluginService(session).platform_revoke_key(workspace_id, key_id, reason=request.reason)
+    return PluginLifecycleService(session).platform_revoke_key(
+        workspace_id, key_id, reason=request.reason
+    )

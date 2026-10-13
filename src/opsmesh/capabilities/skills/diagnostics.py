@@ -12,8 +12,8 @@ from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.governance.agent_policy import agent_mcp_policy_mode
 from opsmesh.capabilities.mcp.catalog.rules import credential_status as _credential_status
 from opsmesh.capabilities.mcp.catalog.rules import execution_mode as _execution_mode
-from opsmesh.capabilities.mcp.catalog.service import McpCatalogService
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.catalog.service import MCPCatalogService
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.plugins.policy import plugin_resource_available
 from opsmesh.capabilities.skills.availability import (
     WorkspaceSkillToolAvailability,
@@ -80,11 +80,11 @@ class SkillToolDiagnosticsService:
         workspace_id: UUID,
         required_tools: list[str],
     ) -> list[WorkspaceSkillToolAvailability]:
-        allowed_tools = McpCatalogService(
+        allowed_tools = MCPCatalogService(
             self._session,
             self._settings,
         ).list_allowed_mcp_tools(workspace_id)
-        allowed_by_name: dict[str, tuple[McpToolAllowlist, McpServer]] = {}
+        allowed_by_name: dict[str, tuple[MCPToolAllowlist, MCPServer]] = {}
         for allow, server in allowed_tools:
             allowed_by_name.setdefault(allow.tool_name, (allow, server))
         credential_counts, workspace_credential_count = self._credential_counts_for_servers(
@@ -114,12 +114,12 @@ class SkillToolDiagnosticsService:
             raise ValueError("Agent profile not found")
 
         policy_mode, configured_tool_names = agent_mcp_policy_mode(agent)
-        configured_tool_set = set(configured_tool_names or [])
-        allowed_tools = McpCatalogService(
+        configured_tool_set = set(configured_tool_names)
+        allowed_tools = MCPCatalogService(
             self._session,
             self._settings,
         ).list_allowed_mcp_tools(workspace_id)
-        allowed_by_name: dict[str, tuple[McpToolAllowlist, McpServer]] = {}
+        allowed_by_name: dict[str, tuple[MCPToolAllowlist, MCPServer]] = {}
         for allow, server in allowed_tools:
             allowed_by_name.setdefault(allow.tool_name, (allow, server))
 
@@ -139,9 +139,7 @@ class SkillToolDiagnosticsService:
             for item in installed_skill_diagnostics
             for tool_name in item["required_tools"]
         }
-        candidate_tool_names = (
-            set(allowed_by_name) if configured_tool_names is None else configured_tool_set
-        ) | required_tool_names
+        candidate_tool_names = configured_tool_set | required_tool_names
         credential_counts, workspace_credential_count = self._credential_counts_for_servers(
             workspace_id,
             [server.id for _, server in allowed_by_name.values()],
@@ -150,9 +148,7 @@ class SkillToolDiagnosticsService:
             self._agent_tool_diagnostic(
                 tool_name,
                 allowed_by_name.get(tool_name),
-                allowed_by_agent_policy=(
-                    configured_tool_names is None or tool_name in configured_tool_set
-                ),
+                allowed_by_agent_policy=tool_name in configured_tool_set,
                 credential_count=credential_counts.get(
                     allowed_by_name[tool_name][1].id,
                     0,
@@ -163,11 +159,7 @@ class SkillToolDiagnosticsService:
             )
             for tool_name in sorted(candidate_tool_names)
         ]
-        missing_policy_tools = sorted(
-            configured_tool_set - set(allowed_by_name)
-            if configured_tool_names is not None
-            else set()
-        )
+        missing_policy_tools = sorted(configured_tool_set - set(allowed_by_name))
         blocked_reasons: list[str] = []
         if agent.status != "active":
             blocked_reasons.append("agent_inactive")
@@ -280,7 +272,7 @@ class SkillToolDiagnosticsService:
     def _agent_tool_diagnostic(
         self,
         tool_name: str,
-        allowed_tool: tuple[McpToolAllowlist, McpServer] | None,
+        allowed_tool: tuple[MCPToolAllowlist, MCPServer] | None,
         *,
         allowed_by_agent_policy: bool,
         credential_count: int,
@@ -329,12 +321,12 @@ class SkillToolDiagnosticsService:
         if not server_ids:
             return {}, 0
         credentials = self._session.scalars(
-            select(McpCredentialReference).where(
-                McpCredentialReference.workspace_id == workspace_id,
-                McpCredentialReference.status == "active",
+            select(MCPCredentialReference).where(
+                MCPCredentialReference.workspace_id == workspace_id,
+                MCPCredentialReference.status == "active",
                 or_(
-                    McpCredentialReference.mcp_server_id.in_(server_ids),
-                    McpCredentialReference.mcp_server_id.is_(None),
+                    MCPCredentialReference.mcp_server_id.in_(server_ids),
+                    MCPCredentialReference.mcp_server_id.is_(None),
                 ),
             )
         ).all()

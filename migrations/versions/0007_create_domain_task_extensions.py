@@ -28,14 +28,22 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("state", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_team_id"], ["agent_teams.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_domain_projects")),
     )
-    op.create_index("ix_domain_projects_workspace_domain", "domain_projects", ["workspace_id", "domain_type"])
-    op.create_index("ix_domain_projects_workspace_status", "domain_projects", ["workspace_id", "status"])
+    op.create_index(
+        "ix_domain_projects_workspace_domain", "domain_projects", ["workspace_id", "domain_type"]
+    )
+    op.create_index(
+        "ix_domain_projects_workspace_status", "domain_projects", ["workspace_id", "status"]
+    )
 
     op.create_table(
         "domain_items",
@@ -50,17 +58,27 @@ def upgrade() -> None:
         sa.Column("content", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("state", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["domain_project_id"], ["domain_projects.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["parent_item_id"], ["domain_items.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_domain_items")),
     )
-    op.create_index("ix_domain_items_workspace_project", "domain_items", ["workspace_id", "domain_project_id"])
+    op.create_index(
+        "ix_domain_items_workspace_project", "domain_items", ["workspace_id", "domain_project_id"]
+    )
     op.create_index("ix_domain_items_workspace_task", "domain_items", ["workspace_id", "task_id"])
-    op.create_index("ix_domain_items_workspace_type_status", "domain_items", ["workspace_id", "item_type", "status"])
+    op.create_index(
+        "ix_domain_items_workspace_type_status",
+        "domain_items",
+        ["workspace_id", "item_type", "status"],
+    )
 
     op.create_table(
         "review_comments",
@@ -73,8 +91,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["author_agent_run_id"], ["agent_runs.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["author_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["domain_item_id"], ["domain_items.id"], ondelete="SET NULL"),
@@ -82,8 +104,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_review_comments")),
     )
-    op.create_index("ix_review_comments_workspace_item", "review_comments", ["workspace_id", "domain_item_id"])
-    op.create_index("ix_review_comments_workspace_task", "review_comments", ["workspace_id", "task_id"])
+    op.create_index(
+        "ix_review_comments_workspace_item", "review_comments", ["workspace_id", "domain_item_id"]
+    )
+    op.create_index(
+        "ix_review_comments_workspace_task", "review_comments", ["workspace_id", "task_id"]
+    )
 
     op.create_table(
         "revision_requests",
@@ -97,17 +123,27 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("resolved_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["assigned_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["assigned_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["domain_item_id"], ["domain_items.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["requested_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_revision_requests")),
     )
-    op.create_index("ix_revision_requests_workspace_status", "revision_requests", ["workspace_id", "status"])
-    op.create_index("ix_revision_requests_workspace_task", "revision_requests", ["workspace_id", "task_id"])
+    op.create_index(
+        "ix_revision_requests_workspace_status", "revision_requests", ["workspace_id", "status"]
+    )
+    op.create_index(
+        "ix_revision_requests_workspace_task", "revision_requests", ["workspace_id", "task_id"]
+    )
 
 
 def downgrade() -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,7 +14,6 @@ class WorkspaceScheduledJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_scheduled_jobs"
     __table_args__ = (
         Index("ix_workspace_scheduled_jobs_workspace_status", "workspace_id", "status"),
-        Index("ix_workspace_scheduled_jobs_due", "status", "next_run_at"),
         Index("ix_workspace_scheduled_jobs_created_by", "workspace_id", "created_by_user_id"),
     )
 
@@ -31,11 +30,10 @@ class WorkspaceScheduledJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     schedule_config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    job_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    execution_kind: Mapped[str | None] = mapped_column(String(80), nullable=True)
     resource_id: Mapped[UUID | None] = mapped_column(nullable=True)
-    routing: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
-    priority: Mapped[int] = mapped_column(nullable=False, default=0)
-    max_attempts: Mapped[int] = mapped_column(nullable=False, default=3)
+    parameters: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    revision: Mapped[int] = mapped_column(nullable=False, default=1)
     metadata_: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,
@@ -47,9 +45,11 @@ class WorkspaceScheduledJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+
 class WorkspaceScheduledJobEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_scheduled_job_events"
     __table_args__ = (
+        UniqueConstraint("scheduled_job_id", "occurrence_id", name="uq_schedule_occurrence"),
         Index(
             "ix_workspace_scheduled_job_events_job_created",
             "scheduled_job_id",
@@ -78,7 +78,8 @@ class WorkspaceScheduledJobEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    queued_job_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    execution_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    occurrence_id: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     metadata_: Mapped[dict[str, object]] = mapped_column(
         "metadata",

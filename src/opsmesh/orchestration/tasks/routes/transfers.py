@@ -17,8 +17,6 @@ from opsmesh.orchestration.tasks.schemas.management import (
     TaskTransferDecisionRequest,
     TaskTransferResponse,
 )
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
@@ -80,7 +78,6 @@ def accept_task_transfer(
     request: TaskTransferDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskTransferResponse:
     try:
         transfer = TaskTransferService(session).accept_transfer(
@@ -89,7 +86,6 @@ def accept_task_transfer(
             transfer_id=transfer_id,
             actor_user_id=context.user.user_id,
             decision=TaskTransferDecision(reason=request.reason, enqueue=request.enqueue),
-            queue=queue,
         )
     except TaskTransferError as exc:
         raise _transfer_http_error(exc) from exc

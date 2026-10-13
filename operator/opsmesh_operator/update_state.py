@@ -24,29 +24,29 @@ class UpdatePlan(Contract):
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
 
-class JournalEvent(Contract):
+class UpdateJournalEvent(Contract):
     id: UUID
     phase: str
     created_at: datetime
 
 
-class Journal(Contract):
+class UpdateJournal(Contract):
     job_id: UUID
     plan: UpdatePlan
     phase: str
     backup_id: str | None = None
-    history: list[JournalEvent] = []
+    history: list[UpdateJournalEvent] = []
 
     def save(self, root: Path) -> None:
         atomic_write(root / "updates" / f"{self.job_id}.json", self.model_dump_json(indent=2))
 
-    def advance(self, root: Path, phase: str, *, backup_id: str | None = None) -> Journal:
+    def advance(self, root: Path, phase: str, *, backup_id: str | None = None) -> UpdateJournal:
         journal = self.model_copy(
             update={
                 "phase": phase,
                 "history": [
                     *self.history,
-                    JournalEvent(id=uuid4(), phase=phase, created_at=datetime.now(UTC)),
+                    UpdateJournalEvent(id=uuid4(), phase=phase, created_at=datetime.now(UTC)),
                 ],
                 "backup_id": backup_id or self.backup_id,
             }

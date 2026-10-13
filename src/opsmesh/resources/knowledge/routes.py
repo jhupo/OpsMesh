@@ -27,9 +27,6 @@ from opsmesh.resources.knowledge.service import (
     KnowledgeSourceService,
     KnowledgeSourceVersionConflictError,
 )
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
@@ -162,7 +159,6 @@ def ingest_source(
     source_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> KnowledgeSourceIngestionResponse:
     service = KnowledgeSourceIngestionService(session)
     try:
@@ -177,7 +173,6 @@ def ingest_source(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     session.commit()
     session.refresh(ingestion)
-    QueueDispatchPublisher(session, queue).publish_pending(workspace_id=context.workspace.id)
     return KnowledgeSourceIngestionResponse.model_validate(ingestion)
 
 

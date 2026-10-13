@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.teams.management.models import AgentTeamMember
-from opsmesh.teams.provider_readiness.member import TeamProviderReadinessMemberBuilder
+from opsmesh.teams.provider_readiness.member import TeamMemberProviderReadinessBuilder
 from opsmesh.teams.provider_readiness.repository import TeamProviderReadinessRepository
 from opsmesh.teams.provider_readiness.summary import provider_readiness_summary
 
@@ -15,7 +15,7 @@ class TeamProviderReadinessService:
 
     def __init__(self, session: Session) -> None:
         self._repo = TeamProviderReadinessRepository(session)
-        self._member_builder = TeamProviderReadinessMemberBuilder(session)
+        self._member_builder = TeamMemberProviderReadinessBuilder(session)
 
     def get_readiness(
         self,

@@ -2,19 +2,12 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
-from uuid import uuid4
 
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
-from redis.exceptions import RedisError
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 from opsmesh.governance.audit.models import AuditIntegrityCheck
@@ -27,29 +20,31 @@ from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.operations.metrics.workers import WorkerPrometheusMetrics
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
+from opsmesh.runtime.operations.metrics.temporal import TemporalPrometheusMetrics
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from opsmesh.runtime.workers.models import WorkerLease, WorkerNode
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.middleware import _metrics_path
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
-from opsmesh.shared.telemetry.metrics import MetricsRegistry, metrics_registry
+from opsmesh.shared.telemetry.metrics import GaugeMetric, MetricsRegistry, metrics_registry
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.database import product_engine
 
 
 def test_metrics_registry_renders_counters_and_histograms() -> None:
     registry = MetricsRegistry()
 
     registry.increment("demo_total", labels={"path": "/x", "status": 200})
-    registry.set_gauge("demo_workers", 2, labels={"state": "online"})
     registry.observe("demo_duration_ms", 42, buckets=(10, 50), labels={"path": "/x"})
 
-    rendered = registry.render_prometheus()
+    rendered = registry.render_prometheus(
+        gauges=(GaugeMetric("demo_workers", 2, labels={"state": "online"}),)
+    )
 
     assert "# TYPE demo_total counter" in rendered
     assert "# TYPE demo_workers gauge" in rendered
@@ -84,60 +79,20 @@ def test_metrics_endpoint_exposes_operations_gauges_without_high_cardinality_lab
     redis = fakeredis.FakeRedis(decode_responses=True)
     client, session = _client(redis)
     workspace = _seed_metrics_fixture(session, redis)
-
-    health = client.get("/api/v1/health")
-    metrics = client.get("/api/v1/metrics")
-
-    assert health.status_code == 200
-    assert metrics.status_code == 200
-    body = metrics.text
-    assert 'opsmesh_http_requests_total{method="GET",path="/api/v1/health",status="200"} 1' in body
-    assert 'opsmesh_queue_jobs{queue_name="agent_runs",state="queued"} 1' in body
-    assert 'opsmesh_queue_jobs{queue_name="agent_runs",state="dead_letter"} 1' in body
-    assert 'opsmesh_queue_idempotency_keys{queue_name="agent_runs"} 1' in body
-    assert 'opsmesh_queue_oldest_queued_age_seconds{queue_name="agent_runs"}' in body
-    assert 'opsmesh_workers{state="online"} 1' in body
-    assert 'opsmesh_metrics_collection_success{source="redis"} 1' in body
+    assert client.get("/api/v1/health").status_code == 200
+    response = client.get("/api/v1/metrics")
+    assert response.status_code == 200
+    body = response.text
+    assert 'opsmesh_temporal_dispatches{state="pending"} 1' in body
     assert 'opsmesh_metrics_collection_success{source="postgres"} 1' in body
-    assert 'opsmesh_workers{state="offline"} 1' in body
-    assert 'opsmesh_workers{state="stale"} 1' in body
-    assert 'opsmesh_worker_leases{status="running"} 1' in body
-    assert 'opsmesh_worker_leases{status="failed"} 1' in body
-    assert 'opsmesh_runtime_capacity_slots{provider="cloud_docker",runtime_type="docker"} 2' in body
-    assert 'opsmesh_runtime_active_runs{provider="cloud_docker",runtime_type="docker"} 1' in body
-    assert (
-        'opsmesh_runtime_saturation_ratio{provider="cloud_docker",runtime_type="docker"} 0.5'
-        in body
-    )
+    assert 'opsmesh_sandbox_environments{sandbox_backend="docker"} 1' in body
+    assert 'opsmesh_runtime_active_runs{sandbox_backend="docker"} 1' in body
     assert 'opsmesh_runtime_space_quota_reserved{quota_key="storage_mb",unit="mb"} 80' in body
     assert 'opsmesh_runtime_space_quota_limit{quota_key="storage_mb",unit="mb"} 100' in body
     assert 'opsmesh_runtime_space_quota_usage_ratio{quota_key="storage_mb",unit="mb"} 0.8' in body
     assert 'opsmesh_team_runtimes{health="healthy"} 1' in body
-    assert 'opsmesh_team_runtimes{health="stale"} 1' in body
-    assert "opsmesh_team_runtime_iterations_total 7" in body
-    assert 'opsmesh_team_runtime_scheduled_loops{state="enabled"} 2' in body
-    assert 'opsmesh_metrics_collection_success{source="postgres"} 1' in body
-    assert 'opsmesh_metrics_collection_success{source="redis"} 1' in body
+    assert 'opsmesh_team_runtimes{health="paused"} 1' in body
     assert str(workspace.id) not in body
-
-
-def test_metrics_endpoint_marks_redis_collection_failures(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    metrics_registry.clear()
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    client, _ = _client(redis)
-
-    def fail_scan(*args: object, **kwargs: object) -> object:
-        raise RedisError("redis unavailable")
-
-    monkeypatch.setattr(redis, "scan_iter", fail_scan)
-
-    response = client.get("/api/v1/metrics")
-
-    assert response.status_code == 200
-    assert 'opsmesh_metrics_collection_success{source="redis"} 0' in response.text
-    assert 'opsmesh_metrics_collection_success{source="postgres"} 1' in response.text
 
 
 def test_metrics_endpoint_marks_postgres_collection_failures(
@@ -150,13 +105,40 @@ def test_metrics_endpoint_marks_postgres_collection_failures(
     def fail_worker_gauges(*args: object, **kwargs: object) -> object:
         raise SQLAlchemyError("postgres unavailable")
 
-    monkeypatch.setattr(WorkerPrometheusMetrics, "gauges", fail_worker_gauges)
+    monkeypatch.setattr(TemporalPrometheusMetrics, "gauges", fail_worker_gauges)
 
     response = client.get("/api/v1/metrics")
 
     assert response.status_code == 200
-    assert 'opsmesh_metrics_collection_success{source="redis"} 1' in response.text
     assert 'opsmesh_metrics_collection_success{source="postgres"} 0' in response.text
+
+
+def test_temporal_metrics_report_committed_publication_pressure_without_payloads() -> None:
+    client, session = _client(fakeredis.FakeRedis(decode_responses=True))
+    _seed_metrics_fixture(session, fakeredis.FakeRedis(decode_responses=True))
+    dispatch = session.query(TemporalOutboxEntry).one()
+    dispatch.created_at = datetime.now(UTC) - timedelta(minutes=20)
+    dispatch.last_error_code = "TemporalUnavailable"
+    dispatch.payload = {**dispatch.payload, "private_canary": "payload-must-stay-private"}
+    session.commit()
+
+    response = client.get("/api/v1/metrics")
+    assert response.status_code == 200
+    assert "opsmesh_temporal_dispatch_publication_errors 1" in response.text
+    oldest = next(
+        line
+        for line in response.text.splitlines()
+        if line.startswith("opsmesh_temporal_oldest_pending_dispatch_age_seconds ")
+    )
+    assert 1200 <= float(oldest.split()[-1]) < 1260
+    assert "payload-must-stay-private" not in response.text
+    assert str(dispatch.workflow_id) not in response.text
+
+    dispatch.published_at = datetime.now(UTC)
+    session.commit()
+    settled = client.get("/api/v1/metrics").text
+    assert "opsmesh_temporal_dispatch_publication_errors 0" in settled
+    assert "opsmesh_temporal_oldest_pending_dispatch_age_seconds 0" in settled
 
 
 def test_metrics_endpoint_exposes_audit_and_cost_governance_without_tenant_labels() -> None:
@@ -267,10 +249,7 @@ def test_unmatched_routes_share_a_bounded_metrics_label() -> None:
     assert client.get("/random-not-found-b").status_code == 404
     body = client.get("/api/v1/metrics").text
 
-    assert (
-        'opsmesh_http_requests_total{method="GET",path="/__unmatched__",status="404"} 2'
-        in body
-    )
+    assert 'opsmesh_http_requests_total{method="GET",path="/__unmatched__",status="404"} 2' in body
     assert "/random-not-found-a" not in body
     assert "/random-not-found-b" not in body
 
@@ -284,21 +263,14 @@ def test_unknown_http_methods_share_a_bounded_metrics_label() -> None:
     body = client.get("/api/v1/metrics").text
 
     assert (
-        'opsmesh_http_requests_total{method="OTHER",path="/api/v1/health",status="405"} 2'
-        in body
+        'opsmesh_http_requests_total{method="OTHER",path="/api/v1/health",status="405"} 2' in body
     )
     assert "RANDOM-METHOD-A" not in body
     assert "RANDOM-METHOD-B" not in body
 
 
 def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     seed_session = session_factory()
@@ -317,157 +289,57 @@ def _client(redis: fakeredis.FakeRedis) -> tuple[TestClient, Session]:
 
 
 def _seed_metrics_fixture(session: Session, redis: fakeredis.FakeRedis) -> Workspace:
-    now = datetime.now(UTC)
     user = User(email="metrics@example.com", display_name="Metrics")
     workspace = Workspace(owner=user, name="Metrics", slug="metrics", settings={})
     session.add_all([user, workspace])
     session.flush()
-    keys = RedisKeyBuilder("opsmesh")
-    queued_job = JobPayload(
-        workspace_id=workspace.id,
-        job_type=JobType.AGENT_RUN,
-        resource_id=uuid4(),
-        idempotency_key="metrics-queued",
-        created_at=now - timedelta(seconds=120),
-    )
-    dead_letter_job = JobPayload(
-        workspace_id=workspace.id,
-        job_type=JobType.AGENT_RUN,
-        resource_id=uuid4(),
-        idempotency_key="metrics-dead-letter",
-        created_at=now - timedelta(seconds=300),
-    )
-    redis.rpush(keys.queue("agent_runs"), queued_job.model_dump_json())
-    redis.rpush(keys.dead_letter_queue("agent_runs"), dead_letter_job.model_dump_json())
-    redis.set(keys.idempotency_key(str(workspace.id), queued_job.idempotency_key), "1")
-
-    runtime_space = RuntimeSpace(
-        workspace_id=workspace.id,
-        name="Metrics Space",
-        scope="workspace",
-    )
-    session.add(runtime_space)
+    space = RuntimeSpace(workspace_id=workspace.id, name="Metrics Space", scope="workspace")
+    session.add(space)
     session.flush()
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
-        runtime_space_id=runtime_space.id,
+        runtime_space_id=space.id,
         name="metrics-runtime",
-        runtime_provider="cloud_docker",
-        runtime_type="docker",
-        capabilities={"capacity_slots": 2},
-        status="running",
-        connection_status="online",
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "runtime:test"},
     )
     session.add(runtime)
     session.flush()
-    session.add_all(
-        [
-            AgentTeam(
-                workspace_id=workspace.id,
-                name="Healthy Team Runtime",
-                team_type="software",
-                default_task_policy={
-                    "team_runtime": {
-                        "status": "running",
-                        "workspace_runtime_id": str(runtime.id),
-                        "iteration_count": 4,
-                        "last_heartbeat_at": now.isoformat(),
-                        "scheduling_policy": {"loop_interval_seconds": 120},
-                    }
-                },
-            ),
-            AgentTeam(
-                workspace_id=workspace.id,
-                name="Stale Team Runtime",
-                team_type="software",
-                default_task_policy={
-                    "team_runtime": {
-                        "status": "running",
-                        "iteration_count": 3,
-                        "last_heartbeat_at": (now - timedelta(seconds=900)).isoformat(),
-                    }
-                },
-            ),
-        ]
+    stage_execution(
+        session,
+        ExecutionRequest(
+            workspace_id=workspace.id,
+            resource_id=runtime.id,
+            kind=ExecutionKind.SANDBOX_CLEANUP,
+        ),
     )
     session.add_all(
         [
-            WorkerNode(
-                worker_id="worker-online",
-                worker_type="cloud",
-                status="online",
-                queue_name="agent_runs",
-                capacity={"max_jobs": 2},
-                details={},
-                last_seen_at=now,
-            ),
-            WorkerNode(
-                worker_id="worker-offline",
-                worker_type="cloud",
-                status="offline",
-                queue_name="agent_runs",
-                capacity={"max_jobs": 1},
-                details={},
-                last_seen_at=now,
-            ),
-            WorkerNode(
-                worker_id="worker-stale",
-                worker_type="cloud",
-                status="online",
-                queue_name="agent_runs",
-                capacity={"max_jobs": 1},
-                details={},
-                last_seen_at=now - timedelta(seconds=600),
-            ),
-            WorkerLease(
+            AgentTeam(
                 workspace_id=workspace.id,
-                worker_id="worker-online",
-                queue_name="agent_runs",
-                job_id=uuid4(),
-                job_type=JobType.AGENT_RUN.value,
-                resource_id=uuid4(),
-                status="running",
-                attempt=0,
-                lease_metadata={},
-                started_at=now,
+                name="Healthy Team",
+                team_type="software",
+                default_task_policy={
+                    "team_runtime": {"status": "running", "workspace_runtime_id": str(runtime.id)}
+                },
             ),
-            WorkerLease(
+            AgentTeam(
                 workspace_id=workspace.id,
-                worker_id="worker-online",
-                queue_name="agent_runs",
-                job_id=uuid4(),
-                job_type=JobType.AGENT_RUN.value,
-                resource_id=uuid4(),
-                status="failed",
-                attempt=1,
-                lease_metadata={},
-                started_at=now - timedelta(seconds=30),
-                finished_at=now,
+                name="Paused Team",
+                team_type="software",
+                default_task_policy={"team_runtime": {"status": "paused"}},
             ),
             RuntimeSpaceQuota(
                 workspace_id=workspace.id,
-                runtime_space_id=runtime_space.id,
+                runtime_space_id=space.id,
                 quota_key="storage_mb",
                 limit_value=100,
                 reserved_value=80,
                 unit="mb",
                 status="active",
             ),
-            AgentRun(
-                workspace_id=workspace.id,
-                runtime_id=runtime.id,
-                status="running",
-            ),
+            AgentRun(workspace_id=workspace.id, runtime_id=runtime.id, status="running"),
         ]
     )
     session.commit()
     return workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

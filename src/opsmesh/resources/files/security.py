@@ -31,7 +31,7 @@ def content_disposition_attachment(filename: str) -> str:
     ascii_fallback = "".join(char if 32 <= ord(char) < 127 else "_" for char in sanitized)
     ascii_fallback = ascii_fallback.replace("\\", "_").replace('"', "_")
     encoded = quote(sanitized)
-    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def validate_storage_key(storage_key: str, *, expected_prefix: str | None = None) -> str:
@@ -48,12 +48,3 @@ def validate_storage_key(storage_key: str, *, expected_prefix: str | None = None
     if expected_prefix is not None and not normalized.startswith(expected_prefix.rstrip("/") + "/"):
         raise ValueError("Storage key is outside the expected workspace prefix")
     return normalized
-
-
-def validate_runtime_relative_path(relative_path: str) -> str:
-    if not relative_path or "\x00" in relative_path:
-        raise ValueError("Runtime path is invalid")
-    normalized = PurePosixPath(relative_path.replace("\\", "/"))
-    if normalized.is_absolute() or ".." in normalized.parts or normalized.as_posix() in {"", "."}:
-        raise ValueError("Runtime staging path escapes runtime root")
-    return normalized.as_posix()

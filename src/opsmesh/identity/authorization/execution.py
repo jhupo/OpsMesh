@@ -13,12 +13,12 @@ from opsmesh.identity.authorization.errors import AuthorizationError
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.identity.authorization.resource_queries import resource_query_scope
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
 
@@ -32,11 +32,11 @@ class ExecutionIdentityService:
         auth = AuthenticationService(self._session)
         if scope is not None:
             if scope.workspace_id != workspace_id or scope.user.user_id != user_id:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             user = auth.refresh_authenticated_user(scope.user)
         else:
             user = auth.authenticate_user(user_id)
-        AuthorizationService(self._session).require_workspace(
+        WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=user.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.WRITE,
@@ -50,13 +50,13 @@ class ExecutionIdentityService:
 
     def restore(self, workspace_id: UUID, identity: dict[str, object] | None) -> AuthenticatedUser:
         if not isinstance(identity, dict):
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         try:
             user_id = UUID(str(identity["user_id"]))
             token_id = UUID(str(identity["token_id"])) if identity.get("token_id") else None
             scopes = identity.get("token_scopes")
             if scopes is not None and not isinstance(scopes, dict):
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             captured = AuthenticatedUser(
                 user_id=user_id,
                 email="",
@@ -66,7 +66,7 @@ class ExecutionIdentityService:
             )
             auth = AuthenticationService(self._session)
             live = auth.refresh_authenticated_user(captured)
-            AuthorizationService(self._session).require_workspace(
+            WorkspaceAuthorizationService(self._session).require_workspace(
                 user_id=user_id,
                 workspace_id=workspace_id,
                 action=WorkspaceAction.WRITE,
@@ -75,10 +75,10 @@ class ExecutionIdentityService:
             # Tokens are immutable; rotation creates a new ID. Never replace the accepted
             # ceiling with a broader credential supplied by a retry or queue message.
             if live.token_scopes != captured.token_scopes:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             return replace(live, token_scopes=deepcopy(captured.token_scopes))
         except (ValueError, KeyError, TypeError, AuthorizationError) as exc:
-            raise ResourceAccessDenied() from exc
+            raise ResourceAccessDeniedError() from exc
 
     def for_task(self, workspace_id: UUID, task_id: UUID) -> AuthenticatedUser:
         identity = self._session.scalar(
@@ -101,7 +101,7 @@ class ExecutionIdentityService:
             )
         )
         if run is None or run.task_id is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         task = self._session.scalar(
             select(Task).where(
                 Task.workspace_id == workspace_id,
@@ -109,7 +109,7 @@ class ExecutionIdentityService:
             )
         )
         if task is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         user = self.restore(workspace_id, task.execution_identity)
         access = ResourceAuthorizationService(self._session, user)
         references = []
@@ -129,20 +129,20 @@ class ExecutionIdentityService:
             while pending:
                 item = pending.pop()
                 if not isinstance(item, dict) or not isinstance(item.get("target"), dict):
-                    raise ResourceAccessDenied()
+                    raise ResourceAccessDeniedError()
                 target = item["target"]
                 try:
                     identifier = UUID(str(target["profile_id"]))
                 except (KeyError, ValueError, TypeError) as exc:
-                    raise ResourceAccessDenied() from exc
+                    raise ResourceAccessDeniedError() from exc
                 references.append((ResourceKind.AGENT, identifier, ResourceAction.INVOKE))
                 children = item.get("agent_tools", [])
                 if isinstance(children, list):
                     children = children + list(item.get("handoffs") or [])
                 if not isinstance(children, list):
-                    raise ResourceAccessDenied()
+                    raise ResourceAccessDeniedError()
                 pending.extend(children)
                 if len(references) > 100:
-                    raise ResourceAccessDenied()
+                    raise ResourceAccessDeniedError()
         access.require_many(workspace_id, references)
         return user

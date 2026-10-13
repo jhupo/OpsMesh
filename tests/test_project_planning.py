@@ -6,7 +6,7 @@ from opsmesh.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from opsmesh.orchestration.definitions.templates.builder import ProjectPlanningService
+from opsmesh.orchestration.definitions.templates.builder import build_initial_task_plan
 from opsmesh.orchestration.planning.org_structure import build_org_structure
 from opsmesh.orchestration.tasks.models import Task
 
@@ -33,7 +33,7 @@ def test_explicit_plan_preserves_custom_role_and_does_not_add_presets() -> None:
             ],
         },
     )
-    plan = ProjectPlanningService().create_initial_plan(task)
+    plan = build_initial_task_plan(task)
     assert [item["package_id"] for item in plan["work_packages"]] == ["evaluate"]
     assert plan["work_packages"][0]["required_role"] == "custom-evaluator"
     assert plan["strategy"] == "explicit_workflow"
@@ -56,7 +56,7 @@ def test_role_names_do_not_assign_management_authority() -> None:
 
 def test_explicit_planning_requires_user_work() -> None:
     with pytest.raises(ProjectPlanValidationError, match="requires work_packages"):
-        ProjectPlanningService().create_initial_plan(
+        build_initial_task_plan(
             Task(workspace_id=uuid4(), title="Empty", input={"planning_mode": "explicit"})
         )
 

@@ -5,11 +5,11 @@ from pydantic import (
     field_serializer,
 )
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AdminSecurityEventResponse(ORMModel):
+class AdminSecurityEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID | None
     user_id: UUID | None

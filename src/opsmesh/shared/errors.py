@@ -47,17 +47,6 @@ class ConflictError(DomainError):
         super().__init__(message, code=code, status_code=409, details=details or {})
 
 
-class QuotaExceededError(DomainError):
-    def __init__(
-        self,
-        message: str = "Quota exceeded",
-        *,
-        code: str = "quota_exceeded",
-        details: dict[str, object] | None = None,
-    ) -> None:
-        super().__init__(message, code=code, status_code=409, details=details or {})
-
-
 class PolicyDeniedError(DomainError):
     def __init__(
         self,

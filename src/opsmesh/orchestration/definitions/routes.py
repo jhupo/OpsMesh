@@ -14,8 +14,8 @@ from opsmesh.orchestration.definitions.authoring import (
     authoring_contract,
 )
 from opsmesh.orchestration.definitions.commands import (
-    OrchestrationDefinitionCreate,
-    OrchestrationDefinitionUpdate,
+    OrchestrationDefinitionCreateCommand,
+    OrchestrationDefinitionUpdateCommand,
 )
 from opsmesh.orchestration.definitions.schemas import (
     OrchestrationDefinitionResponse,
@@ -75,7 +75,7 @@ def list_orchestrations(
     status_code=status.HTTP_201_CREATED,
 )
 def create_orchestration(
-    request: OrchestrationDefinitionCreate,
+    request: OrchestrationDefinitionCreateCommand,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -131,7 +131,7 @@ def get_orchestration(
 @router.patch("/{orchestration_definition_id}", response_model=OrchestrationDefinitionResponse)
 def update_orchestration(
     orchestration_definition_id: UUID,
-    request: OrchestrationDefinitionUpdate,
+    request: OrchestrationDefinitionUpdateCommand,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> OrchestrationDefinitionResponse:

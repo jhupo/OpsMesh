@@ -10,7 +10,7 @@ import httpx
 
 
 async def follow_turn(client: httpx.AsyncClient, endpoint: str) -> int:
-    cursor = "0-0"
+    cursor = "0"
     previous_status = ""
     while True:
         try:
@@ -39,7 +39,7 @@ async def follow_turn(client: httpx.AsyncClient, endpoint: str) -> int:
                             print(f"[{event_name}]", flush=True)
                             return 1
                         if event_name == "stream.reset":
-                            cursor = "0-0"
+                            cursor = "0"
                             print("[output.reset]", flush=True)
                         elif event_name == "turn.snapshot":
                             turn = payload["turn"]
@@ -49,12 +49,14 @@ async def follow_turn(client: httpx.AsyncClient, endpoint: str) -> int:
                             if turn["status"] == "waiting_approval":
                                 print(f"task_id={payload['task_id']} approval required", flush=True)
                                 return 2
-                        elif event_name == "task.event" and payload.get("event_type") == "run.live":
-                            live = payload["payload"]
-                            kind, detail = live["kind"], live["data"]
-                            if kind == "output.text":
-                                print(f"[output.preview] {detail.get('text', '')}", flush=True)
-                            elif kind.startswith("tool."):
+                        elif event_name == "task.event" and (
+                            payload.get("event_type", "").startswith("agent.stream.")
+                        ):
+                            live = payload["payload"]["runtime_stream_event"]
+                            kind, detail = live["event_type"], live["payload"]
+                            if kind == "output.text.delta":
+                                print(f"[output.delta] {live['delta']}", flush=True)
+                            elif kind.startswith("agent.tool."):
                                 print(f"[{kind}] {detail.get('tool_name', '')}", flush=True)
                             else:
                                 print(f"[{kind}]", flush=True)

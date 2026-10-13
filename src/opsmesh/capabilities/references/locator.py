@@ -14,14 +14,10 @@ RESOURCE_ACCESS_MODES = {
 
 RESOURCE_LOCATOR_KEYS = {
     "file_collection": frozenset({"file_ids"}),
-    "memory_collection": frozenset(
-        {"tags", "source_types", "scope_types", "scope_ids"}
-    ),
+    "memory_collection": frozenset({"tags", "source_types", "scope_types", "scope_ids"}),
     "mcp_resource": frozenset({"mcp_server_id", "credential_reference_id", "uri"}),
     "runtime": frozenset({"runtime_space_id", "workspace_runtime_id"}),
-    "external_service": frozenset(
-        {"mcp_server_id", "credential_reference_id", "resource_name"}
-    ),
+    "external_service": frozenset({"mcp_server_id", "credential_reference_id", "resource_name"}),
 }
 
 
@@ -72,9 +68,7 @@ def normalize_resource_locator(
             if key in locator and not memory_locator[key]:
                 raise ValueError(f"locator.{key} must be a non-empty array")
         if "scope_ids" in locator and len(scope_types) != 1:
-            raise ValueError(
-                "locator.scope_ids requires exactly one locator.scope_types value"
-            )
+            raise ValueError("locator.scope_ids requires exactly one locator.scope_types value")
         return memory_locator
     if resource_type == "mcp_resource":
         normalized: dict[str, object] = {

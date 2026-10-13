@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from opsmesh.runtime.instances.policies.runtime import policy_disables_network
-
 
 class RunRuntimeAuthorizationError(ValueError):
     def __init__(self, code: str, message: str) -> None:
@@ -60,7 +58,7 @@ def file_resource_ids(catalog: dict[str, object] | None) -> set[UUID]:
 
 
 def catalog_requires_stdio_runtime(catalog: dict[str, object] | None) -> bool:
-    """Managed MCP has its own isolated runtime; legacy stdio uses the run's runtime."""
+    """Direct stdio tools require the run's explicitly granted SDK environment."""
     raw_tools = catalog.get("tools") if catalog is not None else None
     if not isinstance(raw_tools, list):
         return False
@@ -84,16 +82,6 @@ def snapshot_file_scope_ids(snapshot: dict[str, object]) -> set[UUID]:
     if not isinstance(file_scope, dict):
         return set()
     return parse_uuid_set(file_scope.get("allowed_file_ids"), field="snapshot allowed_file_ids")
-
-
-def runtime_policy_disables_network(policy: dict[str, object]) -> bool:
-    if policy_disables_network(policy):
-        return True
-    mcp_policy = policy.get("mcp")
-    if not isinstance(mcp_policy, dict):
-        return False
-    network = mcp_policy.get("network_policy")
-    return policy_disables_network({"network": network})
 
 
 def _catalog_resources(catalog: dict[str, object] | None) -> tuple[dict[str, object], ...]:

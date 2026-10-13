@@ -4,21 +4,18 @@ from uuid import uuid4
 
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.agents.execution.contracts import (
+    AgentExecutionContext,
+    AgentModelUsageRecord,
+    AgentReference,
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeAgentRef,
-    AgentRuntimeContext,
-    AgentRuntimeModelUsage,
-    AgentRuntimeUsage,
+    AgentUsageTotals,
 )
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
 from opsmesh.agents.execution.usage import runtime_usage
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.governance.costs.pricing import CostPricingService
@@ -31,6 +28,7 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:
@@ -188,20 +186,20 @@ def test_failed_graph_preserves_completed_model_usage() -> None:
     session = _session()
     _, workspace, profile, run = _seed_run(session, slug="failed-graph-cost")
     service = CostAccountingService(session)
-    usage = AgentRuntimeModelUsage(
+    usage = AgentModelUsageRecord(
         request_id="completed-before-failure",
-        agent=AgentRuntimeAgentRef(profile.name, profile.id, profile.role),
+        agent=AgentReference(profile.name, profile.id, profile.role),
         provider="openai",
         model=profile.model,
         model_api="responses",
-        usage=AgentRuntimeUsage(request_count=1, input_tokens=50, output_tokens=5, total_tokens=55),
+        usage=AgentUsageTotals(request_count=1, input_tokens=50, output_tokens=5, total_tokens=55),
     )
-    error = AgentRuntimePolicyError(
+    error = AgentExecutionPolicyError(
         code="agent_graph_model_failed",
         message="Graph stopped",
         event_type="agent.model.failed",
         metadata={
-            "model_usages": TypeAdapter(list[AgentRuntimeModelUsage]).dump_python(
+            "model_usages": TypeAdapter(list[AgentModelUsageRecord]).dump_python(
                 [usage], mode="json"
             )
         },
@@ -245,14 +243,12 @@ def _assert_native_graph_costs(session: Session) -> None:
             source="test",
         )
     request = _request(router, run)
-    usage = AgentRuntimeUsage(
-        request_count=1, input_tokens=1000, output_tokens=0, total_tokens=1000
-    )
+    usage = AgentUsageTotals(request_count=1, input_tokens=1000, output_tokens=0, total_tokens=1000)
 
     def call(profile, response_id):
-        return AgentRuntimeModelUsage(
+        return AgentModelUsageRecord(
             request_id=response_id,
-            agent=AgentRuntimeAgentRef(profile.name, profile.id, profile.role),
+            agent=AgentReference(profile.name, profile.id, profile.role),
             provider="openai",
             model=profile.model,
             model_api="responses",
@@ -331,12 +327,12 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         request=AgentRunRequest(
             agent_profile=unpriced_profile,
             input_text="test",
-            context=AgentRuntimeContext(
+            context=AgentExecutionContext(
                 workspace_id=workspace.id,
                 task_id=None,
                 run_id=unpriced_run.id,
             ),
-            provider="anthropic",
+            provider="openai-compatible",
             model="other-model",
         ),
         result=_usage_result(),
@@ -350,12 +346,12 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         request=AgentRunRequest(
             agent_profile=missing_profile,
             input_text="test",
-            context=AgentRuntimeContext(
+            context=AgentExecutionContext(
                 workspace_id=workspace.id,
                 task_id=None,
                 run_id=missing_run.id,
             ),
-            provider="anthropic",
+            provider="openai",
             model="missing-usage",
         ),
         result=AgentRunResult(final_output="no usage"),
@@ -384,7 +380,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         request=AgentRunRequest(
             agent_profile=euro_profile,
             input_text="test",
-            context=AgentRuntimeContext(
+            context=AgentExecutionContext(
                 workspace_id=workspace.id,
                 task_id=None,
                 run_id=euro_run.id,
@@ -407,7 +403,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         request=AgentRunRequest(
             agent_profile=euro_missing_profile,
             input_text="test",
-            context=AgentRuntimeContext(
+            context=AgentExecutionContext(
                 workspace_id=workspace.id,
                 task_id=None,
                 run_id=euro_missing_run.id,
@@ -494,7 +490,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
     with pytest.raises(CostBudgetExceededError, match="requires an active model pricing rule"):
         service.assert_budget_available(
             workspace.id,
-            provider="anthropic",
+            provider="openai-compatible",
             model="unpriced-model",
             now=now,
         )
@@ -581,7 +577,7 @@ def _record_succeeded_attempt(
 def _usage_result() -> AgentRunResult:
     return AgentRunResult(
         final_output="done",
-        usage=AgentRuntimeUsage(
+        usage=AgentUsageTotals(
             request_count=1,
             input_tokens=1_000,
             output_tokens=500,
@@ -603,7 +599,7 @@ def _request(profile: AgentProfile, run: AgentRun) -> AgentRunRequest:
     return AgentRunRequest(
         agent_profile=profile,
         input_text="test",
-        context=AgentRuntimeContext(
+        context=AgentExecutionContext(
             workspace_id=run.workspace_id,
             task_id=None,
             run_id=run.id,
@@ -614,8 +610,7 @@ def _request(profile: AgentProfile, run: AgentRun) -> AgentRunRequest:
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -663,12 +658,3 @@ def _add_run(
     session.add(run)
     session.flush()
     return profile, run
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

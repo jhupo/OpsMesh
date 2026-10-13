@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeResumeState
-from opsmesh.orchestration.runs.models import AgentRunStateSnapshot
+from opsmesh.agents.execution.contracts import AgentResumeState
+from opsmesh.orchestration.runs.models import AgentResumeStateSnapshot
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 # Native provider state can retain up to 20 MiB of admitted media as base64, plus SDK context.
@@ -15,7 +15,7 @@ MAX_SERIALIZED_RUN_STATE_BYTES = 40 * 1024 * 1024
 RESUMABLE_STATE_STATUSES = frozenset({"paused", "approved", "rejected"})
 
 
-class AgentRunStateStore:
+class AgentResumeStateStore:
     def __init__(self, session: Session, secrets: SecretEncryptionService) -> None:
         self._session = session
         self._secrets = secrets
@@ -25,15 +25,13 @@ class AgentRunStateStore:
         *,
         workspace_id: UUID,
         run_id: UUID,
-        state: AgentRuntimeResumeState,
-    ) -> AgentRunStateSnapshot:
+        state: AgentResumeState,
+    ) -> AgentResumeStateSnapshot:
         _validate_resume_state(state)
-        encrypted = self._secrets.encrypt_payload(
-            {"serialized_state": state.serialized_state}
-        )
+        encrypted = self._secrets.encrypt_payload({"serialized_state": state.serialized_state})
         snapshot = self._snapshot(workspace_id=workspace_id, run_id=run_id)
         if snapshot is None:
-            snapshot = AgentRunStateSnapshot(
+            snapshot = AgentResumeStateSnapshot(
                 workspace_id=workspace_id,
                 agent_run_id=run_id,
                 provider=state.provider,
@@ -63,7 +61,7 @@ class AgentRunStateStore:
         *,
         workspace_id: UUID,
         run_id: UUID,
-    ) -> AgentRuntimeResumeState | None:
+    ) -> AgentResumeState | None:
         snapshot = self._snapshot(workspace_id=workspace_id, run_id=run_id)
         if snapshot is None or snapshot.status not in RESUMABLE_STATE_STATUSES:
             return None
@@ -74,7 +72,7 @@ class AgentRunStateStore:
         serialized_state = payload.get("serialized_state")
         if not isinstance(serialized_state, str) or not serialized_state:
             raise ValueError("Stored agent run state is invalid")
-        return AgentRuntimeResumeState(
+        return AgentResumeState(
             provider=snapshot.provider,
             serialized_state=serialized_state,
             schema_version=snapshot.schema_version,
@@ -93,16 +91,16 @@ class AgentRunStateStore:
         *,
         workspace_id: UUID,
         run_id: UUID,
-    ) -> AgentRunStateSnapshot | None:
+    ) -> AgentResumeStateSnapshot | None:
         return self._session.scalar(
-            select(AgentRunStateSnapshot).where(
-                AgentRunStateSnapshot.workspace_id == workspace_id,
-                AgentRunStateSnapshot.agent_run_id == run_id,
+            select(AgentResumeStateSnapshot).where(
+                AgentResumeStateSnapshot.workspace_id == workspace_id,
+                AgentResumeStateSnapshot.agent_run_id == run_id,
             )
         )
 
 
-def _validate_resume_state(state: AgentRuntimeResumeState) -> None:
+def _validate_resume_state(state: AgentResumeState) -> None:
     if not state.provider or len(state.provider) > 80:
         raise ValueError("Agent run state provider is invalid")
     size = len(state.serialized_state.encode("utf-8"))

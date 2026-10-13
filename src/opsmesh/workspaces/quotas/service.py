@@ -13,10 +13,10 @@ from opsmesh.workspaces.projects.models import WorkspaceProject, WorkspaceProjec
 from opsmesh.workspaces.quotas.contracts import WorkspaceQuotaUpsertPayload
 from opsmesh.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
 
-EXECUTION_SLOT_QUOTA_KEYS = ("active_runs", "docker_runtimes", "self_hosted_jobs")
+EXECUTION_SLOT_QUOTA_KEYS = ("active_runs",)
 
 
-class WorkspaceQuotaService:
+class WorkspaceQuotaManagementService:
     def __init__(self, session: Session) -> None:
         self._session = session
 

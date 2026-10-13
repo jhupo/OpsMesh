@@ -17,13 +17,13 @@ from opsmesh.capabilities.references.schema import reject_embedded_secrets
 from opsmesh.capabilities.skills.models import Skill
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_CAPABILITY,
     REVIEW_TYPE_SKILL,
 )
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars
@@ -31,6 +31,8 @@ from opsmesh.shared.errors import PolicyDeniedError
 from opsmesh.shared.pagination import PageParams
 
 T = TypeVar("T")
+
+
 class CapabilityService:
     def __init__(
         self,
@@ -58,7 +60,7 @@ class CapabilityService:
         workspace_id: UUID,
         actor_user_id: UUID | None = None,
     ) -> Capability:
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_capability(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_capability(
             workspace_id=workspace_id,
             key=data.key,
             name=data.name,
@@ -111,12 +113,10 @@ class CapabilityService:
             data.description if data.description is not None else capability.description
         )
         next_policy = (
-            data.default_policy
-            if data.default_policy is not None
-            else capability.default_policy
+            data.default_policy if data.default_policy is not None else capability.default_policy
         )
         reject_embedded_secrets(next_policy, path="default_policy")
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_capability(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_capability(
             workspace_id=workspace_id,
             key=capability.key,
             name=next_name,
@@ -189,7 +189,7 @@ class CapabilityService:
         workspace_id: UUID | None = None,
         actor_user_id: UUID | None = None,
     ) -> Skill:
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_skill(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_skill(
             workspace_id=workspace_id,
             visibility=data.visibility,
             manifest=data.manifest,
@@ -242,12 +242,10 @@ class CapabilityService:
             raise PolicyDeniedError("Skill is blocked by the platform")
         next_manifest = data.manifest if data.manifest is not None else skill.manifest
         next_capability_keys = (
-            data.capability_keys
-            if data.capability_keys is not None
-            else skill.capability_keys
+            data.capability_keys if data.capability_keys is not None else skill.capability_keys
         )
         reject_embedded_secrets(next_manifest, path="manifest")
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_skill(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_skill(
             workspace_id=workspace_id,
             visibility=data.visibility or skill.visibility,
             manifest=next_manifest,
@@ -258,9 +256,7 @@ class CapabilityService:
             if field_name in data.model_fields_set:
                 setattr(skill, field_name, getattr(data, field_name))
         skill.status = (
-            RESOURCE_STATUS_PENDING_APPROVAL
-            if review.required
-            else data.status or skill.status
+            RESOURCE_STATUS_PENDING_APPROVAL if review.required else data.status or skill.status
         )
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,

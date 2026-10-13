@@ -7,10 +7,10 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 
 
-class AdminWorkspaceMemberResponse(ORMModel):
+class AdminWorkspaceMemberResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     user_id: UUID

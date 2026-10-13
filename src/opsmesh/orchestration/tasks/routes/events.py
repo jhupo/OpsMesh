@@ -1,33 +1,32 @@
 import asyncio
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from functools import partial
+from time import monotonic
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from redis import Redis
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.errors import AuthorizationError
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError
+from opsmesh.orchestration.tasks.async_events import (
+    AsyncPostgresTaskEventReader,
+    TaskEventStreamUnavailableError,
 )
-from opsmesh.orchestration.tasks.events import TaskEventBus
 from opsmesh.orchestration.tasks.feedback import TaskFeedbackService
 from opsmesh.orchestration.tasks.observation.live_status import TaskLiveStatusService
 from opsmesh.orchestration.tasks.queries import TaskQueryService
 from opsmesh.orchestration.tasks.routes.streaming import (
     _message_sequence,
-    _read_task_bus_events,
     _snapshot_messages,
     _task_event_stream_payload,
     _task_stream_complete,
-    get_task_event_bus,
+    get_task_event_reader,
+    read_task_stream_snapshot,
 )
 from opsmesh.orchestration.tasks.schemas.core import (
     TaskFeedbackRequest,
@@ -40,11 +39,6 @@ from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.http.sse import sse_event
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.telemetry.trace_context import current_trace_metadata
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -119,44 +113,48 @@ def get_task_live_status(
 )
 async def stream_task_events(
     task_id: UUID,
+    request: Request,
     after_sequence: int = Query(default=0, ge=0),
-    event_cursor: str = Query(default="$", min_length=1, max_length=64),
+    event_cursor: str = Query(default="0", min_length=1, max_length=36),
+    last_event_id: str | None = Header(default=None, min_length=1, max_length=36),
     message_limit: int = Query(default=50, ge=1, le=200),
-    poll_seconds: float = Query(default=1.0, ge=0.25, le=10.0),
     heartbeat_seconds: float = Query(default=15.0, ge=1.0, le=60.0),
     once: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    task_event_bus: TaskEventBus = Depends(get_task_event_bus),
+    task_event_reader: AsyncPostgresTaskEventReader = Depends(get_task_event_reader),
 ) -> StreamingResponse:
-    service = TaskLiveStatusService(session)
-    initial = service.get_status(
-        workspace_id=context.workspace.id,
-        task_id=task_id,
-        after_sequence=after_sequence,
+    workspace_id = context.workspace.id
+    snapshot_reader = partial(
+        read_task_stream_snapshot,
+        sessionmaker(session.get_bind(), expire_on_commit=False),
+        context.user,
+        workspace_id,
+        task_id,
         message_limit=message_limit,
     )
+    session.rollback()
+    initial = await asyncio.to_thread(snapshot_reader, after_sequence=after_sequence)
     if initial is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     stream_trace_metadata = current_trace_metadata()
 
     async def event_stream() -> AsyncIterator[str]:
         cursor = after_sequence
-        bus_cursor = event_cursor
-        last_emit_at = asyncio.get_running_loop().time()
+        durable_cursor = last_event_id or event_cursor
+        last_emit_at = monotonic()
         snapshot = initial
-        while True:
+        cursor_checked = False
+        while not await request.is_disconnected():
             try:
-                ResourceAuthorizationService(session, context.user).require(
-                    context.workspace.id,
-                    ResourceKind.TASK,
-                    task_id,
-                    ResourceAction.READ,
-                )
-            except ResourceAccessDenied:
-                session.rollback()
+                next_snapshot = await asyncio.to_thread(snapshot_reader, after_sequence=cursor)
+            except (ResourceAccessDeniedError, AuthorizationError):
                 yield sse_event("stream.revoked", {})
                 return
+            if next_snapshot is None:
+                yield sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
+                return
+            snapshot = next_snapshot
             messages = _snapshot_messages(snapshot)
             if messages:
                 cursor = max(_message_sequence(message, cursor) for message in messages)
@@ -166,73 +164,72 @@ async def stream_task_events(
                     **snapshot,
                     "stream": {
                         "cursor": cursor,
-                        "event_cursor": bus_cursor,
+                        "event_cursor": durable_cursor,
                         "message_count": len(messages),
                         "complete": _task_stream_complete(snapshot),
                     },
                 },
             )
-            last_emit_at = asyncio.get_running_loop().time()
-
-            complete = _task_stream_complete(snapshot)
-            stop_after_bus_drain = once or complete
-
-            bus_events = await _read_task_bus_events(
-                task_event_bus,
-                workspace_id=context.workspace.id,
-                task_id=task_id,
-                after_id=bus_cursor,
-                wait_seconds=0 if stop_after_bus_drain else poll_seconds,
-            )
-            for task_event in bus_events:
-                try:
-                    ResourceAuthorizationService(session, context.user).require(
-                        context.workspace.id,
-                        ResourceKind.TASK,
+            terminal = once or _task_stream_complete(snapshot)
+            try:
+                if not cursor_checked:
+                    cursor_checked = True
+                    if durable_cursor != "0" and not await task_event_reader.contains_cursor(
+                        workspace_id,
                         task_id,
-                        ResourceAction.READ,
+                        durable_cursor,
+                    ):
+                        durable_cursor = "0"
+                        yield sse_event("stream.reset", {"reason": "cursor_not_retained"})
+                first_read = True
+                while True:
+                    events = await task_event_reader.read(
+                        workspace_id=workspace_id,
+                        task_id=task_id,
+                        after_id=durable_cursor,
+                        count=100,
+                        wait_seconds=heartbeat_seconds if first_read and not terminal else 0,
                     )
-                except ResourceAccessDenied:
-                    session.rollback()
-                    yield sse_event("stream.revoked", {})
-                    return
-                bus_cursor = task_event.id
-                yield sse_event("task.event", _task_event_stream_payload(task_event, cursor))
-                last_emit_at = asyncio.get_running_loop().time()
-
-            if stop_after_bus_drain:
-                break
-
-            session.expire_all()
-            next_snapshot = service.get_status(
-                workspace_id=context.workspace.id,
-                task_id=task_id,
-                after_sequence=cursor,
-                message_limit=message_limit,
-            )
-            if next_snapshot is None:
-                yield sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
-                break
-            snapshot = next_snapshot
-            if not _snapshot_messages(snapshot):
-                now = asyncio.get_running_loop().time()
-                if now - last_emit_at >= heartbeat_seconds:
-                    yield sse_event(
-                        "heartbeat",
-                        {
-                            "workspace_id": str(context.workspace.id),
-                            "task_id": str(task_id),
-                            "cursor": cursor,
-                            "event_cursor": bus_cursor,
-                            **stream_trace_metadata,
-                        },
-                    )
-                    last_emit_at = now
+                    first_read = False
+                    if events:
+                        try:
+                            await asyncio.to_thread(snapshot_reader, after_sequence=cursor)
+                        except (ResourceAccessDeniedError, AuthorizationError):
+                            yield sse_event("stream.revoked", {})
+                            return
+                    for item in events:
+                        durable_cursor = item.id
+                        yield sse_event(
+                            "task.event",
+                            _task_event_stream_payload(item, cursor),
+                            event_id=durable_cursor,
+                        )
+                        last_emit_at = monotonic()
+                    if len(events) < 100:
+                        break
+            except TaskEventStreamUnavailableError:
+                yield sse_event("stream.unavailable", {"reason": "event_transport_unavailable"})
+                return
+            if terminal:
+                yield sse_event("stream.completed", {"task_id": str(task_id)})
+                return
+            if monotonic() - last_emit_at >= heartbeat_seconds:
+                yield sse_event(
+                    "heartbeat",
+                    {
+                        "workspace_id": str(workspace_id),
+                        "task_id": str(task_id),
+                        "cursor": cursor,
+                        "event_cursor": durable_cursor,
+                        **stream_trace_metadata,
+                    },
+                )
+                last_emit_at = monotonic()
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

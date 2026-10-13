@@ -8,10 +8,10 @@ from botocore.exceptions import ClientError
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
-from opsmesh.resources.storage import storage as storage_module
-from opsmesh.resources.storage.storage import (
-    LocalStorage,
-    S3Storage,
+from opsmesh.resources.storage import backends as storage_module
+from opsmesh.resources.storage.backends import (
+    LocalObjectStorage,
+    S3ObjectStorage,
     StorageObjectTooLargeError,
     create_storage,
 )
@@ -19,7 +19,7 @@ from opsmesh.shared.config import Settings
 
 
 def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None:
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
 
     storage.put("workspaces/demo/file.txt", b"hello")
 
@@ -36,9 +36,37 @@ def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None
     assert storage.exists("workspaces/demo/file.txt") is False
 
 
+def test_interrupted_stream_upload_preserves_previous_object(tmp_path: Path) -> None:
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
+    key = "workspaces/demo/snapshot.tar"
+    storage.write(key, b"previous snapshot")
+
+    class InterruptedStream(BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            if self.tell():
+                raise OSError("upload interrupted")
+            return super().read(4)
+
+    with pytest.raises(OSError, match="upload interrupted"):
+        storage.write_stream(key, InterruptedStream(b"replacement snapshot"))
+    assert storage.read(key) == b"previous snapshot"
+    assert list((tmp_path / "storage/workspaces/demo").iterdir()) == [
+        tmp_path / "storage/workspaces/demo/snapshot.tar"
+    ]
+
+
+def test_stream_upload_and_download_round_trip(tmp_path: Path) -> None:
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
+    payload = b"native snapshot" * 100_000
+    key = "workspaces/demo/snapshot.tar"
+    storage.write_stream(key, BytesIO(payload))
+    with storage.open(key) as stream:
+        assert stream.read() == payload
+
+
 def test_s3_storage_supports_object_storage_semantics() -> None:
     client = FakeS3Client()
-    storage = S3Storage(bucket="opsmesh", prefix="tenant-a", client=client)
+    storage = S3ObjectStorage(bucket="opsmesh", prefix="tenant-a", client=client)
 
     storage.put("workspaces/demo/file.txt", b"hello")
 
@@ -57,13 +85,13 @@ def test_s3_storage_supports_object_storage_semantics() -> None:
 
 
 def test_s3_storage_rejects_unsafe_keys_and_prefixes() -> None:
-    storage = S3Storage(bucket="opsmesh", client=FakeS3Client())
+    storage = S3ObjectStorage(bucket="opsmesh", client=FakeS3Client())
 
     with pytest.raises(ValueError, match="Storage key"):
         storage.put("../escape.txt", b"bad")
 
     with pytest.raises(ValueError, match="Storage key"):
-        S3Storage(bucket="opsmesh", prefix="../tenant", client=FakeS3Client())
+        S3ObjectStorage(bucket="opsmesh", prefix="../tenant", client=FakeS3Client())
 
 
 def test_create_storage_selects_local_backend(tmp_path: Path) -> None:
@@ -71,7 +99,7 @@ def test_create_storage_selects_local_backend(tmp_path: Path) -> None:
 
     storage = create_storage(settings)
 
-    assert isinstance(storage, LocalStorage)
+    assert isinstance(storage, LocalObjectStorage)
 
 
 def test_create_storage_selects_s3_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,7 +109,7 @@ def test_create_storage_selects_s3_backend(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self, **kwargs: object) -> None:
             created.update(kwargs)
 
-    monkeypatch.setattr(storage_module, "S3Storage", StubS3Storage)
+    monkeypatch.setattr(storage_module, "S3ObjectStorage", StubS3Storage)
     settings = Settings(
         environment="test",
         storage_backend="s3",
@@ -123,7 +151,7 @@ def test_s3_sdk_stream_is_closed_after_read(limited: bool) -> None:
         parameters["Range"] = "bytes=0-5"
     with closing(client), Stubber(client) as stubber:
         stubber.add_response("get_object", {"Body": StreamingBody(stream, 5)}, parameters)
-        storage = S3Storage(bucket="opsmesh", client=client)
+        storage = S3ObjectStorage(bucket="opsmesh", client=client)
         content = storage.read_limited("file.txt", 5) if limited else storage.get("file.txt")
         assert content == b"hello"
         assert stream.closed
@@ -142,7 +170,7 @@ def test_s3_sdk_access_denied_is_not_treated_as_missing() -> None:
             expected_params={"Bucket": "opsmesh", "Key": "file.txt"},
         )
         with pytest.raises(ClientError, match="AccessDenied"):
-            S3Storage(bucket="opsmesh", client=client).exists("file.txt")
+            S3ObjectStorage(bucket="opsmesh", client=client).exists("file.txt")
         stubber.assert_no_pending_responses()
 
 
@@ -163,7 +191,7 @@ class FakeS3Client:
         try:
             content = self.objects[(Bucket, Key)]
         except KeyError as exc:
-            raise FakeS3NotFound() from exc
+            raise FakeS3NotFoundError() from exc
         if Range is not None:
             end = int(Range.removeprefix("bytes=0-"))
             content = content[: end + 1]
@@ -174,9 +202,9 @@ class FakeS3Client:
 
     def head_object(self, *, Bucket: str, Key: str) -> None:
         if (Bucket, Key) not in self.objects:
-            raise FakeS3NotFound()
+            raise FakeS3NotFoundError()
 
 
-class FakeS3NotFound(ClientError):
+class FakeS3NotFoundError(ClientError):
     def __init__(self) -> None:
         super().__init__({"Error": {"Code": "404"}}, "GetObject")

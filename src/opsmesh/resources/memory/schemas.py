@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 SemanticScope = Literal["workspace", "team", "agent"]
@@ -32,7 +32,7 @@ class SemanticMemoryArchiveRequest(BaseModel):
     change_reason: str | None = Field(default=None, max_length=1_000)
 
 
-class SemanticMemoryResponse(TimestampedModel):
+class SemanticMemoryResponse(TimestampedContract):
     workspace_id: UUID
     memory_layer: str
     scope_type: str
@@ -54,7 +54,7 @@ class SemanticMemoryResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class SemanticMemoryVersionResponse(ORMModel):
+class SemanticMemoryVersionResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     memory_entry_id: UUID
@@ -114,7 +114,7 @@ class WorkspaceMemoryConfigurationUpdateRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
-class WorkspaceMemoryConfigurationResponse(TimestampedModel):
+class WorkspaceMemoryConfigurationResponse(TimestampedContract):
     workspace_id: UUID
     embedding_enabled: bool
     embedding_credential_id: UUID | None
@@ -130,7 +130,7 @@ class MemoryEmbeddingRetryResponse(BaseModel):
     reset_entries: int
 
 
-class MemoryRetrievalEventResponse(ORMModel):
+class MemoryRetrievalEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     agent_run_id: UUID | None
@@ -157,7 +157,7 @@ class MemoryRetrievalEventResponse(ORMModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
-class MemoryLifecycleEventResponse(ORMModel):
+class MemoryLifecycleEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     memory_entry_id: UUID
@@ -173,7 +173,7 @@ class MemoryLifecycleEventResponse(ORMModel):
         return redact_sensitive_payload(value)
 
 
-class MemoryEmbeddingEventResponse(ORMModel):
+class MemoryEmbeddingEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     memory_entry_id: UUID

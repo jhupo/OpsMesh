@@ -14,7 +14,7 @@ from opsmesh_operator.commands import run_command
 from opsmesh_operator.deployments import ComposeDeployment, deployment_for
 from opsmesh_operator.files import atomic_write, require_install_root, sync_directory
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.releases import ReleaseSource
+from opsmesh_operator.releases import ReleaseDownloader
 
 
 def doctor(root: Path) -> dict[str, object]:
@@ -61,7 +61,7 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
             if shutil.which(name) is None:
                 raise ValueError(f"Install prerequisite {name} before continuing")
         _service_accounts(installation)
-        manifest = ReleaseSource(installation.repository).fetch_manifest(
+        manifest = ReleaseDownloader(installation.repository).fetch_manifest(
             tag, root / "downloads" / tag
         )
         deployment = deployment_for(installation)
@@ -73,7 +73,14 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                 "OPSMESH_ENVIRONMENT": "production",
                 "OPSMESH_ENABLE_API_DOCS": "false",
                 "OPSMESH_API_RATE_LIMIT_ENABLED": "true",
-                "OPSMESH_READINESS_WORKER_CHECK_ENABLED": "true",
+                "OPSMESH_TEMPORAL_ADDRESS": os.environ.get(
+                    "OPSMESH_TEMPORAL_ADDRESS", "127.0.0.1:7233"
+                ),
+                "OPSMESH_TEMPORAL_NAMESPACE": os.environ.get(
+                    "OPSMESH_TEMPORAL_NAMESPACE", "default"
+                ),
+                "OPSMESH_TEMPORAL_POSTGRES_PASSWORD": secrets.token_hex(32),
+                "OPSMESH_TEMPORAL_WORKER_IDENTITY": f"opsmesh:installation:{secrets.token_hex(16)}",
                 "OPSMESH_CORS_ORIGINS": json.dumps([origin]),
                 "OPSMESH_POSTGRES_PASSWORD": password,
                 "OPSMESH_DATABASE_URL": f"postgresql+psycopg://opsmesh:{password}@127.0.0.1:5432/opsmesh",
@@ -89,7 +96,6 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                 "PLATFORM_ADMIN_TOKEN",
                 "TOKEN_HASH_PEPPER",
                 "CREDENTIAL_ENCRYPTION_SECRET",
-                "WORKER_HEARTBEAT_TOKEN",
             ):
                 values[f"OPSMESH_{key}"] = secrets.token_hex(32)
             atomic_write(

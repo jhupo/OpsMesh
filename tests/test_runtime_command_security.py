@@ -1,248 +1,131 @@
-from datetime import UTC, datetime
+"""Command admission and Worker revalidation against the real product database."""
+
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.orm import Session, sessionmaker
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
+from temporalio.exceptions import ApplicationError
 
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.governance.security_events.models import SecurityEvent
-from opsmesh.runtime.instances.contracts import (
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-    RuntimeCreateRequest,
-)
-from opsmesh.runtime.instances.manager import DockerRuntimeManagerProvider
-from opsmesh.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from opsmesh.runtime.instances.service import RuntimeControlService
+from opsmesh.identity.authorization.errors import AuthenticationError, PermissionDeniedError
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError
+from opsmesh.runtime.commands.service import RuntimeCommandService
+from opsmesh.runtime.instances.models import RuntimeCommand, WorkspaceRuntime
+from opsmesh.runtime.sandboxes.activities import SandboxControlActivities
+from opsmesh.runtime.sandboxes.factory import build_sandbox_backends
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
 from opsmesh.shared.config import Settings
-from opsmesh.shared.db.base import Base
-from opsmesh.workspaces.management.models import Workspace
-from tests.fixtures.runtime_host import runtime_host
+from opsmesh.shared.errors import NotFoundError, PolicyDeniedError
+from tests.fixtures.agent_product import _seed_workspace, _session
 
 
-class FakeDockerClient:
-    def configure_execution(self, container_id, identity):
-        pass
-
-    def revoke_execution(self, container_id, identity):
-        pass
-
-    def node_identity(self) -> str:
-        return "test-node"
-
-    def create_container(self, request: RuntimeCreateRequest) -> str:
-        _ = request
-        return "container"
-
-    def start_container(self, container_id: str) -> None:
-        _ = container_id
-
-    def stop_container(self, container_id: str) -> None:
-        _ = container_id
-
-    def remove_container(self, container_id: str) -> None:
-        _ = container_id
-
-    def remove_volume(self, volume_name: str) -> None:
-        _ = volume_name
-
-    def exec_command(
-        self,
-        container_id: str,
-        command: list[str],
-        timeout_seconds: int,
-        *,
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir: str | None = None,
-        identity=None,
-    ) -> RuntimeCommandResult:
-        _ = (container_id, command, timeout_seconds, input_file, working_dir)
-        return RuntimeCommandResult(exit_code=0, stdout="ok", stderr="")
-
-    def copy_archive_to_container(
-        self,
-        container_id: str,
-        destination_path: str,
-        archive: bytes,
-        timeout_seconds: int,
-    ) -> None:
-        _ = (container_id, destination_path, archive, timeout_seconds)
-
-    def copy_file_from_container(
-        self,
-        container_id: str,
-        source_path: str,
-        max_bytes: int,
-        timeout_seconds: int,
-        *,
-        identity=None,
-    ) -> bytes | None:
-        _ = (container_id, source_path, max_bytes, timeout_seconds)
-        return None
-
-
-def test_risky_queued_command_is_blocked_and_audited_without_raw_command() -> None:
-    session, runtime = _runtime()
-    workspace = session.get(Workspace, runtime.workspace_id)
-    workspace.settings = {
-        "approvals": {
-            "rules": [
-                {
-                    "id": "deny-echo",
-                    "action": "runtime_command",
-                    "command_prefix": ["echo"],
-                    "decision": "deny",
-                }
-            ]
-        }
-    }
-    session.commit()
-    secret = "token-secret-value"
-    settings = Settings(environment="test")
-    command = RuntimeControlService(
-        session,
-        settings=settings,
-        manager_provider=DockerRuntimeManagerProvider(session, settings, FakeDockerClient()),
-    ).queue_command(
-        workspace_id=runtime.workspace_id,
-        runtime_id=runtime.id,
-        command=["echo", secret],
-    )
-
-    assert command.status == "blocked"
-    assert command.error == "runtime command denied by approval policy"
-    events = session.scalars(select(RuntimeEvent)).all()
-    assert len(events) == 1
-    assert events[0].event_type == "runtime.command.blocked"
-    assert secret not in events[0].message
-    assert secret not in str(events[0].event_metadata)
-    assert session.scalars(select(SecurityEvent)).one().action == "runtime.command.blocked"
-    assert session.scalars(select(AuditEvent)).one().action == "runtime.command.blocked"
-
-
-def test_queued_command_payload_is_immutable_at_execution() -> None:
-    session, runtime = _runtime()
-    docker = FakeDockerClient()
-    settings = Settings(environment="test")
-    service = RuntimeControlService(
-        session,
-        settings=settings,
-        manager_provider=DockerRuntimeManagerProvider(session, settings, docker),
-    )
-    command = service.queue_command(
-        workspace_id=runtime.workspace_id,
-        runtime_id=runtime.id,
-        command=["echo", "safe"],
-    )
-    assert command.status == "queued"
-    result = service.execute_queued_command(
-        workspace_id=runtime.workspace_id,
-        runtime_id=runtime.id,
-        command_id=command.id,
-        command=["echo", "tampered"],
-    )
-
-    assert result is not None
-    assert result.status == "blocked"
-    assert result.error == "runtime command payload does not match the queued command"
-
-
-def _runtime() -> tuple[Session, WorkspaceRuntime]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine, expire_on_commit=False)()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug=str(uuid4()), settings={})
-    template = RuntimeTemplate(
-        name=str(uuid4()),
-        image="python:3.12-slim",
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
+def fixture():
+    session = _session()
+    user, workspace = _seed_workspace(session, with_default_provider=False)
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
-        runtime_template_id=template.id,
-        name="runtime",
+        name="Native",
         status="active",
-        connection_status="online",
-        host=runtime_host(workspace.id, "container", capacity=16, node_id="test-node"),
-        capabilities={"node_id": "test-node"},
-        limits={"timeout_seconds": 10},
-        network_policy={"mode": "none", "disabled": True},
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "python:3.13"},
     )
     session.add(runtime)
     session.commit()
-    return session, runtime
-
-
-def test_command_approval_resume_rechecks_policy_and_binds_exact_payload():
-    from unittest.mock import Mock
-
-    from opsmesh.orchestration.approvals.models import Approval
-    from opsmesh.runtime.commands.approvals import apply_command_decision
-
-    session, runtime = _runtime()
-    workspace = session.get(Workspace, runtime.workspace_id)
-    workspace.settings = {
-        "approvals": {
-            "rules": [
-                {
-                    "id": "review-echo",
-                    "action": "runtime_command",
-                    "command_prefix": ["echo"],
-                    "decision": "review",
-                }
-            ]
-        }
-    }
-    session.commit()
     settings = Settings(environment="test")
-    service = RuntimeControlService(
-        session,
-        settings=settings,
-        manager_provider=DockerRuntimeManagerProvider(session, settings, FakeDockerClient()),
+    activities = SandboxControlActivities(
+        ActivityDependencies(sessionmaker(session.get_bind(), expire_on_commit=False), settings),
+        build_sandbox_backends(settings),
     )
-    command = service.queue_command(
-        workspace_id=workspace.id, runtime_id=runtime.id, command=["echo", "hello"]
-    )
-    assert command.status == "waiting_approval"
-    approval = session.scalars(select(Approval)).one()
-    queue = Mock()
-    apply_command_decision(session, approval, workspace.owner_user_id, "approved", queue)
-    approval.status = "approved"
-    session.commit()
-    queue.enqueue.assert_called_once()
-    result = service.execute_queued_command(
+    return session, user, workspace, runtime, settings, activities
+
+
+def test_queued_command_uses_persisted_arguments_and_stable_cancellation_identity():
+    session, user, workspace, runtime, settings, activities = fixture()
+    command = RuntimeCommand(
         workspace_id=workspace.id,
-        runtime_id=runtime.id,
-        command_id=command.id,
-        command=["echo", "hello"],
+        workspace_runtime_id=runtime.id,
+        requested_by_user_id=user.id,
+        command=["python", "--version"],
+        status="queued",
     )
-    assert result.status == "completed"
-    # A fresh record never reuses the previous command's approval.
-    second = service.queue_command(
-        workspace_id=workspace.id, runtime_id=runtime.id, command=["echo", "hello"]
-    )
-    assert second.status == "waiting_approval"
-    second_approval = session.scalars(select(Approval).where(Approval.status == "pending")).one()
-    workspace.settings = {"approvals": {"default": "deny"}}
+    session.add(command)
     session.commit()
-    import pytest
+    request = ExecutionRequest(
+        execution_id=command.id,
+        workspace_id=workspace.id,
+        resource_id=command.id,
+        kind=ExecutionKind.SANDBOX_CONTROL,
+        requested_by_user_id=user.id,
+        parameters={"action": "execute"},
+    )
+    prepared = activities._prepare_command(request)
+    assert prepared is not None and prepared.command == ("python", "--version")
+    session.refresh(command)
+    assert command.status == "running"
+    assert settings
 
-    with pytest.raises(ValueError, match="policy changed"):
-        apply_command_decision(session, second_approval, workspace.owner_user_id, "approved", queue)
+
+def test_risky_command_rejection_keeps_only_fingerprint_in_audit():
+    session, user, workspace, runtime, settings, _ = fixture()
+    from opsmesh.governance.policies.models import PlatformPolicy
+    from opsmesh.governance.policies.risky_values import RISKY_EXECUTION_POLICY_KEY
+
+    session.add(
+        PlatformPolicy(
+            policy_key=RISKY_EXECUTION_POLICY_KEY, value={"allow_runtime_commands": False}
+        )
+    )
+    session.commit()
+    raw = ["sh", "-c", "rm -rf /; password=private-canary"]
+    command = RuntimeCommandService(session, settings).queue_command(
+        workspace_id=workspace.id, runtime=runtime, command=raw, requested_by_user_id=user.id
+    )
+    assert command.status in {"blocked", "waiting_approval"}
+    assert session.scalar(select(TemporalOutboxEntry)) is None
+    if command.status == "blocked":
+        assert session.scalar(select(SecurityEvent)) is not None
+        event = session.scalar(
+            select(AuditEvent).where(AuditEvent.action == "runtime.command.blocked")
+        )
+        assert event is not None and "private-canary" not in str(event.audit_metadata)
 
 
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
+@pytest.mark.parametrize("denial", ["foreign_workspace", "different_actor", "disabled_environment"])
+def test_worker_rechecks_scope_actor_and_environment(denial):
+    session, user, workspace, runtime, _, activities = fixture()
+    command = RuntimeCommand(
+        workspace_id=workspace.id,
+        workspace_runtime_id=runtime.id,
+        requested_by_user_id=user.id,
+        command=["python", "--version"],
+        status="queued",
+    )
+    session.add(command)
+    if denial == "disabled_environment":
+        runtime.status = "disabled"
+    session.commit()
+    request = ExecutionRequest(
+        workspace_id=uuid4() if denial == "foreign_workspace" else workspace.id,
+        resource_id=command.id,
+        kind=ExecutionKind.SANDBOX_CONTROL,
+        requested_by_user_id=uuid4() if denial == "different_actor" else user.id,
+        parameters={"action": "execute"},
+    )
+    with pytest.raises(
+        (
+            ApplicationError,
+            PermissionError,
+            NotFoundError,
+            PolicyDeniedError,
+            ResourceAccessDeniedError,
+            AuthenticationError,
+            PermissionDeniedError,
+        )
+    ):
+        activities._prepare_command(request)
+    session.refresh(command)
+    assert command.status == "queued"

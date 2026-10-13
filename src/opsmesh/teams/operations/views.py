@@ -12,6 +12,7 @@ from opsmesh.shared.utils import (
 )
 from opsmesh.teams.organization.policy_payloads import visible_task_policy
 from opsmesh.teams.sessions.service import TEAM_RUNTIME_RUNNING
+from opsmesh.teams.sessions.state_builder import TeamOperationSnapshot
 
 
 def _dict(value: object) -> dict[str, object]:
@@ -45,7 +46,7 @@ def _summary(
     overview: dict[str, object],
     handoff_queue: dict[str, object],
     manager_queue: dict[str, object],
-    runtime_state: object,
+    runtime_state: TeamOperationSnapshot,
     provider_readiness: dict[str, object],
     action_plan: list[dict[str, object]],
     queue_limit: int,
@@ -64,20 +65,22 @@ def _summary(
         "blocked_tasks": _int(overview_summary.get("blocked_tasks")),
         "handoff_queue_total": _int(handoff_queue.get("total")),
         "manager_queue_total": _int(manager_queue.get("total")),
-        "runtime_status": getattr(runtime_state, "status", None),
-        "workspace_runtime_id": getattr(runtime_state, "workspace_runtime_id", None),
-        "workspace_runtime_status": getattr(runtime_state, "runtime_status", None),
-        "runtime_space_id": getattr(runtime_state, "runtime_space_id", None),
+        "runtime_status": runtime_state.status,
+        "workspace_runtime_id": runtime_state.workspace_runtime_id,
+        "workspace_runtime_status": runtime_state.runtime_status,
+        "runtime_space_id": runtime_state.runtime_space_id,
         "runtime_ready": _runtime_ready(runtime_state),
         "provider_readiness": _provider_readiness_summary(provider_readiness),
-        "memory_entry_count": _int(
-            _dict(getattr(runtime_state, "memory_summary", {})).get("active_entry_count")
-        ),
+        "memory_entry_count": _int(_dict(runtime_state.memory_summary).get("active_entry_count")),
         "team_memory_entry_count": _int(
-            _dict(getattr(runtime_state, "memory_summary", {})).get("team_entry_count")
+            _dict(runtime_state.memory_summary).get("team_entry_count")
         ),
+        "task_scan_limit": overview_summary.get("task_scan_limit"),
+        "scanned_task_count": overview_summary.get("scanned_task_count"),
+        "tasks_truncated": overview_summary.get("tasks_truncated", False),
         "queue_limit": queue_limit,
-        "queue_truncated": _int(handoff_queue.get("total")) > queue_limit
+        "queue_truncated": overview_summary.get("tasks_truncated") is True
+        or _int(handoff_queue.get("total")) > queue_limit
         or _int(manager_queue.get("total")) > queue_limit,
         "action_plan_count": len(action_plan),
         "action_plan_source_counts": dict(sorted(source_counts.items())),
@@ -85,20 +88,20 @@ def _summary(
 
 
 def _runtime_payload(
-    runtime_state: object, *, provider_readiness: dict[str, object] | None = None
+    runtime_state: TeamOperationSnapshot, *, provider_readiness: dict[str, object] | None = None
 ) -> dict[str, object]:
     return {
-        "status": getattr(runtime_state, "status", None),
-        "workspace_runtime_id": getattr(runtime_state, "workspace_runtime_id", None),
-        "runtime_status": getattr(runtime_state, "runtime_status", None),
-        "runtime_space_id": getattr(runtime_state, "runtime_space_id", None),
-        "thread_id": getattr(runtime_state, "thread_id", None),
-        "team_session_id": getattr(runtime_state, "team_session_id", None),
-        "member_session_count": getattr(runtime_state, "member_session_count", 0),
+        "status": runtime_state.status,
+        "workspace_runtime_id": runtime_state.workspace_runtime_id,
+        "runtime_status": runtime_state.runtime_status,
+        "runtime_space_id": runtime_state.runtime_space_id,
+        "thread_id": runtime_state.thread_id,
+        "team_session_id": runtime_state.team_session_id,
+        "member_session_count": runtime_state.member_session_count,
         "ready": _runtime_ready(runtime_state),
         "provider_readiness": _provider_readiness_summary(provider_readiness or {}),
-        "operating_policy": getattr(runtime_state, "operating_policy", {}),
-        "memory_summary": getattr(runtime_state, "memory_summary", {}),
+        "operating_policy": runtime_state.operating_policy,
+        "memory_summary": runtime_state.memory_summary,
     }
 
 
@@ -126,11 +129,11 @@ def _provider_readiness_summary(provider_readiness: dict[str, object]) -> dict[s
     }
 
 
-def _runtime_ready(runtime_state: object) -> bool:
+def _runtime_ready(runtime_state: TeamOperationSnapshot) -> bool:
     return (
-        getattr(runtime_state, "status", None) == TEAM_RUNTIME_RUNNING
-        and getattr(runtime_state, "workspace_runtime_id", None) is not None
-        and (getattr(runtime_state, "runtime_status", None) == "running")
+        runtime_state.status == TEAM_RUNTIME_RUNNING
+        and runtime_state.workspace_runtime_id is not None
+        and (runtime_state.runtime_status == "active")
     )
 
 

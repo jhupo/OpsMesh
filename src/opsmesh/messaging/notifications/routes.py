@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.messaging.notifications.contracts import (
+from opsmesh.messaging.notifications.schemas import (
     NotificationCountsResponse,
     NotificationMarkReadRequest,
     NotificationMarkReadResponse,

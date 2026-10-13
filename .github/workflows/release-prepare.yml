@@ -11,7 +11,7 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     services:
       postgres:
         image: pgvector/pgvector:0.8.6-pg16-bookworm
@@ -28,7 +28,10 @@ jobs:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh
       OPSMESH_REDIS_URL: redis://localhost:6379/0
       OPSMESH_ENVIRONMENT: test
-      OPSMESH_WORKER_HEARTBEAT_TOKEN: release-gate-only
+      OPSMESH_TEST_POSTGRES_URL: postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh
+      OPSMESH_TEST_TEMPORAL: '1'
+      OPSMESH_TEST_NATIVE_SANDBOX: '1'
+      OPSMESH_TEST_COMPUTE_IMAGE: opsmesh-compute:release-gate
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +46,8 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
+      - name: Build the native SDK compute environment
+        run: docker build -f deploy/images/Dockerfile.runtime -t "$OPSMESH_TEST_COMPUTE_IMAGE" .
       - run: uv run python -m scripts.release validate --tag "$RELEASE_TAG"
       - run: uv run ruff check . && uv run mypy
       - name: Architecture contracts

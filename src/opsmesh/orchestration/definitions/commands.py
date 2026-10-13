@@ -8,7 +8,7 @@ from opsmesh.orchestration.definitions.authoring import WorkflowEditorMetadata
 from opsmesh.orchestration.definitions.contracts import WorkflowNode
 
 
-class OrchestrationDefinitionCreate(BaseModel):
+class OrchestrationDefinitionCreateCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     key: str = Field(
@@ -22,7 +22,7 @@ class OrchestrationDefinitionCreate(BaseModel):
     editor: WorkflowEditorMetadata = Field(default_factory=WorkflowEditorMetadata)
 
     @model_validator(mode="after")
-    def validate_editor(self) -> OrchestrationDefinitionCreate:
+    def validate_editor(self) -> OrchestrationDefinitionCreateCommand:
         self.editor.validate_nodes(self.nodes)
         return self
 
@@ -53,7 +53,7 @@ class OrchestrationEditScope(BaseModel):
         return value
 
 
-class OrchestrationDefinitionUpdate(BaseModel):
+class OrchestrationDefinitionUpdateCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     expected_version: int = Field(ge=1)
@@ -65,7 +65,7 @@ class OrchestrationDefinitionUpdate(BaseModel):
     edit_scope: OrchestrationEditScope | None = None
 
     @model_validator(mode="after")
-    def require_change(self) -> OrchestrationDefinitionUpdate:
+    def require_change(self) -> OrchestrationDefinitionUpdateCommand:
         if not self.model_fields_set - {"expected_version", "edit_scope"}:
             raise ValueError("At least one orchestration field is required")
         null_fields = sorted(

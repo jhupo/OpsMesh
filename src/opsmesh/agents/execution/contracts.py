@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
-from opsmesh.runtime.contracts import SandboxBinding
 
-AgentRuntimeSessionItem = dict[str, object]
-
-
-class AgentRuntimeCapability(StrEnum):
+class AgentExecutionFeature(StrEnum):
     TOOLS = "tools"
     HANDOFFS = "handoffs"
     AGENTS_AS_TOOLS = "agents_as_tools"
@@ -26,7 +23,7 @@ class AgentRuntimeCapability(StrEnum):
 
 
 @dataclass(frozen=True)
-class AgentRuntimeCapabilities:
+class AgentExecutionCapabilities:
     """Capabilities exposed by one concrete runtime adapter.
 
     The set is intentionally product-owned. Provider SDK feature objects never cross this
@@ -35,59 +32,32 @@ class AgentRuntimeCapabilities:
 
     provider: str
     adapter: str
-    supported: frozenset[AgentRuntimeCapability] = frozenset()
+    supported: frozenset[AgentExecutionFeature] = frozenset()
     limits: dict[str, object] = field(default_factory=dict)
     unsupported_reasons: dict[str, str] = field(default_factory=dict)
 
-    def supports(self, capability: AgentRuntimeCapability | str) -> bool:
+    def supports(self, capability: AgentExecutionFeature | str) -> bool:
         value = (
-            capability.value if isinstance(capability, AgentRuntimeCapability) else str(capability)
+            capability.value if isinstance(capability, AgentExecutionFeature) else str(capability)
         )
         return any(item.value == value for item in self.supported)
 
-    def require(self, *capabilities: AgentRuntimeCapability | str) -> None:
-        missing = [
-            str(item.value if isinstance(item, AgentRuntimeCapability) else item)
-            for item in capabilities
-            if not self.supports(item)
-        ]
-        if missing:
-            raise ValueError(
-                f"Runtime adapter {self.adapter} does not support: {', '.join(missing)}"
-            )
-
-
-@runtime_checkable
-class AgentRuntimeSession(Protocol):
-    """Product-owned session protocol implemented by persistence adapters."""
-
-    session_id: str
-
-    async def get_items(self, limit: int | None = None) -> list[AgentRuntimeSessionItem]: ...
-
-    async def add_items(self, items: list[AgentRuntimeSessionItem]) -> None: ...
-
-    async def pop_item(self) -> AgentRuntimeSessionItem | None: ...
-
-    async def clear_session(self) -> None: ...
-
 
 @dataclass(frozen=True)
-class AgentSessionBinding:
+class AgentSessionScope:
     session_id: str
     workspace_id: UUID
-    database_url: str = field(repr=False)
 
 
 @dataclass(frozen=True)
-class AgentRuntimeAgentRef:
+class AgentReference:
     name: str
     profile_id: UUID | None = None
     role: str | None = None
 
 
 @dataclass(frozen=True)
-class AgentRuntimeProfile:
+class AgentProfileSnapshot:
     """Immutable root-agent definition accepted by provider SDK adapters."""
 
     id: UUID | None
@@ -101,10 +71,10 @@ class AgentRuntimeProfile:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeAgentDefinition:
+class AgentTargetProfile:
     """Authorized, immutable definition used when an agent is a handoff target."""
 
-    ref: AgentRuntimeAgentRef
+    ref: AgentReference
     workspace_id: UUID
     instructions: str
     model: str | None = None
@@ -114,16 +84,16 @@ class AgentRuntimeAgentDefinition:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeHandoffResult:
-    source: AgentRuntimeAgentRef
-    target: AgentRuntimeAgentRef
+class AgentHandoffResult:
+    source: AgentReference
+    target: AgentReference
     status: str
     reason: str = ""
     metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class AgentRuntimeOutputSchema:
+class AgentOutputSchemaSpec:
     name: str
     schema: dict[str, object]
     strict: bool = True
@@ -131,7 +101,7 @@ class AgentRuntimeOutputSchema:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeGuardrail:
+class AgentGuardrailSpec:
     name: str
     kind: str
     config: dict[str, object] = field(default_factory=dict)
@@ -139,13 +109,13 @@ class AgentRuntimeGuardrail:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeGuardrails:
-    input: tuple[AgentRuntimeGuardrail, ...] = ()
-    output: tuple[AgentRuntimeGuardrail, ...] = ()
+class AgentGuardrailConfig:
+    input: tuple[AgentGuardrailSpec, ...] = ()
+    output: tuple[AgentGuardrailSpec, ...] = ()
 
 
 @dataclass(frozen=True)
-class AgentRuntimeGuardrailResult:
+class AgentGuardrailResult:
     stage: str
     name: str
     kind: str
@@ -154,7 +124,7 @@ class AgentRuntimeGuardrailResult:
     evidence: dict[str, object] = field(default_factory=dict)
 
 
-class AgentRuntimeStreamEventKind(StrEnum):
+class AgentStreamEventKind(StrEnum):
     RUN_STARTED = "run.started"
     AGENT_UPDATED = "agent.updated"
     TEXT_DELTA = "output.text.delta"
@@ -168,7 +138,7 @@ class AgentRuntimeStreamEventKind(StrEnum):
 
 
 @runtime_checkable
-class AgentRuntimeCancellation(Protocol):
+class AgentCancellation(Protocol):
     """Cooperative cancellation owned by the OpsMesh execution layer."""
 
     async def is_cancelled(self) -> bool: ...
@@ -177,7 +147,7 @@ class AgentRuntimeCancellation(Protocol):
 
 
 @dataclass(frozen=True)
-class AgentRuntimeStreamEvent:
+class AgentStreamEvent:
     sequence: int
     event_type: str
     payload: dict[str, object] = field(default_factory=dict)
@@ -186,7 +156,7 @@ class AgentRuntimeStreamEvent:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeToolDefinition:
+class AgentToolSpec:
     name: str
     source: str
     description: str
@@ -204,7 +174,7 @@ class AgentRuntimeToolDefinition:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeResourceGrant:
+class AgentResourceGrant:
     resource_id: UUID
     resource_type: str
     access_mode: str
@@ -214,38 +184,36 @@ class AgentRuntimeResourceGrant:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeExecutionBinding:
+class AgentEnvironmentBinding:
     mode: str
     workspace_runtime_id: UUID | None
     runtime_space_id: UUID | None
     capability_resource_ids: tuple[UUID, ...] = ()
-    network_disabled: bool = False
     allowed_file_ids: tuple[UUID, ...] = ()
-    execution_runtime_id: UUID | None = None
 
 
 @dataclass(frozen=True)
-class AgentRuntimeContext:
+class AgentExecutionContext:
     workspace_id: UUID
     task_id: UUID | None
     run_id: UUID
     user_id: UUID | None = None
     allowed_tools: tuple[str, ...] = ()
-    tool_definitions: tuple[AgentRuntimeToolDefinition, ...] = ()
-    resource_grants: tuple[AgentRuntimeResourceGrant, ...] = ()
+    tool_definitions: tuple[AgentToolSpec, ...] = ()
+    resource_grants: tuple[AgentResourceGrant, ...] = ()
     file_scope_ids: tuple[UUID, ...] = ()
-    runtime_binding: AgentRuntimeExecutionBinding | None = None
+    runtime_binding: AgentEnvironmentBinding | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class AgentRuntimeAgentTarget:
+class AgentInvocationConfig:
     """Frozen execution scope for a native SDK handoff or agent tool."""
 
-    target: AgentRuntimeAgentDefinition
+    target: AgentTargetProfile
     tool_name: str
     description: str
-    context: AgentRuntimeContext
+    context: AgentExecutionContext
     max_turns: int
     depth: int
     max_depth: int
@@ -255,17 +223,17 @@ class AgentRuntimeAgentTarget:
     api_key: str | None = field(default=None, repr=False)
     model_api: str | None = None
     model_provider_credential_id: UUID | None = None
-    nested_tools: tuple[AgentRuntimeAgentTarget, ...] = ()
-    nested_handoffs: tuple[AgentRuntimeAgentTarget, ...] = ()
-    output_schema: AgentRuntimeOutputSchema | None = None
-    guardrails: AgentRuntimeGuardrails | None = None
+    nested_tools: tuple[AgentInvocationConfig, ...] = ()
+    nested_handoffs: tuple[AgentInvocationConfig, ...] = ()
+    output_schema: AgentOutputSchemaSpec | None = None
+    guardrails: AgentGuardrailConfig | None = None
     require_handoff: bool = False
 
 
 @dataclass(frozen=True)
-class AgentRuntimeAgentToolResult:
-    source: AgentRuntimeAgentRef
-    target: AgentRuntimeAgentRef
+class AgentToolCallResult:
+    source: AgentReference
+    target: AgentReference
     tool_name: str
     tool_call_id: str
     status: str
@@ -276,7 +244,7 @@ class AgentRuntimeAgentToolResult:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeToolResult:
+class ToolExecutionResult:
     status: str
     output: dict[str, object] | None = None
     error: dict[str, object] | None = None
@@ -284,7 +252,7 @@ class AgentRuntimeToolResult:
 
 
 @dataclass(frozen=True)
-class AgentRunTracing:
+class AgentTracingConfig:
     workflow_name: str
     trace_id: str | None = None
     group_id: str | None = None
@@ -294,7 +262,7 @@ class AgentRunTracing:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeResumeState:
+class AgentResumeState:
     provider: str
     serialized_state: str
     schema_version: str | None = None
@@ -302,7 +270,7 @@ class AgentRuntimeResumeState:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeApprovalDecision:
+class AgentToolApprovalDecision:
     tool_call_id: str
     tool_name: str
     status: str
@@ -310,27 +278,27 @@ class AgentRuntimeApprovalDecision:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeInterruption:
+class AgentToolInterruption:
     tool_call_id: str
     tool_name: str
     tool_kind: str
     arguments: dict[str, object]
-    agent: AgentRuntimeAgentRef | None = None
+    agent: AgentReference | None = None
     policy_decision: dict[str, object] = field(default_factory=dict)
     kind: str = "tool_approval"
     message: str | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
 
-class AgentRuntimeToolExecutor(Protocol):
-    async def authorize_agent(self, *, context: AgentRuntimeContext) -> None: ...
+class AgentToolExecutor(Protocol):
+    async def authorize_agent(self, *, context: AgentExecutionContext) -> None: ...
 
-    async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None: ...
+    async def cancel_active_tools(self, *, context: AgentExecutionContext) -> None: ...
 
     async def review_tool_call(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
     ) -> dict[str, object]: ...
@@ -338,12 +306,12 @@ class AgentRuntimeToolExecutor(Protocol):
     async def execute_tool(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
         tool_call_id: str | None = None,
         approval_granted: bool = False,
-    ) -> AgentRuntimeToolResult: ...
+    ) -> ToolExecutionResult: ...
 
 
 @dataclass(frozen=True)
@@ -358,9 +326,9 @@ class AgentInputAttachment:
 
 @dataclass(frozen=True)
 class AgentRunRequest:
-    agent_profile: AgentRuntimeProfile
+    agent_profile: AgentProfileSnapshot
     input_text: str
-    context: AgentRuntimeContext
+    context: AgentExecutionContext
     max_turns: int = 10
     model: str | None = None
     provider: str | None = None
@@ -368,33 +336,35 @@ class AgentRunRequest:
     api_key: str | None = field(default=None, repr=False)
     model_api: str | None = None
     model_provider_credential_id: UUID | None = None
-    tool_executor: AgentRuntimeToolExecutor | None = None
-    session: AgentRuntimeSession | AgentSessionBinding | None = None
-    tracing: AgentRunTracing | None = None
-    resume_state: AgentRuntimeResumeState | None = None
-    approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()
-    handoffs: tuple[AgentRuntimeAgentTarget, ...] = ()
-    agent_tools: tuple[AgentRuntimeAgentTarget, ...] = ()
+    tool_executor: AgentToolExecutor | None = None
+    session: AgentSessionScope | None = None
+    tracing: AgentTracingConfig | None = None
+    resume_state: AgentResumeState | None = None
+    approval_decisions: tuple[AgentToolApprovalDecision, ...] = ()
+    handoffs: tuple[AgentInvocationConfig, ...] = ()
+    agent_tools: tuple[AgentInvocationConfig, ...] = ()
     require_handoff: bool = False
-    output_schema: AgentRuntimeOutputSchema | None = None
-    guardrails: AgentRuntimeGuardrails | None = None
+    output_schema: AgentOutputSchemaSpec | None = None
+    guardrails: AgentGuardrailConfig | None = None
     stream: bool = False
-    event_sink: Callable[[AgentRuntimeStreamEvent], None] | None = None
-    lifecycle_sink: Callable[[AgentRuntimeEvent], Awaitable[None]] | None = None
-    cancellation: AgentRuntimeCancellation | None = None
-    sandbox: SandboxBinding | None = None
+    event_sink: Callable[[AgentStreamEvent], None] | None = None
+    lifecycle_sink: Callable[[AgentLifecycleEvent], Awaitable[None]] | None = None
+    cancellation: AgentCancellation | None = None
+    sdk_sandbox_client: object | None = field(default=None, repr=False)
+    sdk_sandbox_state: dict[str, object] | None = field(default=None, repr=False)
+    sdk_sandbox_tasks: dict[asyncio.Task[object], None] | None = field(default=None, repr=False)
     attachments: tuple[AgentInputAttachment, ...] = ()
 
 
 @dataclass(frozen=True)
-class AgentRuntimeEvent:
+class AgentLifecycleEvent:
     event_type: str
     message: str = ""
     payload: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class AgentRuntimeUsage:
+class AgentUsageTotals:
     request_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -406,45 +376,36 @@ class AgentRuntimeUsage:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeModelUsage:
+class AgentModelUsageRecord:
     request_id: str
-    agent: AgentRuntimeAgentRef
+    agent: AgentReference
     model: str
     provider: str
     model_api: str | None
-    usage: AgentRuntimeUsage
+    usage: AgentUsageTotals
 
 
 @dataclass(frozen=True)
 class AgentRunResult:
     final_output: str
-    final_agent: AgentRuntimeAgentRef | None = None
+    final_agent: AgentReference | None = None
     raw_output: object | None = None
-    events: tuple[AgentRuntimeEvent, ...] = ()
-    resume_state: AgentRuntimeResumeState | None = None
-    interruptions: tuple[AgentRuntimeInterruption, ...] = ()
-    structured_output: AgentRuntimeStructuredOutput | None = None
-    stream_events: tuple[AgentRuntimeStreamEvent, ...] = ()
-    handoffs: tuple[AgentRuntimeHandoffResult, ...] = ()
-    agent_tool_calls: tuple[AgentRuntimeAgentToolResult, ...] = ()
-    guardrail_results: tuple[AgentRuntimeGuardrailResult, ...] = ()
-    usage: AgentRuntimeUsage | None = None
-    model_usages: tuple[AgentRuntimeModelUsage, ...] = ()
-    capabilities: AgentRuntimeCapabilities | None = None
+    events: tuple[AgentLifecycleEvent, ...] = ()
+    resume_state: AgentResumeState | None = None
+    interruptions: tuple[AgentToolInterruption, ...] = ()
+    structured_output: AgentStructuredOutput | None = None
+    stream_events: tuple[AgentStreamEvent, ...] = ()
+    handoffs: tuple[AgentHandoffResult, ...] = ()
+    agent_tool_calls: tuple[AgentToolCallResult, ...] = ()
+    guardrail_results: tuple[AgentGuardrailResult, ...] = ()
+    usage: AgentUsageTotals | None = None
+    model_usages: tuple[AgentModelUsageRecord, ...] = ()
+    capabilities: AgentExecutionCapabilities | None = None
 
 
 @dataclass(frozen=True)
-class AgentRuntimeStructuredOutput:
+class AgentStructuredOutput:
     value: object
     schema_name: str | None = None
     schema_version: str | None = None
     validated: bool = False
-
-
-class AgentRuntimeExecutor(Protocol):
-    async def run(self, request: AgentRunRequest) -> AgentRunResult: ...
-
-
-class AgentRuntimeAdapter(AgentRuntimeExecutor, Protocol):
-    @property
-    def capabilities(self) -> AgentRuntimeCapabilities: ...

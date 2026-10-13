@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from redis import Redis
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
@@ -17,14 +14,14 @@ from opsmesh.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
     BlockedStepUnblockRequest,
     BlockedStepUnblockResponse,
-    OperationsSchedulerResponse,
     SchedulerControlResponse,
+    SchedulerOverviewResponse,
     SchedulerPauseRequest,
 )
 from opsmesh.runtime.operations.scheduler import (
-    SchedulerBacklogService,
-    SchedulerBlockedStepService,
-    SchedulerPolicyService,
+    BlockedStepQuery,
+    SchedulerOverviewQuery,
+    SchedulerPolicyQuery,
 )
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
@@ -33,32 +30,26 @@ from opsmesh.shared.redis.cache import RedisJsonCache
 from opsmesh.shared.redis.dependencies import get_cache_service
 from opsmesh.workspaces.management.settings import scheduler_settings
 
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
-
-
 router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operations"])
 
 
-@router.get("/scheduler", response_model=OperationsSchedulerResponse)
+@router.get("/scheduler", response_model=SchedulerOverviewResponse)
 def operations_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     cache: RedisJsonCache = Depends(get_cache_service),
-) -> OperationsSchedulerResponse:
+) -> SchedulerOverviewResponse:
     cache_key = f"scheduler:{context.workspace.id}"
     cached = cache.get_or_set(
         cache_key,
         lambda: (
-            SchedulerBacklogService(session)
+            SchedulerOverviewQuery(session)
             .scheduler_payload(context.workspace.id)
             .model_dump(mode="json")
         ),
         ttl_seconds=10,
     )
-    return OperationsSchedulerResponse.model_validate(cached.value)
+    return SchedulerOverviewResponse.model_validate(cached.value)
 
 
 @router.get("/blocked-steps", response_model=PageResponse[BlockedStepExplanationResponse])
@@ -68,7 +59,7 @@ def operations_blocked_steps(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[BlockedStepExplanationResponse]:
-    items, total = SchedulerBlockedStepService(session).list_blocked_steps(
+    items, total = BlockedStepQuery(session).list_blocked_steps(
         context.workspace.id,
         page,
         code=code,
@@ -124,7 +115,7 @@ def pause_scheduler(
         paused=True,
         pause_reason=str(scheduler["pause_reason"]),
         cleared_blocked_steps=cleared,
-        policy=SchedulerPolicyService(session).scheduler_policy(workspace.id),
+        policy=SchedulerPolicyQuery(session).scheduler_policy(workspace.id),
     )
 
 
@@ -145,5 +136,5 @@ def resume_scheduler(
         paused=False,
         pause_reason=None,
         cleared_blocked_steps=cleared,
-        policy=SchedulerPolicyService(session).scheduler_policy(workspace.id),
+        policy=SchedulerPolicyQuery(session).scheduler_policy(workspace.id),
     )

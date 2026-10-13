@@ -31,8 +31,12 @@ def upgrade() -> None:
         sa.Column("drain_requested_at", sa.DateTime(), nullable=True),
         sa.Column("last_seen_at", sa.DateTime(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_worker_nodes")),
         sa.UniqueConstraint("worker_id", name="uq_worker_nodes_worker_id"),
     )
@@ -53,8 +57,12 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(), nullable=False),
         sa.Column("finished_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_worker_leases")),
         sa.UniqueConstraint("job_id", name="uq_worker_leases_job_id"),

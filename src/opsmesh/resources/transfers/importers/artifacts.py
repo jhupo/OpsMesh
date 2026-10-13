@@ -39,10 +39,12 @@ class WorkspaceArchiveArtifactImporter:
 
     def finalize(self, response: WorkspaceImportResponse) -> None:
         """Resolve artifact version links after every archive object has an ID."""
-
-        for artifact, source_id, source_supersedes_id, imported_supersedes_id in (
-            self._pending_supersedes
-        ):
+        for (
+            artifact,
+            source_id,
+            source_supersedes_id,
+            imported_supersedes_id,
+        ) in self._pending_supersedes:
             imported_supersedes_id = imported_supersedes_id or response.id_map["artifacts"].get(
                 source_supersedes_id
             )
@@ -66,12 +68,11 @@ class WorkspaceArchiveArtifactImporter:
         request: WorkspaceArchiveImportRequest,
         item: dict[str, object],
         response: WorkspaceImportResponse,
-        total_bytes: int,
-    ) -> int:
+    ) -> None:
         source_id = _string_field(item, "id")
         if _archive_resolution_action(request, "artifacts", source_id) == "exclude_object":
             response.skipped_counts["artifacts"] += 1
-            return total_bytes
+            return
         filename = safe_filename(_string_field(item, "filename", "artifact.bin"))
         content = self._blob_reader.read_blob(
             archive_name=f"artifacts/{source_id}/{filename}",
@@ -79,7 +80,6 @@ class WorkspaceArchiveArtifactImporter:
             collection="artifacts",
             response=response,
             request=request,
-            total_bytes=total_bytes,
             expected_checksum=_string_field(item, "checksum_sha256"),
             allow_checksum_replacement=(
                 _archive_resolution_action(request, "artifacts", source_id)
@@ -87,7 +87,7 @@ class WorkspaceArchiveArtifactImporter:
             ),
         )
         if content is None:
-            return total_bytes
+            return
         checksum_result = _validated_checksum(
             content=content,
             source_checksum=_string_field(item, "checksum_sha256"),
@@ -103,11 +103,10 @@ class WorkspaceArchiveArtifactImporter:
         )
         if not checksum_result.matched:
             response.skipped_counts["artifacts"] += 1
-            return total_bytes
+            return
         response.created_counts["artifacts"] += 1
-        total_bytes += len(content)
         if request.dry_run:
-            return total_bytes
+            return
         self._create_artifact(
             workspace=workspace,
             request=request,
@@ -119,7 +118,7 @@ class WorkspaceArchiveArtifactImporter:
             checksum_sha256=checksum_result.checksum_sha256,
             checksum_matched=checksum_result.matched,
         )
-        return total_bytes
+        return
 
     def _create_artifact(
         self,

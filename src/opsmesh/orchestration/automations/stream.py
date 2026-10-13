@@ -1,4 +1,5 @@
 """Authorized external projection of the existing task event stream, with explicit replay gaps."""
+
 import asyncio
 from collections.abc import AsyncIterator
 from time import monotonic
@@ -8,14 +9,14 @@ from opsmesh_plugin_sdk.messaging.contracts import AutomationStreamEvent, EventS
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.plugins.authentication import PluginAuthenticationService, PluginPrincipal
 from opsmesh.capabilities.plugins.policy import require_plugin_resource
-from opsmesh.capabilities.plugins.services import PluginPrincipal, PluginServices
 from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.authorization.errors import AuthorizationError
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.identity.authorization.resources import ResourceAccessDenied
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.orchestration.automations.authorization import (
     require_automation_principal,
     require_event_principal,
@@ -23,7 +24,7 @@ from opsmesh.orchestration.automations.authorization import (
 from opsmesh.orchestration.automations.contracts import AutomationConfiguration
 from opsmesh.orchestration.automations.models import Automation, AutomationEvent
 from opsmesh.orchestration.automations.service import AutomationService
-from opsmesh.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
+from opsmesh.orchestration.tasks.events import TaskEvent, TaskEventReader
 from opsmesh.shared.errors import DomainError
 
 
@@ -41,12 +42,14 @@ class AutomationStreamService:
         owner_id = None
         if isinstance(user, PluginPrincipal):
             if user.workspace_id != workspace_id:
-                raise ResourceAccessDenied()
-            PluginServices(self.session).require_automation(user, automation_id, "messages.read")
+                raise ResourceAccessDeniedError()
+            PluginAuthenticationService(self.session).require_automation(
+                user, automation_id, "messages.read"
+            )
         else:
             authorization = AuthenticationService(self.session)
             refreshed = authorization.refresh_authenticated_user(user)
-            AuthorizationService(self.session).require_workspace(
+            WorkspaceAuthorizationService(self.session).require_workspace(
                 user_id=refreshed.user_id,
                 workspace_id=workspace_id,
                 action=WorkspaceAction.READ,
@@ -71,7 +74,7 @@ class AutomationStreamService:
             raise ValueError("Message stream unavailable")
         if isinstance(user, PluginPrincipal):
             if event.source_install_id != user.install_id:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
         elif item.created_by_user_id != owner_id and (
             event.execution_identity is None
             or event.execution_identity.get("user_id") != str(owner_id)
@@ -79,9 +82,12 @@ class AutomationStreamService:
             raise ValueError("Message stream unavailable")
         require_automation_principal(self.session, item)
         require_event_principal(self.session, item, event)
-        require_plugin_resource(self.session, workspace_id, "message_trigger", item.id)
         live = AutomationConfiguration.model_validate(item.configuration)
         config = AutomationConfiguration.model_validate(event.configuration)
+        if config.channel_connection_id is not None:
+            require_plugin_resource(
+                self.session, workspace_id, "channel", config.channel_connection_id
+            )
         if (
             config.trigger_type == "message"
             and event.input_payload.get("sender_id") not in live.allowed_senders
@@ -102,7 +108,7 @@ class AutomationStreamService:
     async def frames(
         self,
         *,
-        bus: RedisTaskEventBus,
+        bus: TaskEventReader,
         workspace_id: UUID,
         automation_id: UUID,
         event_id: UUID,
@@ -126,9 +132,9 @@ class AutomationStreamService:
             items: list[TaskEvent] = []
             reset = False
             if task_id is not None:
-                reset = cursor != "0-0" and not bus.contains_cursor(workspace_id, task_id, cursor)
+                reset = cursor != "0" and not bus.contains_cursor(workspace_id, task_id, cursor)
                 if reset:
-                    cursor = "0-0"
+                    cursor = "0"
                 items = bus.read(
                     workspace_id=workspace_id, task_id=task_id, after_id=cursor, count=100
                 )
@@ -147,7 +153,6 @@ class AutomationStreamService:
                 "skipped",
                 "completed",
                 "reply_failed",
-                "reply_pending",
             }
             self.session.rollback()  # Never hold a database transaction while waiting on a client.
             if reset:
@@ -155,7 +160,7 @@ class AutomationStreamService:
                     event_id=event_id,
                     task_id=task_id,
                     kind="stream.reset",
-                    cursor="0-0",
+                    cursor="0",
                     data={"reason": "cursor_not_retained", "state": snapshot},
                 )
             for frame in projected:
@@ -217,7 +222,7 @@ class AutomationStreamService:
         event: AutomationEvent, config: AutomationConfiguration, item: TaskEvent
     ) -> AutomationStreamEvent | None:
         if (
-            item.event_type != "run.live"
+            not item.event_type.startswith("agent.stream.")
             or item.task_id != event.task_id
             or item.workspace_id != event.workspace_id
         ):
@@ -225,32 +230,39 @@ class AutomationStreamService:
         if event.result_payload:
             return None  # Control acknowledgements do not replay the target task's model previews.
         raw = item.payload
-        kind = str(raw.get("kind"))
-        is_text = kind in {"output.reset", "output.text"}
-        if is_text and raw.get("node_id") not in config.stream_output_nodes:
+        native = raw.get("runtime_stream_event")
+        if not isinstance(native, dict):
             return None
-        if not is_text and (
-            not config.stream_tool_events
-            or kind
-            not in {
-                "tool.started",
-                "tool.completed",
-                "tool.failed",
-                "tool.waiting",
-                "approval.required",
+        event_type = native.get("event_type")
+        payload = native.get("payload")
+        payload = payload if isinstance(payload, dict) else {}
+        if event_type == "output.text.delta":
+            if raw.get("work_package_id") not in config.stream_output_nodes:
+                return None
+            kind = "output.text"
+            data: dict[str, object] = {"delta": native.get("delta")}
+        else:
+            tool_kind = {
+                "agent.tool.started": "tool.started",
+                "agent.tool.completed": "tool.completed",
+                "agent.tool.failed": "tool.failed",
+            }.get(str(event_type))
+            if not config.stream_tool_events or tool_kind is None:
+                return None
+            kind = tool_kind
+            data = {
+                "tool_name": payload.get("tool_name"),
+                "call_id": payload.get("tool_call_id"),
             }
-        ):
-            return None
         return AutomationStreamEvent.model_validate(
             {
                 "event_id": event.id,
                 "task_id": event.task_id,
                 "kind": kind,
                 "cursor": item.id,
-                "run_id": raw.get("run_id"),
-                "step_id": raw.get("step_id"),
-                "attempt_id": raw.get("attempt_id"),
-                "sequence": raw.get("sequence"),
-                "data": raw.get("data", {}),
+                "run_id": raw.get("agent_run_id"),
+                "step_id": raw.get("task_step_id"),
+                "sequence": native.get("provider_sequence"),
+                "data": data,
             }
         )

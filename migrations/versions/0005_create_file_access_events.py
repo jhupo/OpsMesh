@@ -49,4 +49,3 @@ def downgrade() -> None:
     op.drop_index("ix_file_access_events_workspace_user", table_name="file_access_events")
     op.drop_index("ix_file_access_events_workspace_file", table_name="file_access_events")
     op.drop_table("file_access_events")
-

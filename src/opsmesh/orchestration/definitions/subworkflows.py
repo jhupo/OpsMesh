@@ -21,7 +21,6 @@ from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.runs.subworkflow_models import SubworkflowInvocation
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.orchestration.tasks.service import WorkspaceTaskService
-from opsmesh.runtime.queues.service import RedisQueue
 
 
 class SubworkflowExecutionError(ValueError):
@@ -29,7 +28,7 @@ class SubworkflowExecutionError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class SubworkflowLaunch:
+class SubworkflowLaunchResult:
     status: str
     invocation_id: UUID
     child_task_id: UUID
@@ -39,9 +38,8 @@ class SubworkflowLaunch:
 
 
 class SubworkflowExecutionService:
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def launch(
         self,
@@ -50,7 +48,7 @@ class SubworkflowExecutionService:
         parent_task: Task,
         parent_step: TaskStep,
         requested_by_user_id: UUID | None,
-    ) -> SubworkflowLaunch:
+    ) -> SubworkflowLaunchResult:
         existing = self._session.scalar(
             select(SubworkflowInvocation)
             .where(
@@ -121,7 +119,6 @@ class SubworkflowExecutionService:
             input_payload=child_input,
             orchestration_definition_id=definition.id,
             orchestration_version=revision.version,
-            queue=self._queue,
         )
         invocation = SubworkflowInvocation(
             workspace_id=parent_run.workspace_id,
@@ -151,7 +148,7 @@ class SubworkflowExecutionService:
         )
 
         if child_run is None:
-            RunOrchestrationService(self._session, queue=self._queue).schedule_workspace_steps(
+            RunOrchestrationService(self._session).schedule_workspace_steps(
                 workspace_id=child_task.workspace_id,
                 requested_by_user_id=requested_by_user_id,
             )
@@ -165,7 +162,7 @@ class SubworkflowExecutionService:
             invocation.output_payload = output
             invocation.completed_at = datetime.now(UTC)
             self._session.flush([invocation])
-            return SubworkflowLaunch(
+            return SubworkflowLaunchResult(
                 status="completed",
                 invocation_id=invocation.id,
                 child_task_id=child_task.id,
@@ -173,16 +170,16 @@ class SubworkflowExecutionService:
                 output=output,
             )
 
-        return SubworkflowLaunch(
+        return SubworkflowLaunchResult(
             status="waiting_subworkflow",
             invocation_id=invocation.id,
             child_task_id=child_task.id,
             child_run_id=child_run.id,
         )
 
-    def _launch_from_invocation(self, invocation: SubworkflowInvocation) -> SubworkflowLaunch:
+    def _launch_from_invocation(self, invocation: SubworkflowInvocation) -> SubworkflowLaunchResult:
         status = invocation.status
-        return SubworkflowLaunch(
+        return SubworkflowLaunchResult(
             status="waiting_subworkflow" if status == "running" else status,
             invocation_id=invocation.id,
             child_task_id=invocation.child_task_id,
@@ -221,4 +218,4 @@ class SubworkflowExecutionService:
             raise SubworkflowExecutionError("Subworkflow input exceeds the 64 KiB limit")
 
 
-__all__ = ["SubworkflowExecutionError", "SubworkflowExecutionService", "SubworkflowLaunch"]
+__all__ = ["SubworkflowExecutionError", "SubworkflowExecutionService", "SubworkflowLaunchResult"]

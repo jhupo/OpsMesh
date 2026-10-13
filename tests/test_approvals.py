@@ -1,27 +1,20 @@
 from collections.abc import Generator
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-import fakeredis
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeInterruption,
-    AgentRuntimeResumeState,
+    AgentExecutionContext,
+    AgentResumeState,
+    AgentToolInterruption,
 )
-from opsmesh.agents.execution.state import AgentRunStateStore
-from opsmesh.capabilities.mcp.models import McpServer
-from opsmesh.governance.audit.models import AuditEvent
-from opsmesh.governance.reviews.policy import (
+from opsmesh.agents.execution.state import AgentResumeStateStore
+from opsmesh.capabilities.mcp.models import MCPServer
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
@@ -45,27 +38,21 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.orchestration.tasks.state import TaskStatus
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import DispatchOperation, DispatchRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
-def test_approval_approve_enqueues_resume_job() -> None:
+def test_approval_approve_stages_one_durable_resume_signal() -> None:
     session = _session()
     user, workspace, task, run = _seed_run(session)
-    queue = RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-    )
     approval = ApprovalService(session).create_approval(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -77,26 +64,26 @@ def test_approval_approve_enqueues_resume_job() -> None:
     )
     session.commit()
 
-    decided = ApprovalDecisionService(session, queue).approve(approval, user.id, "ok")
-    job = queue.dequeue()
+    decided = ApprovalDecisionService(session).approve(approval, user.id, "ok")
+    commands = _approval_commands(session, workspace.id, run.id)
 
     assert decided.status == "approved"
     assert decided.decided_by_user_id == user.id
-    assert job is not None
-    assert job.job_type == JobType.AGENT_RUN
-    assert job.resource_id == run.id
+    assert len(commands) == 1
+    assert commands[0].operation == DispatchOperation.SIGNAL
+    assert commands[0].signal_name == "approval"
+    assert commands[0].signal.resource_id == approval.id
 
-    repeated = ApprovalDecisionService(session, queue).approve(approval, user.id, "retry")
+    repeated = ApprovalDecisionService(session).approve(approval, user.id, "retry")
 
     assert repeated.status == "approved"
-    assert queue.dequeue() is None
+    assert len(_approval_commands(session, workspace.id, run.id)) == 1
     with pytest.raises(ValueError, match="not pending"):
-        ApprovalDecisionService(session, queue).reject(approval, user.id, "conflict")
+        ApprovalDecisionService(session).reject(approval, user.id, "conflict")
 
 
-def test_approval_approve_api_enqueues_resume_job() -> None:
-    queue = _queue()
-    client, session = _api_client(queue)
+def test_approval_approve_api_stages_resume_signal() -> None:
+    client, session = _api_client()
     user, workspace, task, run = _seed_run(session)
     approval = ApprovalService(session).create_approval(
         workspace_id=workspace.id,
@@ -114,14 +101,15 @@ def test_approval_approve_api_enqueues_resume_job() -> None:
         headers=_headers(user.id),
         json={"reason": "approved through API"},
     )
-    job = queue.dequeue()
+    commands = _approval_commands(session, workspace.id, run.id)
 
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
-    assert job is not None
-    assert job.job_type == JobType.AGENT_RUN
-    assert job.resource_id == run.id
-    assert queue.dequeue() is None
+    assert len(commands) == 1
+    assert commands[0].operation == DispatchOperation.SIGNAL
+    assert commands[0].signal_name == "approval"
+    assert commands[0].signal.resource_id == approval.id
+    assert len(_approval_commands(session, workspace.id, run.id)) == 1
 
 
 def test_approval_reject_marks_run_and_task_failed() -> None:
@@ -172,7 +160,7 @@ def test_list_approvals_filters_by_status() -> None:
 def test_approval_approve_activates_pending_resource_review_target() -> None:
     session = _session()
     user, workspace, _, _ = _seed_run(session)
-    server = McpServer(
+    server = MCPServer(
         workspace_id=workspace.id,
         name="Dangerous MCP",
         server_type="stdio",
@@ -205,7 +193,7 @@ def test_approval_approve_activates_pending_resource_review_target() -> None:
 def test_approval_reject_marks_pending_resource_review_target_rejected() -> None:
     session = _session()
     user, workspace, _, _ = _seed_run(session)
-    server = McpServer(
+    server = MCPServer(
         workspace_id=workspace.id,
         name="Dangerous MCP",
         server_type="stdio",
@@ -315,15 +303,15 @@ def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
     session = _session()
     user, workspace, task, run = _seed_run(session)
     secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
-    AgentRunStateStore(session, secrets).save(
+    AgentResumeStateStore(session, secrets).save(
         workspace_id=workspace.id,
         run_id=run.id,
-        state=AgentRuntimeResumeState(
+        state=AgentResumeState(
             provider="openai_agents",
             serialized_state='{"$schemaVersion":"1.10"}',
         ),
     )
-    context = AgentRuntimeContext(
+    context = AgentExecutionContext(
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -332,7 +320,7 @@ def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
         context=context,
         requested_by_agent_profile_id=None,
         interruptions=(
-            AgentRuntimeInterruption(
+            AgentToolInterruption(
                 tool_call_id="call-approved",
                 tool_name="write_artifact",
                 tool_kind="product",
@@ -348,9 +336,8 @@ def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
     session.commit()
     approval = session.query(Approval).one()
     invocation = session.query(PendingToolInvocation).one()
-    queue = _queue()
 
-    ApprovalDecisionService(session, queue, secrets).approve(approval, user.id, "approved")
+    ApprovalDecisionService(session, secrets).approve(approval, user.id, "approved")
     decisions = PendingToolInvocationService(session, secrets).decisions_for_run(
         workspace_id=workspace.id,
         run_id=run.id,
@@ -391,19 +378,18 @@ def test_approved_sdk_tool_invocation_is_resumable_and_executes_once() -> None:
     assert replay.attempt_count == 1
     assert cached is not None
     assert cached["output"] == {"artifact_id": "artifact-1"}
-    assert queue.dequeue() is not None
+    assert len(_approval_commands(session, workspace.id, run.id)) == 1
 
 
-def test_rejected_sdk_tool_invocation_queues_state_resume_without_failing_run() -> None:
+def test_rejected_sdk_tool_invocation_signals_resume_without_failing_run() -> None:
     session = _session()
     user, workspace, task, run = _seed_run(session)
     secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
     approval, invocation = _persist_sdk_interruption(
         session, workspace.id, task.id, run.id, secrets
     )
-    queue = _queue()
 
-    ApprovalDecisionService(session, queue, secrets).reject(approval, user.id, "not allowed")
+    ApprovalDecisionService(session, secrets).reject(approval, user.id, "not allowed")
     decisions = PendingToolInvocationService(session, secrets).decisions_for_run(
         workspace_id=workspace.id,
         run_id=run.id,
@@ -415,41 +401,17 @@ def test_rejected_sdk_tool_invocation_queues_state_resume_without_failing_run() 
     assert task.status == TaskStatus.WAITING_APPROVAL.value
     assert decisions[0].status == "rejected"
     assert decisions[0].reason == "not allowed"
-    assert queue.dequeue() is not None
+    assert len(_approval_commands(session, workspace.id, run.id)) == 1
     PendingToolInvocationService(session, secrets).mark_decisions_consumed(
         workspace_id=workspace.id,
         run_id=run.id,
+        decisions=decisions,
     )
     assert invocation.status == "rejection_consumed"
     assert not PendingToolInvocationService(session, secrets).decisions_for_run(
         workspace_id=workspace.id,
         run_id=run.id,
     )
-
-
-def test_pending_sdk_tool_timeout_fails_closed_with_audit_evidence() -> None:
-    session = _session()
-    _, workspace, task, run = _seed_run(session)
-    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
-    approval, invocation = _persist_sdk_interruption(
-        session, workspace.id, task.id, run.id, secrets
-    )
-    approval.created_at = datetime.now(UTC) - timedelta(hours=2)
-    session.commit()
-
-    summary = AgentToolApprovalLifecycleService(session).expire_pending(
-        timeout_seconds=3_600,
-        now=datetime.now(UTC),
-    )
-    audit = session.query(AuditEvent).one()
-
-    assert summary.expired == 1
-    assert approval.status == "timed_out"
-    assert invocation.status == "timed_out"
-    assert run.status == RunStatus.FAILED.value
-    assert run.error is not None and run.error["code"] == "approval_timeout"
-    assert task.status == TaskStatus.FAILED.value
-    assert audit.action == "approval.timed_out"
 
 
 def test_run_cancellation_closes_pending_sdk_tool_state() -> None:
@@ -465,7 +427,7 @@ def test_run_cancellation_closes_pending_sdk_tool_state() -> None:
         run_id=run.id,
         actor_user_id=user.id,
     )
-    restored = AgentRunStateStore(session, secrets).load(
+    restored = AgentResumeStateStore(session, secrets).load(
         workspace_id=workspace.id,
         run_id=run.id,
     )
@@ -474,67 +436,6 @@ def test_run_cancellation_closes_pending_sdk_tool_state() -> None:
     assert approval.status == "cancelled"
     assert invocation.status == "cancelled"
     assert restored is None
-
-
-@pytest.mark.parametrize("operation", ["cancel", "expire"])
-def test_approval_lifecycle_rejects_cross_workspace_join(operation: str) -> None:
-    session = _session()
-    user, workspace, task, run = _seed_run(session)
-    _, foreign_workspace, _, _ = _seed_run(session)
-    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
-    approval, invocation = _persist_sdk_interruption(
-        session, workspace.id, task.id, run.id, secrets
-    )
-    approval.workspace_id = foreign_workspace.id
-    approval.created_at = datetime.now(UTC) - timedelta(hours=1)
-    session.flush()
-
-    lifecycle = AgentToolApprovalLifecycleService(session)
-    if operation == "cancel":
-        assert lifecycle.cancel_for_run(
-            workspace_id=workspace.id, run_id=run.id, actor_user_id=user.id
-        ) == 0
-    else:
-        assert lifecycle.expire_pending(timeout_seconds=60).expired == 0
-    assert approval.status == "pending"
-    assert invocation.status == "pending"
-
-
-def test_claimed_tool_after_worker_loss_returns_unknown_without_replay() -> None:
-    session = _session()
-    user, workspace, task, run = _seed_run(session)
-    secrets = SecretEncryptionService(secret="pending-tool-secret", key_id="test-key")
-    approval, _ = _persist_sdk_interruption(
-        session, workspace.id, task.id, run.id, secrets
-    )
-    ApprovalDecisionService(session, secrets=secrets).approve(approval, user.id)
-    pending = PendingToolInvocationService(session, secrets)
-    invocation, cached = pending.claim_execution(
-        workspace_id=workspace.id,
-        run_id=run.id,
-        tool_call_id="call-lifecycle",
-        tool_name="write_artifact",
-        arguments={"content": "private"},
-    )
-    assert cached is None
-
-    changed = pending.mark_stale_execution_outcome_unknown(
-        workspace_id=workspace.id,
-        run_id=run.id,
-    )
-    replay, cached = pending.claim_execution(
-        workspace_id=workspace.id,
-        run_id=run.id,
-        tool_call_id="call-lifecycle",
-        tool_name="write_artifact",
-        arguments={"content": "private"},
-    )
-
-    assert changed == 1
-    assert replay.status == "outcome_unknown"
-    assert replay.attempt_count == 1
-    assert cached is not None
-    assert cached["error"]["code"] == "tool_execution_outcome_unknown"
 
 
 def _seed_run(session: Session) -> tuple[User, Workspace, Task, AgentRun]:
@@ -564,23 +465,23 @@ def _persist_sdk_interruption(
     run_id: UUID,
     secrets: SecretEncryptionService,
 ) -> tuple[Approval, PendingToolInvocation]:
-    AgentRunStateStore(session, secrets).save(
+    AgentResumeStateStore(session, secrets).save(
         workspace_id=workspace_id,
         run_id=run_id,
-        state=AgentRuntimeResumeState(
+        state=AgentResumeState(
             provider="openai_agents",
             serialized_state='{"$schemaVersion":"1.10"}',
         ),
     )
     AgentToolInterruptionService(session, secrets).persist(
-        context=AgentRuntimeContext(
+        context=AgentExecutionContext(
             workspace_id=workspace_id,
             task_id=task_id,
             run_id=run_id,
         ),
         requested_by_agent_profile_id=None,
         interruptions=(
-            AgentRuntimeInterruption(
+            AgentToolInterruption(
                 tool_call_id="call-lifecycle",
                 tool_name="write_artifact",
                 tool_kind="product",
@@ -597,20 +498,13 @@ def _persist_sdk_interruption(
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
 
-def _api_client(queue: RedisQueue) -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def _api_client() -> tuple[TestClient, Session]:
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
@@ -633,26 +527,18 @@ def _api_client(queue: RedisQueue) -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_worker_queue] = lambda: queue
     return TestClient(app), session
 
 
-def _queue() -> RedisQueue:
-    return RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-    )
+def _approval_commands(session: Session, workspace_id: UUID, run_id: UUID) -> list[DispatchRequest]:
+    records = session.scalars(
+        select(TemporalOutboxEntry).where(
+            TemporalOutboxEntry.workspace_id == workspace_id,
+            TemporalOutboxEntry.workflow_id == f"opsmesh:{workspace_id}:agent:{run_id}",
+        )
+    ).all()
+    return [DispatchRequest.model_validate(record.payload) for record in records]
 
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": "Bearer test-token", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

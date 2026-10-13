@@ -1,9 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.identity.users.models import User
@@ -11,10 +8,11 @@ from opsmesh.orchestration.tasks.message_append import (
     TASK_MESSAGE_CREATED_EVENT_TYPE,
     TaskMessageAppendService,
 )
-from opsmesh.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage
+from opsmesh.orchestration.tasks.models import Task, TaskEventRecord, TaskMessage
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_task_message_append_assigns_ordered_sequences_and_payloads() -> None:
@@ -47,7 +45,7 @@ def test_task_message_append_assigns_ordered_sequences_and_payloads() -> None:
     assert messages[1].payload == {}
 
 
-def test_task_message_append_outbox_rolls_back_with_outer_transaction() -> None:
+def test_task_message_append_event_rolls_back_with_outer_transaction() -> None:
     session = _session()
     _, _, task = _seed_task(session)
 
@@ -61,13 +59,13 @@ def test_task_message_append_outbox_rolls_back_with_outer_transaction() -> None:
         payload={"progress": "drafting"},
     )
     assert (
-        session.scalar(select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id))
+        session.scalar(select(TaskEventRecord).where(TaskEventRecord.task_id == task.id))
         is not None
     )
 
     transaction.rollback()
 
-    assert session.scalar(select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id)) is None
+    assert session.scalar(select(TaskEventRecord).where(TaskEventRecord.task_id == task.id)) is None
     assert session.scalar(select(TaskMessage).where(TaskMessage.task_id == task.id)) is None
 
 
@@ -112,7 +110,7 @@ def test_task_message_append_retries_sequence_collision_in_savepoint() -> None:
     assert messages[-1].payload == {"attempt": "retried"}
 
 
-def test_task_message_append_commits_message_created_outbox_event() -> None:
+def test_task_message_append_commits_message_created_stored_event() -> None:
     session = _session()
     _, _, task = _seed_task(session)
 
@@ -124,21 +122,14 @@ def test_task_message_append_commits_message_created_outbox_event() -> None:
     )
     session.commit()
 
-    outbox_event = session.scalar(
-        select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id)
-    )
-    assert outbox_event is not None
-    assert outbox_event.workspace_id == task.workspace_id
-    assert outbox_event.task_id == task.id
-    assert outbox_event.event_type == TASK_MESSAGE_CREATED_EVENT_TYPE
-    assert outbox_event.status == "pending"
-    assert outbox_event.attempts == 0
-    assert outbox_event.available_at is not None
-    assert outbox_event.published_at is None
-    assert outbox_event.last_error is None
-    event_id = str(outbox_event.event_id)
-    outbox_id = str(outbox_event.id)
-    assert outbox_event.payload == {
+    stored_event = session.scalar(select(TaskEventRecord).where(TaskEventRecord.task_id == task.id))
+    assert stored_event is not None
+    assert stored_event.workspace_id == task.workspace_id
+    assert stored_event.task_id == task.id
+    assert stored_event.event_type == TASK_MESSAGE_CREATED_EVENT_TYPE
+    assert stored_event.sequence == 1
+    event_id = str(stored_event.event_id)
+    assert stored_event.payload == {
         "message_id": str(message.id),
         "message_type": "agent.progress",
         "sequence": 1,
@@ -149,13 +140,12 @@ def test_task_message_append_commits_message_created_outbox_event() -> None:
         "payload_keys": ["api_key", "progress"],
         "created_at": message.created_at.isoformat(),
         "event_id": event_id,
-        "outbox_id": outbox_id,
     }
-    assert "Secret body" not in str(outbox_event.payload)
-    assert "sk-hidden" not in str(outbox_event.payload)
+    assert "Secret body" not in str(stored_event.payload)
+    assert "sk-hidden" not in str(stored_event.payload)
 
 
-def test_task_message_append_persists_message_and_outbox_event_only() -> None:
+def test_task_message_append_persists_message_and_stored_event_only() -> None:
     session = _session()
     _, _, task = _seed_task(session)
 
@@ -170,14 +160,14 @@ def test_task_message_append_persists_message_and_outbox_event_only() -> None:
     stored = session.scalar(select(TaskMessage).where(TaskMessage.id == message.id))
     assert stored is not None
     assert stored.sequence == 1
-    assert session.scalar(
-        select(TaskEventOutbox).where(TaskEventOutbox.task_id == task.id)
-    ) is not None
+    assert (
+        session.scalar(select(TaskEventRecord).where(TaskEventRecord.task_id == task.id))
+        is not None
+    )
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -196,12 +186,3 @@ def _seed_task(session: Session) -> tuple[User, Workspace, Task]:
     session.add(task)
     session.commit()
     return user, workspace, task
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

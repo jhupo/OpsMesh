@@ -4,14 +4,14 @@ from pydantic import (
     BaseModel,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 
 
 class AdminQuarantineRuntimeSpaceRequest(BaseModel):
     reason: str = "Quarantined by platform admin"
 
 
-class AdminQuarantineRuntimeSpaceResponse(TimestampedModel):
+class AdminQuarantineRuntimeSpaceResponse(TimestampedContract):
     workspace_id: UUID
     name: str
     scope: str

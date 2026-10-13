@@ -32,10 +32,23 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
         if request.url.path.endswith("/events/stream"):
             assert request.url.path.endswith("/turns/turn/events/stream")
             payload = {
-                "event_type": "run.live",
+                "event_type": "agent.stream.agent.tool.completed",
                 "payload": {
-                    "kind": "tool.completed",
-                    "data": {"tool_name": "search_workspace_memory"},
+                    "runtime_stream_event": {
+                        "event_type": "agent.tool.completed",
+                        "payload": {"tool_name": "search_workspace_memory"},
+                        "delta": None,
+                    },
+                },
+            }
+            delta = {
+                "event_type": "agent.stream.output.text.delta",
+                "payload": {
+                    "runtime_stream_event": {
+                        "event_type": "output.text.delta",
+                        "payload": {},
+                        "delta": "Answer preview",
+                    },
                 },
             }
             result = {**turn, "status": status}
@@ -54,6 +67,9 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
                     + "\n\n"
                     + "event: task.event\ndata: "
                     + json.dumps(payload)
+                    + "\n\n"
+                    + "event: task.event\ndata: "
+                    + json.dumps(delta)
                     + "\n\n"
                     + "event: stream.completed\ndata: "
                     + json.dumps({"turn": result, "task_id": "task"})
@@ -81,7 +97,8 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
     )
     output = capsys.readouterr().out
     assert len(posts) == 1
-    assert "[tool.completed] search_workspace_memory" in output
+    assert "[agent.tool.completed] search_workspace_memory" in output
+    assert "[output.delta] Answer preview" in output
     assert "status=running" in output
     assert code == (0 if status == "completed" else 1)
     assert ("Answer" if status == "completed" else "Bad Request") in output
@@ -92,8 +109,11 @@ def test_stream_reconnect_keeps_last_complete_frame_cursor(monkeypatch, capsys) 
 
     class Interrupted(httpx.AsyncByteStream):
         async def __aiter__(self):
-            yield b'id: 10-0\nevent: task.event\ndata: {"event_type":"unrelated"}\n\n'
-            yield b"id: 11-0\nevent: task.event\n"
+            yield (
+                b"id: 00000000-0000-0000-0000-000000000010\nevent: task.event\n"
+                b'data: {"event_type":"unrelated"}\n\n'
+            )
+            yield b"id: 00000000-0000-0000-0000-000000000011\nevent: task.event\n"
             raise httpx.ReadError("interrupted before frame data")
 
     requests = []
@@ -104,7 +124,7 @@ def test_stream_reconnect_keeps_last_complete_frame_cursor(monkeypatch, capsys) 
             return httpx.Response(200, stream=Interrupted())
         return httpx.Response(
             200,
-            text='event: stream.completed\ndata: '
+            text="event: stream.completed\ndata: "
             '{"turn":{"status":"completed","reply":"done"}}\n\n',
         )
 
@@ -115,5 +135,5 @@ def test_stream_reconnect_keeps_last_complete_frame_cursor(monkeypatch, capsys) 
             assert await follow_turn(client, "/stream") == 0
 
     asyncio.run(exercise())
-    assert requests == ["0-0", "10-0"]
+    assert requests == ["0", "00000000-0000-0000-0000-000000000010"]
     assert "done" in capsys.readouterr().out

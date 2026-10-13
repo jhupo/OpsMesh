@@ -6,14 +6,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeOutputSchema
+from opsmesh.agents.execution.contracts import AgentOutputSchemaSpec
 from opsmesh.orchestration.definitions.contracts import WorkflowNode
 from opsmesh.orchestration.definitions.graph import ProjectPlanValidationError
-from opsmesh.orchestration.definitions.templates.builder import PlanningContext, ProjectPlan
+from opsmesh.orchestration.definitions.templates.builder import TaskPlanningContext, TaskWorkPlan
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 
 
-class PlannedWork(WorkflowNode):
+class PlannedWorkPackage(WorkflowNode):
     """A proposed execution node must resolve its assigned agent."""
 
     assigned_agent_profile_id: UUID
@@ -23,11 +23,11 @@ class AgentPlanProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     objective: str = Field(min_length=1, max_length=4000)
-    work_packages: list[PlannedWork] = Field(min_length=1, max_length=128)
+    work_packages: list[PlannedWorkPackage] = Field(min_length=1, max_length=128)
 
 
-def planner_output_schema() -> AgentRuntimeOutputSchema:
-    return AgentRuntimeOutputSchema(
+def planner_output_schema() -> AgentOutputSchemaSpec:
+    return AgentOutputSchemaSpec(
         # Workflow nodes contain dynamic tool arguments and policy maps. They cannot be
         # represented by strict schemas; output still passes JSON Schema and domain validation.
         name="task_plan",
@@ -49,11 +49,11 @@ def planning_mode(task: Task) -> str:
 
 
 def bootstrap_plan(session: Session, task: Task, attempt_id: UUID) -> dict[str, object]:
-    context = PlanningContext.from_task(task)
+    context = TaskPlanningContext.from_task(task)
     planner_id = context.planner_agent_profile_id if context is not None else None
     if planner_id is None:
         raise ProjectPlanValidationError("Planner requires an assigned team agent")
-    return ProjectPlan(
+    return TaskWorkPlan(
         plan_id=str(attempt_id),
         objective=task.title,
         planner_agent_profile_id=planner_id,

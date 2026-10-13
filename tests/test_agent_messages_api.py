@@ -1,15 +1,10 @@
-from collections.abc import Generator
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import fakeredis
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from opsmesh.agents.messages.contracts import (
     AgentMessageCreateRequest,
@@ -19,24 +14,20 @@ from opsmesh.agents.messages.models import AgentMessage, AgentMessageThread
 from opsmesh.agents.messages.service import AgentMailboxService
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.identity.users.models import User
-from opsmesh.main import create_app
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
-from opsmesh.shared.config import Settings, get_settings
-from opsmesh.shared.db.base import Base
-from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
+pytest_plugins = ["tests.fixtures.agent_api"]
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL required"
+)
 
 
-def test_agent_message_thread_and_messages_round_trip() -> None:
-    client, session = _client()
+def test_agent_message_thread_and_messages_round_trip(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     team = _add_team(session, workspace, name="Delivery")
     task = _add_task(session, workspace, owner, team=team)
@@ -93,8 +84,7 @@ def test_agent_message_thread_and_messages_round_trip() -> None:
         headers=_headers(owner.id),
     )
     agent_threads = client.get(
-        f"/api/v1/workspaces/{workspace.id}/agent-message-threads"
-        f"?agent_profile_id={recipient.id}",
+        f"/api/v1/workspaces/{workspace.id}/agent-message-threads?agent_profile_id={recipient.id}",
         headers=_headers(owner.id),
     )
 
@@ -109,8 +99,8 @@ def test_agent_message_thread_and_messages_round_trip() -> None:
     assert agent_threads.json()["items"][0]["agent_team_id"] == str(team.id)
 
 
-def test_agent_message_body_is_redacted_without_mutating_storage() -> None:
-    client, session = _client()
+def test_agent_message_body_is_redacted_without_mutating_storage(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     task = _add_task(session, workspace, owner)
     sender = _add_agent(session, workspace, name="Planner", role="planner")
@@ -181,8 +171,8 @@ def test_agent_message_body_is_redacted_without_mutating_storage() -> None:
     assert "Bearer hidden" not in serialized
 
 
-def test_agent_inbox_mark_read_and_thread_status() -> None:
-    client, session = _client()
+def test_agent_inbox_mark_read_and_thread_status(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     task = _add_task(session, workspace, owner)
     sender = _add_agent(session, workspace, name="Planner", role="planner")
@@ -194,8 +184,7 @@ def test_agent_inbox_mark_read_and_thread_status() -> None:
     )
     assert thread.status_code == 201
     message = client.post(
-        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/"
-        f"{thread.json()['id']}/messages",
+        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/{thread.json()['id']}/messages",
         headers=_headers(owner.id),
         json={
             "sender_agent_profile_id": str(sender.id),
@@ -223,8 +212,7 @@ def test_agent_inbox_mark_read_and_thread_status() -> None:
         json={},
     )
     closed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/"
-        f"{thread.json()['id']}/status",
+        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/{thread.json()['id']}/status",
         headers=_headers(owner.id),
         json={"status": "closed"},
     )
@@ -252,8 +240,8 @@ def test_agent_inbox_mark_read_and_thread_status() -> None:
     assert inbox_after_read.json()["latest_messages"] == []
 
 
-def test_agent_mailbox_service_writes_remain_in_caller_transaction() -> None:
-    _, session = _client()
+def test_agent_mailbox_service_writes_remain_in_caller_transaction(agent_api) -> None:
+    _, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     task = _add_task(session, workspace, owner)
     sender = _add_agent(session, workspace, name="Planner", role="planner")
@@ -292,8 +280,8 @@ def test_agent_mailbox_service_writes_remain_in_caller_transaction() -> None:
     assert session.get(AgentMessage, message.id) is None
 
 
-def test_agent_messages_reject_cross_workspace_agents_and_tasks() -> None:
-    client, session = _client()
+def test_agent_messages_reject_cross_workspace_agents_and_tasks(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, other_workspace = _seed_workspace(
         session,
@@ -351,8 +339,8 @@ def test_agent_messages_reject_cross_workspace_agents_and_tasks() -> None:
     assert forbidden_list.status_code == 403
 
 
-def test_agent_messages_reject_team_mailbox_on_non_team_task() -> None:
-    client, session = _client()
+def test_agent_messages_reject_team_mailbox_on_non_team_task(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     task = _add_task(session, workspace, owner)
     team = _add_team(session, workspace, name="Delivery")
@@ -375,8 +363,7 @@ def test_agent_messages_reject_team_mailbox_on_non_team_task() -> None:
     )
     assert thread.status_code == 201
     mismatched_message = client.post(
-        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/"
-        f"{thread.json()['id']}/messages",
+        f"/api/v1/workspaces/{workspace.id}/agent-message-threads/{thread.json()['id']}/messages",
         headers=_headers(owner.id),
         json={
             "agent_team_id": str(team.id),
@@ -390,8 +377,8 @@ def test_agent_messages_reject_team_mailbox_on_non_team_task() -> None:
     assert mismatched_message.status_code == 409
 
 
-def test_agent_mailbox_summary_is_workspace_scoped_and_redacted() -> None:
-    client, session = _client()
+def test_agent_mailbox_summary_is_workspace_scoped_and_redacted(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     other_owner, other_workspace = _seed_workspace(
         session,
@@ -495,8 +482,8 @@ def test_agent_mailbox_summary_is_workspace_scoped_and_redacted() -> None:
     assert "foreign-token" not in response.text
 
 
-def test_agent_mailbox_summary_includes_team_level_threads_without_task() -> None:
-    client, session = _client()
+def test_agent_mailbox_summary_includes_team_level_threads_without_task(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session, role="owner")
     team = _add_team(session, workspace, name="Runtime Team")
     sender = _add_agent(session, workspace, name="Planner", role="planner")
@@ -522,8 +509,7 @@ def test_agent_mailbox_summary_includes_team_level_threads_without_task() -> Non
     )
 
     listed = client.get(
-        f"/api/v1/workspaces/{workspace.id}/agent-message-threads"
-        f"?agent_team_id={team.id}",
+        f"/api/v1/workspaces/{workspace.id}/agent-message-threads?agent_team_id={team.id}",
         headers=_headers(owner.id),
     )
     summary = client.get(
@@ -545,48 +531,6 @@ def test_agent_mailbox_summary_includes_team_level_threads_without_task() -> Non
             "message": message_response.json(),
         }
     ]
-
-
-def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-    session = session_factory()
-    redis = fakeredis.FakeRedis(decode_responses=True)
-
-    app = create_app(
-        Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
-        )
-    )
-
-    def override_db_session() -> Generator[Session, None, None]:
-        request_session = session_factory()
-        try:
-            yield request_session
-        finally:
-            request_session.close()
-
-    app.dependency_overrides[get_db_session] = override_db_session
-    app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_redis_client] = lambda: redis
-    worker_queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder(app.state.settings.redis_key_prefix),
-        queue_name=app.state.settings.worker_queue_name,
-        blocking_timeout_seconds=0,
-    )
-    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
-    return TestClient(app), session
 
 
 def _seed_workspace(
@@ -693,12 +637,3 @@ def _headers(user_id: object) -> dict[str, str]:
         "Authorization": f"Bearer {TOKEN}",
         "X-User-ID": str(user_id),
     }
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

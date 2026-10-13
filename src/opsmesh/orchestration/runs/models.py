@@ -25,7 +25,6 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_agent_runs_workspace_status", "workspace_id", "status"),
         Index("ix_agent_runs_workspace_session", "workspace_id", "session_key", "status"),
         Index("ix_agent_runs_workspace_runtime_space", "workspace_id", "runtime_space_id"),
-        Index("ix_agent_runs_workspace_execution_runtime", "workspace_id", "execution_runtime_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -42,10 +41,6 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     runtime_id: Mapped[UUID | None] = mapped_column(nullable=True)
-    execution_runtime_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("workspace_runtimes.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     runtime_space_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("runtime_spaces.id", ondelete="SET NULL"),
         nullable=True,
@@ -58,6 +53,7 @@ class AgentRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    execution_released_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class RunEvent(UUIDPrimaryKeyMixin, Base):
@@ -95,7 +91,7 @@ class RunEvent(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(nullable=False)
 
 
-class AgentRunStateSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class AgentResumeStateSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "agent_run_state_snapshots"
     __table_args__ = (
         UniqueConstraint(

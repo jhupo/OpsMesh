@@ -13,7 +13,7 @@ from opsmesh.workspaces.quotas.schemas import (
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
 )
-from opsmesh.workspaces.quotas.service import WorkspaceQuotaService
+from opsmesh.workspaces.quotas.service import WorkspaceQuotaManagementService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -41,7 +41,7 @@ def get_workspace_execution_slot_summary(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceExecutionSlotSummaryResponse:
-    summary = WorkspaceQuotaService(session).execution_slot_summary(context.workspace.id)
+    summary = WorkspaceQuotaManagementService(session).execution_slot_summary(context.workspace.id)
     return WorkspaceExecutionSlotSummaryResponse.model_validate(summary)
 
 
@@ -51,7 +51,7 @@ def upsert_workspace_quotas(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> list[WorkspaceQuotaResponse]:
-    quotas = WorkspaceQuotaService(session).upsert_quotas(
+    quotas = WorkspaceQuotaManagementService(session).upsert_quotas(
         context.workspace.id,
         request,
         actor_user_id=context.user.user_id,
@@ -65,7 +65,7 @@ def disable_workspace_quota(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceQuotaResponse:
-    quota = WorkspaceQuotaService(session).disable_quota(
+    quota = WorkspaceQuotaManagementService(session).disable_quota(
         context.workspace.id,
         quota_key,
         actor_user_id=context.user.user_id,

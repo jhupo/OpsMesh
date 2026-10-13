@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.messages.contracts import AgentInbox
+from opsmesh.agents.messages.contracts import AgentInboxSummary
 from opsmesh.agents.messages.models import (
     PENDING_STATUSES,
     READ_STATUSES,
@@ -122,7 +122,7 @@ class AgentMailboxQueries(ABC):
         unread_only: bool = False,
         thread_id: UUID | None = None,
         task_id: UUID | None = None,
-    ) -> AgentInbox:
+    ) -> AgentInboxSummary:
         self._require_agent(workspace_id, agent_profile_id)
         if thread_id is not None:
             thread = self._require_thread(workspace_id, thread_id)

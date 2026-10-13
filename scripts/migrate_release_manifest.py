@@ -1,7 +1,7 @@
-"""Explicit, offline conversion of a version-1 installed release record.
+"""Explicit, offline conversion of a version-2 installed release record.
 
 Stop the host updater and back up the installation before running this command.
-The running installer/updater accepts only version 2; this is a data migration.
+The running installer/updater accepts only version 3; this is a data migration.
 """
 
 from __future__ import annotations
@@ -18,17 +18,10 @@ def convert(source: Path, destination: Path) -> ReleaseManifest:
     if source.resolve() == destination.resolve() or destination.exists():
         raise ValueError("Migration requires a new destination; preserve the source record")
     payload = json.loads(source.read_bytes())
-    if not isinstance(payload, dict) or payload.pop("schema_version", None) != 1:
-        raise ValueError("Expected an installed version-1 release record")
-    owner = str(payload.get("repository", "")).split("/")[0].lower()
-    backend = payload.pop("backend_digest")
-    runtime = payload.pop("runtime_digest")
-    payload.update(
-        schema_version=2,
-        api_image=f"ghcr.io/{owner}/opsmesh-backend@{backend}",
-        worker_image=f"ghcr.io/{owner}/opsmesh-backend@{backend}",
-        runtime_image=f"ghcr.io/{owner}/opsmesh-runtime@{runtime}",
-    )
+    if not isinstance(payload, dict) or payload.pop("schema_version", None) != 2:
+        raise ValueError("Expected an installed version-2 release record")
+    payload.pop("connector_protocol")
+    payload["schema_version"] = 3
     manifest = ReleaseManifest.model_validate(payload)
     atomic_write(destination, manifest.model_dump_json(indent=2), mode=0o644)
     return manifest

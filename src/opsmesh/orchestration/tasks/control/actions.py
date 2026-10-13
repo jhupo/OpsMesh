@@ -11,15 +11,15 @@ from opsmesh.orchestration.tasks.collaboration.contracts import TaskOperatorActi
 from opsmesh.orchestration.tasks.collaboration.manager_review_requests import (
     ManagerReviewRequestService,
 )
-from opsmesh.orchestration.tasks.control.dependencies import (
+from opsmesh.orchestration.tasks.control.step_dependencies import (
     completed_source_steps,
     dependency_step_ids,
     without_blocking_keys,
 )
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
-from opsmesh.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
+from opsmesh.orchestration.tasks.state import TaskStatus, transition_task
+from opsmesh.orchestration.tasks.steps import TaskStepStatus, transition_task_step
 
 TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
@@ -196,7 +196,7 @@ class TaskOperatorActionService:
             if step.status != "blocked":
                 warnings.append(f"step_not_blocked:{step.id}")
                 continue
-            TaskStepStateService().transition(
+            transition_task_step(
                 step,
                 TaskStepStatus.QUEUED,
                 dependencies=without_blocking_keys(step.dependencies),
@@ -250,7 +250,7 @@ class TaskOperatorActionService:
             if step.status in TERMINAL_STEP_STATUSES:
                 warnings.append(f"downstream_terminal:{step.id}")
                 continue
-            if step.status in {"running", "waiting_runtime", "waiting_approval"}:
+            if step.status in {"running", "waiting_approval"}:
                 warnings.append(f"downstream_active:{step.id}")
                 continue
 
@@ -261,7 +261,7 @@ class TaskOperatorActionService:
                 step.dependencies = cleaned_dependencies
                 cleared_blocking_step_ids.append(step.id)
             if status_changed:
-                TaskStepStateService().transition(
+                transition_task_step(
                     step,
                     TaskStepStatus.QUEUED,
                     dependencies=cleaned_dependencies,
@@ -317,7 +317,7 @@ class TaskOperatorActionService:
         previous_agent_profile_id = step.assigned_agent_profile_id
         step.assigned_agent_profile_id = agent_profile_id
         if step.status in {"blocked", "failed"}:
-            TaskStepStateService().transition(
+            transition_task_step(
                 step,
                 TaskStepStatus.QUEUED,
                 dependencies=without_blocking_keys(step.dependencies),
@@ -369,6 +369,6 @@ class TaskOperatorActionService:
         if not affected_step_ids:
             return
         if task.status == TaskStatus.BLOCKED.value:
-            TaskStateService().transition(task, TaskStatus.RUNNING)
+            transition_task(task, TaskStatus.RUNNING)
         elif task.status == TaskStatus.FAILED.value:
-            TaskStateService().transition(task, TaskStatus.QUEUED)
+            transition_task(task, TaskStatus.QUEUED)

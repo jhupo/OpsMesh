@@ -7,10 +7,17 @@ from zipfile import BadZipFile, ZipFile
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.storage.transactions import (
     CompensatingObjectStorageWrites,
     ObjectStorageCompensationError,
+)
+from opsmesh.resources.transfers.archive_limits import (
+    ARCHIVE_METADATA_BUDGET,
+    MAX_ARCHIVE_INVENTORY_BYTES,
+    MAX_ARCHIVE_METADATA_BYTES,
+    BoundedArchiveReader,
+    compressed_archive_limit,
 )
 from opsmesh.resources.transfers.contracts import (
     SUPPORTED_WORKSPACE_EXPORT_FORMAT,
@@ -43,6 +50,8 @@ class WorkspaceArchiveImportService:
         request: WorkspaceArchiveImportRequest,
         storage: ObjectStorage,
     ) -> WorkspaceImportResponse:
+        if len(archive_bytes) > compressed_archive_limit(request.max_total_bytes):
+            raise ValueError("Compressed archive exceeds the archive byte limit")
         try:
             archive = ZipFile(BytesIO(archive_bytes))
         except BadZipFile as exc:
@@ -176,9 +185,12 @@ class WorkspaceArchiveImportService:
             self._session.flush()
 
     def _read_metadata(self, archive: ZipFile) -> WorkspaceExportResponse:
-        if "metadata.json" not in archive.namelist():
+        reader = BoundedArchiveReader(archive, max_total_bytes=ARCHIVE_METADATA_BUDGET)
+        if "metadata.json" not in reader.names:
             raise ValueError("Archive is missing metadata.json")
-        metadata = WorkspaceExportResponse.model_validate_json(archive.read("metadata.json"))
+        metadata = WorkspaceExportResponse.model_validate_json(
+            reader.read("metadata.json", max_bytes=MAX_ARCHIVE_METADATA_BYTES)
+        )
         if metadata.manifest.format_version != SUPPORTED_WORKSPACE_EXPORT_FORMAT:
             raise ValueError(
                 f"Unsupported workspace archive format: {metadata.manifest.format_version!r}"
@@ -201,12 +213,14 @@ class WorkspaceArchiveImportService:
         ).hexdigest()
         if expected_checksum != actual_checksum:
             raise ValueError("Workspace archive metadata checksum mismatch")
-        if "object-inventory.json" not in archive.namelist():
+        if "object-inventory.json" not in reader.names:
             raise ValueError("Workspace archive is missing object inventory")
-        inventory = json.loads(archive.read("object-inventory.json"))
+        inventory = json.loads(
+            reader.read("object-inventory.json", max_bytes=MAX_ARCHIVE_INVENTORY_BYTES)
+        )
         if not isinstance(inventory, list):
             raise ValueError("Workspace archive object inventory is invalid")
-        archive_names = set(archive.namelist())
+        archive_names = reader.names
         for item in inventory:
             if not isinstance(item, dict) or item.get("status") != "included":
                 continue
@@ -217,6 +231,7 @@ class WorkspaceArchiveImportService:
                 not isinstance(name, str)
                 or name not in archive_names
                 or not isinstance(expected_size, int)
+                or expected_size < 0
                 or not isinstance(expected_object_checksum, str)
             ):
                 raise ValueError("Workspace archive object inventory is invalid")
@@ -270,7 +285,7 @@ class WorkspaceArchiveImportService:
         response: WorkspaceImportResponse,
         storage_writes: CompensatingObjectStorageWrites,
     ) -> None:
-        blob_reader = WorkspaceArchiveBlobReader(archive, set(archive.namelist()))
+        blob_reader = WorkspaceArchiveBlobReader(archive, max_total_bytes=request.max_total_bytes)
         file_importer = WorkspaceArchiveFileImporter(
             session=self._session,
             blob_reader=blob_reader,
@@ -281,25 +296,22 @@ class WorkspaceArchiveImportService:
             blob_reader=blob_reader,
             storage_writes=storage_writes,
         )
-        total_bytes = 0
         if request.import_file_bytes:
             for item in metadata.files[: request.max_items_per_collection]:
-                total_bytes = file_importer.import_blob(
+                file_importer.import_blob(
                     workspace=workspace,
                     user_id=user_id,
                     request=request,
                     item=item,
                     response=response,
-                    total_bytes=total_bytes,
                 )
         if request.import_artifact_bytes:
             for item in metadata.artifacts[: request.max_items_per_collection]:
-                total_bytes = artifact_importer.import_blob(
+                artifact_importer.import_blob(
                     workspace=workspace,
                     request=request,
                     item=item,
                     response=response,
-                    total_bytes=total_bytes,
                 )
             artifact_importer.finalize(response)
 

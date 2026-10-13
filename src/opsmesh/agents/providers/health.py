@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -8,17 +9,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.providers.audit import ModelProviderAuditWriter
-from opsmesh.agents.providers.contracts import ProviderProbeName
 from opsmesh.agents.providers.model_api import model_api_for_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.agents.providers.probes import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
-    probe_model_provider,
 )
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
+from opsmesh.runtime.temporal.contracts import ExecutionKind
 from opsmesh.shared.security.redaction import redact_sensitive_text
 from opsmesh.shared.security.secrets import SecretEncryptionService
+
+MODEL_PROVIDER_HEALTH_SCHEDULE_TYPE = ExecutionKind.MODEL_PROVIDER_HEALTH.value
+
+
+@dataclass(frozen=True)
+class ModelProviderHealthSnapshot:
+    # This value lives only in the probing process, never in a workflow payload.
+    target: ModelProviderHealthTarget = field(repr=False)
+    api_key_fingerprint: str
 
 
 class ModelProviderHealthService:
@@ -51,39 +60,66 @@ class ModelProviderHealthService:
         )
         self._session.flush([credential])
 
-    async def run_health_check(
+    def prepare_health_check(
         self,
         *,
         workspace_id: UUID,
         credential_id: UUID,
-        actor_user_id: UUID,
-        probes: tuple[ProviderProbeName, ...] = ("models", "inference"),
-        timeout_seconds: float = 15,
-    ) -> ModelProviderHealthCheckResult:
+    ) -> ModelProviderHealthSnapshot:
         credential = self._queries().require(workspace_id=workspace_id, credential_id=credential_id)
         payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
         api_key = payload.get("api_key")
         if not isinstance(api_key, str) or not api_key:
             raise ValueError("Model provider credential is missing api_key")
         model_api = model_api_for_provider(credential.provider, credential.budget_metadata)
-        result = await probe_model_provider(
-            ModelProviderHealthTarget(
+        return ModelProviderHealthSnapshot(
+            target=ModelProviderHealthTarget(
                 provider=credential.provider,
                 model=credential.default_model,
                 api_key=api_key,
                 base_url=credential.base_url,
                 model_api=model_api,
             ),
-            probes=probes,
-            timeout_seconds=timeout_seconds,
+            api_key_fingerprint=credential.api_key_fingerprint,
         )
+
+    def complete_health_check(
+        self,
+        *,
+        workspace_id: UUID,
+        credential_id: UUID,
+        actor_user_id: UUID,
+        snapshot: ModelProviderHealthSnapshot,
+        result: ModelProviderHealthCheckResult,
+    ) -> ModelProviderCredential:
+        credential = self._session.scalar(
+            select(ModelProviderCredential)
+            .where(
+                ModelProviderCredential.workspace_id == workspace_id,
+                ModelProviderCredential.id == credential_id,
+                ModelProviderCredential.status == "active",
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if credential is None:
+            raise ValueError("Model provider credential not found")
+        target = snapshot.target
+        if (
+            credential.api_key_fingerprint != snapshot.api_key_fingerprint
+            or credential.provider != target.provider
+            or credential.default_model != target.model
+            or credential.base_url != target.base_url
+            or model_api_for_provider(credential.provider, credential.budget_metadata)
+            != target.model_api
+        ):
+            raise ValueError("Model provider configuration changed during its health check")
         apply_health_check_result(credential, result)
         ModelProviderAuditWriter(self._session).health_checked(
             workspace_id=workspace_id, user_id=actor_user_id, credential=credential, result=result
         )
-        self._session.commit()
-        self._session.refresh(credential)
-        return result
+        self._session.flush()
+        return credential
 
     def _queries(self) -> ModelProviderCredentialQueryService:
         from opsmesh.agents.providers.queries import ModelProviderCredentialQueryService
@@ -192,7 +228,6 @@ def model_provider_health_check_schedule_summary(
     session: Session, *, workspace_id: UUID, credential_id: UUID
 ) -> dict[str, object]:
     from opsmesh.orchestration.scheduling.models import WorkspaceScheduledJob
-    from opsmesh.runtime.queues.contracts import JobType
 
     jobs = list(
         session.scalars(
@@ -200,7 +235,7 @@ def model_provider_health_check_schedule_summary(
             .where(
                 WorkspaceScheduledJob.workspace_id == workspace_id,
                 WorkspaceScheduledJob.resource_id == credential_id,
-                WorkspaceScheduledJob.job_type == JobType.MODEL_PROVIDER_HEALTH_CHECK.value,
+                WorkspaceScheduledJob.execution_kind == MODEL_PROVIDER_HEALTH_SCHEDULE_TYPE,
             )
             .order_by(
                 WorkspaceScheduledJob.status.asc(),
@@ -229,7 +264,7 @@ def health_check_schedule_job_summary(job: WorkspaceScheduledJob) -> dict[str, o
         "schedule_type": job.schedule_type,
         "next_run_at": job.next_run_at,
         "last_run_at": job.last_run_at,
-        "routing": health_check_schedule_routing_summary(job.routing),
+        "parameters": health_check_schedule_routing_summary(job.parameters),
     }
 
 

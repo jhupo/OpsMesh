@@ -1,2 +1,1 @@
 """Agent team domain."""
-

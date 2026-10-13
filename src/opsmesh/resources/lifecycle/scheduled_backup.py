@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.resources.lifecycle.repository import WorkspaceDataLifecycleRepository
@@ -14,7 +15,6 @@ from opsmesh.resources.lifecycle.scheduling import (
 )
 from opsmesh.resources.lifecycle.settings import _backup_settings
 from opsmesh.resources.transfers.service import WorkspaceExportService
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -26,8 +26,16 @@ class ScheduledBackupService:
     def run_if_due(
         self,
         workspace: Workspace,
-        queue: RedisQueue,
     ) -> ScheduledLifecycleSummary:
+        current = self._session.scalar(
+            select(Workspace)
+            .where(Workspace.id == workspace.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if current is None or current.status != "active":
+            return ScheduledLifecycleSummary()
+        workspace = current
         raw_policy = _backup_settings(workspace.settings)
         latest_job = self._repository.latest_export_job(workspace.id)
         latest_success = self._repository.latest_successful_archive_export(workspace.id)
@@ -90,7 +98,6 @@ class ScheduledBackupService:
             workspace=workspace,
             user_id=workspace.owner_user_id,
             request=request,
-            queue=queue,
         )
         export_job.job_metadata = {
             **export_job.job_metadata,

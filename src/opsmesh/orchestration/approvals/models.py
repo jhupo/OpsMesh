@@ -37,8 +37,8 @@ class Approval(UUIDPrimaryKeyMixin, Base):
         nullable=True,
     )
     decision_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False)
-    decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PendingToolInvocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):

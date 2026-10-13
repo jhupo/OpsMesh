@@ -30,7 +30,6 @@ from opsmesh.teams.management.models import AgentTeam
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -54,13 +53,119 @@ class TaskExecutionDiagnosticsService:
         if task is None:
             return None
 
-        steps = self._steps(workspace_id, task.id)
-        runs_by_step_id = self._runs_by_step_id(workspace_id, task.id)
-        approvals_by_run_id, pending_by_approval_id = self._approval_state(
-            workspace_id,
-            task.id,
+        return self.diagnostics_for_tasks(workspace_id=workspace_id, tasks=[task])[task.id]
+
+    def diagnostics_for_tasks(
+        self,
+        *,
+        workspace_id: UUID,
+        tasks: list[Task],
+        steps: list[TaskStep] | None = None,
+        runs: list[AgentRun] | None = None,
+    ) -> dict[UUID, dict[str, object]]:
+        if any(task.workspace_id != workspace_id for task in tasks):
+            raise ValueError("Diagnostic task outside workspace")
+        task_ids = {task.id for task in tasks}
+        if not task_ids:
+            return {}
+        if steps is None:
+            steps = list(
+                self._session.scalars(
+                    select(TaskStep)
+                    .where(TaskStep.workspace_id == workspace_id, TaskStep.task_id.in_(task_ids))
+                    .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
+                )
+            )
+        if runs is None:
+            runs = list(
+                self._session.scalars(
+                    select(AgentRun)
+                    .where(AgentRun.workspace_id == workspace_id, AgentRun.task_id.in_(task_ids))
+                    .order_by(AgentRun.created_at.asc())
+                )
+            )
+        if any(step.workspace_id != workspace_id or step.task_id not in task_ids for step in steps):
+            raise ValueError("Diagnostic step outside task scope")
+        if any(run.workspace_id != workspace_id or run.task_id not in task_ids for run in runs):
+            raise ValueError("Diagnostic run outside task scope")
+        steps = sorted(steps, key=lambda step: (step.order_index, step.created_at))
+        runs = sorted(runs, key=lambda run: run.created_at)
+        approvals = list(
+            self._session.scalars(
+                select(Approval)
+                .where(Approval.workspace_id == workspace_id, Approval.task_id.in_(task_ids))
+                .order_by(Approval.created_at.asc())
+            )
+        )
+        approval_ids = {approval.id for approval in approvals}
+        pending = (
+            list(
+                self._session.scalars(
+                    select(PendingToolInvocation)
+                    .where(
+                        PendingToolInvocation.workspace_id == workspace_id,
+                        PendingToolInvocation.approval_id.in_(approval_ids),
+                    )
+                    .order_by(PendingToolInvocation.created_at.asc())
+                )
+            )
+            if approval_ids
+            else []
         )
         agents = self._agent_map(workspace_id, steps)
+        invocations = list(
+            self._session.scalars(
+                select(SubworkflowInvocation).where(
+                    SubworkflowInvocation.workspace_id == workspace_id,
+                    SubworkflowInvocation.parent_task_id.in_(task_ids),
+                )
+            )
+        )
+        steps_by_task: dict[UUID, list[TaskStep]] = defaultdict(list)
+        runs_by_task: dict[UUID, dict[UUID, list[AgentRun]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        approvals_by_run: dict[UUID, list[Approval]] = defaultdict(list)
+        pending_by_approval: dict[UUID, list[PendingToolInvocation]] = defaultdict(list)
+        invocations_by_task: dict[UUID, list[SubworkflowInvocation]] = defaultdict(list)
+        for step in steps:
+            steps_by_task[step.task_id].append(step)
+        for run in runs:
+            if run.task_id is not None and run.task_step_id is not None:
+                runs_by_task[run.task_id][run.task_step_id].append(run)
+        for approval in approvals:
+            if approval.agent_run_id is not None:
+                approvals_by_run[approval.agent_run_id].append(approval)
+        for invocation in pending:
+            pending_by_approval[invocation.approval_id].append(invocation)
+        for subworkflow in invocations:
+            invocations_by_task[subworkflow.parent_task_id].append(subworkflow)
+        return {
+            task.id: self._diagnostics_from_records(
+                workspace_id=workspace_id,
+                task=task,
+                steps=steps_by_task[task.id],
+                runs_by_step_id=runs_by_task[task.id],
+                approvals_by_run_id=approvals_by_run,
+                pending_by_approval_id=pending_by_approval,
+                agents=agents,
+                invocations=invocations_by_task[task.id],
+            )
+            for task in tasks
+        }
+
+    def _diagnostics_from_records(
+        self,
+        *,
+        workspace_id: UUID,
+        task: Task,
+        steps: list[TaskStep],
+        runs_by_step_id: dict[UUID, list[AgentRun]],
+        approvals_by_run_id: dict[UUID, list[Approval]],
+        pending_by_approval_id: dict[UUID, list[PendingToolInvocation]],
+        agents: dict[UUID, AgentProfile],
+        invocations: list[SubworkflowInvocation],
+    ) -> dict[str, object]:
         step_by_id = {step.id: step for step in steps}
         downstream_by_step_id = downstream_map(steps)
         step_payloads = [
@@ -76,12 +181,6 @@ class TaskExecutionDiagnosticsService:
         step_payload_by_id = {
             step.id: payload for step, payload in zip(steps, step_payloads, strict=True)
         }
-        invocations = self._session.scalars(
-            select(SubworkflowInvocation).where(
-                SubworkflowInvocation.workspace_id == workspace_id,
-                SubworkflowInvocation.parent_task_id == task.id,
-            )
-        ).all()
         invocation_by_step = {
             invocation.parent_task_step_id: invocation for invocation in invocations
         }
@@ -89,9 +188,7 @@ class TaskExecutionDiagnosticsService:
             step_id = step_payload.get("task_step_id")
             runs = runs_by_step_id.get(step_id, []) if isinstance(step_id, UUID) else []
             approvals = [
-                approval
-                for run in runs
-                for approval in approvals_by_run_id.get(run.id, [])
+                approval for run in runs for approval in approvals_by_run_id.get(run.id, [])
             ]
             step_payload["attempt_count"] = len(runs)
             step_payload["approval_state"] = _approval_state_payload(
@@ -167,9 +264,10 @@ class TaskExecutionDiagnosticsService:
                 )
             )
         )
+        diagnostics_by_task = self.diagnostics_for_tasks(workspace_id=workspace_id, tasks=tasks)
         items: list[dict[str, object]] = []
         for task in tasks:
-            diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
+            diagnostics = diagnostics_by_task.get(task.id)
             if diagnostics is None:
                 continue
             for step_payload in dict_list(diagnostics.get("steps")):
@@ -194,67 +292,6 @@ class TaskExecutionDiagnosticsService:
             "summary": handoff_queue_summary(items),
             "items": paged_items,
         }
-
-    def _steps(self, workspace_id: UUID, task_id: UUID) -> list[TaskStep]:
-        return list(
-            self._session.scalars(
-                select(TaskStep)
-                .where(TaskStep.workspace_id == workspace_id, TaskStep.task_id == task_id)
-                .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
-            )
-        )
-
-    def _runs_by_step_id(
-        self,
-        workspace_id: UUID,
-        task_id: UUID,
-    ) -> dict[UUID, list[AgentRun]]:
-        runs = self._session.scalars(
-            select(AgentRun)
-            .where(
-                AgentRun.workspace_id == workspace_id,
-                AgentRun.task_id == task_id,
-                AgentRun.task_step_id.is_not(None),
-            )
-            .order_by(AgentRun.created_at.asc())
-        ).all()
-        runs_by_step_id: dict[UUID, list[AgentRun]] = defaultdict(list)
-        for run in runs:
-            if run.task_step_id is not None:
-                runs_by_step_id[run.task_step_id].append(run)
-        return runs_by_step_id
-
-    def _approval_state(
-        self,
-        workspace_id: UUID,
-        task_id: UUID,
-    ) -> tuple[dict[UUID, list[Approval]], dict[UUID, list[PendingToolInvocation]]]:
-        approvals = self._session.scalars(
-            select(Approval)
-            .where(
-                Approval.workspace_id == workspace_id,
-                Approval.task_id == task_id,
-            )
-            .order_by(Approval.created_at.asc())
-        ).all()
-        approval_by_run_id: dict[UUID, list[Approval]] = defaultdict(list)
-        approval_ids = {approval.id for approval in approvals}
-        for approval in approvals:
-            if approval.agent_run_id is not None:
-                approval_by_run_id[approval.agent_run_id].append(approval)
-        pending_by_approval_id: dict[UUID, list[PendingToolInvocation]] = defaultdict(list)
-        if approval_ids:
-            pending = self._session.scalars(
-                select(PendingToolInvocation)
-                .where(
-                    PendingToolInvocation.workspace_id == workspace_id,
-                    PendingToolInvocation.approval_id.in_(approval_ids),
-                )
-                .order_by(PendingToolInvocation.created_at.asc())
-            ).all()
-            for invocation in pending:
-                pending_by_approval_id[invocation.approval_id].append(invocation)
-        return approval_by_run_id, pending_by_approval_id
 
     def _agent_map(
         self,
@@ -296,11 +333,7 @@ class TaskExecutionDiagnosticsService:
             for run in runs
             if run.status in ACTIVE_RUN_STATUSES
         )
-        pending_approval_steps = sum(
-            1
-            for step in steps
-            if _has_pending_approval(step)
-        )
+        pending_approval_steps = sum(1 for step in steps if _has_pending_approval(step))
         return {
             "task_status": task.status,
             "step_counts": dict(sorted(status_counts.items())),

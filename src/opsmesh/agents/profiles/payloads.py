@@ -168,6 +168,16 @@ def copy_json_value(field: str, value: Any) -> Any:
             raise ValueError(f"Agent profile {field} must be an object")
         if field == "memory_policy":
             return normalized_memory_policy(dict(value))
+        if field == "tool_policy":
+            if "mcp_tools" in value:
+                raise ValueError("Agent tool policy must use allowed_tools")
+            allowed = value.get("allowed_tools", [])
+            if not isinstance(allowed, list) or any(
+                not isinstance(item, str) or not item for item in allowed
+            ):
+                raise ValueError("Agent allowed_tools must be a list of nonempty tool names")
+            if len(set(allowed)) != len(allowed):
+                raise ValueError("Agent allowed_tools must not contain duplicate names")
         return dict(value)
     if field == "model_provider_credential_id":
         return uuid_or_none(value)

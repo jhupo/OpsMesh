@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.providers.audit import (
     ModelProviderAuditWriter,
     budget_metadata_with_model_api,
 )
-from opsmesh.agents.providers.classification import canonical_model_provider
+from opsmesh.agents.providers.classification import require_model_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.policy import ModelProviderDefaultService, validated_base_url
+from opsmesh.agents.providers.policy import validated_base_url
 from opsmesh.agents.providers.queries import ModelProviderCredentialQueryService
-from opsmesh.shared.security.egress import MODEL_PROVIDER_BASE_URL_POLICY, EgressUrlPolicy
+from opsmesh.shared.security.egress import MODEL_PROVIDER_BASE_URL_POLICY, EgressURLPolicy
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 
@@ -21,7 +22,7 @@ class ModelProviderCredentialCommandService:
         self,
         session: Session,
         secret_service: SecretEncryptionService,
-        egress_policy: EgressUrlPolicy = MODEL_PROVIDER_BASE_URL_POLICY,
+        egress_policy: EgressURLPolicy = MODEL_PROVIDER_BASE_URL_POLICY,
     ) -> None:
         self._session = session
         self._secret_service = secret_service
@@ -42,15 +43,14 @@ class ModelProviderCredentialCommandService:
         model_capabilities: list[dict[str, object]] | None = None,
         budget_metadata: dict[str, object] | None = None,
     ) -> ModelProviderCredential:
-        provider = canonical_model_provider(provider)
+        provider = require_model_provider(provider)
         base_url = validated_base_url(
             base_url,
-            provider=provider,
             egress_policy=self._egress_policy,
         )
         encrypted = self._secret_service.encrypt_payload({"api_key": api_key})
         if is_default:
-            ModelProviderDefaultService(self._session).unset_other_defaults(workspace_id)
+            unset_other_defaults(self._session, workspace_id)
         credential = ModelProviderCredential(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
@@ -103,7 +103,7 @@ class ModelProviderCredentialCommandService:
             credential.name = name
         next_provider = credential.provider
         if provider is not None:
-            next_provider = canonical_model_provider(provider)
+            next_provider = require_model_provider(provider)
         if model_capabilities is not None:
             credential.model_capabilities = model_capabilities
         if default_model is not None:
@@ -111,13 +111,13 @@ class ModelProviderCredentialCommandService:
         if provider is not None or base_url is not None:
             credential.base_url = validated_base_url(
                 base_url if base_url is not None else credential.base_url,
-                provider=next_provider,
                 egress_policy=self._egress_policy,
             )
             credential.provider = next_provider
         if is_default is not None:
             if is_default:
-                ModelProviderDefaultService(self._session).unset_other_defaults(
+                unset_other_defaults(
+                    self._session,
                     workspace_id,
                     credential.id,
                 )
@@ -170,7 +170,8 @@ class ModelProviderCredentialCommandService:
         actor_user_id: UUID,
     ) -> ModelProviderCredential:
         credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
-        ModelProviderDefaultService(self._session).unset_other_defaults(
+        unset_other_defaults(
+            self._session,
             workspace_id,
             credential.id,
         )
@@ -210,3 +211,16 @@ class ModelProviderCredentialCommandService:
             self._session,
             self._secret_service,
         ).require(workspace_id=workspace_id, credential_id=credential_id)
+
+
+def unset_other_defaults(
+    session: Session,
+    workspace_id: UUID,
+    credential_id: UUID | None = None,
+) -> None:
+    statement = update(ModelProviderCredential).where(
+        ModelProviderCredential.workspace_id == workspace_id
+    )
+    if credential_id is not None:
+        statement = statement.where(ModelProviderCredential.id != credential_id)
+    session.execute(statement.values(is_default=False))

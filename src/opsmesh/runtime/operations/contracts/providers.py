@@ -71,14 +71,12 @@ class ModelProviderOperationsRunResponse(BaseModel):
     protocol: str | None
     credential_id: UUID | None
     provider_snapshot_source: str
-    fallback_status: str
-    fallback: dict[str, object] = Field(default_factory=dict)
     failure: dict[str, object] = Field(default_factory=dict)
     provenance: dict[str, object] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
-    @field_serializer("fallback", "failure", "provenance")
+    @field_serializer("failure", "provenance")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
@@ -90,9 +88,8 @@ class ModelProviderOperationsResponse(BaseModel):
     credentials: list[ModelProviderOperationsCredentialResponse]
     agents: list[ModelProviderOperationsAgentResponse]
     runs: list[ModelProviderOperationsRunResponse]
-    fallback: dict[str, object] = Field(default_factory=dict)
     suggested_actions: list[dict[str, object]] = Field(default_factory=list)
 
-    @field_serializer("summary", "fallback", "suggested_actions")
+    @field_serializer("summary", "suggested_actions")
     def _serialize_payload(self, value: object) -> object:
         return redact_sensitive_payload_item(value)

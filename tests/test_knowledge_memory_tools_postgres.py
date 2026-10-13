@@ -12,11 +12,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.agents.execution.contracts import AgentRuntimeContext
-from opsmesh.agents.execution.tools.executor import BackendToolExecutor
+from opsmesh.agents.execution.contracts import AgentExecutionContext
+from opsmesh.agents.execution.tools.executor import AgentToolExecutionService
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.resource_queries import execution_resource_queries
+from opsmesh.identity.users.models import User
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.approvals.pending_tools import (
     PendingToolInvocationRequest,
@@ -24,17 +25,21 @@ from opsmesh.orchestration.approvals.pending_tools import (
 )
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
+from opsmesh.resources.knowledge.activities import KnowledgeIngestionActivities
+from opsmesh.resources.knowledge.content import KnowledgeURLFetcher
 from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
 from opsmesh.resources.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry
-from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
-from opsmesh.runtime.queues.models import QueueDispatch
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import DispatchRequest, ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
-from tests.test_agent_runtime_tools import _memory_resource_grant, _product_definitions
-from tests.test_conversations_postgres import _queue, _seed_conversation
-from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import temporary_postgres_schema
+from tests.test_agent_execution_tools import _memory_resource_grant, _product_definitions
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL URL required"
@@ -58,7 +63,7 @@ TOOLS = (
 
 
 def test_text_source_migration_round_trip_and_refuses_history_loss():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         with engine.connect() as connection:
             schema = connection.scalar(text("SELECT current_schema()"))
         url = engine.url.update_query_dict({"options": f"-csearch_path={schema},public"})
@@ -82,6 +87,14 @@ def test_text_source_migration_round_trip_and_refuses_history_loss():
             source.source_config = {}
             session.get(AgentRun, context.run_id).status = "completed"
             session.commit()
+        with pytest.raises(RuntimeError, match="Drain Temporal delivery intents"):
+            command.downgrade(config, "0120_retired_egress_configuration")
+        # This migration fixture acknowledges its generated delivery record. Native
+        # publication/idempotency is covered by the real Temporal outbox suite.
+        with factory() as session:
+            for dispatch in session.scalars(select(TemporalOutboxEntry)):
+                dispatch.published_at = datetime.now(UTC)
+            session.commit()
         with pytest.raises(DBAPIError, match="Export and remove text"):
             command.downgrade(config, "0120_retired_egress_configuration")
         with factory() as session:
@@ -97,8 +110,14 @@ def test_text_source_migration_round_trip_and_refuses_history_loss():
 
 
 def _seed(factory):
-    wid, uid, _, _ = _seed_conversation(factory)
     with factory() as session:
+        user = User(email=f"{uuid4()}@example.com", display_name="Owner")
+        workspace = Workspace(owner=user, name="Knowledge", slug=uuid4().hex)
+        session.add_all(
+            [user, workspace, WorkspaceMember(workspace=workspace, user=user, role="owner")]
+        )
+        session.flush()
+        wid, uid = workspace.id, user.id
         profile = AgentProfile(workspace_id=wid, name="Knowledge Manager", role="manager")
         session.add(profile)
         session.flush()
@@ -120,7 +139,7 @@ def _seed(factory):
         session.add(run)
         grant = _memory_resource_grant(session, session.get(Workspace, wid))
         session.commit()
-        return AgentRuntimeContext(
+        return AgentExecutionContext(
             workspace_id=wid,
             user_id=uid,
             task_id=task.id,
@@ -137,7 +156,7 @@ def _call(factory, context, tool, arguments):
         user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
         with execution_resource_queries(session, context.workspace_id, user):
             secrets = SecretEncryptionService(secret="knowledge-acceptance-secret", key_id="test")
-            executor = BackendToolExecutor(session, secret_service=secrets)
+            executor = AgentToolExecutionService(session, secret_service=secrets)
             call_id = uuid4().hex
             if tool == "archive_knowledge":
                 review = executor.review_tool_call(
@@ -171,7 +190,7 @@ def _call(factory, context, tool, arguments):
                 )
                 pending.status = "approved"
                 session.commit()
-            result = executor.prepare_tool(
+            result = executor.execute_tool(
                 context=context,
                 tool_name=tool,
                 arguments=arguments,
@@ -182,22 +201,37 @@ def _call(factory, context, tool, arguments):
 
 
 def _ingest(factory, context, source_id, version):
-    with factory() as session:
-        service = KnowledgeSourceIngestionService(session)
-        ingestion = service.start(
+    from unittest.mock import Mock
+
+    KnowledgeIngestionActivities(
+        ActivityDependencies(factory, Settings(environment="test")),
+        Mock(spec=KnowledgeURLFetcher),
+    ).ingest(
+        ExecutionRequest(
             workspace_id=context.workspace_id,
-            source_id=source_id,
-            source_version=version,
+            resource_id=source_id,
+            kind=ExecutionKind.KNOWLEDGE_INGEST,
+            requested_by_user_id=context.user_id,
+            parameters={"source_version": version},
         )
-        assert ingestion is not None
-        session.commit()
-        result = service.process(ingestion=ingestion)
-        assert result.status == "succeeded"
-        session.commit()
+    )
+    with factory() as session:
+        from opsmesh.resources.knowledge.models import KnowledgeSourceIngestion
+
+        assert (
+            session.scalar(
+                select(KnowledgeSourceIngestion).where(
+                    KnowledgeSourceIngestion.workspace_id == context.workspace_id,
+                    KnowledgeSourceIngestion.source_id == source_id,
+                    KnowledgeSourceIngestion.source_version == version,
+                )
+            ).status
+            == "succeeded"
+        )
 
 
 def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writes():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         context = _seed(factory)
@@ -233,7 +267,7 @@ def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writ
         assert created.status == "completed", created.error
         source_id = UUID(created.output["source_id"])
         with factory() as session:
-            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 1
+            assert session.scalar(select(func.count()).select_from(TemporalOutboxEntry)) == 1
             source = session.get(KnowledgeSource, source_id)
             assert source.source_type == "text"
             service = KnowledgeSourceIngestionService(session)
@@ -249,11 +283,13 @@ def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writ
             )
             assert first.id == second.id
             session.commit()
-            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 1
-            queue = _queue()
-            assert QueueDispatchPublisher(session, queue).publish_pending() == 1
-            assert QueueDispatchPublisher(session, queue).publish_pending() == 0
-            assert queue.dequeue().resource_id == source_id
+            dispatches = session.scalars(select(TemporalOutboxEntry)).all()
+            assert len(dispatches) == 1
+            request = DispatchRequest.model_validate(dispatches[0].payload).execution
+            assert request is not None
+            assert request.kind is ExecutionKind.KNOWLEDGE_INGEST
+            assert request.resource_id == source_id
+            assert request.workspace_id == context.workspace_id
             first.status = "failed"
             session.commit()
             service.request(
@@ -262,8 +298,11 @@ def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writ
                 requested_by_user_id=context.user_id,
             )
             session.commit()
-            assert QueueDispatchPublisher(session, queue).publish_pending() == 1
-            assert queue.dequeue().resource_id == source_id
+            dispatches = session.scalars(select(TemporalOutboxEntry)).all()
+            assert len(dispatches) == 2
+            assert all(
+                row.payload["execution"]["resource_id"] == str(source_id) for row in dispatches
+            )
         duplicate = _call(
             factory,
             context,
@@ -330,7 +369,7 @@ def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writ
         assert page.output["content"] == "Refund"
         assert page.output["has_more"] is True
         with factory() as session:
-            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 3
+            assert session.scalar(select(func.count()).select_from(TemporalOutboxEntry)) == 3
             entries = session.scalars(
                 select(WorkspaceMemoryEntry).where(
                     WorkspaceMemoryEntry.source_id == str(source_id),
@@ -357,7 +396,7 @@ def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writ
 
 
 def test_knowledge_rename_conflict_preserves_current_version_and_index():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         context = _seed(factory)
@@ -382,11 +421,11 @@ def test_knowledge_rename_conflict_preserves_current_version_and_index():
         assert current.output["version"] == 1
         assert _call(factory, context, "search_knowledge", {"query": "Original"}).output["items"]
         with factory() as session:
-            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 2
+            assert session.scalar(select(func.count()).select_from(TemporalOutboxEntry)) == 2
 
 
 def test_memory_revision_reads_enforce_scope_and_read_only_grants():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         context = _seed(factory)
@@ -592,7 +631,7 @@ def test_memory_revision_reads_enforce_scope_and_read_only_grants():
 
 
 def test_knowledge_archive_requires_approval_before_mutation():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         context = _seed(factory)
@@ -604,7 +643,7 @@ def test_knowledge_archive_requires_approval_before_mutation():
         with factory() as session:
             user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
             with execution_resource_queries(session, context.workspace_id, user):
-                review = BackendToolExecutor(session).review_tool_call(
+                review = AgentToolExecutionService(session).review_tool_call(
                     context=context,
                     tool_name="archive_knowledge",
                     arguments=arguments,

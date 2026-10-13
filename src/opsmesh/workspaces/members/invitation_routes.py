@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.auth.dependencies import get_current_user, workspace_dependency
 from opsmesh.identity.authorization.context import AuthenticatedUser, WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
@@ -60,7 +60,7 @@ def accept_workspace_invite(
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(http_request),
         action="workspace.invite.accepted",
         outcome="allowed",
@@ -143,7 +143,7 @@ def record_invite_rejection(
     fallback_fingerprint: str,
     exc: WorkspaceInvitePermissionError | WorkspaceInviteConflictError | None = None,
 ) -> None:
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="workspace.invite.accept_rejected",
         outcome="denied",

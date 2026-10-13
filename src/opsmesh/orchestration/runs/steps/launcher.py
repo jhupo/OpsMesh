@@ -133,7 +133,7 @@ class RunStepLauncher:
                 },
             )
             return None
-        member_capacity_decision = self.scheduler().select_runnable_steps(
+        member_capacity_decision = self.scheduler().evaluate_and_mark_steps(
             workspace_id=task.workspace_id,
             candidate_steps=[step],
             policy_override=self.team_scheduler_policy(task.workspace_id, task.agent_team_id)

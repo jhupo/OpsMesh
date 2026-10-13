@@ -1,2 +1,1 @@
 """Agent profile domain."""
-

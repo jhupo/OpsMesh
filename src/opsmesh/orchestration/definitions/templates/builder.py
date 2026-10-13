@@ -15,12 +15,12 @@ from opsmesh.orchestration.tasks.models import Task
 from opsmesh.shared.utils import uuid_or_none
 
 
-class PlanningContext:
+class TaskPlanningContext:
     def __init__(self, planner_agent_profile_id: UUID | None) -> None:
         self.planner_agent_profile_id = planner_agent_profile_id
 
     @classmethod
-    def from_task(cls, task: Task) -> PlanningContext | None:
+    def from_task(cls, task: Task) -> TaskPlanningContext | None:
         snapshot = task.team_snapshot
         if not isinstance(snapshot, dict):
             return None
@@ -31,7 +31,7 @@ class PlanningContext:
 
 
 @dataclass(frozen=True)
-class ProjectPlan:
+class TaskWorkPlan:
     plan_id: str
     objective: str
     planner_agent_profile_id: UUID | None
@@ -77,32 +77,31 @@ def _package_dict(package: WorkflowNode) -> dict[str, object]:
     return payload
 
 
-class ProjectPlanningService:
-    def create_initial_plan(self, task: Task) -> dict[str, object]:
-        raw = (task.input or {}).get("work_packages")
-        context = PlanningContext.from_task(task)
-        if (task.input or {}).get("planning_mode", "direct") == "direct":
-            if context is None or context.planner_agent_profile_id is None:
-                raise ProjectPlanValidationError("Team execution requires an assigned entry agent")
-            raw = [
-                {
-                    "package_id": "entry",
-                    "title": task.title,
-                    "description": task.description or "",
-                    "assigned_agent_profile_id": str(context.planner_agent_profile_id),
-                }
-            ]
-        if not isinstance(raw, list) or not raw:
-            raise ProjectPlanValidationError("Explicit planning requires work_packages")
-        plan = ProjectPlan(
-            plan_id=str(uuid4()),
-            objective=task.title,
-            planner_agent_profile_id=context.planner_agent_profile_id if context else None,
-            generated_at=datetime.now(UTC).isoformat(),
-            strategy="direct"
-            if (task.input or {}).get("planning_mode", "direct") == "direct"
-            else "explicit_workflow",
-            work_packages=tuple(WorkflowNode.model_validate(item) for item in raw),
-        ).as_dict()
-        validate_project_plan(plan, task.team_snapshot)
-        return plan
+def build_initial_task_plan(task: Task) -> dict[str, object]:
+    raw = (task.input or {}).get("work_packages")
+    context = TaskPlanningContext.from_task(task)
+    if (task.input or {}).get("planning_mode", "direct") == "direct":
+        if context is None or context.planner_agent_profile_id is None:
+            raise ProjectPlanValidationError("Team execution requires an assigned entry agent")
+        raw = [
+            {
+                "package_id": "entry",
+                "title": task.title,
+                "description": task.description or "",
+                "assigned_agent_profile_id": str(context.planner_agent_profile_id),
+            }
+        ]
+    if not isinstance(raw, list) or not raw:
+        raise ProjectPlanValidationError("Explicit planning requires work_packages")
+    plan = TaskWorkPlan(
+        plan_id=str(uuid4()),
+        objective=task.title,
+        planner_agent_profile_id=context.planner_agent_profile_id if context else None,
+        generated_at=datetime.now(UTC).isoformat(),
+        strategy="direct"
+        if (task.input or {}).get("planning_mode", "direct") == "direct"
+        else "explicit_workflow",
+        work_packages=tuple(WorkflowNode.model_validate(item) for item in raw),
+    ).as_dict()
+    validate_project_plan(plan, task.team_snapshot)
+    return plan

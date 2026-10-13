@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.providers.resolution import ModelProviderResolutionService
+from opsmesh.agents.providers.resolution import ModelProviderResolver
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_config import (
     ActionKind,
@@ -26,7 +26,7 @@ from opsmesh.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)
-class ConfiguredReview:
+class ApprovalRequirementReview:
     required: bool
     blocked: bool
     risk_level: str
@@ -34,7 +34,7 @@ class ConfiguredReview:
     signals: dict[str, object]
 
 
-class ConfiguredApprovalService:
+class ApprovalPolicyEvaluationService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self.session = session
         self.settings = settings
@@ -49,7 +49,7 @@ class ConfiguredApprovalService:
         context: dict[str, object],
         configured_review: bool = False,
         force_human: bool = False,
-    ) -> ConfiguredReview:
+    ) -> ApprovalRequirementReview:
         workspace = self.session.get(Workspace, workspace_id)
         if workspace is None:
             raise ValueError("Approval workspace not found")
@@ -99,7 +99,7 @@ class ConfiguredApprovalService:
         decision = max(decisions, key={"allow": 0, "review": 1, "deny": 2}.__getitem__)
         signals: dict[str, object] = {"matched_rules": [r.id for r in matched], "action": action}
         if decision != "review":
-            return ConfiguredReview(
+            return ApprovalRequirementReview(
                 False, decision == "deny", "low", ["configured_policy." + decision], signals
             )
         reviewers = [r.reviewer or config.reviewer for r in matched if r.decision == "review"]
@@ -107,7 +107,9 @@ class ConfiguredApprovalService:
         if reviewers and all(r == "model" for r in reviewers):
             reviewer = "model"
         if reviewer == "human" or force_human:
-            return ConfiguredReview(True, False, "low", ["configured_policy.human"], signals)
+            return ApprovalRequirementReview(
+                True, False, "low", ["configured_policy.human"], signals
+            )
         return self._model_review(config, workspace_id, action, name, arguments, context, signals)
 
     def _model_review(
@@ -119,7 +121,7 @@ class ConfiguredApprovalService:
         arguments: dict[str, object],
         context: dict[str, object],
         signals: dict[str, object],
-    ) -> ConfiguredReview:
+    ) -> ApprovalRequirementReview:
         model = config.model
         if model is None:
             raise ValueError("Approval model is not configured")
@@ -133,7 +135,7 @@ class ConfiguredApprovalService:
         try:
             if self.settings is None:
                 raise ValueError("Approval runtime settings unavailable")
-            provider = ModelProviderResolutionService(
+            provider = ModelProviderResolver(
                 self.session,
                 SecretEncryptionService(
                     secret=self.settings.credential_encryption_secret,
@@ -162,7 +164,7 @@ class ConfiguredApprovalService:
             if verdict not in {"approve", "reject", "needs_human"}:
                 raise ValueError("Invalid approval model verdict")
             signals.update(result.signals)
-            review = ConfiguredReview(
+            review = ApprovalRequirementReview(
                 verdict in {"needs_human"},
                 verdict == "reject",
                 result.risk_level,
@@ -172,7 +174,7 @@ class ConfiguredApprovalService:
         except Exception as exc:
             signals["review_error_type"] = type(exc).__name__
             signals["verdict"] = "unavailable"
-            review = ConfiguredReview(
+            review = ApprovalRequirementReview(
                 model.on_error == "human",
                 model.on_error == "deny",
                 "low",

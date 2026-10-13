@@ -7,15 +7,12 @@ import pytest
 
 from opsmesh.agents.providers.contracts import ResolvedModelProvider
 from opsmesh.agents.providers.model_api import (
-    ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
 from opsmesh.governance.reviews.llm import (
-    ANTHROPIC_MESSAGES_REVIEWER,
     OPENAI_CHAT_REVIEWER,
     OPENAI_RESPONSES_REVIEWER,
-    AnthropicMessagesResourceReviewAdapter,
     LlmResourceReviewer,
     OpenAIChatCompletionsResourceReviewAdapter,
     OpenAIResponsesResourceReviewAdapter,
@@ -100,33 +97,6 @@ def test_explicit_openai_chat_reviewer_uses_configured_protocol() -> None:
 
     assert len(client.chat.completions.calls) == 1
     assert client.responses.calls == []
-
-
-def test_anthropic_reviewer_uses_messages_parse_structured_output() -> None:
-    client = _FakeAnthropicClient(_decision(verdict="needs_human"))
-    factory = _RecordingFactory(client)
-    reviewer = LlmResourceReviewer(
-        adapters={
-            ANTHROPIC_MESSAGES_REVIEWER: AnthropicMessagesResourceReviewAdapter(factory),
-        }
-    )
-
-    result = reviewer.review(
-        provider=_provider(provider="anthropic", model_api=ANTHROPIC_MESSAGES_API),
-        resource_type="mcp_tool_allowlist",
-        resource={"tool_name": "deploy"},
-        static_signals={"execution": "write"},
-        timeout_seconds=9,
-        instructions="Assess this resource against its declared permissions.",
-        max_output_tokens=1200,
-    )
-
-    call = client.messages.calls[0]
-    assert call["output_format"] is StructuredResourceReview
-    assert call["timeout"] == 9
-    assert call["max_tokens"] == 1_200
-    assert result.required is True
-    assert result.signals["provider"] == "anthropic"
 
 
 def test_reviewer_fails_closed_when_sdk_returns_no_structured_output() -> None:
@@ -240,27 +210,6 @@ class _FakeOpenAIClient:
         self.chat = SimpleNamespace(completions=_FakeChatCompletionsResource(chat_output))
 
     def __enter__(self) -> _FakeOpenAIClient:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        return None
-
-
-class _FakeAnthropicMessagesResource:
-    def __init__(self, output: StructuredResourceReview | None) -> None:
-        self._output = output
-        self.calls: list[dict[str, object]] = []
-
-    def parse(self, **kwargs: object) -> SimpleNamespace:
-        self.calls.append(dict(kwargs))
-        return SimpleNamespace(parsed_output=self._output)
-
-
-class _FakeAnthropicClient:
-    def __init__(self, output: StructuredResourceReview | None) -> None:
-        self.messages = _FakeAnthropicMessagesResource(output)
-
-    def __enter__(self) -> _FakeAnthropicClient:
         return self
 
     def __exit__(self, *exc_info: object) -> None:

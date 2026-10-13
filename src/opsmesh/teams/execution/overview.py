@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.runs.queries import active_task_ids_by_agent, latest_events_by_run
+from opsmesh.orchestration.tasks.collaboration.contracts import ManagerDiagnostics
 from opsmesh.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
@@ -35,24 +36,40 @@ class TeamExecutionOverviewService:
         workspace_id: UUID,
         team_id: UUID,
         include_completed: bool = False,
+        task_limit: int = 200,
+        manager_diagnostics: dict[UUID, ManagerDiagnostics] | None = None,
+        tasks: list[Task] | None = None,
+        steps: list[TaskStep] | None = None,
+        runs: list[AgentRun] | None = None,
     ) -> dict[str, object] | None:
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
+        if tasks is not None and any(
+            task.workspace_id != workspace_id or task.agent_team_id != team_id for task in tasks
+        ):
+            raise ValueError("Overview task outside team scope")
 
         members = self._repo.members(workspace_id, team_id)
         agent_ids = {member.agent_profile_id for member in members}
         if team.manager_agent_profile_id is not None:
             agent_ids.add(team.manager_agent_profile_id)
         agents = self._repo.agents(workspace_id, agent_ids)
-        tasks = self._repo.tasks(
-            workspace_id=workspace_id,
-            team_id=team_id,
-            include_completed=include_completed,
+        tasks = (
+            tasks
+            if tasks is not None
+            else self._repo.tasks(
+                workspace_id=workspace_id,
+                team_id=team_id,
+                include_completed=include_completed,
+                limit=task_limit + 1,
+            )
         )
+        tasks_truncated = len(tasks) > task_limit
+        tasks = tasks[:task_limit]
         task_ids = [task.id for task in tasks]
-        steps = self._repo.steps(workspace_id, task_ids)
-        runs = self._repo.runs(workspace_id, task_ids)
+        steps = steps if steps is not None else self._repo.steps(workspace_id, task_ids)
+        runs = runs if runs is not None else self._repo.runs(workspace_id, task_ids)
         latest_events = latest_events_by_run(self._session, workspace_id, runs)
         steps_by_task = _group_steps_by_task(steps)
         runs_by_task = _group_runs_by_task(runs)
@@ -70,6 +87,10 @@ class TeamExecutionOverviewService:
         )
         staffing_gaps_result = staffing_gaps(members, agents, steps)
         specialist_reassignments_result = specialist_reassignments(members, agents, steps)
+        if manager_diagnostics is None:
+            manager_diagnostics = TaskManagerDiagnosticsService(
+                self._session
+            ).diagnostics_for_tasks(workspace_id=workspace_id, tasks=tasks, steps=steps)
         task_items = [
             self._task_item(
                 workspace_id=workspace_id,
@@ -77,6 +98,7 @@ class TeamExecutionOverviewService:
                 steps=steps_by_task.get(task.id, []),
                 runs=runs_by_task.get(task.id, []),
                 latest_events=latest_events,
+                diagnostics=manager_diagnostics.get(task.id),
             )
             for task in tasks
         ]
@@ -94,15 +116,20 @@ class TeamExecutionOverviewService:
             "manager_agent": _agent_summary(agents.get(team.manager_agent_profile_id))
             if team.manager_agent_profile_id is not None
             else None,
-            "summary": overview_summary(
-                tasks=tasks,
-                steps=steps,
-                runs=runs,
-                member_items=member_items_result,
-                task_items=task_items,
-                staffing_gaps=staffing_gaps_result,
-                specialist_reassignments=specialist_reassignments_result,
-            ),
+            "summary": {
+                "scanned_task_count": len(tasks),
+                "task_scan_limit": task_limit,
+                "tasks_truncated": tasks_truncated,
+                **overview_summary(
+                    tasks=tasks,
+                    steps=steps,
+                    runs=runs,
+                    member_items=member_items_result,
+                    task_items=task_items,
+                    staffing_gaps=staffing_gaps_result,
+                    specialist_reassignments=specialist_reassignments_result,
+                ),
+            },
             "members": member_items_result,
             "tasks": task_items,
             "staffing_gaps": staffing_gaps_result,
@@ -116,11 +143,8 @@ class TeamExecutionOverviewService:
         steps: list[TaskStep],
         runs: list[AgentRun],
         latest_events: dict[UUID, RunEvent],
+        diagnostics: ManagerDiagnostics | None,
     ) -> dict[str, object]:
-        diagnostics = TaskManagerDiagnosticsService(self._session).get_diagnostics(
-            workspace_id=workspace_id,
-            task_id=task.id,
-        )
         blocked_reasons = (
             string_list(diagnostics.get("blocked_reasons")) if isinstance(diagnostics, dict) else []
         )

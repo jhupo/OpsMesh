@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from opsmesh.capabilities.catalog.contracts import CapabilityTeamPolicy
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 
 
 class AgentTeamCreateRequest(BaseModel):
@@ -38,7 +38,7 @@ class AgentTeamUpdateRequest(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AgentTeamResponse(TimestampedModel):
+class AgentTeamResponse(TimestampedContract):
     workspace_id: UUID
     name: str
     team_type: str
@@ -82,7 +82,7 @@ class AgentTeamMemberUpdateRequest(BaseModel):
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
 
 
-class AgentTeamMemberResponse(ORMModel):
+class AgentTeamMemberResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     agent_team_id: UUID

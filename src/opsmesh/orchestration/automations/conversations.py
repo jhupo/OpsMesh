@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from opsmesh_plugin_sdk.messaging.contracts import PendingAction
+from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage, PendingAction
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,6 @@ from opsmesh.identity.authorization.resources import (
     ResourceKind,
 )
 from opsmesh.orchestration.approvals.models import Approval
-from opsmesh.orchestration.automations.contracts import AutomationMessage
 from opsmesh.orchestration.automations.models import Automation, AutomationEvent
 from opsmesh.orchestration.tasks.contracts import TaskControlActionRequest
 from opsmesh.orchestration.tasks.control.service import TaskControlService
@@ -45,7 +44,7 @@ class AutomationConversationService:
             raise ValueError("Automation event not found")
         return event
 
-    def target(self, item: Automation, message: AutomationMessage) -> AutomationEvent | None:
+    def target(self, item: Automation, message: IncomingMessage) -> AutomationEvent | None:
         if message.reply_to_event_id is None:
             return None
         target = self.require_event(item.workspace_id, item.id, message.reply_to_event_id)
@@ -82,11 +81,13 @@ class AutomationConversationService:
         ]
 
     def dispatch(
-        self, item: Automation, event: AutomationEvent, message: AutomationMessage
+        self, item: Automation, event: AutomationEvent, message: IncomingMessage
     ) -> MessageDispatch:
         target = self.target(item, message)
         if target is None:
             return MessageDispatch()
+        if target.source_connection_id != event.source_connection_id:
+            raise ValueError("Message target belongs to another channel connection")
         task = self.task(target, lock=True)
         if task is None:
             if target.status == "pending":

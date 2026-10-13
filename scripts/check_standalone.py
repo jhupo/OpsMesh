@@ -83,7 +83,8 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         "OPSMESH_REDIS_URL": os.environ["OPSMESH_REDIS_URL"],
         "OPSMESH_TRACING_ENABLED": "false",
         "OPSMESH_OTEL_LOGS_ENABLED": "false",
-        "OPSMESH_READINESS_WORKER_CHECK_ENABLED": "true",
+        "OPSMESH_TEMPORAL_ADDRESS": os.environ["OPSMESH_TEMPORAL_ADDRESS"],
+        "OPSMESH_TEMPORAL_NAMESPACE": os.environ.get("OPSMESH_TEMPORAL_NAMESPACE", "default"),
         "OPSMESH_STORAGE_ROOT": "/work/opsmesh/storage",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
@@ -122,7 +123,7 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
             *base,
             image,
             "/bundle/python/bin/python3",
-            "/bundle/scripts/render-alertmanager-config.py",
+            "/bundle/scripts/render_alertmanager_config.py",
             "--webhook-url",
             "https://alerts.example.com/hook",
             "--output",
@@ -133,22 +134,37 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
     assert (state / "opsmesh/alerts.yml").is_file()
     run("migrate")
     run("migrate", "check")
-    run("worker", "--once")
     # A real no-job updater tick must load its bundled SQLAlchemy/driver and persistent config.
     (state / "opsmesh/installation.json").write_text(
         json.dumps({"root": "/work/opsmesh", "mode": "systemd"})
     )
     run("updater", "--root", "/work/opsmesh", "--once")
-    subprocess.run(
-        [*base, "--name", container, "-d", image, "/bundle/opsmesh-server", "api"], check=True
-    )
+    worker_container = container + "-worker"
+    started: list[str] = []
     try:
+        for name, command in ((worker_container, "worker"), (container, "api")):
+            subprocess.run(
+                [*base, "--name", name, "-d", image, "/bundle/opsmesh-server", command], check=True
+            )
+            started.append(name)
         for _ in range(60):
             try:
                 with urllib.request.urlopen(
                     "http://127.0.0.1:8000/api/v1/health/ready", timeout=2
                 ) as r:
                     if r.status == 200:
+                        running = subprocess.check_output(
+                            [
+                                "docker",
+                                "inspect",
+                                "--format",
+                                "{{.State.Running}}",
+                                worker_container,
+                            ],
+                            text=True,
+                        ).strip()
+                        if running != "true":
+                            raise RuntimeError("Standalone Temporal Worker stopped during startup")
                         return
             except OSError:
                 pass
@@ -156,7 +172,8 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         subprocess.run(["docker", "logs", container], check=False)
         raise RuntimeError("Standalone API/worker readiness failed")
     finally:
-        subprocess.run(["docker", "stop", "--time", "10", container], check=True)
+        if started:
+            subprocess.run(["docker", "stop", "--time", "130", *started], check=True)
 
 
 def main() -> None:

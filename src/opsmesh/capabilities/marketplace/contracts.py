@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from opsmesh.agents.profiles.contracts import AgentProfileResponse
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 MarketplaceListingType = Literal["agent", "skill", "mcp_server", "plugin"]
@@ -30,7 +30,7 @@ class TalentListingCreateRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class TalentListingResponse(TimestampedModel):
+class TalentListingResponse(TimestampedContract):
     owner_user_id: UUID
     source_workspace_id: UUID
     source_agent_profile_id: UUID
@@ -71,7 +71,7 @@ class HireTaskTalentRequest(BaseModel):
     order_index: int = Field(default=0, ge=0)
 
 
-class WorkspaceAgentInstallResponse(TimestampedModel):
+class WorkspaceAgentInstallResponse(TimestampedContract):
     workspace_id: UUID
     talent_listing_id: UUID
     current_talent_listing_id: UUID | None
@@ -145,7 +145,7 @@ class TalentListingReviewCreateRequest(BaseModel):
     body: str = Field(default="", max_length=2_000)
 
 
-class TalentListingReviewResponse(TimestampedModel):
+class TalentListingReviewResponse(TimestampedContract):
     workspace_id: UUID
     talent_listing_id: UUID
     workspace_agent_install_id: UUID | None
@@ -177,7 +177,7 @@ class MarketplaceListingCreateRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class MarketplaceListingResponse(TimestampedModel):
+class MarketplaceListingResponse(TimestampedContract):
     workspace_id: UUID
     owner_user_id: UUID
     source_resource_id: UUID | None
@@ -215,7 +215,7 @@ class MarketplaceInstallRequest(BaseModel):
     config: dict[str, object] = Field(default_factory=dict)
 
 
-class WorkspaceMarketplaceInstallResponse(TimestampedModel):
+class WorkspaceMarketplaceInstallResponse(TimestampedContract):
     workspace_id: UUID
     marketplace_listing_id: UUID
     installed_by_user_id: UUID | None

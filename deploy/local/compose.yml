@@ -1,7 +1,9 @@
 name: opsmesh
-x-logging: &logging
+x-logging: &id001
   driver: json-file
-  options: {max-size: '10m', max-file: '3'}
+  options:
+    max-size: 10m
+    max-file: '3'
 services:
   migrate:
     build:
@@ -11,28 +13,32 @@ services:
     image: opsmesh-api:local
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
-    command: [alembic, upgrade, head]
+    command:
+    - alembic
+    - upgrade
+    - head
     depends_on:
       postgres:
         condition: service_healthy
   api:
-    logging: *logging
+    logging: *id001
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
       target: api
     image: opsmesh-api:local
     env_file:
-      - ../../.env
+    - ../../.env
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
       OPSMESH_SERVICE_NAME: opsmesh-api
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     ports:
-      - "${OPSMESH_API_PORT:-8000}:8000"
+    - ${OPSMESH_API_PORT:-8000}:8000
     volumes:
-      - opsmesh_storage:/app/.opsmesh-storage
+    - opsmesh_storage:/app/.opsmesh-storage
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -40,36 +46,43 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      temporal-namespace:
+        condition: service_completed_successfully
     healthcheck:
       test:
-        - CMD-SHELL
-        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).read()"
+      - CMD-SHELL
+      - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready',
+        timeout=3).read()"
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
-
   worker:
-    logging: *logging
+    logging: *id001
     image: opsmesh-worker:local
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
       target: worker
     env_file:
-      - ../../.env
+    - ../../.env
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
-      OPSMESH_RUN_MIGRATIONS: "false"
+      OPSMESH_RUN_MIGRATIONS: 'false'
       OPSMESH_SERVICE_NAME: opsmesh-worker
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     volumes:
-      - opsmesh_storage:/app/.opsmesh-storage
+    - opsmesh_storage:/app/.opsmesh-storage
+    - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       api:
         condition: service_healthy
-
+      temporal-namespace:
+        condition: service_completed_successfully
+    group_add:
+    - ${OPSMESH_DOCKER_GID:-0}
   postgres:
     image: pgvector/pgvector:0.8.6-pg16-bookworm
     environment:
@@ -77,25 +90,33 @@ services:
       POSTGRES_USER: opsmesh
       POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD:-opsmesh}
     volumes:
-      - opsmesh_postgres:/var/lib/postgresql/data
+    - opsmesh_postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
       interval: 10s
       timeout: 5s
       retries: 5
-
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+    - redis-server
+    - --appendonly
+    - 'yes'
     volumes:
-      - opsmesh_redis:/data
+    - opsmesh_redis:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - ping
       interval: 10s
       timeout: 5s
       retries: 5
-
 volumes:
-  opsmesh_postgres:
-  opsmesh_redis:
-  opsmesh_storage:
+  opsmesh_postgres: null
+  opsmesh_redis: null
+  opsmesh_storage: null
+include:
+- ../temporal/compose.yml

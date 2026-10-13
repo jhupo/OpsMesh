@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.mcp.catalog.contracts import (
-    McpCredentialReferenceCreateRequest,
-    McpCredentialReferenceResponse,
-    McpCredentialReferenceRotateRequest,
-    McpCredentialReferenceUpdateRequest,
+    MCPCredentialReferenceCreateRequest,
+    MCPCredentialReferenceResponse,
+    MCPCredentialReferenceRotateRequest,
+    MCPCredentialReferenceUpdateRequest,
 )
-from opsmesh.capabilities.mcp.catalog.credentials import McpCredentialService
+from opsmesh.capabilities.mcp.catalog.credentials import MCPCredentialService
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
@@ -25,17 +25,17 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 @router.post(
     "/mcp-credentials",
-    response_model=McpCredentialReferenceResponse,
+    response_model=MCPCredentialReferenceResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_mcp_credential_reference(
-    request: McpCredentialReferenceCreateRequest,
+    request: MCPCredentialReferenceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpCredentialReferenceResponse:
+) -> MCPCredentialReferenceResponse:
     try:
-        credential = McpCredentialService(
+        credential = MCPCredentialService(
             session,
             SecretEncryptionService(
                 secret=settings.credential_encryption_secret,
@@ -52,22 +52,22 @@ def create_mcp_credential_reference(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpCredentialReferenceResponse.model_validate(credential)
+    return MCPCredentialReferenceResponse.model_validate(credential)
 
 
 @router.patch(
     "/mcp-credentials/{credential_id}",
-    response_model=McpCredentialReferenceResponse,
+    response_model=MCPCredentialReferenceResponse,
 )
 def update_mcp_credential_reference(
     credential_id: UUID,
-    request: McpCredentialReferenceUpdateRequest,
+    request: MCPCredentialReferenceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpCredentialReferenceResponse:
+) -> MCPCredentialReferenceResponse:
     try:
-        credential = McpCredentialService(session, settings=settings).update_credential_reference(
+        credential = MCPCredentialService(session, settings=settings).update_credential_reference(
             context.workspace.id,
             credential_id,
             request,
@@ -83,22 +83,22 @@ def update_mcp_credential_reference(
             else status.HTTP_404_NOT_FOUND
         )
         raise HTTPException(status_code=error_status, detail=detail) from exc
-    return McpCredentialReferenceResponse.model_validate(credential)
+    return MCPCredentialReferenceResponse.model_validate(credential)
 
 
 @router.post(
     "/mcp-credentials/{credential_id}/rotate",
-    response_model=McpCredentialReferenceResponse,
+    response_model=MCPCredentialReferenceResponse,
 )
 def rotate_mcp_credential_reference(
     credential_id: UUID,
-    request: McpCredentialReferenceRotateRequest,
+    request: MCPCredentialReferenceRotateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpCredentialReferenceResponse:
+) -> MCPCredentialReferenceResponse:
     try:
-        credential = McpCredentialService(
+        credential = MCPCredentialService(
             session,
             SecretEncryptionService(
                 secret=settings.credential_encryption_secret,
@@ -120,19 +120,19 @@ def rotate_mcp_credential_reference(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=error_status, detail=detail) from exc
-    return McpCredentialReferenceResponse.model_validate(credential)
+    return MCPCredentialReferenceResponse.model_validate(credential)
 
 
-@router.get("/mcp-credentials", response_model=PageResponse[McpCredentialReferenceResponse])
+@router.get("/mcp-credentials", response_model=PageResponse[MCPCredentialReferenceResponse])
 def list_mcp_credential_references(
     page: PageParams = Depends(pagination_params),
     mcp_server_id: UUID | None = Query(default=None),
     include_disabled: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[McpCredentialReferenceResponse]:
+) -> PageResponse[MCPCredentialReferenceResponse]:
     try:
-        items, total = McpCredentialService(session).list_credential_references(
+        items, total = MCPCredentialService(session).list_credential_references(
             context.workspace.id,
             page,
             mcp_server_id=mcp_server_id,
@@ -145,19 +145,19 @@ def list_mcp_credential_references(
 
 @router.post(
     "/mcp-credentials/{credential_id}/disable",
-    response_model=McpCredentialReferenceResponse,
+    response_model=MCPCredentialReferenceResponse,
 )
 def disable_mcp_credential_reference(
     credential_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
-) -> McpCredentialReferenceResponse:
+) -> MCPCredentialReferenceResponse:
     try:
-        credential = McpCredentialService(session).disable_credential_reference(
+        credential = MCPCredentialService(session).disable_credential_reference(
             context.workspace.id,
             credential_id,
             context.user.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpCredentialReferenceResponse.model_validate(credential)
+    return MCPCredentialReferenceResponse.model_validate(credential)

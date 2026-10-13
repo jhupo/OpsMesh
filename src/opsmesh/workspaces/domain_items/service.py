@@ -10,8 +10,8 @@ from opsmesh.identity.authorization.resource_queries import (
 )
 from opsmesh.identity.authorization.resources import ResourceAction
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
@@ -31,10 +31,9 @@ from opsmesh.workspaces.domain_items.models import (
 T = TypeVar("T")
 
 
-class DomainTaskService:
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+class DomainContentService:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def create_project(
         self,
@@ -175,16 +174,17 @@ class DomainTaskService:
         )
         self._session.add(revision)
         self._session.flush()
-        if self._queue is not None:
-            self._queue.enqueue(
-                JobPayload(
-                    workspace_id=workspace_id,
-                    job_type=JobType.TASK_PLAN,
-                    resource_id=task_id,
-                    requested_by_user_id=requested_by_user_id,
-                    idempotency_key=f"revision:{workspace_id}:{revision.id}",
-                )
-            )
+        stage_execution(
+            self._session,
+            ExecutionRequest(
+                execution_id=revision.id,
+                workspace_id=workspace_id,
+                resource_id=task_id,
+                kind=ExecutionKind.TASK_PLAN,
+                requested_by_user_id=requested_by_user_id,
+                parameters={"revision_request_id": str(revision.id)},
+            ),
+        )
         self._session.commit()
         self._session.refresh(revision)
         return revision

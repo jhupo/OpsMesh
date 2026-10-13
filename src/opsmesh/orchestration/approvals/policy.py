@@ -6,9 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.policies.reader import PlatformPolicyService
+from opsmesh.governance.policies.reader import risky_execution_policy
 from opsmesh.governance.policies.risky_values import RiskyExecutionPolicy
-from opsmesh.governance.reviews.model_request import ModelRequestReviewService
 from opsmesh.governance.reviews.tool_execution import ToolExecutionReviewService
 from opsmesh.shared.config import Settings
 
@@ -154,35 +153,6 @@ class ApprovalPolicyEngine:
             )
         )
 
-    def evaluate_model_request(
-        self,
-        *,
-        workspace_id: UUID,
-        input_text: str,
-        context: dict[str, object],
-    ) -> ApprovalPolicyDecision:
-        try:
-            review = ModelRequestReviewService(
-                self._session,
-                self._settings,
-            ).review_request(
-                workspace_id=workspace_id,
-                input_text=input_text,
-                context=context,
-            )
-        except Exception as exc:
-            return self._review_failure("model_request", exc)
-        return self.resolve(
-            ApprovalPolicyInput(
-                action_kind="model_request",
-                risk_level=review.risk_level,
-                review_required=review.required,
-                blocked=review.blocked,
-                reasons=tuple(review.reasons),
-                signals=review.signals,
-            )
-        )
-
     def evaluate_runtime_command(
         self,
         *,
@@ -279,7 +249,7 @@ class ApprovalPolicyEngine:
         )
 
     def _risky_policy(self) -> RiskyExecutionPolicy:
-        return PlatformPolicyService(self._session).risky_execution_policy()
+        return risky_execution_policy(self._session)
 
 
 def _normalize_risk(value: object) -> tuple[str, bool]:

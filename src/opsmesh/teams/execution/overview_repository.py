@@ -53,6 +53,7 @@ class TeamExecutionOverviewRepository:
         workspace_id: UUID,
         team_id: UUID,
         include_completed: bool,
+        limit: int | None = None,
     ) -> list[Task]:
         statement = select(Task).where(
             Task.workspace_id == workspace_id,
@@ -60,11 +61,10 @@ class TeamExecutionOverviewRepository:
         )
         if not include_completed:
             statement = statement.where(~Task.status.in_(DONE_TASK_STATUSES))
-        return list(
-            self._session.scalars(
-                statement.order_by(Task.priority.desc(), Task.updated_at.desc(), Task.id.asc())
-            )
-        )
+        statement = statement.order_by(Task.priority.desc(), Task.updated_at.desc(), Task.id.asc())
+        if limit is not None:
+            statement = statement.limit(max(limit, 0))
+        return list(self._session.scalars(statement))
 
     def steps(self, workspace_id: UUID, task_ids: list[UUID]) -> list[TaskStep]:
         if not task_ids:

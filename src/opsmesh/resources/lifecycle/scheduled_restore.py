@@ -15,8 +15,8 @@ from opsmesh.resources.lifecycle.scheduling import (
     scheduled_restore_drill_request,
 )
 from opsmesh.resources.lifecycle.settings import _restore_drill_settings
-from opsmesh.resources.storage.storage import ObjectStorage
-from opsmesh.resources.transfers.service import WorkspaceExportService
+from opsmesh.resources.transfers.restore_operations import RestoreDrillOperationService
+from opsmesh.shared.errors import DomainError
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -28,8 +28,6 @@ class ScheduledRestoreDrillService:
     def run_if_due(
         self,
         workspace: Workspace,
-        *,
-        storage: ObjectStorage | None,
     ) -> ScheduledLifecycleSummary:
         raw_policy = _restore_drill_settings(workspace.settings)
         if raw_policy.get("enabled") is not True:
@@ -87,20 +85,6 @@ class ScheduledRestoreDrillService:
                 resource_id=latest_success.id,
             )
 
-        if storage is None:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="storage_unavailable",
-                metadata={"source_export_job_id": str(latest_success.id)},
-            )
-            self._session.commit()
-            return restore_drill_skipped_summary(
-                workspace.id,
-                "storage_unavailable",
-                resource_id=latest_success.id,
-            )
-
         try:
             request = scheduled_restore_drill_request(raw_policy)
         except ValidationError as exc:
@@ -121,14 +105,14 @@ class ScheduledRestoreDrillService:
             )
 
         try:
-            result = WorkspaceExportService(self._session).run_archive_restore_drill(
-                workspace=workspace,
-                user_id=workspace.owner_user_id,
-                job_id=latest_success.id,
-                request=request,
-                storage=storage,
+            result = RestoreDrillOperationService(self._session).create(
+                workspace.id,
+                latest_success.id,
+                workspace.owner_user_id,
+                request,
+                origin="scheduled",
             )
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, ValueError, DomainError) as exc:
             self._repository.record_lifecycle_schedule_event(
                 workspace=workspace,
                 action="workspace.lifecycle.restore_drill_skipped",
@@ -147,24 +131,21 @@ class ScheduledRestoreDrillService:
 
         self._repository.record_lifecycle_schedule_event(
             workspace=workspace,
-            action="workspace.lifecycle.restore_drill_completed",
+            action="workspace.lifecycle.restore_drill_queued",
             reason="restore_drill_schedule_due",
             metadata={
                 "source_export_job_id": str(latest_success.id),
-                "passed": result["passed"],
-                "required_resolution_count": result["required_resolution_count"],
-                "suggested_resolution_count": result["suggested_resolution_count"],
-                "conflict_counts": result["conflict_counts"],
+                "operation_id": str(result.id),
             },
         )
         self._session.commit()
         return ScheduledLifecycleSummary(
-            restore_drills_completed=1,
+            restore_drills_queued=1,
             details=[
                 scheduled_lifecycle_detail(
                     workspace.id,
                     "restore_drill",
-                    "completed",
+                    "queued",
                     "restore_drill_schedule_due",
                     resource_id=latest_success.id,
                 )

@@ -37,9 +37,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column(
-            "configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("checksum_sha256", sa.String(length=64), nullable=False),
         sa.Column("created_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("change_summary", sa.String(length=500), server_default="", nullable=False),

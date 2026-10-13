@@ -7,12 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.mcp.execution.contracts import (
-    McpExecutionRequest,
+    MCPExecutionRequest,
     snapshot_audit_metadata,
 )
 from opsmesh.capabilities.mcp.execution.events import (
-    McpExecutionNotifier,
-    McpToolCallLogService,
+    MCPExecutionNotifier,
+    MCPToolCallRecorder,
 )
 from opsmesh.capabilities.tools.contracts import ToolPermissionError
 from opsmesh.governance.security_events.models import SecurityEvent
@@ -22,12 +22,12 @@ from opsmesh.shared.telemetry.trace_context import with_current_trace_metadata
 
 
 @dataclass(slots=True)
-class McpExecutionBlocker:
+class MCPExecutionBlocker:
     session: Session
 
     def block(
         self,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         reason: str,
         *,
         mcp_server_id: UUID | None = None,
@@ -52,7 +52,7 @@ class McpExecutionBlocker:
                 resolved_server_id=resolved_server_id,
                 snapshot=snapshot,
             )
-        log = McpToolCallLogService(self.session).record(
+        log = MCPToolCallRecorder(self.session).record(
             request=request,
             server_id=resolved_server_id,
             status="blocked",
@@ -63,7 +63,7 @@ class McpExecutionBlocker:
             latency_ms=0,
         )
         if run is not None:
-            McpExecutionNotifier(self.session).append_execution_audit(
+            MCPExecutionNotifier(self.session).append_execution_audit(
                 run=run,
                 request=request,
                 server_id=resolved_server_id,
@@ -83,13 +83,13 @@ class McpExecutionBlocker:
     def _notify_blocked(
         self,
         *,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         run: AgentRun,
         reason: str,
         resolved_server_id: UUID | None,
         snapshot: dict[str, object],
     ) -> None:
-        notifier = McpExecutionNotifier(self.session)
+        notifier = MCPExecutionNotifier(self.session)
         notifier.append_run_event(
             run=run,
             event_type="tool.blocked",
@@ -121,7 +121,7 @@ class McpExecutionBlocker:
     def _record_security_event(
         self,
         *,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         reason: str,
         resolved_server_id: UUID | None,
         snapshot: dict[str, object],

@@ -9,7 +9,7 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 
 
 class AdminAnnouncementCreateRequest(BaseModel):
@@ -37,7 +37,7 @@ class AdminAnnouncementCreateRequest(BaseModel):
         return self
 
 
-class AdminAnnouncementResponse(TimestampedModel):
+class AdminAnnouncementResponse(TimestampedContract):
     created_by_user_id: UUID | None
     title: str
     body: str

@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.platform.updates.models import PlatformUpdateEvent, PlatformUpdateJob
-from opsmesh.platform.updates.service import UpdateService
+from opsmesh.platform.updates.service import PlatformUpdateService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.client_ip import security_request_context
@@ -18,19 +18,19 @@ from opsmesh.shared.http.client_ip import security_request_context
 router = APIRouter(prefix="/system/updates")
 
 
-class PlanRequest(BaseModel):
+class PlatformUpdatePlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     tag: str = Field(pattern=TAG_PATTERN)
     action: Literal["update", "rollback", "backup"] = "update"
     idempotency_key: str = Field(min_length=8, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
 
 
-class ApplyRequest(BaseModel):
+class PlatformUpdateApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-class JobResponse(BaseModel):
+class PlatformUpdateJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     action: str
@@ -46,7 +46,7 @@ class JobResponse(BaseModel):
     updated_at: datetime
 
 
-class EventResponse(BaseModel):
+class PlatformUpdateEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     phase: str
@@ -54,9 +54,9 @@ class EventResponse(BaseModel):
     created_at: datetime
 
 
-@router.post("/plans", response_model=JobResponse, status_code=202)
+@router.post("/plans", response_model=PlatformUpdateJobResponse, status_code=202)
 def create_plan(
-    body: PlanRequest,
+    body: PlatformUpdatePlanRequest,
     request: Request,
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -64,7 +64,7 @@ def create_plan(
     if not settings.release_update_enabled:
         raise HTTPException(409, "Host updates are disabled")
     try:
-        job = UpdateService(session).request(
+        job = PlatformUpdateService(session).request(
             tag=body.tag, action=body.action, key=body.idempotency_key
         )
     except ValueError as exc:
@@ -74,15 +74,15 @@ def create_plan(
     return job
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get("/{job_id}", response_model=PlatformUpdateJobResponse)
 def read_job(job_id: UUID, session: Session = Depends(get_db_session)) -> PlatformUpdateJob:
     try:
-        return UpdateService(session).get(job_id)
+        return PlatformUpdateService(session).get(job_id)
     except LookupError as exc:
         raise HTTPException(404, "Update job not found") from exc
 
 
-@router.get("/{job_id}/events", response_model=list[EventResponse])
+@router.get("/{job_id}/events", response_model=list[PlatformUpdateEventResponse])
 def read_events(
     job_id: UUID, session: Session = Depends(get_db_session)
 ) -> list[PlatformUpdateEvent]:
@@ -96,10 +96,10 @@ def read_events(
     )
 
 
-@router.post("/{job_id}/apply", response_model=JobResponse, status_code=202)
+@router.post("/{job_id}/apply", response_model=PlatformUpdateJobResponse, status_code=202)
 def apply_job(
     job_id: UUID,
-    body: ApplyRequest,
+    body: PlatformUpdateApplyRequest,
     request: Request,
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -107,7 +107,7 @@ def apply_job(
     if not settings.release_update_enabled:
         raise HTTPException(409, "Host updates are disabled")
     try:
-        job = UpdateService(session).approve(job_id, body.plan_sha256)
+        job = PlatformUpdateService(session).approve(job_id, body.plan_sha256)
     except LookupError as exc:
         raise HTTPException(404, "Update job not found") from exc
     except ValueError as exc:
@@ -117,12 +117,12 @@ def apply_job(
     return job
 
 
-@router.post("/{job_id}/cancel", response_model=JobResponse)
+@router.post("/{job_id}/cancel", response_model=PlatformUpdateJobResponse)
 def cancel_job(
     job_id: UUID, request: Request, session: Session = Depends(get_db_session)
 ) -> PlatformUpdateJob:
     try:
-        job = UpdateService(session).cancel(job_id)
+        job = PlatformUpdateService(session).cancel(job_id)
     except LookupError as exc:
         raise HTTPException(404, "Update job not found") from exc
     except ValueError as exc:
@@ -133,7 +133,7 @@ def cancel_job(
 
 
 def _audit(session: Session, request: Request, job: PlatformUpdateJob, action: str) -> None:
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action=f"platform.update.{action}",
         outcome="allowed",

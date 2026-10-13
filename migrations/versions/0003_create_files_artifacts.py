@@ -30,14 +30,24 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["uploaded_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_files")),
     )
-    op.create_index("ix_workspace_files_workspace_checksum", "workspace_files", ["workspace_id", "checksum_sha256"])
-    op.create_index("ix_workspace_files_workspace_status", "workspace_files", ["workspace_id", "status"])
+    op.create_index(
+        "ix_workspace_files_workspace_checksum",
+        "workspace_files",
+        ["workspace_id", "checksum_sha256"],
+    )
+    op.create_index(
+        "ix_workspace_files_workspace_status", "workspace_files", ["workspace_id", "status"]
+    )
 
     op.create_table(
         "artifacts",
@@ -69,4 +79,3 @@ def downgrade() -> None:
     op.drop_index("ix_workspace_files_workspace_status", table_name="workspace_files")
     op.drop_index("ix_workspace_files_workspace_checksum", table_name="workspace_files")
     op.drop_table("workspace_files")
-

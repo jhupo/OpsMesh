@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.definitions.conditions import condition_step_references
 from opsmesh.orchestration.definitions.templates.members import snapshot_agent_ids
-from opsmesh.orchestration.planning.member_matching import MemberMatchingService
+from opsmesh.orchestration.planning.member_matching import TeamMemberMatcher
 from opsmesh.orchestration.planning.org_structure import build_org_structure
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskStep
@@ -28,10 +28,10 @@ class _PackageNode:
     depends_on: tuple[str, ...]
 
 
-class ProjectPlanDiagnosticsService:
+class TaskPlanDiagnosticsService:
     def __init__(self, session: Session) -> None:
         self._session = session
-        self._matcher = MemberMatchingService(session)
+        self._matcher = TeamMemberMatcher(session)
 
     def get_diagnostics(
         self,

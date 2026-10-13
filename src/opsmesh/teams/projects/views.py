@@ -14,9 +14,9 @@ from opsmesh.runtime.spaces.models import RuntimeSpace
 from opsmesh.shared.utils import counts_by_value
 from opsmesh.teams.execution.overview_contracts import DONE_TASK_STATUSES
 from opsmesh.teams.management.models import AgentTeam
-from opsmesh.teams.projects.employees import employee_outputs
+from opsmesh.teams.projects.member_outputs import employee_outputs
 from opsmesh.teams.projects.policies import SPACE_TIER_TEMPLATES
-from opsmesh.teams.projects.runtime import (
+from opsmesh.teams.projects.runtime_space_views import (
     capacity_summary,
     max_project_space,
     reservation_summary,
@@ -121,9 +121,14 @@ def landing_rules(team: AgentTeam, spaces: list[RuntimeSpace]) -> dict[str, obje
         "artifact_source": "artifact.task_id_or_agent_run_id",
         "workspace_file_source": "workspace_file.metadata",
         "memory_source": "workspace_memory.source_or_metadata",
-        "default_storage_policy": primary_space.storage_policy if primary_space is not None else {},
-        "default_cleanup_policy": primary_space.cleanup_policy if primary_space is not None else {},
+        "default_storage_metadata": primary_space.storage_metadata
+        if primary_space is not None
+        else {},
+        "default_cleanup_metadata": primary_space.cleanup_metadata
+        if primary_space is not None
+        else {},
     }
+
 
 def archive_policy(
     team: AgentTeam,
@@ -135,8 +140,8 @@ def archive_policy(
         {
             "runtime_space_id": space.id,
             "scope": space.scope,
-            "cleanup_policy": space.cleanup_policy,
-            "storage_policy": space.storage_policy,
+            "cleanup_metadata": space.cleanup_metadata,
+            "storage_metadata": space.storage_metadata,
         }
         for space in spaces
     ]
@@ -152,6 +157,7 @@ def archive_policy(
         "space_policies": policies,
         "recommended_actions": recommended_actions,
     }
+
 
 def summary(
     *,
@@ -201,6 +207,7 @@ def project_task_items(records: ProjectSpaceRecords) -> list[dict[str, object]]:
         )
         for task in records.tasks
     ]
+
 
 def task_item(
     task: Task,

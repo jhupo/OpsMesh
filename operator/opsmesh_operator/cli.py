@@ -16,8 +16,16 @@ from opsmesh_operator.installation import Installation
 from opsmesh_operator.installer import doctor, install
 
 
-def request(base: str, method: str, path: str, body: dict[str, object] | None = None) -> object:
-    url = urlsplit(base)
+def send_admin_request(
+    api_base_url: str, method: str, path: str, body: dict[str, object] | None = None
+) -> object:
+    """Send an authenticated admin request and close the owned HTTP client.
+
+    Requires HTTPS except for loopback URLs, rejects URL credentials and reads
+    the admin token from the environment. Raises ValueError for unsafe/missing
+    configuration and RuntimeError for an unsuccessful HTTP response.
+    """
+    url = urlsplit(api_base_url)
     if url.username or url.password or url.query or url.fragment:
         raise ValueError("API URL cannot contain credentials, query or fragment")
     if url.scheme != "https" and not (
@@ -28,7 +36,7 @@ def request(base: str, method: str, path: str, body: dict[str, object] | None = 
     if not token:
         raise ValueError("Set OPSMESH_PLATFORM_ADMIN_TOKEN in the environment")
     with httpx.Client(
-        base_url=base, timeout=30, headers={"Authorization": f"Bearer {token}"}
+        base_url=api_base_url, timeout=30, headers={"Authorization": f"Bearer {token}"}
     ) as client:
         response = client.request(method, path, json=body)
         if response.is_error:
@@ -36,7 +44,8 @@ def request(base: str, method: str, path: str, body: dict[str, object] | None = 
         return response.json()
 
 
-def parser() -> argparse.ArgumentParser:
+def build_argument_parser() -> argparse.ArgumentParser:
+    """Build the operator CLI's command and safety-flag definitions."""
     root = argparse.ArgumentParser(prog="opsmesh")
     root.add_argument("--root", type=Path, default=Path("/opt/opsmesh"))
     root.add_argument("--api-url", default="http://127.0.0.1:8000")
@@ -99,7 +108,7 @@ def execute(args: argparse.Namespace) -> object:
         if args.admin_action == "reset-password":
             return json.loads(deployment_for(installation).reset_admin_password())
     if args.command == "status":
-        return request(args.api_url, "GET", "/api/v1/admin/system/version")
+        return send_admin_request(args.api_url, "GET", "/api/v1/admin/system/version")
     if args.command == "logs":
         if args.service == "updater" or Installation.load(args.root).mode == "systemd":
             return run_command(
@@ -119,19 +128,19 @@ def execute(args: argparse.Namespace) -> object:
             return BackupStore(Installation.load(args.root)).verify(
                 str(args.id), restore_check=args.restore_check
             )
-        current = request(args.api_url, "GET", "/api/v1/admin/system/version")
+        current = send_admin_request(args.api_url, "GET", "/api/v1/admin/system/version")
         if not isinstance(current, dict):
             raise ValueError("Invalid current release response")
-        return request(
+        return send_admin_request(
             args.api_url,
             "POST",
             "/api/v1/admin/system/updates/plans",
             {"tag": current["tag"], "action": "backup", "idempotency_key": uuid4().hex},
         )
     if args.action == "check":
-        return request(args.api_url, "GET", "/api/v1/admin/system/check-updates")
+        return send_admin_request(args.api_url, "GET", "/api/v1/admin/system/check-updates")
     if args.action in {"plan", "rollback"}:
-        return request(
+        return send_admin_request(
             args.api_url,
             "POST",
             "/api/v1/admin/system/updates/plans",
@@ -144,7 +153,7 @@ def execute(args: argparse.Namespace) -> object:
     if args.action == "status":
         if args.local:
             return json.loads((args.root / "updates" / f"{args.plan}.json").read_text("utf-8"))
-        return request(args.api_url, "GET", f"/api/v1/admin/system/updates/{args.plan}")
+        return send_admin_request(args.api_url, "GET", f"/api/v1/admin/system/updates/{args.plan}")
     if args.action == "recover":
         installation = Installation.load(args.root)
         if args.strategy == "restore" and not args.ack_data_loss:
@@ -164,13 +173,13 @@ def execute(args: argparse.Namespace) -> object:
         run_command(command, cwd=installation.root, timeout=7200)
         return {"recovered": True}
     body = {"plan_sha256": args.fingerprint} if args.action == "apply" else None
-    return request(
+    return send_admin_request(
         args.api_url, "POST", f"/api/v1/admin/system/updates/{args.plan}/{args.action}", body
     )
 
 
 def main() -> None:
-    arguments = parser()
+    arguments = build_argument_parser()
     args = arguments.parse_args()
     try:
         payload = json.dumps(execute(args), ensure_ascii=False, indent=2)

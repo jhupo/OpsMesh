@@ -6,21 +6,21 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.mcp.catalog.contracts import (
-    McpCredentialReferenceCreateRequest,
-    McpCredentialReferenceRotateRequest,
-    McpCredentialReferenceUpdateRequest,
+    MCPCredentialReferenceCreateRequest,
+    MCPCredentialReferenceRotateRequest,
+    MCPCredentialReferenceUpdateRequest,
 )
-from opsmesh.capabilities.mcp.models import McpCredentialReference
+from opsmesh.capabilities.mcp.models import MCPCredentialReference
 from opsmesh.capabilities.mcp.policy import require_mcp_server
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.models import ResourceReview
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.contracts import ResourceReviewResult
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars
@@ -28,7 +28,7 @@ from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 
-class McpCredentialService:
+class MCPCredentialService:
     def __init__(
         self,
         session: Session,
@@ -42,17 +42,17 @@ class McpCredentialService:
     def create_credential_reference(
         self,
         workspace_id: UUID,
-        data: McpCredentialReferenceCreateRequest,
+        data: MCPCredentialReferenceCreateRequest,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
-    ) -> McpCredentialReference:
+    ) -> MCPCredentialReference:
         if data.secret_payload is None and data.provider in {"hosted", "static_header"}:
             raise ValueError("Remote MCP headers must use encrypted secret_payload")
         server = None
         if data.mcp_server_id is not None:
             server = require_mcp_server(self._session, workspace_id, data.mcp_server_id)
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_credential_reference(
@@ -65,7 +65,7 @@ class McpCredentialService:
             scopes=data.scopes,
             has_secret_payload=data.secret_payload is not None,
         )
-        credential = McpCredentialReference(
+        credential = MCPCredentialReference(
             workspace_id=workspace_id,
             status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
             **data.model_dump(exclude={"secret_payload"}),
@@ -138,16 +138,16 @@ class McpCredentialService:
         self,
         workspace_id: UUID,
         credential_id: UUID,
-        data: McpCredentialReferenceUpdateRequest,
+        data: MCPCredentialReferenceUpdateRequest,
         actor_user_id: UUID | None = None,
-    ) -> McpCredentialReference:
+    ) -> MCPCredentialReference:
         credential = self._require_credential(workspace_id, credential_id)
         if data.name is None and data.scopes is None:
             raise ValueError("Provide name or scopes to update MCP credential")
         server_visibility = self._credential_server_visibility(workspace_id, credential)
         next_name = data.name if data.name is not None else credential.name
         next_scopes = list(data.scopes) if data.scopes is not None else list(credential.scopes)
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_credential_reference(
@@ -189,9 +189,9 @@ class McpCredentialService:
         self,
         workspace_id: UUID,
         credential_id: UUID,
-        data: McpCredentialReferenceRotateRequest,
+        data: MCPCredentialReferenceRotateRequest,
         actor_user_id: UUID | None = None,
-    ) -> McpCredentialReference:
+    ) -> MCPCredentialReference:
         credential = self._require_credential(workspace_id, credential_id)
         if data.secret_payload is not None:
             if self._secret_service is None:
@@ -208,7 +208,7 @@ class McpCredentialService:
                 raise ValueError("Remote MCP headers must use encrypted secret_payload")
             encrypted = None
         server_visibility = self._credential_server_visibility(workspace_id, credential)
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_credential_reference(
@@ -253,20 +253,20 @@ class McpCredentialService:
         *,
         mcp_server_id: UUID | None = None,
         include_disabled: bool = False,
-    ) -> tuple[list[McpCredentialReference], int]:
+    ) -> tuple[list[MCPCredentialReference], int]:
         if mcp_server_id is not None:
             require_mcp_server(self._session, workspace_id, mcp_server_id)
-        statement = select(McpCredentialReference).where(
-            McpCredentialReference.workspace_id == workspace_id
+        statement = select(MCPCredentialReference).where(
+            MCPCredentialReference.workspace_id == workspace_id
         )
         if mcp_server_id is not None:
-            statement = statement.where(McpCredentialReference.mcp_server_id == mcp_server_id)
+            statement = statement.where(MCPCredentialReference.mcp_server_id == mcp_server_id)
         if not include_disabled:
-            statement = statement.where(McpCredentialReference.status == "active")
+            statement = statement.where(MCPCredentialReference.status == "active")
         return self._page(
             statement.order_by(
-                McpCredentialReference.status.asc(),
-                McpCredentialReference.created_at.desc(),
+                MCPCredentialReference.status.asc(),
+                MCPCredentialReference.created_at.desc(),
             ),
             page,
         )
@@ -276,7 +276,7 @@ class McpCredentialService:
         workspace_id: UUID,
         credential_id: UUID,
         actor_user_id: UUID | None = None,
-    ) -> McpCredentialReference:
+    ) -> MCPCredentialReference:
         credential = self._require_credential(workspace_id, credential_id)
         credential.status = "disabled"
         credential.configuration_version += 1
@@ -303,12 +303,12 @@ class McpCredentialService:
         self,
         workspace_id: UUID,
         credential_id: UUID,
-    ) -> McpCredentialReference:
+    ) -> MCPCredentialReference:
         credential = self._session.scalar(
-            select(McpCredentialReference)
+            select(MCPCredentialReference)
             .where(
-                McpCredentialReference.id == credential_id,
-                McpCredentialReference.workspace_id == workspace_id,
+                MCPCredentialReference.id == credential_id,
+                MCPCredentialReference.workspace_id == workspace_id,
             )
             .with_for_update()
         )
@@ -319,7 +319,7 @@ class McpCredentialService:
     def _credential_server_visibility(
         self,
         workspace_id: UUID,
-        credential: McpCredentialReference,
+        credential: MCPCredentialReference,
     ) -> str:
         if credential.mcp_server_id is None:
             return "private"
@@ -327,10 +327,10 @@ class McpCredentialService:
 
     def _request_review(
         self,
-        credential: McpCredentialReference,
+        credential: MCPCredentialReference,
         workspace_id: UUID,
         actor_user_id: UUID | None,
-        review: ResourceReview,
+        review: ResourceReviewResult,
     ) -> None:
         ResourceReviewApprovalService(self._session).request_resource_review(
             workspace_id=workspace_id,
@@ -361,9 +361,9 @@ class McpCredentialService:
         *,
         workspace_id: UUID,
         actor_user_id: UUID,
-        credential: McpCredentialReference,
+        credential: MCPCredentialReference,
         action: str,
-        review: ResourceReview,
+        review: ResourceReviewResult,
     ) -> None:
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
@@ -389,7 +389,7 @@ class McpCredentialService:
 
     def _page(
         self,
-        statement: Select[tuple[McpCredentialReference]],
+        statement: Select[tuple[MCPCredentialReference]],
         page: PageParams,
-    ) -> tuple[list[McpCredentialReference], int]:
+    ) -> tuple[list[MCPCredentialReference], int]:
         return page_scalars(self._session, statement, page)

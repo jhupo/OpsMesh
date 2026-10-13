@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.orchestration.runs.activity import run_activity
+from opsmesh.orchestration.runs.activity_summary import run_activity_summary
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.runs.queries import latest_events_by_run
 from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
@@ -189,11 +189,11 @@ def _blocked_reasons(task: Task, steps: list[TaskStep], delivery: dict[str, obje
         reason = dependencies.get("blocked_reason")
         if isinstance(reason, str) and reason:
             reasons.append(reason)
-    if _int(delivery.get("missing_expected_artifact_count")) > 0:
+    if int_or_zero(delivery.get("missing_expected_artifact_count")) > 0:
         reasons.append("missing_expected_artifacts")
-    if _int(delivery.get("rejected_artifact_count")) > 0:
+    if int_or_zero(delivery.get("rejected_artifact_count")) > 0:
         reasons.append("rejected_artifacts")
-    return _dedupe(reasons)
+    return dedupe_strings(reasons)
 
 
 def _recommended_actions(
@@ -214,14 +214,14 @@ def _recommended_actions(
         actions.append("monitor_active_runs")
     if not actions and task.status not in TERMINAL_TASK_STATUSES:
         actions.append("inspect_execution_status")
-    return _dedupe(actions)
+    return dedupe_strings(actions)
 
 
 def _summary(
     items: list[dict[str, object]], *, limit: int, include_completed: bool
 ) -> dict[str, object]:
-    status_counts = _counts(str(item["status"]) for item in items)
-    delivery_status_counts = _counts(
+    status_counts = counts_by_value(str(item["status"]) for item in items)
+    delivery_status_counts = counts_by_value(
         str(dict_or_empty(item.get("delivery")).get("status")) for item in items
     )
     return {
@@ -233,11 +233,12 @@ def _summary(
         "blocked_task_count": sum(1 for item in items if item.get("blocked_reasons")),
         "high_risk_task_count": sum(1 for item in items if item.get("risk_level") == "high"),
         "active_run_count": sum(
-            _int(dict_or_empty(item.get("execution")).get("active_run_count")) for item in items
+            int_or_zero(dict_or_empty(item.get("execution")).get("active_run_count"))
+            for item in items
         ),
         "active_run_phase_counts": _summary_phase_counts(items),
         "missing_expected_artifact_count": sum(
-            _int(dict_or_empty(item.get("delivery")).get("missing_expected_artifact_count"))
+            int_or_zero(dict_or_empty(item.get("delivery")).get("missing_expected_artifact_count"))
             for item in items
         ),
         "pending_review_task_count": sum(
@@ -280,18 +281,18 @@ def _latest_message_payload(message: TaskMessage | None) -> dict[str, object] | 
 
 
 def _step_status_counts(steps: list[TaskStep]) -> dict[str, int]:
-    return _counts(step.status for step in steps)
+    return counts_by_value(step.status for step in steps)
 
 
 def _run_status_counts(runs: list[AgentRun]) -> dict[str, int]:
-    return _counts(run.status for run in runs)
+    return counts_by_value(run.status for run in runs)
 
 
 def _active_run_phase_counts(
     runs: list[AgentRun], latest_events: dict[UUID, RunEvent]
 ) -> dict[str, int]:
-    return _counts(
-        str(run_activity(run, latest_events.get(run.id)).get("phase"))
+    return counts_by_value(
+        str(run_activity_summary(run, latest_events.get(run.id)).get("phase"))
         for run in runs
         if run.status in ACTIVE_RUN_STATUSES
     )
@@ -312,15 +313,3 @@ def _completion_ratio(step_counts: dict[str, int], step_count: int) -> float:
     if step_count <= 0:
         return 0.0
     return round(step_counts.get("completed", 0) / step_count, 4)
-
-
-def _counts(values: object) -> dict[str, int]:
-    return counts_by_value(values) if isinstance(values, list | tuple | set) else {}
-
-
-def _int(value: object) -> int:
-    return int_or_zero(value)
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    return dedupe_strings(values)

@@ -9,13 +9,11 @@ from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.resources.lifecycle.settings import _ensure_utc_datetime, _positive_int
-from opsmesh.resources.storage.storage import ObjectStorage
 from opsmesh.resources.transfers.contracts import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveRestoreDrillRequest,
 )
 from opsmesh.resources.transfers.models import WorkspaceExportJob
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -230,6 +228,7 @@ def backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
         "weekly": 168,
     }.get(schedule.strip().lower())
 
+
 class WorkspaceScheduledLifecycleService:
     def __init__(self, session: Session) -> None:
         from opsmesh.resources.lifecycle.scheduled_backup import ScheduledBackupService
@@ -244,8 +243,6 @@ class WorkspaceScheduledLifecycleService:
     def run_scheduled_lifecycle(
         self,
         *,
-        queue: RedisQueue,
-        storage: ObjectStorage | None = None,
         workspace_id: UUID | None = None,
         limit: int = 100,
     ) -> ScheduledLifecycleSummary:
@@ -258,29 +255,18 @@ class WorkspaceScheduledLifecycleService:
 
         summary = ScheduledLifecycleSummary(scanned_workspaces=len(workspaces))
         for workspace in workspaces:
-            summary = summary.combine(
-                self._run_workspace_scheduled_lifecycle(
-                    workspace,
-                    queue,
-                    storage=storage,
-                )
-            )
+            summary = summary.combine(self._run_workspace_scheduled_lifecycle(workspace))
         return summary
 
     def _run_workspace_scheduled_lifecycle(
         self,
         workspace: Workspace,
-        queue: RedisQueue,
-        *,
-        storage: ObjectStorage | None,
     ) -> ScheduledLifecycleSummary:
-        backup_summary = self._backup.run_if_due(workspace, queue)
+        backup_summary = self._backup.run_if_due(workspace)
         retention_summary = self._retention.run_if_due(workspace)
-        restore_drill_summary = self._restore_drill.run_if_due(
-            workspace,
-            storage=storage,
-        )
+        restore_drill_summary = self._restore_drill.run_if_due(workspace)
         return backup_summary.combine(retention_summary).combine(restore_drill_summary)
+
 
 @dataclass(frozen=True)
 class ScheduledLifecycleSummary:
@@ -289,7 +275,7 @@ class ScheduledLifecycleSummary:
     backup_jobs_skipped: int = 0
     retention_runs_applied: int = 0
     retention_runs_skipped: int = 0
-    restore_drills_completed: int = 0
+    restore_drills_queued: int = 0
     restore_drills_skipped: int = 0
     details: list[dict[str, object]] = field(default_factory=list)
 
@@ -300,21 +286,7 @@ class ScheduledLifecycleSummary:
             backup_jobs_skipped=self.backup_jobs_skipped + other.backup_jobs_skipped,
             retention_runs_applied=self.retention_runs_applied + other.retention_runs_applied,
             retention_runs_skipped=self.retention_runs_skipped + other.retention_runs_skipped,
-            restore_drills_completed=(
-                self.restore_drills_completed + other.restore_drills_completed
-            ),
+            restore_drills_queued=(self.restore_drills_queued + other.restore_drills_queued),
             restore_drills_skipped=self.restore_drills_skipped + other.restore_drills_skipped,
             details=[*self.details, *other.details],
         )
-
-    def to_metadata(self) -> dict[str, object]:
-        return {
-            "scanned_workspaces": self.scanned_workspaces,
-            "backup_jobs_enqueued": self.backup_jobs_enqueued,
-            "backup_jobs_skipped": self.backup_jobs_skipped,
-            "retention_runs_applied": self.retention_runs_applied,
-            "retention_runs_skipped": self.retention_runs_skipped,
-            "restore_drills_completed": self.restore_drills_completed,
-            "restore_drills_skipped": self.restore_drills_skipped,
-            "details": self.details,
-        }

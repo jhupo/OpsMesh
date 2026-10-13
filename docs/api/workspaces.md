@@ -31,7 +31,7 @@ List Workspaces
 
 Operation ID：`list_workspaces_api_v1_workspaces_get`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `list_workspaces`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `list_workspaces`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -59,7 +59,7 @@ Create Workspace
 
 Operation ID：`create_workspace_api_v1_workspaces_post`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `create_workspace`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `create_workspace`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.account_action_dependency.<locals>.require_account_action`：`action=workspaces:create`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -140,7 +140,7 @@ Get Workspace
 
 Operation ID：`get_workspace_api_v1_workspaces__workspace_id__get`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `get_workspace`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `get_workspace`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -167,7 +167,7 @@ Update Workspace
 
 Operation ID：`update_workspace_api_v1_workspaces__workspace_id__patch`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `update_workspace`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `update_workspace`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -208,7 +208,7 @@ Get Workspace Health
 
 Operation ID：`get_workspace_health_api_v1_workspaces__workspace_id__health_get`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `get_workspace_health`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `get_workspace_health`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -235,7 +235,7 @@ List Workspace Health Snapshots
 
 Operation ID：`list_workspace_health_snapshots_api_v1_workspaces__workspace_id__health_snapshots_get`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `list_workspace_health_snapshots`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `list_workspace_health_snapshots`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -264,7 +264,7 @@ Create Workspace Health Snapshot
 
 Operation ID：`create_workspace_health_snapshot_api_v1_workspaces__workspace_id__health_snapshots_post`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `create_workspace_health_snapshot`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `create_workspace_health_snapshot`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -291,7 +291,7 @@ Get Workspace Health Trends
 
 Operation ID：`get_workspace_health_trends_api_v1_workspaces__workspace_id__health_trends_get`。
 
-实现：[src/opsmesh/workspaces/management/dependencies.py](../../src/opsmesh/workspaces/management/dependencies.py) · `get_workspace_health_trends`。
+实现：[src/opsmesh/workspaces/management/workspace_routes.py](../../src/opsmesh/workspaces/management/workspace_routes.py) · `get_workspace_health_trends`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 

@@ -57,6 +57,8 @@ jobs:
             --health-cmd 'pg_isready -U opsmesh' --health-interval 2s --health-retries 30 \
             pgvector/pgvector:0.8.6-pg16-bookworm
           docker run -d --name acceptance-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+          docker compose -p acceptance-temporal -f deploy/temporal/compose.yml up -d temporal-namespace
+          uv run python -m opsmesh_operator.compose --timeout 180 -- docker compose -p acceptance-temporal -f deploy/temporal/compose.yml
       - name: Signed native install, cross-version upgrade and real interruption recovery
         run: |
           sudo env "PATH=$PATH" "OPSMESH_RELEASE_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \

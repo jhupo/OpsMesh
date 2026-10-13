@@ -31,8 +31,12 @@ def upgrade() -> None:
         sa.Column("storage_policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("cleanup_policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["created_by_user_id"],
             ["users.id"],
@@ -65,8 +69,12 @@ def upgrade() -> None:
         sa.Column("target_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["runtime_space_id"],
             ["runtime_spaces.id"],
@@ -97,8 +105,12 @@ def upgrade() -> None:
         sa.Column("unit", sa.String(length=32), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["runtime_space_id"],
             ["runtime_spaces.id"],
@@ -131,8 +143,12 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(), nullable=True),
         sa.Column("released_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_run_id"], ["agent_runs.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(
             ["runtime_space_id"],

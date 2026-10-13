@@ -1,7 +1,7 @@
 import pytest
 
 from opsmesh.agents.providers.policy import model_provider_base_url_host, validated_base_url
-from opsmesh.shared.security.egress import EgressUrlPolicy
+from opsmesh.shared.security.egress import EgressURLPolicy
 
 
 @pytest.mark.parametrize(
@@ -16,8 +16,7 @@ def test_provider_preserves_explicit_endpoint(url: str) -> None:
     assert (
         validated_base_url(
             url,
-            provider="openai-compatible",
-            egress_policy=EgressUrlPolicy(allowed_schemes=("https",)),
+            egress_policy=EgressURLPolicy(allowed_schemes=("https",)),
         )
         == url
     )

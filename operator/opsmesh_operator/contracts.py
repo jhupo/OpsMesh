@@ -20,7 +20,7 @@ class ReleaseFile(Contract):
 
 
 class ReleaseManifest(Contract):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     tag: str = Field(pattern=TAG_PATTERN)
     commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -30,7 +30,6 @@ class ReleaseManifest(Contract):
     database_revision: str = Field(pattern=r"^[A-Za-z0-9_]+$")
     upgrade_from_revisions: list[str]
     rollback_database_revisions: list[str]
-    connector_protocol: int = Field(ge=1)
     platforms: list[Literal["linux/amd64", "linux/arm64"]] = Field(min_length=1)
     files: list[ReleaseFile] = Field(min_length=1)
 

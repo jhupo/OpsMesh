@@ -11,34 +11,14 @@ from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceReservation
 from opsmesh.runtime.spaces.reservations import (
     RuntimeSpaceCapacityReservationService,
-    RuntimeSpaceReservationAttachmentService,
+    RuntimeSpaceReservationBindingService,
     RuntimeSpaceReservationReleaseService,
 )
 from opsmesh.workspaces.quotas.models import WorkspaceReservation
-from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaService
+from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaReservationService
 
 MarkStepBlocked = Callable[[TaskStep, str, dict[str, object] | None], None]
 MarkStepRunnable = Callable[[TaskStep], None]
-
-
-def positive_numeric_usage(value: object) -> dict[str, int | float]:
-    if not isinstance(value, dict):
-        return {}
-    normalized: dict[str, int | float] = {}
-    for key, amount in value.items():
-        if not isinstance(key, str) or isinstance(amount, bool):
-            continue
-        if isinstance(amount, int | float) and amount > 0:
-            normalized[key] = amount
-            continue
-        if isinstance(amount, str):
-            try:
-                parsed = float(amount)
-            except ValueError:
-                continue
-            if parsed > 0:
-                normalized[key] = parsed
-    return normalized
 
 
 def positive_int_usage(value: object) -> dict[str, int]:
@@ -92,13 +72,6 @@ def merge_usage_max(target: dict[str, int], update: dict[str, int]) -> None:
         target[key] = max(target.get(key, 0), value)
 
 
-def merge_workspace_slot_usage(target: dict[str, int], update: dict[str, int]) -> None:
-    for key in ("docker_runtimes", "self_hosted_jobs"):
-        value = update.get(key)
-        if value is not None:
-            target[key] = max(target.get(key, 0), value)
-
-
 class RunProfileLookup:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -143,7 +116,7 @@ class RunResourceReservationService:
             runtime_space_id=runtime_space_id,
         )
         if not reservation_available:
-            WorkspaceQuotaService(self.session).release_reservation(
+            WorkspaceQuotaReservationService(self.session).release_reservation(
                 workspace_reservation,
                 released_at=datetime.now(UTC),
             )
@@ -155,18 +128,18 @@ class RunResourceReservationService:
         )
 
     def attach_to_run(self, bundle: RunReservationBundle, run: AgentRun) -> None:
-        WorkspaceQuotaService(self.session).attach_reservation_to_run(
+        WorkspaceQuotaReservationService(self.session).attach_reservation_to_run(
             bundle.workspace_reservation,
             run.id,
         )
         if bundle.runtime_space_reservation is not None:
-            RuntimeSpaceReservationAttachmentService(self.session).attach_reservation_to_run(
+            RuntimeSpaceReservationBindingService(self.session).attach_reservation_to_run(
                 bundle.runtime_space_reservation,
                 run.id,
             )
 
     def release_bundle(self, bundle: RunReservationBundle, *, released_at: datetime) -> None:
-        WorkspaceQuotaService(self.session).release_reservation(
+        WorkspaceQuotaReservationService(self.session).release_reservation(
             bundle.workspace_reservation,
             released_at=released_at,
         )
@@ -183,7 +156,7 @@ class RunResourceReservationService:
         task: Task,
         step: TaskStep,
     ) -> WorkspaceReservation | None:
-        result = WorkspaceQuotaService(self.session).reserve(
+        result = WorkspaceQuotaReservationService(self.session).reserve(
             workspace_id=task.workspace_id,
             task_id=task.id,
             task_step_id=step.id,
@@ -295,10 +268,6 @@ class RunResourceReservationService:
                 usage,
                 positive_int_usage(profile.runtime_policy.get("workspace_reservation_usage")),
             )
-            merge_workspace_slot_usage(
-                usage,
-                positive_int_usage(profile.runtime_policy.get("reservation_usage")),
-            )
             merge_usage_max(
                 usage,
                 positive_int_usage(profile.runtime_policy.get("resource_requirements")),
@@ -306,10 +275,6 @@ class RunResourceReservationService:
         merge_usage_max(
             usage,
             positive_int_usage(step.dependencies.get("workspace_reservation_usage")),
-        )
-        merge_workspace_slot_usage(
-            usage,
-            positive_int_usage(step.dependencies.get("reservation_usage")),
         )
         merge_usage_max(
             usage,
@@ -328,7 +293,7 @@ def release_run_reservations(session: Session, run: AgentRun, *, released_at: da
         agent_run_id=run.id,
         released_at=released_at,
     )
-    WorkspaceQuotaService(session).release_reservations_for_run(
+    WorkspaceQuotaReservationService(session).release_reservations_for_run(
         workspace_id=run.workspace_id,
         agent_run_id=run.id,
         released_at=released_at,

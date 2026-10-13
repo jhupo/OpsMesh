@@ -171,8 +171,10 @@ def calculate_costs(
     total = (input_cost + cached_cost + output_cost + request_cost).quantize(_COST_QUANTUM)
     return input_cost, output_cost, cached_cost, request_cost, total
 
+
 def _cost(tokens: int, rate_per_million: Decimal) -> Decimal:
     return (Decimal(tokens) * rate_per_million / _MILLION).quantize(_COST_QUANTUM)
+
 
 def normalize_currency(value: str) -> str:
     normalized = value.strip().upper()

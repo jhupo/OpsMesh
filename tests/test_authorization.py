@@ -1,23 +1,18 @@
-from uuid import uuid4
-
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.identity.auth.models import UserAPIToken
 from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.errors import AuthenticationError, PermissionDeniedError
 from opsmesh.identity.authorization.permissions import WorkspaceAction, role_allows
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.identity.users.accounts import AccountService
 from opsmesh.identity.users.models import User
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_role_permissions_are_hierarchical() -> None:
@@ -39,7 +34,7 @@ def test_require_workspace_allows_active_member() -> None:
     session = _session()
     user, workspace = _seed_workspace(session, role="operator")
 
-    context = AuthorizationService(session).require_workspace(
+    context = WorkspaceAuthorizationService(session).require_workspace(
         user_id=user.id,
         workspace_id=workspace.id,
         action=WorkspaceAction.WRITE,
@@ -61,7 +56,7 @@ def test_require_workspace_rejects_cross_workspace_access() -> None:
     )
 
     with pytest.raises(PermissionDeniedError, match="not an active member"):
-        AuthorizationService(session).require_workspace(
+        WorkspaceAuthorizationService(session).require_workspace(
             user_id=user.id,
             workspace_id=other_workspace.id,
             action=WorkspaceAction.READ,
@@ -73,7 +68,7 @@ def test_require_workspace_rejects_insufficient_role() -> None:
     user, workspace = _seed_workspace(session, role="viewer")
 
     with pytest.raises(PermissionDeniedError, match="does not allow"):
-        AuthorizationService(session).require_workspace(
+        WorkspaceAuthorizationService(session).require_workspace(
             user_id=user.id,
             workspace_id=workspace.id,
             action=WorkspaceAction.WRITE,
@@ -245,19 +240,8 @@ def test_change_password_and_revoke_all_user_api_tokens() -> None:
         service.authenticate_user_token(second.token, settings)
 
 
-def test_worker_resource_workspace_mismatch_is_rejected() -> None:
-    session = _session()
-
-    with pytest.raises(PermissionDeniedError, match="Resource does not belong"):
-        AuthorizationService(session).ensure_resource_workspace(
-            resource_workspace_id=uuid4(),
-            expected_workspace_id=uuid4(),
-        )
-
-
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -282,14 +266,4 @@ def _settings() -> Settings:
         environment="test",
         internal_api_token="internal-token",
         token_hash_pepper="test-pepper",
-        database_url="sqlite+pysqlite:///:memory:",
     )
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

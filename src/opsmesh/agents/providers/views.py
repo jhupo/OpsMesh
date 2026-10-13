@@ -21,9 +21,10 @@ from opsmesh.agents.providers.model_api import (
 )
 from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.agents.providers.policy import model_provider_base_url_host
-from opsmesh.agents.providers.snapshots import (
-    ModelProviderResolutionService,
-    ModelProviderResolutionSnapshot,
+from opsmesh.agents.providers.readiness import provider_readiness
+from opsmesh.agents.providers.selection import (
+    ModelProviderSelectionQuery,
+    ModelProviderSelectionSnapshot,
 )
 
 
@@ -53,7 +54,7 @@ def agent_model_provider_summary(
     agent: AgentProfile,
 ) -> dict[str, object]:
     try:
-        snapshot = ModelProviderResolutionService(db_session).resolve_snapshot_for_agent(
+        snapshot = ModelProviderSelectionQuery(db_session).resolve_snapshot_for_agent(
             workspace_id=agent.workspace_id,
             agent_credential_id=agent.model_provider_credential_id,
             agent_model=agent.model,
@@ -190,10 +191,8 @@ def _agent_model_provider_health_summary(
             ModelProviderCredential.id == credential_id,
         )
     )
-    reasons: list[str] = []
-    warnings: list[str] = []
+    reasons, warnings = provider_readiness(credential)
     if credential is None:
-        reasons.append("model_provider_unavailable")
         return {
             "credential_status": None,
             "credential_health_status": None,
@@ -203,15 +202,7 @@ def _agent_model_provider_health_summary(
             "reasons": reasons,
             "warnings": warnings,
         }
-    if credential.status != "active":
-        reasons.append("model_provider_not_active")
-    if credential.health_status == "unhealthy":
-        reasons.append("model_provider_unhealthy")
-    elif credential.health_status in {"degraded", "unknown"}:
-        warnings.append(f"model_provider_{credential.health_status}")
     exhausted = budget_is_exhausted(credential.budget_metadata)
-    if exhausted:
-        reasons.append("model_provider_budget_exhausted")
     return {
         "credential_status": credential.status,
         "credential_health_status": credential.health_status,
@@ -223,7 +214,7 @@ def _agent_model_provider_health_summary(
     }
 
 
-def _capability_provider(snapshot: ModelProviderResolutionSnapshot) -> str | None:
+def _capability_provider(snapshot: ModelProviderSelectionSnapshot) -> str | None:
     if snapshot.provider is not None:
         return snapshot.provider
     return None

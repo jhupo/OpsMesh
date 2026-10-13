@@ -10,7 +10,7 @@ from opsmesh.capabilities.tools.workspace_memory_documents import (
     WorkspaceMemoryDocumentRepository,
     result_payload,
 )
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.memory.authorization import AuthorizedMemoryScope
 from opsmesh.resources.memory.configuration import WorkspaceMemoryConfigurationService
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent

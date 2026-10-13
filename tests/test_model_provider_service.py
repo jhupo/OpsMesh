@@ -1,15 +1,12 @@
 import asyncio
+import ipaddress
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-import opsmesh.agents.providers.health as model_provider_health_service_module
 from opsmesh.agents.providers.contracts import ModelProviderUnavailableError
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
 from opsmesh.agents.providers.health import ModelProviderHealthService
@@ -23,7 +20,7 @@ from opsmesh.agents.providers.probes import (
     ModelProviderHealthCheckResult,
 )
 from opsmesh.agents.providers.queries import ModelProviderCredentialQueryService
-from opsmesh.agents.providers.resolution import ModelProviderResolutionService
+from opsmesh.agents.providers.resolution import ModelProviderResolver
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.identity.users.models import User
 from opsmesh.shared.db.base import Base
@@ -31,6 +28,16 @@ from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
+
+
+@pytest.fixture(autouse=True)
+def public_provider_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise URL policy using public DNS answers independent of the host resolver."""
+    monkeypatch.setattr(
+        "opsmesh.shared.security.egress._resolve_host",
+        lambda host, *, policy: [ipaddress.ip_address("93.184.216.34")],
+    )
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:
@@ -52,16 +59,16 @@ def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -
 
     with pytest.raises(ValueError, match="not supported"):
         model_api_for_agent_provider(
-            "anthropic",
-            {"model_api": "responses"},
+            "openai",
+            {"model_api": "unsupported_api"},
             {"model_api": "chat_completions"},
         )
     assert (
         unsupported_agent_model_api(
-            "anthropic",
-            {"model_api": "responses"},
+            "openai",
+            {"model_api": "unsupported_api"},
         )
-        == "responses"
+        == "unsupported_api"
     )
 
 
@@ -202,20 +209,20 @@ def test_model_provider_rejects_unknown_or_unsupported_model_api() -> None:
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
-        name="Anthropic",
-        provider="anthropic",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com/",
+        name="OpenAI",
+        provider="openai",
+        api_key="openai-key",
+        default_model="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1/",
         is_default=False,
     )
 
-    with pytest.raises(ValueError, match="not supported by provider"):
+    with pytest.raises(ValueError, match="Unsupported model_api"):
         service.update(
             workspace_id=workspace.id,
             credential_id=credential.id,
             actor_user_id=user.id,
-            model_api="responses",
+            model_api="unsupported_api",
             model_api_provided=True,
         )
 
@@ -227,11 +234,11 @@ def test_update_provider_uses_formal_provider_key_before_base_url_normalization(
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
-        name="Anthropic",
-        provider="anthropic",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com/",
+        name="OpenAI",
+        provider="openai",
+        api_key="openai-key",
+        default_model="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1/",
         is_default=False,
     )
 
@@ -255,9 +262,9 @@ def test_update_provider_renormalizes_existing_base_url() -> None:
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         name="Gateway",
-        provider="anthropic",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
+        provider="openai",
+        api_key="openai-key",
+        default_model="gpt-4.1-mini",
         base_url="https://dash.ovload.com/",
         is_default=False,
     )
@@ -270,7 +277,7 @@ def test_update_provider_renormalizes_existing_base_url() -> None:
     )
 
     assert updated.provider == "openai-compatible"
-    assert updated.base_url == "https://dash.ovload.com"
+    assert updated.base_url == "https://dash.ovload.com/"
 
 
 @pytest.mark.parametrize(
@@ -471,20 +478,20 @@ def test_resolve_exposes_configured_model_api() -> None:
     assert credential.budget_metadata["model_api"] == "chat_completions"
 
 
-def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
+def test_resolve_preserves_explicit_responses_api_and_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _command_service(session)
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
-        name="Anthropic",
-        provider="anthropic",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com/",
+        name="OpenAI",
+        provider="openai",
+        api_key="openai-key",
+        default_model="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1/",
         is_default=True,
-        budget_metadata={"model_api": "anthropic_messages"},
+        budget_metadata={"model_api": "responses"},
     )
 
     resolved = _resolution_service(session).resolve_for_agent(
@@ -493,66 +500,11 @@ def test_resolve_preserves_non_openai_provider_and_base_url() -> None:
         agent_model="workspace-default",
     )
 
-    assert credential.base_url == "https://api.anthropic.com"
-    assert resolved.provider == "anthropic"
-    assert resolved.base_url == "https://api.anthropic.com"
-    assert resolved.model == "claude-sonnet-4-5"
-    assert resolved.model_api == "anthropic_messages"
-
-
-def test_anthropic_health_check_uses_default_messages_model_api(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    service = _command_service(session)
-    credential = service.create(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        name="Anthropic",
-        provider="anthropic",
-        api_key="anthropic-key",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com",
-        is_default=True,
-    )
-    captured: dict[str, object] = {}
-
-    async def fake_probe(target, *, probes, timeout_seconds):
-        captured["provider"] = target.provider
-        captured["model_api"] = target.model_api
-        captured["probes"] = probes
-        captured["timeout_seconds"] = timeout_seconds
-        return ModelProviderHealthCheckResult(
-            status="healthy",
-            checks=(
-                ModelProviderHealthCheck(
-                    name="inference",
-                    status="passed",
-                    metadata={"model_api": target.model_api},
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
-
-    result = asyncio.run(
-        _health_service(session).run_health_check(
-            workspace_id=workspace.id,
-            credential_id=credential.id,
-            actor_user_id=user.id,
-            probes=("inference",),
-            timeout_seconds=2,
-        )
-    )
-
-    assert result.status == "healthy"
-    assert captured == {
-        "provider": "anthropic",
-        "model_api": "anthropic_messages",
-        "probes": ("inference",),
-        "timeout_seconds": 2,
-    }
+    assert credential.base_url == "https://api.openai.com/v1/"
+    assert resolved.provider == "openai"
+    assert resolved.base_url == "https://api.openai.com/v1/"
+    assert resolved.model == "gpt-4.1-mini"
+    assert resolved.model_api == "responses"
 
 
 def test_resolve_fails_closed_when_default_provider_is_unhealthy() -> None:
@@ -740,13 +692,13 @@ def test_resolve_agent_override_can_use_specific_model() -> None:
     resolved = _resolution_service(session).resolve_for_agent(
         workspace_id=workspace.id,
         agent_credential_id=credential.id,
-        agent_model="anthropic/claude-sonnet",
+        agent_model="openai/gpt-4.1-mini",
     )
 
     assert resolved.credential_id == credential.id
     assert resolved.api_key == "sk-router"
     assert resolved.base_url == "https://openrouter.ai/api/v1"
-    assert resolved.model == "anthropic/claude-sonnet"
+    assert resolved.model == "openai/gpt-4.1-mini"
 
 
 def test_resolve_rejects_cross_workspace_credential() -> None:
@@ -1000,10 +952,10 @@ def test_health_check_persists_result_and_records_redacted_audit(
     credential = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
-        name="Claude Gateway",
+        name="OpenAI Gateway",
         provider="openai-compatible",
         api_key="sk-health-check",
-        default_model="claude-opus-4-6",
+        default_model="gpt-4.1",
         base_url="https://dash.ovload.com/v1",
         is_default=False,
         budget_metadata={"model_api": "chat_completions"},
@@ -1045,23 +997,26 @@ def test_health_check_persists_result_and_records_redacted_audit(
             ),
         )
 
-    monkeypatch.setattr(model_provider_health_service_module, "probe_model_provider", fake_probe)
-
+    health = _health_service(session)
+    snapshot = health.prepare_health_check(workspace_id=workspace.id, credential_id=credential.id)
+    session.rollback()
     result = asyncio.run(
-        _health_service(session).run_health_check(
-            workspace_id=workspace.id,
-            credential_id=credential.id,
-            actor_user_id=user.id,
-            probes=("models", "inference"),
-            timeout_seconds=3,
-        )
+        fake_probe(snapshot.target, probes=("models", "inference"), timeout_seconds=3)
     )
+    health.complete_health_check(
+        workspace_id=workspace.id,
+        credential_id=credential.id,
+        actor_user_id=user.id,
+        snapshot=snapshot,
+        result=result,
+    )
+    session.commit()
     session.refresh(credential)
 
     assert result.status == "degraded"
     assert captured == {
         "provider": "openai-compatible",
-        "model": "claude-opus-4-6",
+        "model": "gpt-4.1",
         "api_key": "sk-health-check",
         "base_url": "https://dash.ovload.com/v1",
         "model_api": "chat_completions",
@@ -1116,7 +1071,6 @@ def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> Non
                     "agent_profile_id": "agent-1",
                     "model": "gpt-4.1-mini",
                     "credential_id": "credential-1",
-                    "fallback_selected": True,
                     "api_key": "sk-secret",
                     "base_url": "https://secret.example.test/v1",
                 },
@@ -1126,7 +1080,7 @@ def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> Non
                 actor_type="user",
                 actor_id=str(user.id),
                 user_id=user.id,
-                action="model_provider.fallback_unavailable",
+                action="model_provider.request_failed",
                 target_type="agent_run",
                 target_id="run-2",
                 created_at=datetime.now(UTC),
@@ -1156,16 +1110,16 @@ def test_usage_audit_lists_only_sanitized_provider_events_for_workspace() -> Non
     session.commit()
 
     rows, total = _query_service(session).list_usage_audit(workspace.id, PageParams())
-    fallback_rows, fallback_total = _query_service(session).list_usage_audit(
+    failure_rows, failure_total = _query_service(session).list_usage_audit(
         workspace.id,
         PageParams(),
-        action="model_provider.fallback_unavailable",
+        action="model_provider.request_failed",
     )
 
     assert total == 2
     assert {row.target_id for row in rows} == {"run-1", "run-2"}
-    assert fallback_total == 1
-    assert fallback_rows[0].target_id == "run-2"
+    assert failure_total == 1
+    assert failure_rows[0].target_id == "run-2"
 
 
 def _command_service(session: Session) -> ModelProviderCredentialCommandService:
@@ -1189,16 +1143,15 @@ def _health_service(session: Session) -> ModelProviderHealthService:
     )
 
 
-def _resolution_service(session: Session) -> ModelProviderResolutionService:
-    return ModelProviderResolutionService(
+def _resolution_service(session: Session) -> ModelProviderResolver:
+    return ModelProviderResolver(
         session,
         SecretEncryptionService(secret="unit-test-secret", key_id="test-key"),
     )
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -1237,12 +1190,3 @@ def _raw_credential(
         is_default=is_default,
         status=status,
     )
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

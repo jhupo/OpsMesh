@@ -6,8 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeResourceGrant
-from opsmesh.agents.execution.tokens import estimate_token_upper_bound, truncate_to_token_bound
+from opsmesh.agents.execution.contracts import AgentResourceGrant
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from opsmesh.orchestration.runs.models import AgentRun
@@ -55,7 +54,7 @@ class AgentMemoryContextService:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-        resource_grants: tuple[AgentRuntimeResourceGrant, ...],
+        resource_grants: tuple[AgentResourceGrant, ...],
         memory_policy: object,
     ) -> AgentMemoryContext:
         policy = context_memory_retrieval_policy(memory_policy)
@@ -70,14 +69,14 @@ class AgentMemoryContextService:
         evidence["layer_limits"] = layer_limits
         if not layer_limits:
             return _skipped(evidence, "memory_layer_retrieval_disabled")
-        query = truncate_to_token_bound(
+        query = _truncate_to_token_bound(
             self._query_for_run(run=run, task=task, profile=profile),
             policy.query_max_tokens,
         )
         if not query:
             return _skipped(evidence, "empty_retrieval_query")
         evidence["query_fingerprint"] = query_fingerprint(query)
-        evidence["query_tokens"] = estimate_token_upper_bound(query)
+        evidence["query_tokens"] = _estimate_token_upper_bound(query)
         query_embedding = self._query_embedding(run.workspace_id, query)
         evidence["query_embedding"] = query_embedding.evidence
         items = WorkspaceMemorySearchService(self._session).search(
@@ -98,7 +97,7 @@ class AgentMemoryContextService:
                 "status": "completed",
                 "retrieved_count": len(items),
                 "rendered_count": len(rendered_items),
-                "rendered_tokens": estimate_token_upper_bound(text),
+                "rendered_tokens": _estimate_token_upper_bound(text),
                 "selected": rendered_items,
             }
         )
@@ -168,7 +167,7 @@ def _render_memory_context(
 ) -> tuple[str, list[dict[str, object]]]:
     if not items:
         return "", []
-    remaining = max_tokens - estimate_token_upper_bound(MEMORY_CONTEXT_HEADER)
+    remaining = max_tokens - _estimate_token_upper_bound(MEMORY_CONTEXT_HEADER)
     if remaining <= 0:
         return "", []
     lines: list[str] = []
@@ -179,11 +178,11 @@ def _render_memory_context(
         available = remaining - separator_tokens
         if available <= 0:
             break
-        bounded = truncate_to_token_bound(rendered, available)
+        bounded = _truncate_to_token_bound(rendered, available)
         if not bounded:
             break
         lines.append(bounded)
-        remaining -= estimate_token_upper_bound(bounded) + separator_tokens
+        remaining -= _estimate_token_upper_bound(bounded) + separator_tokens
         evidence.append(item_evidence)
         if bounded != rendered:
             break
@@ -222,6 +221,25 @@ def _render_memory_item(
             "source_id": source_id,
         },
     )
+
+
+def _estimate_token_upper_bound(value: str) -> int:
+    """Return a conservative tokenizer-independent upper bound for UTF-8 model input."""
+    return len(value.encode("utf-8"))
+
+
+def _truncate_to_token_bound(value: str, token_bound: int) -> str:
+    if token_bound <= 0:
+        return ""
+    encoded = value.encode("utf-8")
+    if len(encoded) <= token_bound:
+        return value
+    suffix = "\n[context truncated]"
+    suffix_bytes = suffix.encode("utf-8")
+    if token_bound <= len(suffix_bytes):
+        return encoded[:token_bound].decode("utf-8", errors="ignore")
+    prefix = encoded[: token_bound - len(suffix_bytes)].decode("utf-8", errors="ignore").rstrip()
+    return prefix + suffix
 
 
 def _optional_string(value: object) -> str | None:

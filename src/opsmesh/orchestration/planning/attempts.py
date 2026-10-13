@@ -11,7 +11,7 @@ from opsmesh.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from opsmesh.orchestration.definitions.templates.builder import ProjectPlanningService
+from opsmesh.orchestration.definitions.templates.builder import build_initial_task_plan
 from opsmesh.orchestration.planning.agent_plan import (
     bootstrap_plan,
     is_agent_planning_step,
@@ -22,17 +22,12 @@ from opsmesh.orchestration.planning.ownership import require_automatic_plan_owne
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
+from opsmesh.orchestration.tasks.state import TaskStatus, transition_task
 
 
 class TaskPlanningAttemptService:
-    def __init__(
-        self,
-        session: Session,
-        planner: ProjectPlanningService | None = None,
-    ) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._planner = planner or ProjectPlanningService()
 
     def ensure_initial_plan(
         self,
@@ -50,7 +45,7 @@ class TaskPlanningAttemptService:
             return task.project_plan
         require_automatic_plan_ownership(task)
         if transition_to_planning:
-            TaskStateService().transition(task, TaskStatus.PLANNING)
+            transition_task(task, TaskStatus.PLANNING)
         attempt = self._create_attempt(task, retry_count=self._next_retry_count(task))
         plan: dict[str, object] | None
         try:
@@ -68,7 +63,7 @@ class TaskPlanningAttemptService:
                 )
                 self._session.flush([attempt, task])
                 return plan
-            plan = self._planner.create_initial_plan(task)
+            plan = build_initial_task_plan(task)
             if plan is not None:
                 validate_project_plan(plan, task.team_snapshot)
         except ProjectPlanValidationError as exc:
@@ -187,7 +182,7 @@ class TaskPlanningAttemptService:
                 "failed_at": now.isoformat(),
             },
         }
-        TaskStateService().transition(task, TaskStatus.BLOCKED)
+        transition_task(task, TaskStatus.BLOCKED)
         approval = ApprovalService(self._session).create_approval(
             workspace_id=task.workspace_id,
             task_id=task.id,

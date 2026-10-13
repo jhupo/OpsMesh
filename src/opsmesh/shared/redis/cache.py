@@ -111,21 +111,6 @@ class RedisJsonCache:
     def delete(self, key: str) -> int:
         return int(self._redis.delete(self._storage_key(key)))
 
-    def delete_prefix(self, prefix: str) -> int:
-        normalized_prefix = self._normalize_key(prefix)
-        pattern = self._keys.cache(self._namespace, f"{normalized_prefix}*")
-        matched_keys = list(self._redis.scan_iter(pattern))
-        if not matched_keys:
-            return 0
-        return int(self._redis.delete(*matched_keys))
-
-    def delete_namespace(self) -> int:
-        pattern = self._keys.cache(self._namespace, "*")
-        matched_keys = list(self._redis.scan_iter(pattern))
-        if not matched_keys:
-            return 0
-        return int(self._redis.delete(*matched_keys))
-
     def _storage_key(self, key: str) -> str:
         normalized_key = self._normalize_key(key)
         return self._keys.cache(self._namespace, normalized_key)

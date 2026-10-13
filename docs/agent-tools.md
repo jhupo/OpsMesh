@@ -1,16 +1,36 @@
 # Agent 的记忆与知识工具
 
-本文描述当前源码合同。内置工具必须在 Agent 工具清单中显式启用，并绑定对应资源授权；仅修改指令不会授予权限。
+本文描述当前产品配置与工具合同，不规定平台默认业务流程。执行边界见 [当前架构](architecture.md)。内置工具必须在 Agent 工具清单中显式启用，并绑定对应资源授权；仅修改指令不会授予权限。
 
 ## 三种存储
 
 | 存储 | 用途 | 模型访问方式 |
 | --- | --- | --- |
 | SDK Session | 同一会话的历史 | SDK Session 自动管理，不提供另一套历史 CRUD |
-| SDK 本地记忆 | Agent 持久经验文件 | 启用 `memory_policy.sdk_memory` 后使用 SDK Memory、Shell、Filesystem；文件命名空间与隔离限制见 [SDK 原生执行](sdk-native-execution.md) |
-| 工作空间共享记忆与知识 | 受权限、版本、审计控制的业务资料 | 下列产品工具，经授权 RPC 调用服务和 PostgreSQL |
+| SDK 本地记忆 | Agent 持久经验文件 | 启用 `memory_policy.sdk_memory` 后使用 SDK Memory、Shell、Filesystem；配置见下节 |
+| 工作空间共享记忆与知识 | 受权限、版本、审计控制的业务资料 | 下列产品工具，经授权 Temporal Activity 调用产品服务和 PostgreSQL |
 
 本地记忆的读写整理交给 SDK 文件能力；平台产品工具不重写该流水线。
+
+## SDK 本地记忆配置
+
+当前 `memory_policy.sdk_memory` 默认关闭。以下是只读取持久经验文件的用户配置示例：
+
+```json
+{
+  "sdk_memory": {
+    "enabled": true,
+    "read": true,
+    "generate": false,
+    "live_update": false,
+    "max_raw_memories": 32
+  }
+}
+```
+
+SDK 管理 `.opsmesh/memory/{workspace}/{user}/{agent}/` 下的经验文件与会话资料；没有记忆时按 SDK not-found 合同处理。`generate=true` 启用 SDK 提取/汇总，使用该 Run 冻结的模型配置，用量计入同一 Run。该可选流水线不等于 Session 压缩或工作空间知识库。
+
+启用必须满足当前 SDK、模型和持久执行环境条件，失败时明确拒绝；配置字段见 [数据模型](api/schemas.md)。目录命名空间不等于用户级文件隔离，权限需由实际执行边界保证。Temporal 后端的复用/恢复条件尚待验收，不能把此示例当成新后端已经可用的证明。
 
 ## 共享记忆
 
@@ -46,24 +66,11 @@
 
 HTTP 知识来源接口也支持 `source_type="text"`，正文为 `config.text`。API 完整参数见 [接口参考](api/knowledge.md) 与 [数据模型](api/schemas.md)。迁移 `0121_text_knowledge_sources` 更新来源及版本表类型约束；降级前必须导出并删除文本来源及文本历史版本，否则拒绝降级以避免丢失数据。
 
-## 路由模型与回答模型
+## 可选的路由配置
 
-推荐把入口 Router 与业务 Manager 分成两个 Agent，用户分别配置模型和指令：
+用户可以配置单 Agent 直接回答，也可选择 Router、handoff 或专家工具，模型与 instructions 分别由用户维护。SDK `handoff` 将最终回答权交给目标；`Agent.as_tool` 把专家结果返回调用者。是否汇总或升级到其他模型由用户配置决定，平台不提供默认 Router→Manager→专家流程。
 
-```mermaid
-flowchart LR
-    U[用户问题] --> R[小模型 Router]
-    R -->|单专家问题| E[专家回答]
-    R -->|复杂或不确定| M[强模型 Manager]
-    M --> T[专家工具与业务工具]
-    T --> M
-    E --> A[用户结果]
-    M --> A
-```
-
-Router 只选择已授权目标，不接收专家结果后重新生成业务答案。明确的单专家问题使用 SDK `handoff`，由专家接管当前分支和最终回答；多专家综合问题交给强模型 Manager，通过 SDK `Agent.as_tool` 调用专家，再由强模型根据证据汇总。不能确定目标时升级到强模型，不依赖未经校准的模型自报置信度。每次用户输入仍需保留原问题和 SDK 会话上下文，不能只传小模型改写的摘要。
-
-生产 Chat 使用同一次原生 SDK 执行图。入口 Router 配置示例：
+下面示例表示用户明确要求入口转交回答，不是所有 Agent 的默认配置：
 
 ```json
 {
@@ -81,7 +88,7 @@ Router 只选择已授权目标，不接收专家结果后重新生成业务答�
 
 占位符须替换为真实 UUID。`require_handoff` 禁止入口模型直接结束回答；目标描述和 Router 指令由用户维护，平台不内置业务分类。强模型 Manager 配置 `tool_policy.agent_tools`，字段为 `enabled`、`allowed_agent_profile_ids`、`max_depth`、`max_turns`、`max_targets`。SDK `Agent.as_tool` 返回专家证据给 Manager；handoff 将最终回答权交给目标。
 
-显式目标列表可以不绑定团队；绑定团队时还要求目标是活动、接收任务的团队成员。`allowed_agent_profile_ids="*"` 仅用于当前团队。每种目标默认最多 5 个、深度 1、回合预算 8；硬上限为 10、3、20，整张图最多 25 个目标节点。入口 `handoffs.max_turns` 设置本次 SDK Run 的整体回合预算，handoff 共享这份预算；`agent_tools.max_turns` 设置每次专家工具调用的预算。循环引用、跨工作空间、跨 SDK 提供商家族及不可访问目标在准入阶段拒绝。Claude 适配器当前不支持原生图配置。
+显式目标列表可以不绑定团队；绑定团队时还要求目标是活动、接收任务的团队成员。`allowed_agent_profile_ids="*"` 仅用于当前团队。每种目标默认最多 5 个、深度 1、回合预算 8；硬上限为 10、3、20，整张图最多 25 个目标节点。入口 `handoffs.max_turns` 设置本次 SDK Run 的整体回合预算，handoff 共享这份预算；`agent_tools.max_turns` 设置每次专家工具调用的预算。循环引用、跨工作空间、不支持的模型提供者及不可访问目标在准入阶段拒绝。当前执行统一使用 OpenAI Agents SDK 与 Temporal 官方集成。
 
 每个目标使用自己的冻结 Profile、模型、凭据、设置、输出格式、护栏、记忆策略和能力目录。handoff 使用目标的授权能力；专家工具还要求与父节点能力相交。执行仍在同一获准 Runtime 边界，目标不能扩大文件范围或改变 Runtime 绑定。工具及模型调用重新检查活动状态和原始用户权限。事件记录实际 Agent，混合模型分别计量计费。
 
@@ -91,4 +98,4 @@ Router 只选择已授权目标，不接收专家结果后重新生成业务答�
 
 迁移 `0122_native_agent_routing` 前必须排空或取消非终态 Run 和对话轮次。旧执行链接存档在原 Task 输入，历史 Task、Run、事件保留。旧发现与委派工具已删除，须从 Agent 和 Tool Group 工具清单移除并配置新目标列表。旧授权快照不能用于新执行，应发送新消息。降级恢复旧执行链接；存在同一次执行多模型计费记录时，先导出并移除这些记录才能降级。
 
-依据：[OpenAI 编排与 handoff](https://developers.openai.com/api/docs/guides/agents/orchestration)、[Anthropic 路由与 orchestrator-workers](https://www.anthropic.com/engineering/building-effective-agents)。
+依据：[OpenAI 编排与 handoff](https://developers.openai.com/api/docs/guides/agents/orchestration)。

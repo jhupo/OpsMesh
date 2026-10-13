@@ -52,7 +52,7 @@ class SemanticMemoryUpsert:
     change_reason: str | None = None
 
 
-class AgentSemanticMemoryService:
+class SemanticMemoryService:
     """Owns scoped semantic knowledge heads and immutable revision history."""
 
     def __init__(self, session: Session) -> None:
@@ -120,6 +120,9 @@ class AgentSemanticMemoryService:
                 ) from exc
             entry.source_id = str(entry.id)
             self._record_version(entry, command)
+            from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+            stage_memory_embedding(self._session, entry)
             return entry
         self._require_update(existing)
         candidate = _semantic_snapshot_values(
@@ -155,6 +158,9 @@ class AgentSemanticMemoryService:
         existing.revision += 1
         self._session.flush([existing])
         self._record_version(existing, command)
+        from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+        stage_memory_embedding(self._session, existing)
         return existing
 
     def archive(

@@ -5,19 +5,18 @@ from uuid import UUID, uuid4
 import pytest
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.update_state import Journal, UpdatePlan
+from opsmesh_operator.update_state import UpdateJournal, UpdatePlan
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.bootstrap.worker import build_worker_runner
 from opsmesh.platform.updates import daemon
 from opsmesh.platform.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from opsmesh.platform.updates.service import UpdateService, maintenance_enabled
-from tests.test_admin_api import _admin_headers, _client
+from opsmesh.platform.updates.service import PlatformUpdateService, maintenance_enabled
+from tests.fixtures.admin_api import _admin_headers, _client
 
 
 def manifest(tag: str = "v0.1.0") -> ReleaseManifest:
@@ -31,7 +30,6 @@ def manifest(tag: str = "v0.1.0") -> ReleaseManifest:
         database_revision="0071_platform_delivery",
         upgrade_from_revisions=["0071_platform_delivery"],
         rollback_database_revisions=[],
-        connector_protocol=2,
         platforms=["linux/amd64"],
         files=[ReleaseFile(name="bundle.tar.gz", size=1, sha256="d" * 64)],
     )
@@ -80,7 +78,7 @@ def test_update_api_requires_platform_authority_and_durable_plan() -> None:
 
 def test_plan_approval_is_bound_to_fingerprint_and_idempotent() -> None:
     _, session, _ = _client()
-    service = UpdateService(session)
+    service = PlatformUpdateService(session)
     job = service.request(tag="v0.2.0", action="update", key="approve-once")
     job.status, job.plan_sha256 = "ready", "e" * 64
     session.commit()
@@ -88,8 +86,7 @@ def test_plan_approval_is_bound_to_fingerprint_and_idempotent() -> None:
         service.approve(job.id, "f" * 64)
     assert service.approve(job.id, "e" * 64).status == "queued"
     approved = job.approved_at
-    # SQLite drops timezone metadata when the lock query refreshes this row.
-    assert service.approve(job.id, "e" * 64).approved_at.replace(tzinfo=UTC) == approved
+    assert service.approve(job.id, "e" * 64).approved_at == approved
     session.commit()
     assert (
         len(
@@ -107,23 +104,21 @@ def test_maintenance_holds_new_plans() -> None:
     session.commit()
     assert maintenance_enabled(session)
     with pytest.raises(ValueError, match="owns"):
-        UpdateService(session).request(tag="v0.2.0", action="update", key="maintenance-denial")
+        PlatformUpdateService(session).request(
+            tag="v0.2.0", action="update", key="maintenance-denial"
+        )
 
 
-def test_worker_admission_does_not_claim_work_during_maintenance() -> None:
-    from opsmesh.runtime.workers.models import WorkerRunnerConfig
-    from tests.test_worker_runner import _queue, _session_factory
+def test_execution_admission_is_rejected_during_maintenance() -> None:
+    from opsmesh.platform.updates.admission import require_execution_admission
+    from opsmesh.shared.errors import DomainError
 
-    factory = _session_factory()
-    with factory() as session:
-        session.get(PlatformInstallation, 1).maintenance = True
-        session.commit()
-    runner = build_worker_runner(
-        queue=_queue(),
-        session_factory=factory,
-        config=WorkerRunnerConfig(worker_id="drain-check", queue_name="agent_runs"),
-    )
-    assert runner.run_once() is False
+    _, session, _ = _client()
+    session.get(PlatformInstallation, 1).maintenance = True
+    session.commit()
+    with pytest.raises(DomainError) as denied:
+        require_execution_admission(session)
+    assert denied.value.code == "platform_maintenance"
 
 
 class FakeDeployment:
@@ -171,7 +166,7 @@ def test_local_recovery_plans_do_not_fetch_a_different_published_build(
     def reject_download(*args: object) -> None:
         raise AssertionError("Local backup/rollback must use the installed build record")
 
-    monkeypatch.setattr(daemon.ReleaseSource, "fetch_manifest", reject_download)
+    monkeypatch.setattr(daemon.ReleaseDownloader, "fetch_manifest", reject_download)
     installation = Installation(root=tmp_path, mode="compose")
     target = current if action == "backup" else manifest()
     directory = installation.release_dir(target)
@@ -180,7 +175,9 @@ def test_local_recovery_plans_do_not_fetch_a_different_published_build(
     (tmp_path / ".env").write_text("TEST=example")
     updater = daemon.HostUpdater(installation)
     monkeypatch.setattr(updater, "revision", lambda: target.database_revision)
-    job = UpdateService(session).request(tag=target.tag, action=action, key=f"local-{action}")
+    job = PlatformUpdateService(session).request(
+        tag=target.tag, action=action, key=f"local-{action}"
+    )
     session.commit()
     updater.plan(job.id)
     session.expire_all()
@@ -207,18 +204,21 @@ def test_host_workflow_is_durable_and_never_replays_interrupted_work(
     deployment.fail_health = health_failure
     monkeypatch.setattr(daemon, "deployment_for", lambda _: deployment)
     monkeypatch.setattr(Installation, "current", lambda _: manifest())
-    monkeypatch.setattr(daemon.ReleaseSource, "fetch_manifest", lambda *args: manifest("v0.2.0"))
+    monkeypatch.setattr(
+        daemon.ReleaseDownloader, "fetch_manifest", lambda *args: manifest("v0.2.0")
+    )
     (tmp_path / ".env").write_text("TEST=example", encoding="utf-8")
     updater = daemon.HostUpdater(Installation(root=tmp_path, mode="compose"))
     monkeypatch.setattr(updater, "revision", lambda: "0071_platform_delivery")
     monkeypatch.setattr(updater.backups, "create", lambda **kwargs: str(uuid4()))
-    job = UpdateService(session).request(tag="v0.2.0", action="update", key="durable-test")
+    monkeypatch.setattr(updater, "drain", lambda: None)
+    job = PlatformUpdateService(session).request(tag="v0.2.0", action="update", key="durable-test")
     session.commit()
     updater.tick()
     session.expire_all()
     job = session.get(PlatformUpdateJob, job.id)
     assert job.status == "ready"
-    UpdateService(session).approve(job.id, job.plan_sha256)
+    PlatformUpdateService(session).approve(job.id, job.plan_sha256)
     session.commit()
     updater.tick()
     session.expire_all()
@@ -230,7 +230,9 @@ def test_host_workflow_is_durable_and_never_replays_interrupted_work(
     before = list(deployment.calls)
     updater.tick()
     assert deployment.calls == before
-    journal = Journal.model_validate_json((tmp_path / "updates" / f"{job.id}.json").read_bytes())
+    journal = UpdateJournal.model_validate_json(
+        (tmp_path / "updates" / f"{job.id}.json").read_bytes()
+    )
     assert journal.backup_id is not None
     phases = session.scalars(
         select(PlatformUpdateEvent.phase).where(PlatformUpdateEvent.job_id == job.id)
@@ -239,6 +241,7 @@ def test_host_workflow_is_durable_and_never_replays_interrupted_work(
     if health_failure:
         deployment.fail_health = False
         monkeypatch.setattr(updater.backups, "verify", lambda _backup_id: None)
+        session.commit()
         updater.recover(job.id, "rollback")
         session.expire_all()
         assert session.get(PlatformUpdateJob, job.id).status == "failed"
@@ -255,9 +258,9 @@ def test_journal_preserves_recovery_plan(tmp_path: Path) -> None:
         configuration_sha256="e" * 64,
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    journal = Journal(job_id=str(UUID(int=1)), plan=plan, phase="draining")
+    journal = UpdateJournal(job_id=str(UUID(int=1)), plan=plan, phase="draining")
     advanced = journal.advance(tmp_path, "backup", backup_id=str(UUID(int=2)))
-    restored = Journal.model_validate_json(
+    restored = UpdateJournal.model_validate_json(
         (tmp_path / "updates" / f"{journal.job_id}.json").read_bytes()
     )
     assert restored == advanced
@@ -279,10 +282,12 @@ def test_recovery_rejects_unsafe_request_before_stopping_services(tmp_path, monk
         configuration_sha256="e" * 64,
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    job = UpdateService(session).request(tag="v0.2.0", action="update", key="recovery-denial")
+    job = PlatformUpdateService(session).request(
+        tag="v0.2.0", action="update", key="recovery-denial"
+    )
     job.status, job.plan_sha256 = "recovery_required", plan.fingerprint()
     session.commit()
-    Journal(job_id=job.id, plan=plan, phase="starting").save(tmp_path)
+    UpdateJournal(job_id=job.id, plan=plan, phase="starting").save(tmp_path)
     monkeypatch.setattr(updater, "revision", lambda: "unknown-schema")
     with pytest.raises(ValueError):
         updater.recover(job.id, strategy)
@@ -304,11 +309,13 @@ def test_crash_after_terminal_journal_reconciles_without_replaying_io(tmp_path, 
         configuration_sha256="e" * 64,
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    job = UpdateService(session).request(tag="v0.2.0", action="update", key="terminal-reconcile")
+    job = PlatformUpdateService(session).request(
+        tag="v0.2.0", action="update", key="terminal-reconcile"
+    )
     job.status, job.plan_sha256 = "running", plan.fingerprint()
     session.get(PlatformInstallation, 1).maintenance = True
     session.commit()
-    journal = Journal(job_id=job.id, plan=plan, phase="starting").advance(tmp_path, phase)
+    journal = UpdateJournal(job_id=job.id, plan=plan, phase="starting").advance(tmp_path, phase)
     updater.tick()
     session.expire_all()
     state = session.get(PlatformInstallation, 1)

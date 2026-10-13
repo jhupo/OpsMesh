@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.catalog.contracts import (
-    CapabilityMcpCredentialBinding,
+    CapabilityMCPCredentialBinding,
     CapabilityResourceResponse,
     CapabilityToolDescriptor,
     WorkspaceCapabilityCatalogResponse,
@@ -18,8 +18,8 @@ from opsmesh.capabilities.mcp.catalog.rules import (
     requires_credentials,
     selected_remote_credentials,
 )
-from opsmesh.capabilities.mcp.catalog.servers import McpServerService
-from opsmesh.capabilities.mcp.models import McpCredentialReference
+from opsmesh.capabilities.mcp.catalog.servers import MCPServerService
+from opsmesh.capabilities.mcp.models import MCPCredentialReference
 from opsmesh.capabilities.plugins.policy import plugin_resource_available
 from opsmesh.capabilities.references.service import CapabilityResourceService
 from opsmesh.shared.config import Settings, get_settings
@@ -32,17 +32,17 @@ class WorkspaceCapabilityCatalogService:
 
     def build(self, workspace_id: UUID) -> WorkspaceCapabilityCatalogResponse:
         resources = CapabilityResourceService(self._session).list_active_resources(workspace_id)
-        mcp_tools = McpServerService(self._session).list_allowed_mcp_tools(workspace_id)
+        mcp_tools = MCPServerService(self._session).list_allowed_mcp_tools(workspace_id)
         credentials = list(
             self._session.scalars(
-                select(McpCredentialReference)
+                select(MCPCredentialReference)
                 .where(
-                    McpCredentialReference.workspace_id == workspace_id,
-                    McpCredentialReference.status == "active",
+                    MCPCredentialReference.workspace_id == workspace_id,
+                    MCPCredentialReference.status == "active",
                 )
                 .order_by(
-                    McpCredentialReference.created_at.asc(),
-                    McpCredentialReference.id.asc(),
+                    MCPCredentialReference.created_at.asc(),
+                    MCPCredentialReference.id.asc(),
                 )
             )
         )
@@ -93,12 +93,14 @@ class WorkspaceCapabilityCatalogService:
                     mcp_server_type=server.server_type,
                     mcp_runtime=(
                         "managed" if server.connection.get("runtime") == "managed" else "run"
-                    ) if server.server_type == "stdio" else None,
+                    )
+                    if server.server_type == "stdio"
+                    else None,
                     mcp_server_configuration_version=server.configuration_version,
                     mcp_tool_configuration_version=allow.configuration_version,
                     mcp_requires_credentials=credentials_required,
                     mcp_credential_references=[
-                        CapabilityMcpCredentialBinding(
+                        CapabilityMCPCredentialBinding(
                             credential_reference_id=credential.id,
                             mcp_server_id=credential.mcp_server_id,
                             configuration_version=credential.configuration_version,

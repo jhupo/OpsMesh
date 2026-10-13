@@ -12,11 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
+    AgentModelUsageRecord,
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeModelUsage,
 )
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
 from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
@@ -120,8 +120,8 @@ class CostAccountingService:
         )
         records: list[ModelUsageRecord] = []
         usages = result.model_usages if result is not None else ()
-        if result is None and isinstance(error, AgentRuntimePolicyError):
-            usages = TypeAdapter(tuple[AgentRuntimeModelUsage, ...]).validate_python(
+        if result is None and isinstance(error, AgentExecutionPolicyError):
+            usages = TypeAdapter(tuple[AgentModelUsageRecord, ...]).validate_python(
                 error.metadata.get("model_usages", [])
             )
         if usages:

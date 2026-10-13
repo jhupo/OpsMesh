@@ -1,4 +1,5 @@
 """Product resource authorization; membership and token scopes remain upper bounds."""
+
 from enum import StrEnum
 from uuid import UUID
 
@@ -15,7 +16,7 @@ from opsmesh.identity.authorization.permissions import (
     WorkspaceRole,
     role_allows,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.identity.users.models import User
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.errors import DomainError
@@ -95,7 +96,7 @@ _WORKSPACE_ACTION = {
 }
 
 
-class ResourceAccessDenied(DomainError):
+class ResourceAccessDeniedError(DomainError):
     def __init__(self) -> None:
         super().__init__(
             message="Resource access denied",
@@ -269,9 +270,9 @@ class ResourceAuthorizationService:
         try:
             live = AuthenticationService(self._session).refresh_authenticated_user(self.user)
             if live.token_scopes != self.user.token_scopes:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
         except AuthorizationError as exc:
-            raise ResourceAccessDenied() from exc
+            raise ResourceAccessDeniedError() from exc
         clauses = []
         for kind, resource_id, action in references:
             table = Base.metadata.tables[RESOURCE_TABLES[kind]]
@@ -286,7 +287,7 @@ class ResourceAuthorizationService:
                 )
             )
         if clauses and not self._session.scalar(select(and_(*clauses))):
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
 
     def effective_actions(
         self,
@@ -352,7 +353,7 @@ class ResourceAuthorizationService:
             .with_for_update()
         )
         if resource is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         self.require(workspace_id, kind, resource_id, ResourceAction.SHARE)
         member = self._session.scalar(
             select(WorkspaceMember).where(
@@ -362,7 +363,7 @@ class ResourceAuthorizationService:
             )
         )
         if member is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         # Delegation cannot manufacture actions the granting principal does not possess.
         for action in actions:
             self.require(workspace_id, kind, resource_id, action)
@@ -404,13 +405,13 @@ class ResourceAuthorizationService:
         resource_id: UUID,
         user_id: UUID,
     ) -> None:
-        AuthorizationService(self._session).require_workspace(
+        WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=self.user.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.ADMIN,
             authenticated_user=self.user,
         )
-        AuthorizationService(self._session).require_workspace(
+        WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=user_id, workspace_id=workspace_id, action=WorkspaceAction.READ
         )
         self.require(workspace_id, kind, resource_id, ResourceAction.SHARE)

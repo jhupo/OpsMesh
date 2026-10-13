@@ -12,7 +12,7 @@ from tests.test_postgres_scheduler_concurrency import (
     POSTGRES_TEST_URL_ENV,
     _metadata_has_sqlite_json_columns,
     _seed_scheduler_fixture,
-    _temporary_postgres_schema,
+    temporary_postgres_schema,
 )
 
 
@@ -20,7 +20,7 @@ from tests.test_postgres_scheduler_concurrency import (
 def test_parallel_run_events_allocate_distinct_sequences() -> None:
     if _metadata_has_sqlite_json_columns():
         pytest.skip("Run PostgreSQL test separately from SQLite tests")
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)
         fixture = _seed_scheduler_fixture(factory)
@@ -35,8 +35,10 @@ def test_parallel_run_events_allocate_distinct_sequences() -> None:
             with factory() as session:
                 barrier.wait(timeout=10)
                 event = RunEventWriter(session).append(
-                    workspace_id=fixture.workspace_id, run_id=run_id,
-                    event_type="test", message="parallel",
+                    workspace_id=fixture.workspace_id,
+                    run_id=run_id,
+                    event_type="test",
+                    message="parallel",
                 )
                 session.commit()
                 return event.sequence

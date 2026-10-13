@@ -8,11 +8,15 @@ from opsmesh.capabilities.governance.diagnostic_schemas import (
     WorkspaceToolPolicyMatrixResponse,
 )
 from opsmesh.capabilities.mcp.execution.contracts import (
-    McpToolCallDiagnosticResponse,
-    McpToolCallLogRequest,
-    McpToolCallLogResponse,
+    MCPDiagnosticNotificationResponse,
+    MCPToolCallDiagnosticResponse,
+    MCPToolCallLogRequest,
+    MCPToolCallLogResponse,
 )
-from opsmesh.capabilities.mcp.execution.events import McpToolCallLogQueryService
+from opsmesh.capabilities.mcp.execution.events import (
+    MCPToolCallLogQueryService,
+    MCPToolCallRecorder,
+)
 from opsmesh.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
@@ -54,25 +58,27 @@ def get_workspace_tool_policy_matrix(
 
 @router.post(
     "/mcp-tool-call-logs",
-    response_model=McpToolCallLogResponse,
+    response_model=MCPToolCallLogResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def log_mcp_tool_call(
-    request: McpToolCallLogRequest,
+    request: MCPToolCallLogRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-) -> McpToolCallLogResponse:
+) -> MCPToolCallLogResponse:
     try:
-        log = McpToolCallLogQueryService(session).log_mcp_tool_call(
+        log = MCPToolCallRecorder(session).record_report(
             context.workspace.id,
             request,
         )
+        session.commit()
+        session.refresh(log)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpToolCallLogResponse.model_validate(log)
+    return MCPToolCallLogResponse.model_validate(log)
 
 
-@router.get("/mcp-tool-call-logs", response_model=PageResponse[McpToolCallLogResponse])
+@router.get("/mcp-tool-call-logs", response_model=PageResponse[MCPToolCallLogResponse])
 def list_mcp_tool_call_logs(
     page: PageParams = Depends(pagination_params),
     mcp_server_id: UUID | None = Query(default=None),
@@ -85,9 +91,9 @@ def list_mcp_tool_call_logs(
     error_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[McpToolCallLogResponse]:
+) -> PageResponse[MCPToolCallLogResponse]:
     try:
-        items, total = McpToolCallLogQueryService(session).list_mcp_tool_call_logs(
+        items, total = MCPToolCallLogQueryService(session).list_mcp_tool_call_logs(
             context.workspace.id,
             page,
             mcp_server_id=mcp_server_id,
@@ -104,14 +110,39 @@ def list_mcp_tool_call_logs(
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.get("/mcp-tool-call-logs/{log_id}/diagnostic", response_model=McpToolCallDiagnosticResponse)
+@router.get("/mcp-tool-call-logs/{log_id}/diagnostic", response_model=MCPToolCallDiagnosticResponse)
 def get_mcp_tool_call_diagnostic(
     log_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
-) -> McpToolCallDiagnosticResponse:
+) -> MCPToolCallDiagnosticResponse:
     try:
-        log = McpToolCallLogQueryService(session).get_diagnostic(context.workspace.id, log_id)
+        log = MCPToolCallLogQueryService(session).get_diagnostic(context.workspace.id, log_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpToolCallDiagnosticResponse.model_validate(log)
+    return MCPToolCallDiagnosticResponse.model_validate(log)
+
+
+@router.get(
+    "/mcp-diagnostic-notifications/{event_id}", response_model=MCPDiagnosticNotificationResponse
+)
+def get_mcp_diagnostic_notification(
+    event_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> MCPDiagnosticNotificationResponse:
+    try:
+        event = MCPToolCallLogQueryService(session).get_diagnostic_notification(
+            context.workspace.id, event_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return MCPDiagnosticNotificationResponse.model_validate(
+        {
+            "id": event.id,
+            "workspace_id": event.workspace_id,
+            "agent_run_id": event.agent_run_id,
+            "created_at": event.created_at,
+            **event.event_metadata,
+        }
+    )

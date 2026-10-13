@@ -4,14 +4,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.mcp.models import McpServer
+from opsmesh.capabilities.mcp.models import MCPServer
 from opsmesh.shared.security.redaction import redact_sensitive_text
 
 MCP_LIMIT_COUNTED_STATUSES = (
     "running",
     "completed",
     "failed",
-    "waiting_self_hosted",
 )
 
 
@@ -21,11 +20,11 @@ def require_mcp_server(
     server_id: UUID,
     *,
     for_update: bool = False,
-) -> McpServer:
+) -> MCPServer:
     """Load an MCP server only inside its workspace boundary."""
-    statement = select(McpServer).where(
-        McpServer.id == server_id,
-        McpServer.workspace_id == workspace_id,
+    statement = select(MCPServer).where(
+        MCPServer.id == server_id,
+        MCPServer.workspace_id == workspace_id,
     )
     if for_update:
         statement = statement.with_for_update()
@@ -46,7 +45,7 @@ def mcp_health_error(health_status: str, error_code: str | None) -> str | None:
     return None
 
 
-def mcp_health_check_stale(server: McpServer, *, stale_after: timedelta) -> bool:
+def mcp_health_check_stale(server: MCPServer, *, stale_after: timedelta) -> bool:
     checked_at = server.last_health_check_at
     if checked_at is None:
         return False

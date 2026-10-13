@@ -39,7 +39,7 @@ sys.path.insert(0, sys.argv[1])
 from fastapi.testclient import TestClient
 from opsmesh.main import app
 from opsmesh.bootstrap.models import register_models
-for name in ('opsmesh.runtime.workers.cli', 'opsmesh.runtime.agent_host.main',
+for name in ('opsmesh.runtime.temporal.cli',
              'opsmesh.platform.updates.daemon', 'opsmesh.delivery'):
     importlib.import_module(name)
 with TestClient(app) as client:
@@ -51,7 +51,7 @@ for name, module in list(sys.modules.items()):
         assert module.__file__.startswith(sys.argv[1]), (name, module.__file__)
 model_count = len(register_models().tables)
 assert model_count > 0
-print(f'Isolated wheel import, API, Worker, updater, SDK host and {model_count} models verified')
+print(f'Isolated wheel import, API, Worker, updater and {model_count} models verified')
 """
     with tempfile.TemporaryDirectory(prefix="opsmesh-wheel-check-") as directory:
         subprocess.run(

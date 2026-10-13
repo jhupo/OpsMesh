@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.catalog.models import Capability
 from opsmesh.capabilities.marketplace.models import MarketplaceListing, TalentListing
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.skills.models import Skill
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.governance.reviews.policy import RESOURCE_STATUS_ACTIVE, RESOURCE_STATUS_REJECTED
+from opsmesh.governance.reviews.constants import RESOURCE_STATUS_ACTIVE, RESOURCE_STATUS_REJECTED
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.shared.errors import PolicyDeniedError
 from opsmesh.shared.utils import uuid_or_none
@@ -18,9 +18,9 @@ ResourceReviewTarget: TypeAlias = (
     AgentProfile
     | Capability
     | Skill
-    | McpServer
-    | McpToolAllowlist
-    | McpCredentialReference
+    | MCPServer
+    | MCPToolAllowlist
+    | MCPCredentialReference
     | MarketplaceListing
     | TalentListing
 )
@@ -29,9 +29,9 @@ RESOURCE_REVIEW_TARGET_MODELS: dict[str, type[ResourceReviewTarget]] = {
     "agent_profile": AgentProfile,
     "capability": Capability,
     "skill": Skill,
-    "mcp_server": McpServer,
-    "mcp_tool_allowlist": McpToolAllowlist,
-    "mcp_credential_reference": McpCredentialReference,
+    "mcp_server": MCPServer,
+    "mcp_tool_allowlist": MCPToolAllowlist,
+    "mcp_credential_reference": MCPCredentialReference,
     "marketplace_listing": MarketplaceListing,
     "talent_listing": TalentListing,
 }
@@ -58,7 +58,7 @@ class ResourceReviewDecisionService:
             return
         if status == "approved" and getattr(target, "platform_blocked", False):
             raise PolicyDeniedError("Resource is blocked by the platform")
-        if isinstance(target, McpServer | McpToolAllowlist | McpCredentialReference):
+        if isinstance(target, MCPServer | MCPToolAllowlist | MCPCredentialReference):
             snapshot = payload.get("snapshot")
             if (
                 not isinstance(snapshot, dict)
@@ -67,7 +67,7 @@ class ResourceReviewDecisionService:
             ):
                 raise ValueError("MCP resource changed after review was requested")
             if (
-                isinstance(target, McpToolAllowlist)
+                isinstance(target, MCPToolAllowlist)
                 and target.discovery_source == "mcp"
                 and snapshot.get("discovery_checksum") != target.discovery_checksum
             ):

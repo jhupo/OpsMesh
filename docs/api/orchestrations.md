@@ -72,11 +72,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/OrchestrationDefinitionCreate"
+  "$ref": "#/components/schemas/OrchestrationDefinitionCreateCommand"
 }
 ```
 
-模型：[OrchestrationDefinitionCreate](schemas.md#schema-OrchestrationDefinitionCreate)
+模型：[OrchestrationDefinitionCreateCommand](schemas.md#schema-OrchestrationDefinitionCreateCommand)
 
 ### 响应
 
@@ -169,11 +169,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/OrchestrationDefinitionUpdate"
+  "$ref": "#/components/schemas/OrchestrationDefinitionUpdateCommand"
 }
 ```
 
-模型：[OrchestrationDefinitionUpdate](schemas.md#schema-OrchestrationDefinitionUpdate)
+模型：[OrchestrationDefinitionUpdateCommand](schemas.md#schema-OrchestrationDefinitionUpdateCommand)
 
 ### 响应
 

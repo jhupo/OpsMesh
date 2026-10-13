@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry
 from opsmesh.resources.memory.policy import (
     HybridMemoryRetrievalPolicy,
@@ -158,6 +158,7 @@ class WorkspaceMemoryConfigurationService:
             )
         )
         count = int(getattr(result, "rowcount", 0) or 0)
+        self._stage_pending_embeddings(workspace_id)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=actor_user_id,
@@ -226,6 +227,21 @@ class WorkspaceMemoryConfigurationService:
                 embedded_at=None,
             )
         )
+        if enabled:
+            self._stage_pending_embeddings(workspace_id)
+
+    def _stage_pending_embeddings(self, workspace_id: UUID) -> None:
+        from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+        for entry in self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.status == "active",
+                WorkspaceMemoryEntry.embedding_status == "pending",
+                WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
+            )
+        ):
+            stage_memory_embedding(self._session, entry)
 
 
 def _configuration_payload(

@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+from contextlib import closing
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -16,10 +18,7 @@ from opsmesh.resources.files.schemas import (
 )
 from opsmesh.resources.files.security import content_disposition_attachment
 from opsmesh.resources.files.service import WorkspaceFileService
-from opsmesh.resources.memory.indexing import enqueue_workspace_memory_index_job
-from opsmesh.resources.storage.storage import create_storage
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.resources.storage.backends import create_storage
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
@@ -31,12 +30,14 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["files"])
 def file_service(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> WorkspaceFileService:
-    return WorkspaceFileService(
-        session=session,
-        storage=create_storage(settings),
-        max_upload_bytes=settings.max_upload_bytes,
-    )
+) -> Iterator[WorkspaceFileService]:
+    """Borrow the DB session and release request-owned storage after the response."""
+    with closing(create_storage(settings)) as storage:
+        yield WorkspaceFileService(
+            session=session,
+            storage=storage,
+            max_upload_bytes=settings.max_upload_bytes,
+        )
 
 
 @router.get("/files", response_model=PageResponse[WorkspaceFileResponse])
@@ -54,7 +55,6 @@ async def upload_file(
     file: UploadFile = File(...),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     service: WorkspaceFileService = Depends(file_service),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceFileResponse:
     content = await file.read()
     try:
@@ -70,14 +70,6 @@ async def upload_file(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=str(exc),
         ) from exc
-    enqueue_workspace_memory_index_job(
-        queue=queue,
-        workspace_id=context.workspace.id,
-        source_type="workspace_file",
-        source_id=stored_file.id,
-        requested_by_user_id=context.user.user_id,
-        routing={"source": "workspace_file_upload"},
-    )
     return WorkspaceFileResponse.model_validate(stored_file)
 
 
@@ -99,7 +91,7 @@ def download_file(
     service: WorkspaceFileService = Depends(file_service),
 ) -> Response:
     try:
-        file, content = service.read_file(context.workspace.id, file_id, context.user.user_id)
+        file, content = service.download_file(context.workspace.id, file_id, context.user.user_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(
@@ -210,7 +202,7 @@ def download_artifact(
     service: WorkspaceFileService = Depends(file_service),
 ) -> Response:
     try:
-        artifact, content = service.read_artifact(
+        artifact, content = service.download_artifact(
             context.workspace.id,
             artifact_id,
             context.user.user_id,

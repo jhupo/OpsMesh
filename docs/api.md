@@ -39,6 +39,8 @@ curl "$BASE/auth/me" -H "Authorization: Bearer $TOKEN"
 
 UUID 使用字符串；日期时间使用 schema 声明的 date-time 格式。字段的必填、nullable、默认值、枚举、字符串长度、数值边界和嵌套模型均在 [模型参考](api/schemas.md) 中给出。`PATCH` 的省略与显式 null 是否等价由该 schema 和实现决定，不统一假定 null 表示删除。
 
+工作空间元数据和 ZIP 归档当前使用 `workspace-export.v3`，RuntimeSpace 的描述性字段为 `storage_metadata`、`cleanup_metadata`。导入拒绝旧版本，不会把旧字段静默丢弃；升级后需要从已迁移的数据库重新导出。数据库字段迁移保留已有值并支持降级，既有归档字节不会自动改写。
+
 ## 错误与追踪
 
 HTTP/领域错误采用以下结构；参数校验失败的 `details` 是仅保留 type、loc、msg 的脱敏错误数组：
@@ -96,8 +98,8 @@ curl -X POST "$BASE/workspaces/$WORKSPACE_ID/conversations/$CONVERSATION_ID/mess
 | 接口 | 编码与消费方式 |
 | --- | --- |
 | `/workspaces/{workspace_id}/tasks/{task_id}/events/stream` | `text/event-stream`；按 event/data 帧读取 snapshot、消息、工具事件、心跳与终止事件；参数支持 after_sequence、event_cursor、once |
-| `/workspaces/{workspace_id}/automations/{automation_id}/events/{event_id}/stream` | `application/x-ndjson`；逐行 JSON，cursor 为 Redis stream 游标 |
-| `/plugin-runtime/{workspace_id}/{install_id}/automations/{automation_id}/events/{event_id}/stream` | 插件凭据下的同类 NDJSON 流 |
+| `/workspaces/{workspace_id}/automations/{automation_id}/events/{event_id}/stream` | `application/x-ndjson`；逐行 JSON，cursor 为 PostgreSQL 持久事件游标 |
+| `/plugin-services/{workspace_id}/{install_id}/automations/{automation_id}/events/{event_id}/stream` | 插件凭据下的同类 NDJSON 流 |
 | `/auth/me/avatar` | `image/webp` 二进制 |
 | 文件与 Artifact 的 `/download` | 文件原始字节，Content-Type 使用存储元数据，Content-Disposition 提供下载文件名 |
 | `/metrics` | Prometheus 文本格式 |

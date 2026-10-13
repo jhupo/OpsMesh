@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -7,13 +6,12 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.planning.attempts import TaskPlanningAttemptService
-from opsmesh.orchestration.planning.team_project_plan import TeamStepPlanner
+from opsmesh.orchestration.planning.task_plan_steps import TeamStepPlanner
 from opsmesh.orchestration.requests.builder import RunRequestBuilder
 from opsmesh.orchestration.runs.authorization.runtime import runtime_binding_for_snapshot
 from opsmesh.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
 from opsmesh.orchestration.runs.eligibility import RunEligibilityService
 from opsmesh.orchestration.runs.events import RunEventRecorder
-from opsmesh.orchestration.runs.job_routing import RunJobRoutingService
 from opsmesh.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.resources import (
@@ -27,18 +25,17 @@ from opsmesh.orchestration.runs.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
+from opsmesh.orchestration.runs.temporal import run_execution_reference
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
-from opsmesh.shared.redis.keys import RedisKeyBuilder
+from opsmesh.orchestration.tasks.state import TaskStatus, transition_task
+from opsmesh.runtime.temporal.contracts import ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.teams.sessions.snapshots import build_team_snapshot
 from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 __all__ = [
     "RunOrchestrationService",
-    "build_default_queue",
 ]
 
 
@@ -46,15 +43,18 @@ class RunOrchestrationService:
     def __init__(
         self,
         session: Session,
-        queue: RedisQueue | None = None,
     ) -> None:
         self._session = session
-        self._queue = queue
 
     def create_queued_run_for_task(self, task: Task) -> AgentRun | None:
         existing_run = self._existing_active_task_run(task)
         if existing_run is not None:
             return existing_run
+        from opsmesh.orchestration.runs.release import task_has_unreleased_execution
+        from opsmesh.shared.errors import ConflictError
+
+        if task_has_unreleased_execution(self._session, task.workspace_id, task.id):
+            raise ConflictError("Previous task execution has not released its session")
 
         if self._requires_initial_project_plan(task):
             if task.team_snapshot is None and task.agent_team_id is not None:
@@ -122,35 +122,22 @@ class RunOrchestrationService:
         else:
             run = self._run_step_launcher().create_reserved_run_for_step(task, first_team_step)
 
-        TaskStateService().transition(task, TaskStatus.QUEUED)
+        transition_task(task, TaskStatus.QUEUED)
         self._session.flush()
         return run
 
-    def enqueue_run(
+    def request_run(
         self,
         run: AgentRun,
         requested_by_user_id: UUID | None,
-        *,
-        force: bool = False,
-    ) -> bool:
-        if self._queue is None:
-            return False
+    ) -> str:
+        """Persist a start intent in the same transaction as the run state."""
+        return stage_execution(self._session, self.execution_for_run(run, requested_by_user_id))
 
-        job = self.job_for_run(run, requested_by_user_id)
-        if force:
-            return self._queue.ensure_enqueued(job)
-        return self._queue.enqueue(job)
-
-    def job_for_run(self, run: AgentRun, requested_by_user_id: UUID | None) -> JobPayload:
-        return JobPayload(
-            workspace_id=run.workspace_id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=requested_by_user_id,
-            idempotency_key=f"agent.run:{run.workspace_id}:{run.id}",
-            priority=self._run_job_routing().priority(run),
-            routing=self._run_job_routing().routing(run),
-        )
+    def execution_for_run(
+        self, run: AgentRun, requested_by_user_id: UUID | None
+    ) -> ExecutionRequest:
+        return run_execution_reference(self._session, run, requested_by_user_id)
 
     def schedule_workspace_steps(
         self,
@@ -165,7 +152,7 @@ class RunOrchestrationService:
         ]
         scheduled_steps = (
             self._scheduler()
-            .select_runnable_steps(
+            .evaluate_and_mark_steps(
                 workspace_id=workspace_id,
                 candidate_steps=candidates,
             )
@@ -181,7 +168,7 @@ class RunOrchestrationService:
             run = self._run_step_launcher().create_reserved_run_for_step(task, step)
             if run is None:
                 continue
-            self.enqueue_run(run, requested_by_user_id)
+            self.request_run(run, requested_by_user_id)
             runs.append(run)
         self._session.flush()
         return runs
@@ -192,15 +179,17 @@ class RunOrchestrationService:
         workspace_id: UUID,
         team_id: UUID,
         requested_by_user_id: UUID | None = None,
+        task_id: UUID | None = None,
     ) -> list[AgentRun]:
         candidates = [
             step
             for step in self._eligibility().team_eligible_steps(workspace_id, team_id)
-            if not self._eligibility().step_has_active_run(step)
+            if (task_id is None or step.task_id == task_id)
+            and not self._eligibility().step_has_active_run(step)
         ]
         scheduled_steps = (
             self._scheduler()
-            .select_runnable_steps(
+            .evaluate_and_mark_steps(
                 workspace_id=workspace_id,
                 candidate_steps=candidates,
                 policy_override=self._team_scheduler_policy(workspace_id, team_id),
@@ -221,7 +210,7 @@ class RunOrchestrationService:
             run = self._run_step_launcher().create_reserved_run_for_step(task, step)
             if run is None:
                 continue
-            self.enqueue_run(run, requested_by_user_id)
+            self.request_run(run, requested_by_user_id)
             runs.append(run)
         self._session.flush()
         return runs
@@ -276,9 +265,6 @@ class RunOrchestrationService:
 
     def _run_events(self) -> RunEventRecorder:
         return RunEventRecorder(self._session)
-
-    def _run_job_routing(self) -> RunJobRoutingService:
-        return RunJobRoutingService(self._session)
 
     def _request_builder(self) -> RunRequestBuilder:
         return RunRequestBuilder(self._session, None)
@@ -349,7 +335,7 @@ class RunOrchestrationService:
         eligible_steps = self._eligibility().next_eligible_steps(task.id, task.workspace_id)
         scheduled_steps = (
             self._scheduler()
-            .select_runnable_steps(
+            .evaluate_and_mark_steps(
                 workspace_id=task.workspace_id,
                 candidate_steps=eligible_steps,
             )
@@ -359,18 +345,9 @@ class RunOrchestrationService:
             next_run = self._run_step_launcher().create_reserved_run_for_step(task, next_step)
             if next_run is None:
                 continue
-            self.enqueue_run(next_run, requested_by_user_id)
+            self.request_run(next_run, requested_by_user_id)
             next_runs.append(next_run)
         return next_runs
 
     def _scheduler(self) -> WorkspaceScheduler:
         return WorkspaceScheduler(self._session)
-
-
-def build_default_queue(redis_client: Any, settings: Any) -> RedisQueue:
-    return RedisQueue(
-        redis=redis_client,
-        keys=RedisKeyBuilder(settings.redis_key_prefix),
-        queue_name=settings.worker_queue_name,
-        tracing_enabled=settings.tracing_enabled,
-    )

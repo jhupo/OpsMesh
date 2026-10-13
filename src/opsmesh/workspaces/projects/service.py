@@ -32,7 +32,7 @@ from opsmesh.workspaces.projects.policy import (
     validate_project_configuration,
     validate_project_layout,
 )
-from opsmesh.workspaces.projects.snapshots.format import sha256_json
+from opsmesh.workspaces.projects.snapshots.diff import sha256_json
 
 
 class WorkspaceProjectService:

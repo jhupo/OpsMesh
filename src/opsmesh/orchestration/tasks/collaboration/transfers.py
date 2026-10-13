@@ -17,7 +17,6 @@ from opsmesh.orchestration.tasks.collaboration.transfer_package import TaskHando
 from opsmesh.orchestration.tasks.control.ownership import is_platform_owned_step, owner_version
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep, TaskTransfer
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.security.redaction import redact_text_fragments
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.teams.sessions.snapshots import build_team_snapshot
@@ -26,7 +25,8 @@ TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"
 TRANSFER_REJECTED = "rejected"
 TRANSFER_CANCELLED = "cancelled"
-TRANSFER_TERMINAL_STATUSES = {TRANSFER_ACCEPTED, TRANSFER_REJECTED, TRANSFER_CANCELLED}
+
+
 class TaskTransferError(ValueError):
     """Stable domain error exposed by task transfer endpoints."""
 
@@ -62,7 +62,6 @@ class TaskTransferService:
         task_id: UUID,
         actor_user_id: UUID,
         command: TaskTransferCommand,
-        queue: RedisQueue | None = None,
     ) -> TaskTransfer | None:
         task = self._lock_task(workspace_id, task_id)
         if task is None:
@@ -114,15 +113,18 @@ class TaskTransferService:
                 "A task transfer is already awaiting a decision",
             )
 
-        revision = int(
-            self._session.scalar(
-                select(func.coalesce(func.max(TaskTransfer.revision), 0)).where(
-                    TaskTransfer.workspace_id == workspace_id,
-                    TaskTransfer.task_id == task.id,
+        revision = (
+            int(
+                self._session.scalar(
+                    select(func.coalesce(func.max(TaskTransfer.revision), 0)).where(
+                        TaskTransfer.workspace_id == workspace_id,
+                        TaskTransfer.task_id == task.id,
+                    )
                 )
+                or 0
             )
-            or 0
-        ) + 1
+            + 1
+        )
         package = self._build_handoff_package(task, source_id, command.target_agent_profile_id)
         transfer = TaskTransfer(
             workspace_id=workspace_id,
@@ -178,7 +180,6 @@ class TaskTransferService:
         transfer_id: UUID,
         actor_user_id: UUID,
         decision: TaskTransferDecision,
-        queue: RedisQueue | None = None,
     ) -> TaskTransfer | None:
         task = self._lock_task(workspace_id, task_id)
         if task is None:
@@ -220,8 +221,7 @@ class TaskTransferService:
         transfer.target_owner_version = next_version
         if decision.reason:
             transfer.reason = (
-                f"{transfer.reason}\nAcceptance: "
-                f"{redact_text_fragments(decision.reason)}"
+                f"{transfer.reason}\nAcceptance: {redact_text_fragments(decision.reason)}"
             )
             transfer.reason = _bounded_text(transfer.reason, 1_000)
         self._append_message(
@@ -254,8 +254,8 @@ class TaskTransferService:
             },
         )
         self._session.flush([task, transfer])
-        if decision.enqueue and queue is not None:
-            self._enqueue_next_run(task, actor_user_id, queue)
+        if decision.enqueue:
+            self._enqueue_next_run(task, actor_user_id)
         self._session.commit()
         self._session.refresh(transfer)
         return transfer
@@ -323,9 +323,12 @@ class TaskTransferService:
         workspace_id: UUID,
         task_id: UUID,
     ) -> list[TaskTransfer] | None:
-        if self._session.scalar(
-            select(Task.id).where(Task.workspace_id == workspace_id, Task.id == task_id)
-        ) is None:
+        if (
+            self._session.scalar(
+                select(Task.id).where(Task.workspace_id == workspace_id, Task.id == task_id)
+            )
+            is None
+        ):
             return None
         return list(
             self._session.scalars(
@@ -484,13 +487,10 @@ class TaskTransferService:
                     review_policy: dict[str, object] = (
                         dict(raw_review_policy) if isinstance(raw_review_policy, dict) else {}
                     )
-                    if (
-                        updated_package.get("assigned_agent_profile_id") == str(source_id)
-                        and (
-                            package_id in {"manager-planning", "manager-summary"}
-                            or package_id.startswith("manager-summary-revision-")
-                            or review_policy.get("mode") in {"final_acceptance", "executive_review"}
-                        )
+                    if updated_package.get("assigned_agent_profile_id") == str(source_id) and (
+                        package_id in {"manager-planning", "manager-summary"}
+                        or package_id.startswith("manager-summary-revision-")
+                        or review_policy.get("mode") in {"final_acceptance", "executive_review"}
                     ):
                         updated_package["assigned_agent_profile_id"] = str(target_id)
                     updated_packages.append(updated_package)
@@ -529,11 +529,11 @@ class TaskTransferService:
             payload=payload,
         )
 
-    def _enqueue_next_run(self, task: Task, actor_user_id: UUID, queue: RedisQueue) -> None:
-        orchestration = RunOrchestrationService(self._session, queue=queue)
+    def _enqueue_next_run(self, task: Task, actor_user_id: UUID) -> None:
+        orchestration = RunOrchestrationService(self._session)
         run = orchestration.create_queued_run_for_task(task)
         if run is not None:
-            orchestration.enqueue_run(run, actor_user_id)
+            orchestration.request_run(run, actor_user_id)
 
 
 def _bounded_text(value: str, limit: int) -> str:

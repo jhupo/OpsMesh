@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.guardrails import runtime_controls_snapshot
-from opsmesh.agents.profiles.model_validation import AgentModelValidator
+from opsmesh.agents.profiles.model_validation import AgentModelConfigValidator
 from opsmesh.agents.profiles.models import AgentProfile, AgentProfileVersion
 from opsmesh.agents.profiles.payloads import (
     AGENT_PROFILE_FIELDS,
@@ -24,7 +24,7 @@ from opsmesh.agents.profiles.payloads import (
 from opsmesh.agents.profiles.reviews import AgentProfileReviewService
 from opsmesh.agents.profiles.routing import agent_target_policy, require_handoff_policy
 from opsmesh.agents.profiles.versions import AgentVersionRecorder
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
@@ -37,11 +37,11 @@ AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
 AGENT_STATUS_ARCHIVED = "archived"
 
 
-class AgentManagementService:
+class AgentProfileService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings
-        self._model_validator = AgentModelValidator(session)
+        self._model_validator = AgentModelConfigValidator(session)
         self._versions = AgentVersionRecorder(session)
 
     def list_agents(
@@ -134,6 +134,8 @@ class AgentManagementService:
         agent_profile_id: UUID,
         changes: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
+        *,
+        commit: bool = True,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
         values = normalize_update_payload(changes, {})
@@ -192,8 +194,11 @@ class AgentManagementService:
                 "review_reasons": review.reasons if review is not None else [],
             },
         )
-        self._session.commit()
-        self._session.refresh(profile)
+        if commit:
+            self._session.commit()
+            self._session.refresh(profile)
+        else:
+            self._session.flush()
         return profile
 
     def archive_agent(

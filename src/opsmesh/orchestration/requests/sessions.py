@@ -5,12 +5,12 @@ from uuid import uuid5
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentSessionBinding
+from opsmesh.agents.execution.contracts import AgentSessionScope
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.agents.sessions.models import PersistentAgentSessionRef
+from opsmesh.agents.sessions.models import AgentSessionIdentity
 from opsmesh.agents.sessions.store import prepare_session_binding
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
-from opsmesh.identity.authorization.resources import ResourceAccessDenied
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError
 from opsmesh.orchestration.automations.models import AutomationEvent
 from opsmesh.orchestration.conversations.models import (
     Conversation,
@@ -30,10 +30,8 @@ class RunRequestSessionService:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-        ref: PersistentAgentSessionRef | None = None,
-        *,
-        sdk_provider: str,
-    ) -> AgentSessionBinding | None:
+        ref: AgentSessionIdentity | None = None,
+    ) -> AgentSessionScope | None:
         if profile.id is None:
             return None
         ref = ref or self.persistent_session_ref_for_run(run, task, profile)
@@ -46,7 +44,6 @@ class RunRequestSessionService:
             metadata={
                 "agent_role": profile.role,
                 "source": "run_orchestration",
-                "sdk_provider": sdk_provider,
             },
         )
 
@@ -55,9 +52,9 @@ class RunRequestSessionService:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-    ) -> PersistentAgentSessionRef:
+    ) -> AgentSessionIdentity:
         if task is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         user = ExecutionIdentityService(self.session).restore(
             run.workspace_id,
             task.execution_identity,
@@ -82,17 +79,20 @@ class RunRequestSessionService:
         if execution is not None:
             conversation = execution[0]
             if conversation.created_by_user_id != user.user_id:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             scope_type = "conversation_agent"
             scope_id = f"{conversation.id}:{profile.id}"
         elif event is not None and event.configuration.get("trigger_type") == "message":
             sender_id = event.input_payload.get("sender_id")
             if not isinstance(sender_id, str) or not sender_id:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             scope_type = "automation_agent"
             conversation_id = uuid5(
                 event.automation_id,
-                json.dumps([sender_id, event.conversation_id], ensure_ascii=False),
+                json.dumps(
+                    [str(event.source_connection_id), sender_id, event.conversation_id],
+                    ensure_ascii=False,
+                ),
             )
             scope_id = f"{conversation_id}:{profile.id}"
         elif task.agent_team_id is not None and execution is None:
@@ -103,9 +103,9 @@ class RunRequestSessionService:
             scope_id = f"{task.id}:{profile.id}"
         key = f"{run.workspace_id}:{user.user_id}:{scope_type}:{scope_id}"
         if run.session_key is not None and run.session_key != key:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         run.session_key = key
-        return PersistentAgentSessionRef(
+        return AgentSessionIdentity(
             session_key=key,
             workspace_id=run.workspace_id,
             scope_type=scope_type,

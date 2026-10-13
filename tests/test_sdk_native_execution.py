@@ -1,9 +1,8 @@
 import asyncio
 from dataclasses import replace
-from pathlib import Path
-from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from agents.items import ModelResponse
 from agents.models.interface import Model
 from agents.usage import Usage
@@ -14,109 +13,19 @@ from openai.types.responses import (
 )
 
 from opsmesh.agents.execution.contracts import (
+    AgentExecutionContext,
     AgentRunRequest,
-    AgentRuntimeApprovalDecision,
-    AgentRuntimeContext,
-    AgentRuntimeToolDefinition,
-    AgentRuntimeToolResult,
+    AgentToolApprovalDecision,
+    AgentToolSpec,
+    ToolExecutionResult,
 )
-from opsmesh.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from opsmesh.agents.execution.providers.openai.executor import OpenAIAgentExecutor
 from opsmesh.agents.profiles.models import AgentProfile
 
 
-def test_claude_uses_native_structured_output_without_text_fallback():
-    import pytest
-    from claude_agent_sdk import ResultMessage
-
-    from opsmesh.agents.execution.contracts import AgentRuntimeOutputSchema
-    from opsmesh.agents.execution.errors import AgentRuntimeOutputValidationError
-    from opsmesh.agents.execution.providers.claude.runner import ClaudeAgentSDKRunner
-
-    profile = AgentProfile(id=uuid4(), workspace_id=uuid4(), name="Structured", role="expert")
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Answer",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id, task_id=None, run_id=uuid4()
-        ),
-        output_schema=AgentRuntimeOutputSchema(
-            name="answer", version="1", schema={"type": "object"}
-        ),
-    )
-    result = ResultMessage(
-        subtype="success",
-        duration_ms=0,
-        duration_api_ms=0,
-        is_error=False,
-        num_turns=1,
-        session_id="offline",
-        result='{"answer":"text"}',
-        structured_output={"answer": "native"},
-    )
-    runner = ClaudeAgentSDKRunner()
-    text, structured = runner._final_output(request, result, [])
-    assert structured.value == {"answer": "native"}
-    assert "native" in text
-    with pytest.raises(AgentRuntimeOutputValidationError):
-        runner._final_output(request, replace(result, structured_output=None), [])
-
-
-def test_sdk_memory_requires_persistence_and_handles_empty_then_populated_storage(monkeypatch):
-    import pytest
-    from agents.sandbox.capabilities import Memory
-
-    from opsmesh.agents.execution.providers.openai.sandbox import (
-        OpsMeshSandboxSession,
-        sandbox_capabilities,
-    )
-    from opsmesh.runtime.contracts import SandboxBinding, SandboxManifest, SandboxSession
-
-    profile = AgentProfile(id=uuid4(), workspace_id=uuid4(), name="Memory", role="expert")
-    context = AgentRuntimeContext(
-        workspace_id=profile.workspace_id,
-        user_id=uuid4(),
-        task_id=None,
-        run_id=uuid4(),
-        metadata={"sdk_memory": {"enabled": True, "read": True, "generate": False}},
-    )
-    executor = SimpleNamespace(read_file=lambda path: None)
-    binding = SandboxBinding(
-        manifest=SandboxManifest(run_id=context.run_id, root="/workspace"),
-        session=SandboxSession(
-            session_id="persistent", root="/workspace", backend="test", executor=executor
-        ),
-    )
-    request = AgentRunRequest(
-        agent_profile=profile, input_text="Remember", context=context, sandbox=binding
-    )
-    with pytest.raises(ValueError, match="persistent Runtime"):
-        sandbox_capabilities(request)
-    binding = replace(binding, session=replace(binding.session, persistent=True))
-    request = replace(request, sandbox=binding)
-    capabilities = sandbox_capabilities(request)
-    assert [item.type for item in capabilities] == ["filesystem", "shell", "memory"]
-    memory = next(item for item in capabilities if isinstance(item, Memory))
-    assert memory.generate is None
-    assert str(context.workspace_id) in memory.layout.memories_dir
-    assert str(context.user_id) in memory.layout.memories_dir
-    native = OpsMeshSandboxSession(binding)
-    memory.session = native
-
-    async def validated(path):
-        return Path("/workspace") / path
-
-    monkeypatch.setattr(native, "_check_read_with_exec", validated)
-
-    async def read():
-        assert await memory.instructions(native.state.manifest) is None
-        executor.read_file = lambda path: b"Remember the confirmed incident procedure."
-        prompt = await memory.instructions(native.state.manifest)
-        assert "confirmed incident procedure" in prompt
-
-    asyncio.run(read())
-
-
-def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monkeypatch, tmp_path):
+def test_native_product_tool_approval_resume_preserves_call_identity_and_tool_output(
+    monkeypatch, tmp_path
+):
     from agents.extensions.memory import SQLAlchemySession
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -166,7 +75,7 @@ def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monk
 
         async def execute_tool(self, *, tool_call_id, **kwargs):
             calls.append(tool_call_id)
-            return AgentRuntimeToolResult(
+            return ToolExecutionResult(
                 status="completed",
                 output={
                     "content": [{"type": "text", "text": "original-runtime-result"}],
@@ -174,10 +83,15 @@ def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monk
                 },
             )
 
-    monkeypatch.setattr(
-        "opsmesh.agents.execution.providers.openai.runner.OpenAIProvider.get_model",
-        lambda *args, **kwargs: OfflineModel(),
-    )
+    from agents import ModelProvider
+
+    from tests.fixtures.sdk import install_model_provider
+
+    class Provider(ModelProvider):
+        def get_model(self, name):
+            return OfflineModel()
+
+    install_model_provider(monkeypatch, Provider())
     profile = AgentProfile(
         id=uuid4(),
         workspace_id=uuid4(),
@@ -193,40 +107,41 @@ def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monk
         agent_profile=profile,
         input_text="Analyze this order",
         api_key="offline-key",
-        context=AgentRuntimeContext(
+        context=AgentExecutionContext(
             workspace_id=profile.workspace_id,
             task_id=None,
             run_id=uuid4(),
             allowed_tools=("inspect_logs",),
             tool_definitions=(
-                AgentRuntimeToolDefinition(
+                AgentToolSpec(
                     name="inspect_logs",
-                    source="mcp",
+                    source="product",
                     description="Inspect runtime logs",
                     input_schema={"type": "object", "properties": {"order": {"type": "string"}}},
                 ),
             ),
         ),
         tool_executor=Executor(),
-        session=storage,
+        model_provider_credential_id=uuid4(),
     )
 
     async def execute():
-        runner = OpenAIAgentsRunner()
-        interrupted = await runner.run(request)
+        runner = OpenAIAgentExecutor()
+        interrupted = await runner.run(request, session=storage)
         assert calls == []
-        assert interrupted.interruptions[0].tool_kind == "mcp"
+        assert interrupted.interruptions[0].tool_kind == "product"
         assert interrupted.interruptions[0].policy_decision["risk_level"] == "high"
         resumed = await runner.run(
             replace(
                 request,
                 resume_state=interrupted.resume_state,
                 approval_decisions=(
-                    AgentRuntimeApprovalDecision(
+                    AgentToolApprovalDecision(
                         tool_call_id="original-call", tool_name="inspect_logs", status="approved"
                     ),
                 ),
-            )
+            ),
+            session=storage,
         )
         assert resumed.final_output == "analyzed"
         assert resumed.usage is not None
@@ -246,3 +161,49 @@ def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monk
         for item in seen[-1]
     )
     assert len([item for item in seen[-1] if item.get("role") == "user"]) == 1
+
+
+@pytest.mark.parametrize("generate", [False, True])
+def test_sdk_memory_requires_native_client_and_uses_tenant_layout(generate):
+    from agents.sandbox.capabilities import Memory
+
+    from opsmesh.agents.execution.providers.openai.contracts import AgentModelReference
+    from opsmesh.agents.execution.providers.openai.sandbox import sandbox_capabilities
+
+    profile = AgentProfile(
+        id=uuid4(),
+        workspace_id=uuid4(),
+        name="Memory",
+        role="expert",
+        model="gpt-4.1",
+        model_settings={},
+    )
+    context = AgentExecutionContext(
+        workspace_id=profile.workspace_id,
+        user_id=uuid4(),
+        task_id=None,
+        run_id=uuid4(),
+        metadata={"sdk_memory": {"enabled": True, "read": True, "generate": generate}},
+    )
+    request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="Remember",
+        context=context,
+        model_provider_credential_id=uuid4(),
+    )
+    with pytest.raises(ValueError, match="native Temporal sandbox client"):
+        sandbox_capabilities(request)
+    request = replace(request, sdk_sandbox_client=object())
+    capabilities = sandbox_capabilities(request)
+    memory = next(item for item in capabilities if isinstance(item, Memory))
+    if generate:
+        assert memory.generate is not None
+        reference = AgentModelReference.decode(memory.generate.phase_one_model)
+        assert reference.purpose == "memory"
+        assert reference.credential_id == request.model_provider_credential_id
+        assert memory.generate.phase_one_model == memory.generate.phase_two_model
+    else:
+        assert memory.generate is None
+    assert str(context.workspace_id) in memory.layout.memories_dir
+    assert str(context.user_id) in memory.layout.memories_dir
+    assert str(profile.id) in memory.layout.memories_dir

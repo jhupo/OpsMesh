@@ -1,23 +1,16 @@
-from collections.abc import Generator
 from datetime import UTC, datetime
 from uuid import UUID
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
@@ -29,11 +22,10 @@ from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
-from tests.fixtures.runtime_host import runtime_host
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-token"
 
@@ -58,9 +50,8 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
                 "resource_requirements": {"memory_mb": 1024},
                 "api_key": "sk-space",
             },
-            "network_policy": {"mode": "none"},
-            "storage_policy": {"remote_url": "https://storage.example.test/private"},
-            "cleanup_policy": {"headers": {"authorization": "Bearer cleanup"}},
+            "storage_metadata": {"remote_url": "https://storage.example.test/private"},
+            "cleanup_metadata": {"headers": {"authorization": "Bearer cleanup"}},
             "quota_limits": {"active_runs": 2, "memory_mb": 2048},
         },
     )
@@ -69,12 +60,18 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
     runtime_space_id = UUID(created.json()["id"])
     assert created.json()["workspace_id"] == str(workspace.id)
     assert created.json()["created_by_user_id"] == str(owner.id)
-    assert created.json()["network_policy"] == {"mode": "none"}
     assert created.json()["policy"]["api_key"] == "[redacted]"
-    assert created.json()["storage_policy"]["remote_url"] == "[redacted]"
-    assert created.json()["cleanup_policy"]["headers"] == "[redacted]"
+    assert created.json()["storage_metadata"]["remote_url"] == "[redacted]"
+    assert created.json()["cleanup_metadata"]["headers"] == "[redacted]"
     assert "sk-space" not in str(created.json())
     assert "storage.example.test/private" not in str(created.json())
+
+    obsolete_policy = client.patch(
+        f"/api/v1/workspaces/{workspace.id}/runtime-spaces/{runtime_space_id}",
+        headers=_headers(owner.id),
+        json={"cleanup_policy": {"completed_task_retention_days": 1}},
+    )
+    assert obsolete_policy.status_code == 422
 
     forbidden_read = client.get(
         f"/api/v1/workspaces/{other_workspace.id}/runtime-spaces/{runtime_space_id}",
@@ -441,8 +438,8 @@ def test_runtime_space_reset_releases_reservations_and_clears_blocks() -> None:
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="runtime",
-        status="running",
-        connection_status="online",
+        status="active",
+        sandbox_backend_id="docker",
     )
     quota = RuntimeSpaceQuota(
         workspace_id=workspace.id,
@@ -553,12 +550,9 @@ def test_runtime_space_diagnostics_reports_quota_reservations_runtimes_and_block
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="runtime",
-        status="running",
-        connection_status="online",
-        host=runtime_host(workspace.id, "container-secret", capacity=16, node_id="test-node"),
-        limits={"memory_mb": 4096, "token": "runtime-token"},
-        network_policy={"base_url": "https://runtime.example.test/private"},
-        capabilities={"headers": {"authorization": "Bearer hidden"}, "tools": ["python"]},
+        status="active",
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "python:3.13"},
     )
     quota = RuntimeSpaceQuota(
         workspace_id=workspace.id,
@@ -600,11 +594,8 @@ def test_runtime_space_diagnostics_reports_quota_reservations_runtimes_and_block
     ]
     assert payload["active_reservations"][0]["reservation_key"] == "task:blocked"
     assert payload["active_reservations"][0]["resource_usage"] == {"memory_mb": 4096}
-    assert payload["runtimes"][0]["has_docker_container"] is True
+    assert payload["runtimes"][0]["sandbox_backend_id"] == "docker"
     assert "container-secret" not in str(payload)
-    assert payload["runtimes"][0]["limits"]["token"] == "[redacted]"
-    assert payload["runtimes"][0]["network_policy"]["base_url"] == "[redacted]"
-    assert payload["runtimes"][0]["capabilities"]["headers"] == "[redacted]"
     assert payload["blocked_steps"][0]["task_step_id"] == str(step.id)
     assert payload["blocked_steps"][0]["code"] == "runtime_space_quota_exceeded"
     assert payload["blocked_steps"][0]["resource_key"] == "memory_mb"
@@ -669,13 +660,7 @@ def test_viewer_cannot_manage_runtime_spaces() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     seed_session = session_factory()
@@ -683,23 +668,18 @@ def _client() -> tuple[TestClient, Session]:
         environment="test",
         log_format="text",
         internal_api_token=TOKEN,
-        database_url="sqlite+pysqlite:///:memory:",
+        database_url=engine.url.render_as_string(hide_password=False),
     )
     app = create_app(settings)
     redis_client = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis_client, RedisKeyBuilder(settings.redis_key_prefix), "agent.run")
 
-    def override_db_session() -> Generator[Session, None, None]:
-        request_session = session_factory()
-        try:
+    def database_session():
+        with session_factory() as request_session:
             yield request_session
-        finally:
-            request_session.close()
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_db_session] = database_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis_client
-    app.dependency_overrides[get_worker_queue] = lambda: queue
     return TestClient(app), seed_session
 
 
@@ -723,12 +703,3 @@ def _headers(user_id: object) -> dict[str, str]:
         "Authorization": f"Bearer {TOKEN}",
         "X-User-ID": str(user_id),
     }
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

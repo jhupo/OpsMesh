@@ -10,8 +10,16 @@ from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditService
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
+from opsmesh.resources.transfers.archive_limits import (
+    ARCHIVE_METADATA_BUDGET,
+    MAX_ARCHIVE_INVENTORY_BYTES,
+    MAX_ARCHIVE_METADATA_BYTES,
+    MAX_ARCHIVE_OBJECT_BYTES,
+    MAX_ARCHIVE_TOTAL_OBJECT_BYTES,
+    BoundedArchiveReader,
+    compressed_archive_limit,
+)
 from opsmesh.resources.transfers.contracts import SUPPORTED_WORKSPACE_EXPORT_FORMAT
 from opsmesh.resources.transfers.repository import WorkspaceArchiveExportJobRepository
 
@@ -26,42 +34,43 @@ class WorkspaceArchiveIntegrityService:
         *,
         workspace_id: UUID,
         job_id: UUID,
-        user_id: UUID,
         storage: ObjectStorage,
     ) -> dict[str, object]:
-        export_job, content = self._jobs.read_completed_content(
-            workspace_id=workspace_id,
-            job_id=job_id,
-            storage=storage,
+        export_job = self._jobs.get(workspace_id=workspace_id, job_id=job_id)
+        if export_job is None or export_job.status != "completed" or export_job.storage_key is None:
+            raise ValueError("A completed archive export is required")
+        key, expected_size, expected_checksum, filename, content_type = (
+            export_job.storage_key,
+            export_job.size_bytes,
+            export_job.checksum_sha256,
+            export_job.filename,
+            export_job.content_type,
+        )
+        self._session.commit()
+        content = storage.read_limited(
+            key, compressed_archive_limit(MAX_ARCHIVE_TOTAL_OBJECT_BYTES)
         )
         checked_at = datetime.now(UTC)
         checks, metadata = inspect_archive_content(
             content=content,
             workspace_id=workspace_id,
-            expected_size=export_job.size_bytes,
-            expected_checksum=export_job.checksum_sha256,
-            filename=export_job.filename,
-            content_type=export_job.content_type,
+            expected_size=expected_size,
+            expected_checksum=expected_checksum,
+            filename=filename,
+            content_type=content_type,
         )
         failed_checks = [name for name, passed in checks.items() if not passed]
         verified = not failed_checks
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action="workspace.archive_export_job.integrity_checked",
-            target_type="workspace_export_job",
-            target_id=export_job.id,
-            metadata={
-                "verified": verified,
-                "checks": checks,
-                "failed_checks": failed_checks,
-                **metadata,
-            },
-        )
-        self._session.commit()
+        self._session.expire(export_job)
+        if (
+            export_job.status != "completed"
+            or export_job.storage_key != key
+            or export_job.checksum_sha256 != expected_checksum
+        ):
+            raise ValueError("Archive export changed during verification")
         return {
             "workspace_id": workspace_id,
-            "job_id": export_job.id,
+            "job_id": job_id,
             "verified": verified,
             "checked_at": checked_at,
             "checks": checks,
@@ -103,23 +112,28 @@ def inspect_archive_content(
     }
     manifest_counts: dict[str, int] = {}
     try:
+        if len(content) > compressed_archive_limit(MAX_ARCHIVE_TOTAL_OBJECT_BYTES):
+            raise ValueError("Compressed archive exceeds the archive byte limit")
         with ZipFile(BytesIO(content)) as archive:
             checks["zip_readable"] = True
-            names = set(archive.namelist())
+            reader = BoundedArchiveReader(archive, max_total_bytes=ARCHIVE_METADATA_BUDGET)
+            names = reader.names
             checks["metadata_present"] = "metadata.json" in names
             checks["object_inventory_present"] = "object-inventory.json" in names
             metadata["archive_entry_count"] = len(names)
             if checks["metadata_present"]:
                 inspect_metadata_payload(
-                    json.loads(archive.read("metadata.json")),
+                    json.loads(reader.read("metadata.json", max_bytes=MAX_ARCHIVE_METADATA_BYTES)),
                     workspace_id,
                     checks,
                     lambda counts: manifest_counts.update(counts),
                 )
             if checks["object_inventory_present"]:
-                inventory = json.loads(archive.read("object-inventory.json"))
+                inventory = json.loads(
+                    reader.read("object-inventory.json", max_bytes=MAX_ARCHIVE_INVENTORY_BYTES)
+                )
                 checks["object_inventory_valid"] = _verify_object_inventory(archive, inventory)
-    except (BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (BadZipFile, ValueError, UnicodeDecodeError) as exc:
         metadata["archive_error"] = str(exc)[:500]
     metadata["manifest_counts"] = manifest_counts
     return checks, metadata
@@ -128,7 +142,8 @@ def inspect_archive_content(
 def _verify_object_inventory(archive: ZipFile, inventory: object) -> bool:
     if not isinstance(inventory, list):
         return False
-    names = set(archive.namelist())
+    reader = BoundedArchiveReader(archive, max_total_bytes=MAX_ARCHIVE_TOTAL_OBJECT_BYTES)
+    names = reader.names
     for entry in inventory:
         if not isinstance(entry, dict):
             return False
@@ -141,7 +156,7 @@ def _verify_object_inventory(archive: ZipFile, inventory: object) -> bool:
             return False
         if not isinstance(expected_size, int) or name not in names:
             return False
-        content = archive.read(name)
+        content = reader.read(name, max_bytes=MAX_ARCHIVE_OBJECT_BYTES)
         if len(content) != expected_size or sha256(content).hexdigest() != expected_checksum:
             return False
     return True

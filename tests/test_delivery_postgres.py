@@ -12,7 +12,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from opsmesh.platform.updates.models import PlatformInstallation, PlatformUpdateEvent
-from opsmesh.platform.updates.service import UpdateService
+from opsmesh.platform.updates.service import PlatformUpdateService
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("OPSMESH_DELIVERY_POSTGRES_TEST") != "1",
@@ -50,7 +50,7 @@ def test_update_event_is_worm_and_plan_is_transactional() -> None:
     assert os.environ.get("OPSMESH_ENVIRONMENT") == "test"
     engine = create_engine(os.environ["OPSMESH_DATABASE_URL"])
     with Session(engine) as session:
-        service = UpdateService(session)
+        service = PlatformUpdateService(session)
         job = service.request(tag="v0.2.0", action="update", key=uuid4().hex)
         event = session.scalar(
             select(PlatformUpdateEvent).where(PlatformUpdateEvent.job_id == job.id)

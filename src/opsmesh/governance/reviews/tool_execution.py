@@ -6,12 +6,15 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
-from opsmesh.governance.reviews.configured import ConfiguredApprovalService, ConfiguredReview
+from opsmesh.governance.reviews.configured import (
+    ApprovalPolicyEvaluationService,
+    ApprovalRequirementReview,
+)
 from opsmesh.shared.config import Settings
 
 
 @dataclass(frozen=True)
-class ToolExecutionReview(ConfiguredReview):
+class ToolExecutionReview(ApprovalRequirementReview):
     @property
     def approved(self) -> bool:
         return not self.required and not self.blocked
@@ -28,7 +31,7 @@ class ToolExecutionReview(ConfiguredReview):
 
 class ToolExecutionReviewService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
-        self._reviewer = ConfiguredApprovalService(session, settings)
+        self._reviewer = ApprovalPolicyEvaluationService(session, settings)
 
     def review_mcp_tool_call(
         self,
@@ -90,7 +93,7 @@ class ToolExecutionReviewService:
         )
 
     @staticmethod
-    def _convert(review: ConfiguredReview) -> ToolExecutionReview:
+    def _convert(review: ApprovalRequirementReview) -> ToolExecutionReview:
         return ToolExecutionReview(
             review.required, review.blocked, review.risk_level, review.reasons, review.signals
         )

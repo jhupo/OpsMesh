@@ -9,12 +9,12 @@ from opsmesh.agents.execution.tools.executor import PRODUCT_TOOL_NAMES
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.definitions.data import resolve_workflow_inputs
 from opsmesh.orchestration.planning.agent_plan import is_agent_planning_step
-from opsmesh.orchestration.requests.context_budget import ContextFragment, ContextPriority
+from opsmesh.orchestration.requests.context import ContextFragment, ContextPriority
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
-from opsmesh.teams.sessions.service import TeamRuntimeService
+from opsmesh.teams.sessions.service import TeamOperationService
 
 
 @dataclass(slots=True)
@@ -161,7 +161,6 @@ class RunRequestPromptRenderer:
                     ),
                     priority=ContextPriority.HIGH,
                     required=True,
-                    allow_truncation=False,
                 )
             )
         fragments.extend(self._special_step_fragments(task, step))
@@ -196,7 +195,6 @@ class RunRequestPromptRenderer:
                     ),
                     priority=ContextPriority.CRITICAL,
                     required=True,
-                    allow_truncation=False,
                 )
             )
         return fragments
@@ -218,7 +216,7 @@ class RunRequestPromptRenderer:
         )
         if team is None:
             return ""
-        runtime_state = TeamRuntimeService(self.session).get_state(
+        runtime_state = TeamOperationService(self.session).get_or_initialize_state(
             workspace_id=run.workspace_id,
             team_id=team.id,
             initialize=True,
@@ -301,7 +299,7 @@ def step_context_text_for_request(step: TaskStep) -> str:
         lines.append("- Expected artifacts: " + "; ".join(expected_artifacts))
     acceptance_criteria = runtime_text_list(step.acceptance_criteria)
     if acceptance_criteria:
-        lines.append("- Acceptance criteria: " + "; ".join(acceptance_criteria))
+        lines.append("- ManagedDeliveryAcceptance criteria: " + "; ".join(acceptance_criteria))
     review_policy = redact_sensitive_payload(step.review_policy)
     if isinstance(review_policy, dict) and review_policy:
         lines.append(

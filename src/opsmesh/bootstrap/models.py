@@ -8,10 +8,9 @@ from sqlalchemy.orm import configure_mappers
 from opsmesh.shared.db.base import Base
 
 _MODEL_MODULES = (
-    "opsmesh.platform.data_migrations.models",
-    "opsmesh.runtime.queues.models",
+    "opsmesh.platform.operations.models",
+    "opsmesh.runtime.temporal.models",
     "opsmesh.orchestration.conversations.models",
-    "opsmesh.runtime.operations.models",
     "opsmesh.governance.policies.models",
     "opsmesh.messaging.email.models",
     "opsmesh.platform.updates.models",
@@ -46,16 +45,17 @@ _MODEL_MODULES = (
     "opsmesh.resources.artifacts.models",
     "opsmesh.resources.files.models",
     "opsmesh.teams.management.models",
+    "opsmesh.teams.execution.models",
     "opsmesh.workspaces.management.models",
     "opsmesh.workspaces.members.models",
     "opsmesh.workspaces.quotas.models",
     "opsmesh.governance.audit.models",
     "opsmesh.governance.costs.models",
     "opsmesh.messaging.notifications.models",
+    "opsmesh.messaging.channels.models",
     "opsmesh.runtime.instances.models",
+    "opsmesh.runtime.sandboxes.models",
     "opsmesh.runtime.spaces.models",
-    "opsmesh.runtime.workers.models",
-    "opsmesh.runtime.self_hosted.models",
     "opsmesh.orchestration.scheduling.models",
 )
 

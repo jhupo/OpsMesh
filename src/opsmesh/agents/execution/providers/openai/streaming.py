@@ -5,27 +5,29 @@ from contextlib import suppress
 
 from agents import Agent, RunConfig, RunHooks, Runner, RunResultStreaming, RunState, Session
 from agents.items import TResponseInputItem
+from agents.stream_events import RawResponsesStreamEvent
+from temporalio import workflow
 
 from opsmesh.agents.execution.cancellation import (
     cancel_active_tools,
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRuntimeContext
-from opsmesh.agents.execution.errors import AgentRuntimeCancelledError
-from opsmesh.agents.execution.observer import AgentRuntimeExecutionObserver
+from opsmesh.agents.execution.contracts import AgentExecutionContext, AgentRunRequest
+from opsmesh.agents.execution.errors import AgentExecutionCancelledError
+from opsmesh.agents.execution.observer import AgentExecutionObserver
 from opsmesh.agents.execution.providers.openai.results import runtime_stream_event_from_sdk_item
 
 
 async def run_openai_streamed(
     *,
     request: AgentRunRequest,
-    agent: Agent[AgentRuntimeContext],
-    runner_input: str | list[TResponseInputItem] | RunState[AgentRuntimeContext],
-    hooks: RunHooks[AgentRuntimeContext],
+    agent: Agent[AgentExecutionContext],
+    runner_input: str | list[TResponseInputItem] | RunState[AgentExecutionContext],
+    hooks: RunHooks[AgentExecutionContext],
     run_config: RunConfig | None,
     session: Session | None,
-    observer: AgentRuntimeExecutionObserver,
+    observer: AgentExecutionObserver,
 ) -> RunResultStreaming:
     await raise_if_cancelled(request.cancellation)
     result = Runner.run_streamed(
@@ -55,7 +57,9 @@ async def run_openai_streamed(
         watcher = asyncio.create_task(watch_cancellation())
     try:
         async for item in result.stream_events():
-            if request.stream:
+            if request.stream and not (
+                workflow.in_workflow() and isinstance(item, RawResponsesStreamEvent)
+            ):
                 mapped = runtime_stream_event_from_sdk_item(
                     item,
                     sequence=len(observer.stream_events) + 1,
@@ -74,5 +78,5 @@ async def run_openai_streamed(
     finally:
         await stop_cancellation_watcher(watcher)
     if cancelled.is_set():
-        raise AgentRuntimeCancelledError
+        raise AgentExecutionCancelledError
     return result

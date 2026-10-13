@@ -3,7 +3,7 @@
 import base64
 import re
 from importlib.metadata import version
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from opsmesh_plugin_sdk.packaging.distribution import (
     PluginCatalog,
@@ -15,26 +15,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.plugins.contracts import (
-    CandidateApproval,
-    CandidatePreviewRequest,
+    PluginCandidateInstallRequest,
+    PluginCandidatePreviewRequest,
     PluginInstallRequest,
-    SourceSettings,
-    SourceUpdate,
+    PluginSourceSettings,
+    PluginSourceUpdateRequest,
 )
+from opsmesh.capabilities.plugins.lifecycle import PluginLifecycleService
 from opsmesh.capabilities.plugins.models import (
     PluginBinding,
     PluginCandidate,
     PluginDownload,
-    PluginInstall,
-    PluginRelease,
+    PluginInstallation,
     PluginSource,
     PluginTrustKey,
 )
 from opsmesh.capabilities.plugins.policy import resource_configuration
-from opsmesh.capabilities.plugins.service import PluginService
 from opsmesh.capabilities.plugins.transport import validate_distribution_url
 from opsmesh.capabilities.references.schema import reject_embedded_secrets
 from opsmesh.governance.audit.service import AuditService
+from opsmesh.identity.authorization.context import AuthenticatedUser
+from opsmesh.platform.updates.admission import require_execution_admission
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.db.errors import flush_or_raise_conflict
 from opsmesh.shared.errors import ConflictError, NotFoundError, PolicyDeniedError
 from opsmesh.shared.utils import payload_hash
@@ -45,7 +48,7 @@ class PluginDistributionService:
         self.session = session
 
     def authorize(self, workspace_id: UUID, user_id: UUID) -> None:
-        PluginService(self.session).require_admin(workspace_id, user_id)
+        PluginLifecycleService(self.session).require_admin(workspace_id, user_id)
 
     def source(self, workspace_id: UUID, source_id: UUID) -> PluginSource:
         row = self.session.scalar(
@@ -77,7 +80,7 @@ class PluginDistributionService:
         self,
         workspace_id: UUID,
         user_id: UUID,
-        request: SourceSettings,
+        request: PluginSourceSettings,
         source_id: UUID | None = None,
     ) -> PluginSource:
         self.authorize(workspace_id, user_id)
@@ -91,7 +94,7 @@ class PluginDistributionService:
         else:
             source = self.source(workspace_id, source_id)
             if (
-                not isinstance(request, SourceUpdate)
+                not isinstance(request, PluginSourceUpdateRequest)
                 or request.expected_generation != source.generation
             ):
                 raise ConflictError("Plugin source changed; reload before modifying")
@@ -113,11 +116,13 @@ class PluginDistributionService:
     def enqueue(
         self,
         workspace_id: UUID,
-        user_id: UUID,
+        actor: AuthenticatedUser,
         source_id: UUID,
         request_key: str,
         candidate_id: UUID | None = None,
     ) -> PluginDownload:
+        require_execution_admission(self.session)
+        user_id = actor.user_id
         self.authorize(workspace_id, user_id)
         source = self.source(workspace_id, source_id)
         if not source.enabled:
@@ -141,6 +146,8 @@ class PluginDistributionService:
                 source.generation,
             ):
                 raise ConflictError("Download request key already has another intent")
+            if existing.actor_id != user_id or existing.actor_token_id != actor.token_id:
+                raise ConflictError("Download request key already belongs to another actor")
             self.session.commit()
             return existing
         job = PluginDownload(
@@ -148,11 +155,13 @@ class PluginDistributionService:
             source_id=source_id,
             candidate_id=candidate_id,
             actor_id=user_id,
+            actor_token_id=actor.token_id,
             request_key=request_key,
             source_generation=source.generation,
         )
         self.session.add(job)
         self.session.flush()
+        self._stage(job)
         self.audit(workspace_id, user_id, "download_queued", job.id, {})
         self.session.commit()
         return job
@@ -170,7 +179,9 @@ class PluginDistributionService:
             raise NotFoundError("Plugin download not found")
         return job
 
-    def retry(self, workspace_id: UUID, user_id: UUID, job_id: UUID) -> PluginDownload:
+    def retry(self, workspace_id: UUID, actor: AuthenticatedUser, job_id: UUID) -> PluginDownload:
+        require_execution_admission(self.session)
+        user_id = actor.user_id
         self.authorize(workspace_id, user_id)
         job = self.job(workspace_id, job_id)
         source = self.source(workspace_id, job.source_id)
@@ -182,9 +193,24 @@ class PluginDistributionService:
             raise ConflictError("Only failed downloads for the current source can be retried")
         job.status, job.attempts, job.error_code = "queued", 0, None
         job.actor_id = user_id
+        job.actor_token_id = actor.token_id
+        job.execution_id = uuid4()
+        self._stage(job)
         self.audit(workspace_id, user_id, "download_retried", job.id, {})
         self.session.commit()
         return job
+
+    def _stage(self, job: PluginDownload) -> None:
+        stage_execution(
+            self.session,
+            ExecutionRequest(
+                execution_id=job.execution_id,
+                workspace_id=job.workspace_id,
+                resource_id=job.id,
+                kind=ExecutionKind.PLUGIN_DOWNLOAD,
+                requested_by_user_id=job.actor_id,
+            ),
+        )
 
     def apply_catalog(self, source: PluginSource, catalog: PluginCatalog) -> None:
         existing = {
@@ -262,7 +288,7 @@ class PluginDistributionService:
         workspace_id: UUID,
         user_id: UUID,
         candidate_id: UUID,
-        request: CandidatePreviewRequest,
+        request: PluginCandidatePreviewRequest,
     ) -> dict[str, object]:
         self.authorize(workspace_id, user_id)
         candidate = self.candidate(workspace_id, candidate_id)
@@ -276,55 +302,50 @@ class PluginDistributionService:
             raise PolicyDeniedError("Plugin candidate is not available and verified")
         release = SignedPluginRelease.model_validate(candidate.verified_release)
         self.verify(candidate, release)
-        install = self.session.scalar(
-            select(PluginInstall).where(
-                PluginInstall.workspace_id == workspace_id,
-                PluginInstall.plugin_key == candidate.plugin_key,
+        install = None
+        if request.installation_id is not None:
+            install = PluginLifecycleService(self.session).require(
+                workspace_id, request.installation_id
             )
-        )
-        previous = (
-            None
-            if install is None
-            else self.session.scalar(
-                select(PluginRelease).where(
-                    PluginRelease.workspace_id == workspace_id,
-                    PluginRelease.install_id == install.id,
-                    PluginRelease.version == install.current_version,
-                )
-            )
-        )
-        old_permissions = set(previous.approved_permissions if previous else [])
+            if install.plugin_key != candidate.plugin_key:
+                raise ValueError("Candidate does not belong to this installation's plugin")
+        old_permissions = set(install.approved_permissions if install else [])
         manifest = release.release.package.manifest
         permissions = {p for cap in manifest.capabilities for p in cap.required_permissions}
         schemas = {cap.key: cap.configuration_schema for cap in manifest.capabilities}
-        if set(request.bindings) - set(schemas):
+        if {item.capability_key for item in request.bindings} - set(schemas):
             raise ValueError("Unknown capability binding")
-        proposed = {
-            cap.key: {
-                "resource_id": str(request.bindings[cap.key].resource_id),
+        capabilities = {cap.key: cap for cap in manifest.capabilities}
+        proposed = [
+            {
+                "capability_key": item.capability_key,
+                "resource_id": str(item.resource_id),
                 "configuration": resource_configuration(
-                    self.session, workspace_id, cap.kind, request.bindings[cap.key].resource_id
+                    self.session,
+                    workspace_id,
+                    capabilities[item.capability_key].kind,
+                    item.resource_id,
                 ),
             }
-            for cap in manifest.capabilities
-            if cap.key in request.bindings
-        }
+            for item in request.bindings
+        ]
         reject_embedded_secrets(proposed)
         current = (
-            {}
-            if previous is None
-            else {
-                row.capability_key: {
+            []
+            if install is None
+            else [
+                {
+                    "capability_key": row.capability_key,
                     "resource_id": str(row.resource_id),
                     "configuration": row.configuration,
                 }
                 for row in self.session.scalars(
                     select(PluginBinding).where(
                         PluginBinding.workspace_id == workspace_id,
-                        PluginBinding.release_id == previous.id,
+                        PluginBinding.install_id == install.id,
                     )
                 )
-            }
+            ]
         )
         result: dict[str, object] = {
             "candidate_id": str(candidate.id),
@@ -348,20 +369,27 @@ class PluginDistributionService:
         workspace_id: UUID,
         user_id: UUID,
         candidate_id: UUID,
-        request: CandidateApproval,
-    ) -> PluginInstall:
+        request: PluginCandidateInstallRequest,
+    ) -> PluginInstallation:
         preview = self.preview(
-            workspace_id, user_id, candidate_id, CandidatePreviewRequest(bindings=request.bindings)
+            workspace_id,
+            user_id,
+            candidate_id,
+            PluginCandidatePreviewRequest(
+                installation_id=request.installation_id, bindings=request.bindings
+            ),
         )
         if request.preview_digest != preview["preview_digest"]:
             raise ConflictError("Preview changed; review permissions and bindings again")
         candidate = self.candidate(workspace_id, candidate_id)
         release = SignedPluginRelease.model_validate(candidate.verified_release)
-        install = PluginService(self.session).install(
+        install = PluginLifecycleService(self.session).install(
             workspace_id,
             user_id,
             PluginInstallRequest(
                 package=release.release.package,
+                installation_id=request.installation_id,
+                instance_name=request.instance_name,
                 bindings=request.bindings,
                 approved_permissions=request.approved_permissions,
                 expected_generation=request.expected_generation,

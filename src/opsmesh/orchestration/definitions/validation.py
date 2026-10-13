@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.orchestration.definitions.contracts import WorkflowNode
 from opsmesh.orchestration.definitions.graph import (
@@ -167,14 +167,18 @@ class DefinitionValidationService:
 
     def _validate_mcp(self, workspace_id: UUID, nodes: list[WorkflowNode]) -> None:
         server_ids = {item.mcp_server_id for node in nodes for item in node.required_mcp_tools}
-        servers = self._session.scalars(
-            select(McpServer).where(
-                McpServer.workspace_id == workspace_id,
-                McpServer.id.in_(server_ids),
-                McpServer.status == "active",
-                McpServer.platform_blocked.is_(False),
-            )
-        ).all() if server_ids else []
+        servers = (
+            self._session.scalars(
+                select(MCPServer).where(
+                    MCPServer.workspace_id == workspace_id,
+                    MCPServer.id.in_(server_ids),
+                    MCPServer.status == "active",
+                    MCPServer.platform_blocked.is_(False),
+                )
+            ).all()
+            if server_ids
+            else []
+        )
         if {server.id for server in servers} != server_ids:
             raise DefinitionValidationError(
                 "Orchestration references an unavailable MCP server",
@@ -183,12 +187,12 @@ class DefinitionValidationService:
         for node in nodes:
             for item in node.required_mcp_tools:
                 allowlist = self._session.scalar(
-                    select(McpToolAllowlist).where(
-                        McpToolAllowlist.workspace_id == workspace_id,
-                        McpToolAllowlist.mcp_server_id == item.mcp_server_id,
-                        McpToolAllowlist.tool_name == item.tool_name,
-                        McpToolAllowlist.status == "active",
-                        McpToolAllowlist.platform_blocked.is_(False),
+                    select(MCPToolAllowlist).where(
+                        MCPToolAllowlist.workspace_id == workspace_id,
+                        MCPToolAllowlist.mcp_server_id == item.mcp_server_id,
+                        MCPToolAllowlist.tool_name == item.tool_name,
+                        MCPToolAllowlist.status == "active",
+                        MCPToolAllowlist.platform_blocked.is_(False),
                     )
                 )
                 if allowlist is None or (

@@ -1,137 +1,94 @@
-"""Map product workspace declarations only at the OpenAI SDK boundary."""
+"""Configure the OpenAI Agents SDK with a native Temporal sandbox client."""
 
 from __future__ import annotations
 
-import asyncio
-import io
-from pathlib import Path, PurePosixPath
-from typing import BinaryIO, cast
+from datetime import timedelta
+from typing import Any, Literal
 from uuid import UUID
 
-from agents.models.openai_provider import OpenAIProvider
-from agents.sandbox import Manifest, SandboxRunConfig
+from agents.run_config import SandboxRunConfig
 from agents.sandbox.capabilities import Filesystem, Memory, Shell
 from agents.sandbox.capabilities.capability import Capability
 from agents.sandbox.config import MemoryGenerateConfig, MemoryLayoutConfig, MemoryReadConfig
-from agents.sandbox.errors import WorkspaceReadNotFoundError
-from agents.sandbox.manifest import Environment
-from agents.sandbox.session import BaseSandboxSession, SandboxSessionState
-from agents.sandbox.snapshot import NoopSnapshot
-from agents.sandbox.types import ExecResult, User
+from agents.sandbox.manifest import Manifest
+from agents.sandbox.session import BaseSandboxClient, BaseSandboxSession
+from pydantic import PrivateAttr
+from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 from opsmesh.agents.execution.contracts import AgentRunRequest
-from opsmesh.agents.execution.providers.openai.memory_usage import (
-    MeteredMemoryModel,
-    memory_usage,
-)
-from opsmesh.agents.execution.providers.openai.settings import OpenAIModelSettingsMapper
-from opsmesh.agents.providers.model_api import OPENAI_RESPONSES_API, canonical_model_api
+from opsmesh.agents.execution.providers.openai.contracts import AgentModelReference
+from opsmesh.agents.execution.providers.openai.sandbox_tools import configure_sandbox_tools
+from opsmesh.agents.execution.providers.openai.settings import model_settings_from_config
 from opsmesh.resources.memory.policy import SDKMemoryPolicy
-from opsmesh.runtime.contracts import SandboxBinding
+from opsmesh.workspaces.projects.io.native import ProjectInputEntry, ProjectOutputHarvestRequest
 
 
-class OpsMeshSandboxSession(BaseSandboxSession):
-    """Expose an OpsMesh-owned runtime as a live OpenAI Agents SDK session.
+class ProjectFilesCapability(Capability):
+    """Declare product project inputs and collect final outputs through SDK hooks."""
 
-    The SDK owns agent capabilities and filesystem/shell tool behavior. OpsMesh retains
-    ownership of container allocation, pooling, policy, cleanup, and durable evidence.
+    type: Literal["opsmesh_project"] = "opsmesh_project"
+    workspace_id: UUID
+    run_id: UUID
+    backend_id: str
+    _binding: list[BaseSandboxSession] = PrivateAttr(default_factory=list)
+
+    def clone(self) -> ProjectFilesCapability:
+        # The final SDK run hook receives the Agent's declared capabilities, whereas
+        # the SDK binds a per-run clone. Only this product binding is shared with it.
+        return self.model_copy(deep=False)
+
+    def bind(self, session: BaseSandboxSession) -> None:
+        super().bind(session)
+        self._binding[:] = [session]
+
+    def process_manifest(self, manifest: Manifest) -> Manifest:
+        return manifest.model_copy(
+            update={
+                "entries": {
+                    **manifest.entries,
+                    ".opsmesh/project": ProjectInputEntry(
+                        workspace_id=self.workspace_id,
+                        run_id=self.run_id,
+                    ),
+                }
+            }
+        )
+
+    async def harvest(self) -> None:
+        if not self._binding:
+            raise ValueError("Project outputs require the SDK's bound native sandbox session")
+        # Persist through the native SDK before another worker collects outputs.
+        await self._binding[0].stop()
+        await workflow.execute_activity(
+            "opsmesh.project.harvest",
+            ProjectOutputHarvestRequest(
+                workspace_id=self.workspace_id,
+                run_id=self.run_id,
+                backend_id=self.backend_id,
+                session_state=self._binding[0].state.model_dump(mode="json"),
+            ),
+            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+            cancellation_type=workflow.ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+        )
+
+
+def sandbox_run_config(
+    client: BaseSandboxClient[Any], *, state: dict[str, object] | None
+) -> SandboxRunConfig:
+    """Build the SDK config from the registered Temporal sandbox client.
+
+    The locked Temporal plugin rejects session=, including its own proxy. Its
+    supported session_state= resumes the authorized reference; a public Worker
+    interceptor retains compute at the SDK cleanup boundary.
     """
-
-    def __init__(self, binding: SandboxBinding) -> None:
-        self._binding = binding
-        manifest = Manifest(
-            root=binding.manifest.root,
-            environment=Environment(value=dict(binding.manifest.environment)),
-        )
-        self.state = SandboxSessionState(
-            type="opsmesh",
-            session_id=binding.manifest.run_id,
-            snapshot=NoopSnapshot(id=str(binding.manifest.run_id)),
-            manifest=manifest,
-            workspace_root_ready=True,
-        )
-
-    async def start(self) -> None:
-        """Verify the worker-owned container before the SDK starts capability setup."""
-
-        if not await self.running():
-            raise RuntimeError("OpsMesh sandbox runtime is not running")
-        await super().start()
-
-    async def _exec_internal(
-        self,
-        *command: str | Path,
-        timeout: float | None = None,
-    ) -> ExecResult:
-        result = await asyncio.to_thread(
-            self._binding.session.executor.execute,
-            [str(part) for part in command],
-            timeout_seconds=max(1, int(timeout or 300)),
-            working_dir=self.state.manifest.root,
-        )
-        return ExecResult(
-            stdout=result.stdout,
-            stderr=result.stderr,
-            exit_code=result.exit_code,
-        )
-
-    async def _validate_path_access(
-        self,
-        path: Path | str,
-        *,
-        for_write: bool = False,
-    ) -> Path:
-        """Validate the normalized path against the live container filesystem.
-
-        The SDK's base implementation only normalizes paths locally.  An OpsMesh runtime is a
-        remote Docker filesystem, so the provider helper must also resolve symlinks and enforce
-        the workspace boundary inside that container before any read or write is attempted.
-        """
-
-        return await self._validate_remote_path_access(path, for_write=for_write)
-
-    async def read(self, path: Path, *, user: str | User | None = None) -> io.IOBase:
-        del user
-        try:
-            resolved = await self._check_read_with_exec(path)
-        except FileNotFoundError as exc:
-            raise WorkspaceReadNotFoundError(path=path, cause=exc) from exc
-        content = await asyncio.to_thread(
-            self._binding.session.executor.read_file,
-            PurePosixPath(resolved.as_posix()),
-        )
-        if content is None:
-            raise WorkspaceReadNotFoundError(path=resolved)
-        return io.BytesIO(content)
-
-    async def write(
-        self,
-        path: Path,
-        data: io.IOBase,
-        *,
-        user: str | User | None = None,
-    ) -> None:
-        del user
-        resolved = await self._check_write_with_exec(path)
-        await asyncio.to_thread(
-            self._binding.session.executor.write_file,
-            PurePosixPath(resolved.as_posix()),
-            cast(BinaryIO, data),
-        )
-
-    async def running(self) -> bool:
-        return await asyncio.to_thread(self._binding.session.executor.running)
-
-    async def persist_workspace(self) -> io.IOBase:
-        raise RuntimeError("OpsMesh persists project files outside the provider SDK lifecycle")
-
-    async def hydrate_workspace(self, data: io.IOBase) -> None:
-        del data
-        raise RuntimeError("OpsMesh hydrates project files before the provider SDK run")
-
-
-def sandbox_run_config(binding: SandboxBinding) -> SandboxRunConfig:
-    return SandboxRunConfig(session=OpsMeshSandboxSession(binding))
+    if state is None:
+        raise ValueError("Native sandbox execution requires an authorized session")
+    return SandboxRunConfig(
+        client=client,
+        session_state=client.deserialize_session_state(state),
+    )
 
 
 def sandbox_capabilities(
@@ -139,14 +96,32 @@ def sandbox_capabilities(
     *,
     profile_id: UUID | None = None,
     model_settings: dict[str, object] | None = None,
+    approval_reviews: dict[str, dict[str, object]] | None = None,
 ) -> list[Capability]:
-    """SDK Memory owns extraction and consolidation; platform selects its scoped storage."""
-    capabilities: list[Capability] = [Filesystem(), Shell()]
+    """Configure SDK-owned filesystem, shell, and optional memory capabilities."""
+    configure = configure_sandbox_tools(
+        request, approval_reviews if approval_reviews is not None else {}
+    )
+    capabilities: list[Capability] = [
+        Filesystem(configure_tools=configure),
+        Shell(configure_tools=configure),
+    ]
+    if request.context.metadata.get("project_workspace") is not None:
+        backend_id = request.context.metadata.get("sandbox_backend_id")
+        if not isinstance(backend_id, str):
+            raise ValueError("Project files require a registered native sandbox backend")
+        capabilities.append(
+            ProjectFilesCapability(
+                workspace_id=request.context.workspace_id,
+                run_id=request.context.run_id,
+                backend_id=backend_id,
+            )
+        )
     policy = SDKMemoryPolicy.model_validate(request.context.metadata.get("sdk_memory", {}))
     if not policy.enabled:
         return capabilities
-    if request.sandbox is None or not request.sandbox.session.persistent:
-        raise ValueError("SDK memory requires a persistent Runtime")
+    if request.sdk_sandbox_client is None:
+        raise ValueError("SDK memory requires a native Temporal sandbox client")
     profile_id = profile_id or request.agent_profile.id
     if request.context.user_id is None or profile_id is None:
         raise ValueError("SDK memory requires an authorized user and agent profile")
@@ -154,17 +129,20 @@ def sandbox_capabilities(
         raise ValueError("SDK memory requires reading or generation")
     generate = None
     if policy.generate:
-        if request.api_key is None:
-            raise ValueError("SDK memory generation requires a frozen provider credential")
-        model = OpenAIProvider(
-            api_key=request.api_key,
-            base_url=request.base_url,
-            use_responses=canonical_model_api(request.model_api) == OPENAI_RESPONSES_API,
-        ).get_model(request.model or request.agent_profile.model)
-        meter = memory_usage.get()
-        if meter is not None:
-            model = MeteredMemoryModel(model, meter, request)
-        settings = OpenAIModelSettingsMapper().map_settings(
+        if request.model_provider_credential_id is None:
+            raise ValueError("SDK memory generation requires an authorized credential reference")
+        # Memory uses SDK Runner internally. A model reference lets the official
+        # Temporal plugin route those calls through its authorized model Activity.
+        model = AgentModelReference(
+            workspace_id=request.context.workspace_id,
+            run_id=request.context.run_id,
+            agent_profile_id=profile_id,
+            credential_id=request.model_provider_credential_id,
+            model=request.model or request.agent_profile.model,
+            model_api=request.model_api,
+            purpose="memory",
+        ).encode()
+        settings = model_settings_from_config(
             model_settings if model_settings is not None else request.agent_profile.model_settings
         )
         generate = MemoryGenerateConfig(

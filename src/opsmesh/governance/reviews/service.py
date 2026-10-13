@@ -2,14 +2,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.reviews.configured import ConfiguredApprovalService
-from opsmesh.governance.reviews.models import ResourceReview
+from opsmesh.governance.reviews.configured import ApprovalPolicyEvaluationService
+from opsmesh.governance.reviews.contracts import ResourceReviewResult
 from opsmesh.shared.config import Settings
 
 
-class ResourcePolicyReviewBuilder:
+class ResourcePolicyReviewService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
-        self._reviewer = ConfiguredApprovalService(session, settings)
+        self._reviewer = ApprovalPolicyEvaluationService(session, settings)
 
     def review_agent_profile(
         self,
@@ -24,7 +24,7 @@ class ResourcePolicyReviewBuilder:
         tool_policy: dict[str, object],
         runtime_policy: dict[str, object],
         approval_policy: dict[str, object],
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="agent_profile",
@@ -49,7 +49,7 @@ class ResourcePolicyReviewBuilder:
         visibility: str,
         manifest: dict[str, object],
         capability_keys: list[str],
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="skill",
@@ -70,7 +70,7 @@ class ResourcePolicyReviewBuilder:
         category: str,
         description: str,
         default_policy: dict[str, object],
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="capability",
@@ -91,7 +91,7 @@ class ResourcePolicyReviewBuilder:
         server_type: str,
         connection: dict[str, object],
         visibility: str,
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="mcp_server",
@@ -112,7 +112,7 @@ class ResourcePolicyReviewBuilder:
         requires_approval: bool,
         risk_level: str,
         policy: dict[str, object],
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="mcp_tool_allowlist",
@@ -137,7 +137,7 @@ class ResourcePolicyReviewBuilder:
         external_ref: str,
         scopes: list[str],
         has_secret_payload: bool,
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="mcp_credential_reference",
@@ -155,14 +155,13 @@ class ResourcePolicyReviewBuilder:
 
     def review_plugin(
         self, *, workspace_id: UUID | None, visibility: str, name: str, manifest: dict[str, object]
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         return self._review(
             workspace_id=workspace_id,
             resource_type="plugin",
             visibility=visibility,
             resource={"visibility": visibility, "name": name, "manifest": manifest},
         )
-
 
     def _review(
         self,
@@ -171,7 +170,7 @@ class ResourcePolicyReviewBuilder:
         resource_type: str,
         visibility: str,
         resource: dict[str, object],
-    ) -> ResourceReview:
+    ) -> ResourceReviewResult:
         if workspace_id is None:
             raise ValueError("Workspace is required for resource approval configuration")
         review = self._reviewer.review(
@@ -183,4 +182,6 @@ class ResourcePolicyReviewBuilder:
         )
         if review.blocked:
             raise ValueError("Resource denied by configured approval policy")
-        return ResourceReview(review.required, review.risk_level, review.reasons, review.signals)
+        return ResourceReviewResult(
+            review.required, review.risk_level, review.reasons, review.signals
+        )

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,20 +10,19 @@ from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.authorization.permissions import WorkspaceAction, WorkspaceRole
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.approvals.pending_tools import PendingToolInvocationService
 from opsmesh.orchestration.approvals.run_gate import ApprovalRunGateService
-from opsmesh.orchestration.runs.models import AgentRunStateSnapshot
+from opsmesh.orchestration.runs.models import AgentResumeStateSnapshot
 from opsmesh.resources.memory.episodic import AgentEpisodicMemoryService
 from opsmesh.runtime.commands.approvals import apply_command_decision
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.outbox import stage_signal
 from opsmesh.shared.config import get_settings
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
@@ -32,11 +31,9 @@ class ApprovalDecisionService:
     def __init__(
         self,
         session: Session,
-        queue: RedisQueue | None = None,
         secrets: SecretEncryptionService | None = None,
     ) -> None:
         self._session = session
-        self._queue = queue
         settings = get_settings()
         self._secrets = secrets or SecretEncryptionService(
             secret=settings.credential_encryption_secret,
@@ -50,14 +47,14 @@ class ApprovalDecisionService:
     def require_actor(self, approval: Approval, actor: AuthenticatedUser) -> None:
         authorization = AuthenticationService(self._session)
         actor = authorization.refresh_authenticated_user(actor)
-        context = AuthorizationService(self._session).require_workspace(
+        context = WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=actor.user_id,
             workspace_id=approval.workspace_id,
             action=WorkspaceAction.APPROVE,
             authenticated_user=actor,
         )
         if approval.approval_type == "runtime.command.control":
-            AuthorizationService(self._session).require_workspace(
+            WorkspaceAuthorizationService(self._session).require_workspace(
                 user_id=actor.user_id,
                 workspace_id=approval.workspace_id,
                 action=WorkspaceAction.MANAGE_RUNTIME,
@@ -67,7 +64,7 @@ class ApprovalDecisionService:
             WorkspaceRole.OWNER,
             WorkspaceRole.ADMIN,
         }:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         if approval.task_id is not None:
             ResourceAuthorizationService(self._session, actor).require(
                 approval.workspace_id, ResourceKind.TASK, approval.task_id, ResourceAction.APPROVE
@@ -96,7 +93,7 @@ class ApprovalDecisionService:
             return approval
         if approval.status != "pending":
             raise ValueError("Approval is not pending")
-        apply_command_decision(self._session, approval, user_id, status, self._queue)
+        apply_command_decision(self._session, approval, status)
         approval.status = status
         approval.decided_by_user_id = user_id
         approval.decision_reason = reason
@@ -111,9 +108,9 @@ class ApprovalDecisionService:
         )
         if invocation is not None:
             snapshot = self._session.scalar(
-                select(AgentRunStateSnapshot).where(
-                    AgentRunStateSnapshot.workspace_id == approval.workspace_id,
-                    AgentRunStateSnapshot.agent_run_id == invocation.agent_run_id,
+                select(AgentResumeStateSnapshot).where(
+                    AgentResumeStateSnapshot.workspace_id == approval.workspace_id,
+                    AgentResumeStateSnapshot.agent_run_id == invocation.agent_run_id,
                 )
             )
             if snapshot is not None:
@@ -130,27 +127,35 @@ class ApprovalDecisionService:
         )
         if status == "rejected" and invocation is None:
             ApprovalRunGateService(self._session).fail_rejected_run(approval)
-        if (
-            (status == "approved" or invocation is not None)
-            and approval.agent_run_id is not None
-            and self._queue is not None
-        ):
-            self._enqueue_resume(approval, user_id, status)
+        # A rejection is also a durable wake-up. The run may already be failed by
+        # its gate, but its Workflow must leave approval wait and close as well.
+        if approval.agent_run_id is not None:
+            self._stage_resume(approval)
         self._session.commit()
         self._session.refresh(approval)
         return approval
 
-    def _enqueue_resume(self, approval: Approval, user_id: UUID, status: str) -> None:
-        if self._queue is None or approval.agent_run_id is None:
+    def _stage_resume(self, approval: Approval) -> None:
+        if approval.agent_run_id is None:
             return
-        self._queue.enqueue(
-            JobPayload(
-                workspace_id=approval.workspace_id,
-                job_type=JobType.AGENT_RUN,
-                resource_id=approval.agent_run_id,
-                requested_by_user_id=user_id,
-                idempotency_key=(f"approval.resume:{status}:{approval.workspace_id}:{approval.id}"),
+        from opsmesh.orchestration.runs.models import AgentRun
+        from opsmesh.orchestration.runs.temporal import run_execution_reference
+
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == approval.workspace_id,
+                AgentRun.id == approval.agent_run_id,
             )
+        )
+        if run is None:
+            raise ValueError("Approval run is unavailable")
+        stage_signal(
+            self._session,
+            dispatch_id=uuid4(),
+            workspace_id=approval.workspace_id,
+            workflow_id=run_execution_reference(self._session, run).workflow_id,
+            signal_name="approval",
+            resource_id=approval.id,
         )
 
     def _append_audit_event(self, approval: Approval, user_id: UUID, action: str) -> None:

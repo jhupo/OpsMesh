@@ -42,8 +42,12 @@ def upgrade() -> None:
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("retracted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_announcements")),
     )
@@ -66,8 +70,12 @@ def upgrade() -> None:
         sa.Column("notification_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["announcement_id"],
             ["platform_announcements.id"],
@@ -110,8 +118,12 @@ def upgrade() -> None:
         sa.Column("approval_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("security_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_user_notification_preferences")),
@@ -129,7 +141,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_user_notification_preferences_user", table_name="user_notification_preferences")
+    op.drop_index(
+        "ix_user_notification_preferences_user", table_name="user_notification_preferences"
+    )
     op.drop_table("user_notification_preferences")
     op.drop_index(
         "ix_platform_announcement_recipients_workspace_user",

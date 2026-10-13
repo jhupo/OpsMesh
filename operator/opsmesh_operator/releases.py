@@ -20,7 +20,7 @@ _DOWNLOAD_DEADLINE_SECONDS = 7200
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
-class ReleaseSource:
+class ReleaseDownloader:
     def __init__(self, repository: str) -> None:
         if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
             raise ValueError("Invalid release repository")
@@ -125,9 +125,7 @@ class ReleaseSource:
         if not isinstance(raw_assets, list):
             raise ValueError("Release assets are not a list")
         assets = [
-            asset
-            for asset in raw_assets
-            if isinstance(asset, dict) and asset.get("name") == name
+            asset for asset in raw_assets if isinstance(asset, dict) and asset.get("name") == name
         ]
         if len(assets) != 1:
             raise ValueError("Release asset identity mismatch")
@@ -136,9 +134,10 @@ class ReleaseSource:
             raise ValueError("Release asset identity mismatch")
         asset_url: str = asset_url_value
         expected_prefix = f"https://api.github.com/repos/{self.repository}/releases/assets/"
-        if not asset_url.startswith(expected_prefix) or not asset_url.removeprefix(
-            expected_prefix
-        ).isdigit():
+        if (
+            not asset_url.startswith(expected_prefix)
+            or not asset_url.removeprefix(expected_prefix).isdigit()
+        ):
             raise ValueError("Release asset endpoint is outside the repository")
         return asset_url
 
@@ -195,9 +194,9 @@ class ReleaseSource:
                 response.raise_for_status()
                 return response.json()
             except (httpx.HTTPError, ValueError) as exc:
-                if not ReleaseSource._retryable(exc) or attempt + 1 == _DOWNLOAD_ATTEMPTS:
+                if not ReleaseDownloader._retryable(exc) or attempt + 1 == _DOWNLOAD_ATTEMPTS:
                     raise
-                ReleaseSource._wait_before_retry(attempt, deadline)
+                ReleaseDownloader._wait_before_retry(attempt, deadline)
         raise RuntimeError("Release metadata retry loop ended unexpectedly")
 
     @staticmethod

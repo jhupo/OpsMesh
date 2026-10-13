@@ -22,6 +22,10 @@ from opsmesh.resources.transfers.importers.preview import (
 )
 from opsmesh.runtime.spaces.models import RuntimeSpace
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
+from opsmesh.teams.management.policy import (
+    validate_team_configuration,
+    validate_team_reporting_graph,
+)
 
 
 class TeamMetadataImporter:
@@ -37,6 +41,7 @@ class TeamMetadataImporter:
 
     def _import_team_records(self, ctx: WorkspaceMetadataImportContext) -> None:
         for item in ctx.request.export.teams[: ctx.request.max_items_per_collection]:
+            validate_team_configuration(item)
             source_id = _string_field(item, "id")
             imported_name = _resolved_import_name(
                 ctx.request,
@@ -105,8 +110,8 @@ class TeamMetadataImporter:
     def _import_member_records(
         self,
         ctx: WorkspaceMetadataImportContext,
-    ) -> list[tuple[AgentTeamMember, str, str]]:
-        pending: list[tuple[AgentTeamMember, str, str]] = []
+    ) -> list[tuple[UUID, UUID, str, str]]:
+        pending: list[tuple[UUID, UUID, str, str]] = []
         for item in ctx.request.export.team_members[: ctx.request.max_items_per_collection]:
             source_id = _string_field(item, "id")
             team_id = self._dependency(
@@ -131,8 +136,10 @@ class TeamMetadataImporter:
                 self._skip_missing_member(ctx, item, source_id)
                 continue
             ctx.created_counts["team_members"] += 1
+            reports_to_id = _string_field(item, "reports_to_member_id")
             if ctx.request.dry_run:
                 ctx.id_map["team_members"][source_id] = source_id
+                pending.append((UUID(source_id), UUID(team_id), source_id, reports_to_id))
                 continue
             member = AgentTeamMember(
                 workspace_id=ctx.workspace.id,
@@ -154,19 +161,29 @@ class TeamMetadataImporter:
             self._session.add(member)
             self._session.flush()
             ctx.id_map["team_members"][source_id] = str(member.id)
-            reports_to_id = _string_field(item, "reports_to_member_id")
-            if reports_to_id:
-                pending.append((member, source_id, reports_to_id))
+            pending.append((member.id, member.agent_team_id, source_id, reports_to_id))
         return pending
 
     def _resolve_reports_to(
         self,
         ctx: WorkspaceMetadataImportContext,
-        pending: list[tuple[AgentTeamMember, str, str]],
+        pending: list[tuple[UUID, UUID, str, str]],
     ) -> None:
-        if ctx.request.dry_run:
-            return
-        for member, source_id, source_reports_to_id in pending:
+        team_ids = {team_id for _, team_id, _, _ in pending}
+        existing = self._session.scalars(
+            select(AgentTeamMember).where(
+                AgentTeamMember.workspace_id == ctx.workspace.id,
+                AgentTeamMember.agent_team_id.in_(team_ids),
+            )
+        ).all()
+        graphs: dict[UUID, dict[UUID, UUID | None]] = {team_id: {} for team_id in team_ids}
+        for member in existing:
+            graphs[member.agent_team_id][member.id] = member.reports_to_member_id
+        for member_id, team_id, _, _ in pending:
+            graphs[team_id][member_id] = None
+        for member_id, team_id, source_id, source_reports_to_id in pending:
+            if not source_reports_to_id:
+                continue
             reports_to_id = self._dependency(
                 ctx,
                 collection="team_members",
@@ -176,7 +193,14 @@ class TeamMetadataImporter:
                 id_map_key="team_members",
                 model=AgentTeamMember,
             )
-            member.reports_to_member_id = _uuid_or_none(reports_to_id)
+            if reports_to_id is None:
+                raise ValueError("Reporting manager team member was not imported or resolved")
+            graphs[team_id][member_id] = UUID(reports_to_id)
+        for graph in graphs.values():
+            validate_team_reporting_graph(graph)
+        if not ctx.request.dry_run:
+            for member in existing:
+                member.reports_to_member_id = graphs[member.agent_team_id][member.id]
 
     def _dependency(
         self,
@@ -227,9 +251,12 @@ class TeamMetadataImporter:
         )
 
     def _team_exists(self, workspace_id: UUID, name: str) -> bool:
-        return self._session.scalar(
-            select(AgentTeam.id).where(
-                AgentTeam.workspace_id == workspace_id,
-                AgentTeam.name == name,
+        return (
+            self._session.scalar(
+                select(AgentTeam.id).where(
+                    AgentTeam.workspace_id == workspace_id,
+                    AgentTeam.name == name,
+                )
             )
-        ) is not None
+            is not None
+        )

@@ -5,13 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.identity.users.admin_schemas import (
     AdminUserCreateRequest,
     AdminUserCreateResponse,
     AdminUserDetailResponse,
-    AdminUserListResponse,
+    AdminUserListItemResponse,
     AdminUserPasswordResetResponse,
     AdminUserResponse,
     AdminUserStatusUpdateRequest,
@@ -19,7 +19,7 @@ from opsmesh.identity.users.admin_schemas import (
     AdminUserUpdateRequest,
 )
 from opsmesh.identity.users.models import User
-from opsmesh.identity.users.service import IdentityAdminService
+from opsmesh.identity.users.service import AdminUserService
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.client_ip import security_request_context
@@ -46,7 +46,7 @@ def _member_response(member: WorkspaceMember, user: User) -> AdminWorkspaceMembe
 
 
 def _user_detail(
-    service: IdentityAdminService,
+    service: AdminUserService,
     user: User,
 ) -> AdminUserDetailResponse:
     memberships = [
@@ -66,20 +66,20 @@ def _user_detail(
     )
 
 
-@router.get("/users", response_model=PageResponse[AdminUserListResponse])
+@router.get("/users", response_model=PageResponse[AdminUserListItemResponse])
 def list_admin_users(
     page: PageParams = Depends(pagination_params),
     user_status: Literal["active", "disabled", "invited"] | None = Query(
         default=None, alias="status"
     ),
     session: Session = Depends(get_db_session),
-) -> PageResponse[AdminUserListResponse]:
-    service = IdentityAdminService(session)
+) -> PageResponse[AdminUserListItemResponse]:
+    service = AdminUserService(session)
     users, total = service.list_users(page, status=user_status)
     summaries = service.user_organization_summaries([user.id for user in users])
     return PageResponse(
         items=[
-            AdminUserListResponse.model_validate(user).model_copy(update=summaries[user.id])
+            AdminUserListItemResponse.model_validate(user).model_copy(update=summaries[user.id])
             for user in users
         ],
         total=total,
@@ -99,7 +99,7 @@ def create_admin_user(
     session: Session = Depends(get_db_session),
 ) -> AdminUserCreateResponse:
     initial_password = payload.password or token_urlsafe(32)
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     try:
         user = service.create_user(
             email=payload.email,
@@ -110,7 +110,7 @@ def create_admin_user(
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_created",
         outcome="allowed",
@@ -139,7 +139,7 @@ def get_admin_user(
     user_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> AdminUserDetailResponse:
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     user = service.get_user(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -153,7 +153,7 @@ def update_admin_user(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> AdminUserResponse:
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     try:
         user = service.update_user(
             user_id,
@@ -165,7 +165,7 @@ def update_admin_user(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_updated",
         outcome="allowed",
@@ -191,12 +191,12 @@ def reset_admin_user_password(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> AdminUserPasswordResetResponse:
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     result = service.reset_password(user_id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user, temporary_password = result
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_password_reset",
         outcome="allowed",
@@ -228,11 +228,11 @@ def revoke_admin_user_tokens(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> AdminUserTokenRevokeResponse:
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     revoked = service.revoke_tokens(user_id)
     if revoked is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_tokens_revoked",
         outcome="allowed",
@@ -252,14 +252,14 @@ def update_admin_user_status(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> AdminUserResponse:
-    service = IdentityAdminService(session)
+    service = AdminUserService(session)
     try:
         user = service.set_user_status(user_id, status=payload.status)
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_status_changed",
         outcome="allowed",

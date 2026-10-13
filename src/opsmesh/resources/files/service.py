@@ -12,8 +12,8 @@ from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import FileAccessEvent, WorkspaceFile
 from opsmesh.resources.files.runtime_policy import validate_file_runtime_policy
 from opsmesh.resources.files.security import safe_filename
-from opsmesh.resources.memory.indexing import WorkspaceMemoryIndexingService
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.memory.indexing import WorkspaceMemoryIndexingService, stage_memory_index
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.storage.transactions import CompensatingObjectStorageWrites
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
@@ -67,6 +67,13 @@ class WorkspaceFileService:
             self._session.add(file)
             self._session.flush()
             writes.write_new(file.storage_key, content)
+            stage_memory_index(
+                session=self._session,
+                workspace_id=workspace_id,
+                source_type="workspace_file",
+                source_id=file.id,
+                requested_by_user_id=uploaded_by_user_id,
+            )
             self._session.commit()
         except Exception:
             try:
@@ -78,12 +85,21 @@ class WorkspaceFileService:
         self._session.refresh(file)
         return file
 
-    def read_file(
+    def download_file(
         self,
         workspace_id: UUID,
         file_id: UUID,
         user_id: UUID | None = None,
     ) -> tuple[WorkspaceFile, bytes]:
+        """Download an active tenant file and record the access before reading.
+
+        Commits the entire borrowed Session, including the download access event,
+        before reading object storage. A storage read failure therefore leaves
+        the access record committed. The storage client remains caller-owned.
+
+        Raises:
+            FileNotFoundError: The file is absent, inactive or outside the tenant.
+        """
         file = self._session.scalar(
             select(WorkspaceFile).where(
                 WorkspaceFile.workspace_id == workspace_id, WorkspaceFile.id == file_id
@@ -205,12 +221,21 @@ class WorkspaceFileService:
         )
         return task, work_package_ids, artifacts
 
-    def read_artifact(
+    def download_artifact(
         self,
         workspace_id: UUID,
         artifact_id: UUID,
         user_id: UUID | None = None,
     ) -> tuple[Artifact, bytes]:
+        """Download a tenant artifact and record the access before reading.
+
+        Commits the entire borrowed Session, including the download access event,
+        before reading object storage. A storage read failure therefore leaves
+        the access record committed. The storage client remains caller-owned.
+
+        Raises:
+            FileNotFoundError: The artifact is absent or outside the tenant.
+        """
         artifact = self._session.scalar(
             select(Artifact).where(
                 Artifact.workspace_id == workspace_id, Artifact.id == artifact_id

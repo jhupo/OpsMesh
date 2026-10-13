@@ -1,26 +1,50 @@
-from datetime import UTC, datetime, timedelta
+import os
+import subprocess
+import sys
 
 import fakeredis
+import pytest
 from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.main import create_app
-from opsmesh.runtime.workers.models import WorkerNode
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.errors import QuotaExceededError
+from opsmesh.shared.errors import ConflictError
 from opsmesh.shared.redis.dependencies import get_redis_client
+from tests.fixtures.database import product_engine
+
+
+@pytest.fixture(autouse=True)
+def temporal_readiness(monkeypatch):
+    async def available(request):
+        return "ok"
+
+    monkeypatch.setattr("opsmesh.platform.health.routes._check_temporal", available)
 
 
 def test_health_endpoint_returns_service_status() -> None:
-    app = create_app(Settings(environment="test", log_format="text"))
+    # Native OTel providers cannot be restarted after another app shuts them down.
+    if os.getenv("OPSMESH_ISOLATED_HEALTH_TRACE") != "1":
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                f"{__file__}::test_health_endpoint_returns_service_status",
+            ],
+            env={**os.environ, "OPSMESH_ISOLATED_HEALTH_TRACE": "1"},
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        return
+    app = create_app(Settings(environment="test", log_format="text", otel_excluded_urls=""))
     client = TestClient(app)
 
     response = client.get(
@@ -35,9 +59,7 @@ def test_health_endpoint_returns_service_status() -> None:
     assert response.headers["X-Request-ID"] == "test-request-id"
     assert response.headers["X-Trace-ID"] == "0123456789abcdef0123456789abcdef"
     assert response.headers["X-Parent-Span-ID"] == "abcdef0123456789"
-    assert response.headers["traceparent"].startswith(
-        "00-0123456789abcdef0123456789abcdef-"
-    )
+    assert response.headers["traceparent"].startswith("00-0123456789abcdef0123456789abcdef-")
     assert int(response.headers["X-Process-Time-Ms"]) >= 0
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
@@ -80,6 +102,7 @@ def test_liveness_and_startup_endpoints_return_split_health_status() -> None:
     assert startup.json()["dependencies"] == {
         "configuration": "ok",
         "storage": "ok",
+        "temporal": "ok",
     }
 
 
@@ -132,71 +155,8 @@ def test_readiness_endpoint_checks_dependencies() -> None:
         "database": "ok",
         "redis": "ok",
         "storage": "ok",
-        "worker_queue": "ok",
-        "workers_online": "disabled",
+        "temporal": "ok",
     }
-    session.close()
-
-
-def test_readiness_endpoint_can_require_recent_online_worker() -> None:
-    app, session = _health_client_app(
-        Settings(
-            environment="test",
-            log_format="text",
-            storage_root=".opsmesh-test-storage",
-            readiness_worker_check_enabled=True,
-            readiness_worker_stale_after_seconds=120,
-        )
-    )
-    session.add(
-        WorkerNode(
-            worker_id="worker-ready",
-            worker_type="cloud",
-            status="online",
-            queue_name="agent_runs",
-            capacity={"max_jobs": 2},
-            details={},
-            last_seen_at=datetime.now(UTC) - timedelta(seconds=30),
-        )
-    )
-    session.commit()
-    client = TestClient(app)
-
-    response = client.get("/api/v1/health/ready")
-
-    assert response.status_code == 200
-    assert response.json()["dependencies"]["workers_online"] == "ok"
-    session.close()
-
-
-def test_readiness_endpoint_returns_503_when_required_workers_are_stale() -> None:
-    app, session = _health_client_app(
-        Settings(
-            environment="test",
-            log_format="text",
-            storage_root=".opsmesh-test-storage",
-            readiness_worker_check_enabled=True,
-            readiness_worker_stale_after_seconds=120,
-        )
-    )
-    session.add(
-        WorkerNode(
-            worker_id="worker-stale",
-            worker_type="cloud",
-            status="online",
-            queue_name="agent_runs",
-            capacity={"max_jobs": 2},
-            details={},
-            last_seen_at=datetime.now(UTC) - timedelta(seconds=300),
-        )
-    )
-    session.commit()
-    client = TestClient(app)
-
-    response = client.get("/api/v1/health/ready")
-
-    assert response.status_code == 503
-    assert response.json()["error"]["details"]["dependencies"]["workers_online"] == "stale"
     session.close()
 
 
@@ -270,9 +230,9 @@ def test_domain_errors_use_consistent_error_envelope() -> None:
 
     @app.get("/domain-error-demo")
     async def domain_error_demo() -> None:
-        raise QuotaExceededError(
-            "Runtime quota exceeded",
-            details={"quota_key": "memory_mb"},
+        raise ConflictError(
+            "Resource update conflict",
+            details={"resource": "test"},
         )
 
     client = TestClient(app)
@@ -280,9 +240,9 @@ def test_domain_errors_use_consistent_error_envelope() -> None:
     response = client.get("/domain-error-demo")
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "quota_exceeded"
-    assert response.json()["error"]["message"] == "Runtime quota exceeded"
-    assert response.json()["error"]["details"] == {"quota_key": "memory_mb"}
+    assert response.json()["error"]["code"] == "conflict"
+    assert response.json()["error"]["message"] == "Resource update conflict"
+    assert response.json()["error"]["details"] == {"resource": "test"}
     assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
 
 
@@ -295,13 +255,7 @@ def _health_client_app(
     settings: Settings | None = None,
     redis: object | None = None,
 ) -> tuple[FastAPI, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        future=True,
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = session_factory()
@@ -313,12 +267,3 @@ def _health_client_app(
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_redis_client] = lambda: redis or fakeredis.FakeRedis()
     return app, session
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.auth.dependencies import account_action_dependency, get_current_user
 from opsmesh.identity.auth.schemas import (
     CurrentUserResponse,
@@ -411,7 +411,7 @@ def _record_auth_event(
     user_id: UUID | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action=action,
         outcome=outcome,

@@ -11,7 +11,7 @@ from opsmesh.orchestration.scheduling.schemas import (
     ScheduledJobResponse,
 )
 from opsmesh.orchestration.scheduling.service import WorkspaceScheduledJobService
-from opsmesh.orchestration.scheduling.types import ScheduledJobCreate
+from opsmesh.orchestration.scheduling.types import ScheduledJobCreateCommand
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
@@ -32,16 +32,14 @@ def create_scheduled_job(
         scheduled_job = WorkspaceScheduledJobService(session).create(
             workspace=context.workspace,
             user_id=context.user.user_id,
-            data=ScheduledJobCreate(
+            data=ScheduledJobCreateCommand(
                 name=request.name,
                 schedule_type=request.schedule.type,
                 schedule_config=request.schedule.as_config(),
                 action_type=request.action_type,
-                job_type=request.job_type,
+                execution_kind=request.execution_kind,
                 resource_id=request.resource_id,
-                routing=request.routing,
-                priority=request.priority,
-                max_attempts=request.max_attempts,
+                parameters=request.parameters,
                 metadata=request.metadata,
             ),
         )

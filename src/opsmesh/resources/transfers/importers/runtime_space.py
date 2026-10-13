@@ -31,11 +31,14 @@ class RuntimeSpaceMetadataImporter:
         if ctx.request.import_runtime_spaces:
             for item in ctx.request.export.runtime_spaces[: ctx.request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                if _resolution_action(
-                    ctx.request,
-                    "runtime_spaces",
-                    source_id,
-                ) == "exclude_runtime_space":
+                if (
+                    _resolution_action(
+                        ctx.request,
+                        "runtime_spaces",
+                        source_id,
+                    )
+                    == "exclude_runtime_space"
+                ):
                     ctx.skipped_counts["runtime_spaces"] += 1
                     continue
                 imported_name = _resolved_import_name(
@@ -82,9 +85,8 @@ class RuntimeSpaceMetadataImporter:
                     scope=_string_field(item, "scope", "ctx.workspace"),
                     status="active",
                     policy=runtime_policy,
-                    network_policy=_dict_field(item, "network_policy"),
-                    storage_policy=_dict_field(item, "storage_policy"),
-                    cleanup_policy=_dict_field(item, "cleanup_policy"),
+                    storage_metadata=_dict_field(item, "storage_metadata"),
+                    cleanup_metadata=_dict_field(item, "cleanup_metadata"),
                 )
                 self._session.add(runtime_space)
                 self._session.flush()
@@ -94,11 +96,14 @@ class RuntimeSpaceMetadataImporter:
                 : ctx.request.max_items_per_collection
             ]:
                 source_id = _string_field(item, "id")
-                if _resolution_action(
-                    ctx.request,
-                    "runtime_space_quotas",
-                    source_id,
-                ) == "exclude_quota":
+                if (
+                    _resolution_action(
+                        ctx.request,
+                        "runtime_space_quotas",
+                        source_id,
+                    )
+                    == "exclude_quota"
+                ):
                     ctx.skipped_counts["runtime_space_quotas"] += 1
                     continue
                 runtime_space_id = resolved_dependency_id(
@@ -156,9 +161,12 @@ class RuntimeSpaceMetadataImporter:
                 ctx.id_map["runtime_space_quotas"][source_id] = str(quota.id)
 
     def _runtime_space_exists(self, workspace_id: UUID, name: str) -> bool:
-        return self._session.scalar(
-            select(RuntimeSpace.id).where(
-                RuntimeSpace.workspace_id == workspace_id,
-                RuntimeSpace.name == name,
+        return (
+            self._session.scalar(
+                select(RuntimeSpace.id).where(
+                    RuntimeSpace.workspace_id == workspace_id,
+                    RuntimeSpace.name == name,
+                )
             )
-        ) is not None
+            is not None
+        )

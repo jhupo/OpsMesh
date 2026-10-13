@@ -9,10 +9,10 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 
 
-class WorkspaceMemberResponse(TimestampedModel):
+class WorkspaceMemberResponse(TimestampedContract):
     workspace_id: UUID
     user_id: UUID
     role: str
@@ -62,7 +62,7 @@ class WorkspaceInviteAcceptRequest(BaseModel):
     token: str = Field(min_length=16, max_length=512)
 
 
-class WorkspaceInviteResponse(TimestampedModel):
+class WorkspaceInviteResponse(TimestampedContract):
     workspace_id: UUID
     email: str
     role: str

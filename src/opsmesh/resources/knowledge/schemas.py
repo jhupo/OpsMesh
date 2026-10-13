@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 KnowledgeSourceType = Literal["url", "workspace_file", "text"]
@@ -69,7 +69,7 @@ class KnowledgeSourceStatusRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
-class KnowledgeSourceResponse(TimestampedModel):
+class KnowledgeSourceResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID | None
     name: str
@@ -89,7 +89,7 @@ class KnowledgeSourceResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class KnowledgeSourceIngestionResponse(TimestampedModel):
+class KnowledgeSourceIngestionResponse(TimestampedContract):
     workspace_id: UUID
     source_id: UUID
     requested_by_user_id: UUID | None
@@ -104,7 +104,7 @@ class KnowledgeSourceIngestionResponse(TimestampedModel):
     completed_at: datetime | None
 
 
-class KnowledgeCitationResponse(TimestampedModel):
+class KnowledgeCitationResponse(TimestampedContract):
     workspace_id: UUID
     source_id: UUID
     ingestion_id: UUID
@@ -118,7 +118,7 @@ class KnowledgeCitationResponse(TimestampedModel):
     quote_sha256: str
 
 
-class KnowledgeSourceRevisionResponse(ORMModel):
+class KnowledgeSourceRevisionResponse(FromAttributesContract):
     id: UUID
     created_at: datetime
     workspace_id: UUID

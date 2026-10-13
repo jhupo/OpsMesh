@@ -1,13 +1,14 @@
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 from uuid import UUID
 
+from opentelemetry import trace
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeResourceGrant,
-    AgentRuntimeToolResult,
+    AgentExecutionContext,
+    AgentResourceGrant,
+    ToolExecutionResult,
 )
 from opsmesh.agents.execution.tools.arguments import (
     bool_argument,
@@ -22,7 +23,10 @@ from opsmesh.agents.execution.tools.arguments import (
     str_list_argument,
     uuid_argument,
 )
-from opsmesh.agents.execution.tools.gateway import AgentToolGateway, ToolGatewayDenied
+from opsmesh.agents.execution.tools.authorization import (
+    AgentToolAccessDeniedError,
+    AgentToolAuthorizer,
+)
 from opsmesh.agents.execution.tools.metadata import (
     agent_profile_id_for_context,
     product_review_context,
@@ -42,19 +46,18 @@ from opsmesh.orchestration.approvals.policy import ApprovalPolicyDecision, Appro
 from opsmesh.orchestration.approvals.service import ApprovalService
 from opsmesh.orchestration.approvals.waiting import ApprovalWaitingService
 from opsmesh.resources.memory.authorization import memory_read_scopes, memory_write_scopes
-from opsmesh.resources.storage.storage import ObjectStorage, create_storage
+from opsmesh.resources.storage.backends import ObjectStorage, create_storage
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.redaction import redact_sensitive_text
 from opsmesh.shared.security.secrets import SecretEncryptionService
-from opsmesh.shared.telemetry.trace_context import current_trace_context, telemetry_span
 from opsmesh.shared.utils import payload_hash, string_list, uuid_or_none
 
-__all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
+__all__ = ["PRODUCT_TOOL_NAMES", "ProductToolDispatcher"]
 
 
-class ProductToolExecutor:
+class ProductToolDispatcher:
     def __init__(
         self,
         session: Session,
@@ -65,27 +68,34 @@ class ProductToolExecutor:
     ) -> None:
         self._session = session
         self._settings = settings
-        self._storage = storage or (create_storage(settings) if settings is not None else None)
+        self._storage = storage
         self._secret_service = secret_service
 
     def execute(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
-        resource_grants: tuple[AgentRuntimeResourceGrant, ...] = (),
+        resource_grants: tuple[AgentResourceGrant, ...] = (),
         approval_granted: bool = False,
-    ) -> AgentRuntimeToolResult:
-        with telemetry_span(
-            "opsmesh.product.tool.execute",
-            parent=current_trace_context(),
-            kind=SpanKind.INTERNAL,
-            attributes={
-                "opsmesh.workspace.id": str(context.workspace_id),
-                "opsmesh.run.id": str(context.run_id),
-                "opsmesh.tool.name": tool_name,
-            },
+    ) -> ToolExecutionResult:
+        storage_scope = (
+            closing(create_storage(self._settings))
+            if self._storage is None and self._settings is not None
+            else nullcontext(self._storage)
+        )
+        with (
+            storage_scope as storage,
+            trace.get_tracer(__name__).start_as_current_span(
+                "opsmesh.product.tool.execute",
+                kind=SpanKind.INTERNAL,
+                attributes={
+                    "opsmesh.workspace.id": str(context.workspace_id),
+                    "opsmesh.run.id": str(context.run_id),
+                    "opsmesh.tool.name": tool_name,
+                },
+            ),
         ):
             return self._execute(
                 context=context,
@@ -93,17 +103,19 @@ class ProductToolExecutor:
                 arguments=arguments,
                 resource_grants=resource_grants,
                 approval_granted=approval_granted,
+                storage=storage,
             )
 
     def _execute(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
-        resource_grants: tuple[AgentRuntimeResourceGrant, ...],
+        resource_grants: tuple[AgentResourceGrant, ...],
         approval_granted: bool,
-    ) -> AgentRuntimeToolResult:
+        storage: ObjectStorage | None,
+    ) -> ToolExecutionResult:
         policy_result = self._review_for_approval(
             context=context,
             tool_name=tool_name,
@@ -126,7 +138,7 @@ class ProductToolExecutor:
             )
             with transaction:
                 output = _execute_product_tool(
-                    service=self._product_tool_service(),
+                    service=self._product_tool_service(storage),
                     context=product_context,
                     tool_name=tool_name,
                     arguments=arguments,
@@ -138,12 +150,12 @@ class ProductToolExecutor:
             if tool_name in {"read_workspace_file", "get_knowledge_citations"}:
                 if error_code == "product_tool_failed":
                     error_code = "workspace_file_not_found"
-                AgentToolGateway(self._session).record_denial(
+                AgentToolAuthorizer(self._session).record_denial(
                     context=context,
                     tool_name=tool_name,
-                    denial=ToolGatewayDenied(error_code, str(exc)),
+                    denial=AgentToolAccessDeniedError(error_code, str(exc)),
                 )
-            return AgentRuntimeToolResult(
+            return ToolExecutionResult(
                 status="failed",
                 error={
                     "code": error_code,
@@ -156,7 +168,7 @@ class ProductToolExecutor:
                 ),
             )
         self._session.commit()
-        return AgentRuntimeToolResult(
+        return ToolExecutionResult(
             status="completed",
             output=output,
             metadata=tool_metadata(
@@ -166,21 +178,21 @@ class ProductToolExecutor:
             ),
         )
 
-    def _product_tool_service(self) -> ProductToolService:
+    def _product_tool_service(self, storage: ObjectStorage | None) -> ProductToolService:
         return ProductToolService(
             self._session,
-            storage=self._storage,
+            storage=storage,
             memory_embedding_secret_service=self._secret_service,
         )
 
     def _review_for_approval(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
         approval_granted: bool,
-    ) -> AgentRuntimeToolResult | None:
+    ) -> ToolExecutionResult | None:
         policy_decision = ApprovalPolicyEngine(
             self._session,
             self._settings,
@@ -191,7 +203,7 @@ class ProductToolExecutor:
             context=product_review_context(context),
         )
         if policy_decision.blocked:
-            return AgentRuntimeToolResult(
+            return ToolExecutionResult(
                 status="failed",
                 error={
                     "code": "product_tool_policy_denied",
@@ -216,7 +228,7 @@ class ProductToolExecutor:
             arguments=arguments,
             execution_review=policy_decision,
         )
-        return AgentRuntimeToolResult(
+        return ToolExecutionResult(
             status="waiting_approval",
             error=None,
             metadata=tool_metadata(
@@ -233,7 +245,7 @@ class ProductToolExecutor:
     def _request_approval(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         tool_name: str,
         arguments: dict[str, object],
         execution_review: ApprovalPolicyDecision,
@@ -269,7 +281,7 @@ def _execute_product_tool(
     context: ToolContext,
     tool_name: str,
     arguments: dict[str, object],
-    resource_grants: tuple[AgentRuntimeResourceGrant, ...],
+    resource_grants: tuple[AgentResourceGrant, ...],
     file_scope_ids: tuple[UUID, ...],
 ) -> dict[str, object]:
     if tool_name in RESOURCE_TOOL_NAMES:
@@ -401,7 +413,7 @@ def _execute_product_tool(
 
 
 def _file_ids(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
+    grants: tuple[AgentResourceGrant, ...],
     file_scope_ids: tuple[UUID, ...],
 ) -> set[UUID]:
     ids: set[UUID] = set()

@@ -14,7 +14,7 @@ from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 
 
-class AuthorizationService:
+class WorkspaceAuthorizationService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -73,12 +73,3 @@ class AuthorizationService:
             raise PermissionDeniedError("Workspace role does not allow this action")
 
         return WorkspaceContext(user=user, workspace=workspace, membership=membership)
-
-    def ensure_resource_workspace(
-        self,
-        *,
-        resource_workspace_id: UUID,
-        expected_workspace_id: UUID,
-    ) -> None:
-        if resource_workspace_id != expected_workspace_id:
-            raise PermissionDeniedError("Resource does not belong to the requested workspace")

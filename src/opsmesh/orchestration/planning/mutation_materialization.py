@@ -2,8 +2,8 @@
 
 from uuid import UUID
 
-from opsmesh.orchestration.planning.team_project_plan import (
-    ProjectPlanStepMaterializer,
+from opsmesh.orchestration.planning.task_plan_steps import (
+    TaskPlanStepMaterializer,
     step_dependencies_for_package,
 )
 from opsmesh.orchestration.tasks.models import Task, TaskStep
@@ -11,7 +11,7 @@ from opsmesh.shared.utils import string_list, uuid_or_none
 
 
 def build_step(
-    materializer: ProjectPlanStepMaterializer,
+    materializer: TaskPlanStepMaterializer,
     task: Task,
     package: dict[str, object],
     *,

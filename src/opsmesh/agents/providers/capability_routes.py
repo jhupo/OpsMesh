@@ -2,9 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeCapability
-from opsmesh.agents.execution.dependencies import get_agent_runtime_registry
-from opsmesh.agents.execution.registry import ProviderAgentRuntimeRegistry
+from opsmesh.agents.execution.contracts import AgentExecutionFeature
+from opsmesh.agents.execution.providers.openai.executor import OpenAIAgentExecutor
 from opsmesh.agents.providers.capabilities import list_model_capabilities
 from opsmesh.agents.providers.model_api import default_model_api, model_api_options_for_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
@@ -30,10 +29,8 @@ router = APIRouter(
 )
 def list_agent_runtime_adapter_capabilities(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
-    registry: ProviderAgentRuntimeRegistry = Depends(get_agent_runtime_registry),
 ) -> list[AgentRuntimeAdapterCapabilityResponse]:
     del context
-    matrix = registry.capability_matrix()
     return [
         AgentRuntimeAdapterCapabilityResponse(
             provider=capabilities.provider,
@@ -52,10 +49,10 @@ def list_agent_runtime_adapter_capabilities(
                         )
                     ),
                 )
-                for feature in AgentRuntimeCapability
+                for feature in AgentExecutionFeature
             ],
         )
-        for capabilities in matrix.values()
+        for capabilities in (OpenAIAgentExecutor.capabilities,)
     ]
 
 

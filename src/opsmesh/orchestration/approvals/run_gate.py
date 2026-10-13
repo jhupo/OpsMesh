@@ -5,20 +5,20 @@ from sqlalchemy.orm import Session
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.runs.events import RunEventRecorder
 from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.orchestration.runs.state import RunStateService, RunStatus
+from opsmesh.orchestration.runs.state import RunStatus, transition_run
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
-    TaskStateService,
     TaskStatus,
+    transition_task,
 )
 from opsmesh.orchestration.tasks.steps import (
     FINAL_STEP_STATUSES,
-    TaskStepStateService,
     TaskStepStatus,
+    transition_task_step,
 )
 from opsmesh.runtime.spaces.reservations import RuntimeSpaceReservationReleaseService
-from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaService
+from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaReservationService
 
 
 class ApprovalRunGateService:
@@ -56,7 +56,7 @@ class ApprovalRunGateService:
             RunStatus.CANCELLED,
         }:
             return
-        RunStateService().transition(
+        transition_run(
             run,
             RunStatus.FAILED,
             completed_at=completed_at,
@@ -68,14 +68,12 @@ class ApprovalRunGateService:
             message,
             {"approval_id": str(approval.id)},
         )
-        RuntimeSpaceReservationReleaseService(
-            self._session
-        ).release_reservations_for_run(
+        RuntimeSpaceReservationReleaseService(self._session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=completed_at,
         )
-        WorkspaceQuotaService(self._session).release_reservations_for_run(
+        WorkspaceQuotaReservationService(self._session).release_reservations_for_run(
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             released_at=completed_at,
@@ -87,7 +85,7 @@ class ApprovalRunGateService:
                 and step.workspace_id == run.workspace_id
                 and TaskStepStatus(step.status) not in FINAL_STEP_STATUSES
             ):
-                TaskStepStateService().transition(step, TaskStepStatus.FAILED)
+                transition_task_step(step, TaskStepStatus.FAILED)
 
     def _fail_task(self, approval: Approval, completed_at: datetime) -> None:
         if approval.task_id is None:
@@ -95,7 +93,7 @@ class ApprovalRunGateService:
         task = self._session.get(Task, approval.task_id)
         if task is None or TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             return
-        TaskStateService().transition(
+        transition_task(
             task,
             TaskStatus.FAILED,
             completed_at=completed_at,

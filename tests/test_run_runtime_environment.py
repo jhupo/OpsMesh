@@ -1,446 +1,179 @@
-from datetime import UTC, datetime
+"""Native sandbox product references: ownership, encrypted state and scoped cleanup."""
+
+import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.orm import Session, sessionmaker
+import pytest
+from agents.sandbox import Manifest
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 
-from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
-from opsmesh.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
-from opsmesh.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from opsmesh.runtime.instances.run_environment import RunRuntimeEnvironmentService
-from opsmesh.shared.db.base import Base
-from opsmesh.workspaces.management.models import Workspace
-from tests.fixtures.runtime_host import runtime_host
-
-
-class FakeDockerClient:
-    def configure_execution(self, container_id, identity):
-        self.identities[identity.allocation_id] = identity
-
-    def revoke_execution(self, container_id, identity):
-        self.identities.pop(identity.allocation_id, None)
-
-    def node_identity(self) -> str:
-        return "test-node"
-
-    def __init__(self) -> None:
-        self.identities = {}
-        self.created = []
-        self.started: list[str] = []
-        self.removed: list[str] = []
-        self.removed_volumes: list[str] = []
-        self.exec_command_calls: list[tuple[str, list[str], int, str | None]] = []
-
-    def create_container(self, request):  # noqa: ANN001
-        self.created.append(request)
-        return f"container-{len(self.created)}"
-
-    def start_container(self, container_id: str) -> None:
-        self.started.append(container_id)
-
-    def stop_container(self, container_id: str) -> None:
-        _ = container_id
-
-    def remove_container(self, container_id: str) -> None:
-        self.removed.append(container_id)
-
-    def remove_volume(self, volume_name: str) -> None:
-        self.removed_volumes.append(volume_name)
-
-    def exec_command(
-        self,
-        container_id: str,
-        command: list[str],
-        timeout_seconds: int,
-        *,
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir: str | None = None,
-        identity=None,
-    ) -> RuntimeCommandResult:
-        self.exec_command_calls.append((container_id, command, timeout_seconds, working_dir))
-        _ = input_file
-        return RuntimeCommandResult(exit_code=0, stdout="", stderr="")
-
-    def copy_archive_to_container(
-        self,
-        container_id: str,
-        destination_path: str,
-        archive: bytes,
-        timeout_seconds: int,
-    ) -> None:
-        _ = (container_id, destination_path, archive, timeout_seconds)
-
-    def copy_file_from_container(
-        self,
-        container_id: str,
-        source_path: str,
-        max_bytes: int,
-        timeout_seconds: int,
-        *,
-        identity=None,
-    ) -> bytes | None:
-        _ = (container_id, source_path, max_bytes, timeout_seconds)
-        return None
+from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.sandboxes.models import SandboxReference
+from opsmesh.runtime.sandboxes.service import SandboxService
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.shared.config import Settings
+from opsmesh.shared.errors import ConflictError, NotFoundError, PolicyDeniedError
+from tests.fixtures.agent_product import _seed_workspace, _session
+from tests.fixtures.native_sandbox import native_boundary
 
 
-def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> None:
+def fixture():
     session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="run-isolation", settings={})
-    template = RuntimeTemplate(
-        name="run-isolation-image",
-        image="python@sha256:" + "0" * 64,
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
-    parent = WorkspaceRuntime(
+    _, workspace = _seed_workspace(session, with_default_provider=False)
+    runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
-        runtime_template_id=template.id,
-        name="shared-placement",
-        execution_mode="isolated",
+        name="Native",
         status="active",
-        connection_status="online",
-        host=runtime_host(workspace.id, "parent-container", capacity=1, node_id="test-node"),
-        limits={
-            "cpu_count": 1,
-            "memory_mb": 512,
-            "disk_mb": 1024,
-            "timeout_seconds": 30,
-            "max_output_bytes": 256_000,
-            "max_processes": 64,
-            "max_concurrent_executions": 1,
-        },
-        network_policy={"mode": "none", "disabled": True},
-        capabilities={
-            "node_id": "test-node",
-            "isolation": {"workspace_mount": {"target": "/workspace"}},
-        },
+        sandbox_backend_id="docker",
+        sandbox_options={"image": "python:3.13"},
     )
-    session.add(parent)
-    session.flush()
-    first = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    second = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    session.add_all([first, second])
+    session.add(runtime)
     session.commit()
+    native, client, registry = native_boundary()
+    services = ActivityDependencies(
+        sessionmaker(session.get_bind(), expire_on_commit=False), Settings(environment="test")
+    )
+    service = SandboxService(services.transaction, registry, services.secrets())
+    return SimpleNamespace(
+        session=session,
+        workspace=workspace,
+        runtime=runtime,
+        native=native,
+        client=client,
+        service=service,
+    )
 
-    docker = FakeDockerClient()
-    service = RunRuntimeEnvironmentService(session, docker)
-    first_result = service.ensure_for_run(first)
-    second_result = service.ensure_for_run(second)
-    session.commit()
 
-    assert first_result.runtime is not None
-    assert second_result.runtime is not None
-    assert first_result.runtime.id != second_result.runtime.id
-    assert first.execution_runtime_id == first_result.runtime.id
-    assert second.execution_runtime_id == second_result.runtime.id
-    assert docker.started == ["container-1", "container-2"]
-    assert docker.created[0].mounts[0].target == "/workspace"
-    assert docker.created[0].mounts[0].source != docker.created[1].mounts[0].source
-    assert docker.created[0].labels["opsmesh.run_id"] == str(first.id)
-    assert docker.created[1].labels["opsmesh.run_id"] == str(second.id)
+def test_native_owner_reuse_and_scoped_delete_preserve_other_execution():
+    f = fixture()
 
-    # A process restart after Docker creation must reacquire an identity before
-    # resuming; an acknowledged container start alone cannot authorize execution.
-    RuntimeAllocationStore(session).release(first_result.runtime, "run", first.id)
-    first_result.runtime.status = "created"
-    first_result.runtime.connection_status = "offline"
-    first_result.runtime.host.status = "created"
-    session.commit()
-    resumed = service.ensure_for_run(first)
-    assert resumed.runtime.id == first_result.runtime.id
-    allocation = RuntimeAllocationStore(session).get(resumed.runtime, "run", first.id)
-    assert allocation is not None and allocation.id in docker.identities
-
-    assert service.cleanup_for_run(first) is True
-    assert service.cleanup_for_run(first) is True
-    assert service.cleanup_for_run(second) is True
-    session.commit()
-    children = session.scalars(
-        select(WorkspaceRuntime).where(
-            WorkspaceRuntime.parent_runtime_id == parent.id,
+    async def exercise():
+        owner = uuid4()
+        first = await f.service.create(
+            workspace_id=f.workspace.id,
+            runtime_id=f.runtime.id,
+            owner_kind="run",
+            owner_id=owner,
+            manifest=Manifest(root="/workspace"),
         )
-    ).all()
-    assert {child.status for child in children} == {"deleted"}
-    assert docker.removed == ["container-1", "container-2"]
-    assert len(docker.removed_volumes) == 2
-    events = session.scalars(select(RuntimeEvent)).all()
-    assert {event.event_type for event in events} == {
-        "runtime.run.created",
-        "runtime.deleted",
-    }
-
-
-def test_shared_run_reuses_a_preprovisioned_container_and_releases_lease() -> None:
-    session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared", settings={})
-    template = RuntimeTemplate(
-        name="shared-image",
-        image="python@sha256:" + "0" * 64,
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
-    parent = WorkspaceRuntime(
-        workspace_id=workspace.id,
-        runtime_template_id=template.id,
-        name="shared-placement",
-        execution_mode="shared",
-        status="active",
-        connection_status="online",
-        host=runtime_host(workspace.id, "shared-container", capacity=1, node_id="test-node"),
-        limits={
-            "cpu_count": 1,
-            "memory_mb": 512,
-            "disk_mb": 1024,
-            "timeout_seconds": 30,
-            "max_output_bytes": 256_000,
-            "max_processes": 64,
-            "max_concurrent_executions": 1,
-        },
-        network_policy={"mode": "none", "disabled": True},
-        capabilities={
-            "node_id": "test-node",
-            "isolation": {
-                "workspace_mount": {
-                    "type": "volume",
-                    "docker_volume": "shared-volume",
-                    "target": "/workspace",
-                    "mode": "rw",
-                },
-                "network": {"mode": "none", "disabled": True},
-            },
-            "hardening": {},
-        },
-    )
-    session.add(parent)
-    session.flush()
-    run = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    session.add(run)
-    session.commit()
-
-    docker = FakeDockerClient()
-    service = RunRuntimeEnvironmentService(session, docker)
-    result = service.ensure_for_run(run)
-    session.commit()
-
-    assert result.runtime is not None
-    assert result.runtime.execution_mode == "shared"
-    assert result.runtime.id == parent.id
-    assert result.runtime.docker_container_id == parent.docker_container_id
-    assert docker.created == []
-    assert docker.started == []
-
-    assert service.cleanup_for_run(run) is True
-    session.commit()
-    assert docker.removed == []
-    assert docker.removed_volumes == []
-    assert len(docker.created) == 0
-    assert len(docker.started) == 0
-    assert len(docker.removed) == 0
-    assert len(docker.removed_volumes) == 0
-    assert len(docker.exec_command_calls) == 4
-
-
-def test_shared_runs_use_distinct_hosts_until_a_slot_is_released() -> None:
-    session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="pool-members", settings={})
-    template = RuntimeTemplate(
-        name="pool-members-image",
-        image="python@sha256:" + "0" * 64,
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
-    limits = {
-        "cpu_count": 1,
-        "memory_mb": 512,
-        "disk_mb": 1024,
-        "timeout_seconds": 30,
-        "max_output_bytes": 256_000,
-        "max_processes": 64,
-        "max_concurrent_executions": 1,
-    }
-    capabilities = {
-        "node_id": "test-node",
-        "isolation": {
-            "workspace_mount": {
-                "type": "volume",
-                "docker_volume": "pool-volume",
-                "target": "/workspace",
-                "mode": "rw",
-            },
-            "network": {"mode": "none", "disabled": True},
-        },
-        "hardening": {},
-    }
-    members = [
-        WorkspaceRuntime(
-            workspace_id=workspace.id,
-            runtime_template_id=template.id,
-            name=f"pool-member-{index}",
-            execution_mode="shared",
-            status="active",
-            connection_status="online",
-            host=runtime_host(
-                workspace.id, f"pool-container-{index}", capacity=1, node_id="test-node"
-            ),
-            limits=limits,
-            network_policy={"mode": "none", "disabled": True},
-            capabilities=capabilities,
+        second = await f.service.create(
+            workspace_id=f.workspace.id,
+            runtime_id=f.runtime.id,
+            owner_kind="run",
+            owner_id=uuid4(),
+            manifest=Manifest(root="/workspace"),
         )
-        for index in (1, 2)
-    ]
-    session.add_all(members)
-    session.flush()
-    first = AgentRun(
-        workspace_id=workspace.id,
-        runtime_id=members[0].id,
-        status="running",
-        input={},
-    )
-    second = AgentRun(
-        workspace_id=workspace.id,
-        runtime_id=members[0].id,
-        status="running",
-        input={},
-    )
-    session.add_all([first, second])
-    session.commit()
+        reused = await f.service.create(
+            workspace_id=f.workspace.id,
+            runtime_id=f.runtime.id,
+            owner_kind="run",
+            owner_id=owner,
+            manifest=Manifest(root="/workspace"),
+        )
+        assert first.id == reused.id and first.id != second.id
+        with pytest.raises(NotFoundError):
+            await f.service.resume(uuid4(), first.id)
+        await f.service.delete(f.workspace.id, first.id)
+        await f.service.delete(f.workspace.id, first.id)
+        assert f.client.delete.await_count == 1
+        f.session.expire_all()
+        remaining = f.session.get(SandboxReference, second.id)
+        assert remaining.status == "running"
+        assert (
+            remaining.encrypted_session_state
+            and "native-fixture" not in remaining.encrypted_session_state
+        )
+        await f.service.delete(f.workspace.id, second.id)
 
-    docker = FakeDockerClient()
-    service = RunRuntimeEnvironmentService(session, docker)
-    first_child = service.ensure_for_run(first).runtime
-    second_child = service.ensure_for_run(second).runtime
-
-    assert first_child is not None and second_child is not None
-    assert first_child.id == members[0].id
-    assert second_child.id == members[1].id
-    assert first_child.docker_container_id != second_child.docker_container_id
-    assert docker.created == []
+    asyncio.run(exercise())
 
 
-def test_shared_run_binds_parent_without_child_or_container_cleanup() -> None:
-    session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared", settings={})
-    template = RuntimeTemplate(
-        name="shared-image",
-        image="python@sha256:" + "0" * 64,
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
-    parent = WorkspaceRuntime(
-        workspace_id=workspace.id,
-        runtime_template_id=template.id,
-        name="shared-placement",
-        execution_mode="shared",
-        status="active",
-        connection_status="online",
-        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
-        limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
-        network_policy={"mode": "none", "disabled": True},
-        capabilities={
-            "node_id": "test-node",
-            "isolation": {"workspace_mount": {"target": "/workspace"}},
-        },
-    )
-    session.add(parent)
-    session.flush()
-    run = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    session.add(run)
-    session.commit()
+def test_unknown_create_outcome_is_not_silently_retried():
+    f = fixture()
+    f.client.create.side_effect = TimeoutError("native outcome unknown")
+    owner = uuid4()
 
-    docker = FakeDockerClient()
-    service = RunRuntimeEnvironmentService(session, docker)
-    result = service.ensure_for_run(run)
-    assert result.runtime is parent
-    assert run.execution_runtime_id == parent.id
-    assert result.created is True
-    assert service.ensure_for_run(run).created is False
-    assert service.cleanup_for_run(run) is True
-    session.commit()
-    assert docker.created == []
-    assert docker.removed == []
-    assert docker.removed_volumes == []
+    async def exercise():
+        with pytest.raises(TimeoutError):
+            await f.service.create(
+                workspace_id=f.workspace.id,
+                runtime_id=f.runtime.id,
+                owner_kind="run",
+                owner_id=owner,
+                manifest=Manifest(root="/workspace"),
+            )
+        with pytest.raises(ConflictError):
+            await f.service.create(
+                workspace_id=f.workspace.id,
+                runtime_id=f.runtime.id,
+                owner_kind="run",
+                owner_id=owner,
+                manifest=Manifest(root="/workspace"),
+            )
+        assert f.client.create.await_count == 1
+
+    asyncio.run(exercise())
+    assert f.session.scalar(select(SandboxReference)).status == "unknown"
 
 
-def test_shared_runtime_shares_capacity_and_releases_only_one_run() -> None:
-    session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared-busy", settings={})
-    template = RuntimeTemplate(
-        name="shared-busy-image",
-        image="python@sha256:" + "0" * 64,
-        default_limits={},
-        default_network_policy={"mode": "none"},
-        created_at=datetime.now(UTC),
-    )
-    session.add_all([workspace, template])
-    session.flush()
-    parent = WorkspaceRuntime(
-        workspace_id=workspace.id,
-        runtime_template_id=template.id,
-        name="shared-placement",
-        execution_mode="shared",
-        status="active",
-        connection_status="online",
-        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
-        limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
-        network_policy={"mode": "none", "disabled": True},
-        capabilities={
-            "node_id": "test-node",
-            "isolation": {"workspace_mount": {"target": "/workspace"}},
-        },
-    )
-    session.add(parent)
-    session.flush()
-    first = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    second = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    session.add_all([first, second])
-    session.commit()
+def test_cancellation_waits_for_native_delete_and_commits_terminal_reference():
+    f = fixture()
 
-    docker = FakeDockerClient()
-    service = RunRuntimeEnvironmentService(session, docker)
-    service.ensure_for_run(first)
-    service.ensure_for_run(second)
-    third = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
-    session.add(third)
-    session.commit()
-    import pytest
+    async def exercise():
+        reference = await f.service.create(
+            workspace_id=f.workspace.id,
+            runtime_id=f.runtime.id,
+            owner_kind="run",
+            owner_id=uuid4(),
+            manifest=Manifest(root="/workspace"),
+        )
+        entered, release = asyncio.Event(), asyncio.Event()
 
-    from opsmesh.runtime.contracts import RuntimeEnvironmentError
-    from opsmesh.runtime.instances.models import RuntimeAllocation
+        async def delete(native):
+            entered.set()
+            await release.wait()
 
-    with pytest.raises(RuntimeEnvironmentError, match="capacity is full"):
-        service.ensure_for_run(third)
-    assert service.cleanup_for_run(first)
-    session.commit()
-    assert service.ensure_for_run(third).runtime is parent
-    assert service.ensure_for_run(second).runtime is parent
-    assert len(session.scalars(select(RuntimeAllocation)).all()) == 2
-    assert not docker.created and not docker.removed
-    assert not any("/proc" in " ".join(command) for _, command, _, _ in docker.exec_command_calls)
+        f.client.delete.side_effect = delete
+        pending = asyncio.create_task(f.service.delete(f.workspace.id, reference.id))
+        await entered.wait()
+        pending.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        f.session.expire_all()
+        assert f.session.get(SandboxReference, reference.id).status == "deleted"
+
+    asyncio.run(exercise())
 
 
-def _session() -> Session:
-    engine = create_engine("sqlite://", future=True)
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, expire_on_commit=False)()
+def test_failed_resume_deletes_only_replacement_container_with_the_same_session_id():
+    f = fixture()
+
+    async def exercise():
+        reference = await f.service.create(
+            workspace_id=f.workspace.id,
+            runtime_id=f.runtime.id,
+            owner_kind="run",
+            owner_id=uuid4(),
+            manifest=Manifest(root="/workspace"),
+        )
+        replacement, _, _ = native_boundary()
+        replacement.state = f.native.state.model_copy(update={"container_id": "replacement"})
+        replacement.start.side_effect = RuntimeError("native restore failed")
+        f.client.resume.return_value = replacement
+        with pytest.raises(RuntimeError, match="native restore failed"):
+            await f.service.resume(f.workspace.id, reference.id)
+        f.client.delete.assert_awaited_once_with(replacement)
+        assert replacement.state.session_id == f.native.state.session_id
+        assert f.native.state.container_id == "native-fixture"
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("path", ["../outside", "/absolute", "folder\\escape"])
+def test_native_file_path_denial(path):
+    f = fixture()
+    with pytest.raises(PolicyDeniedError):
+        f.service._workspace_path(f.native, path)

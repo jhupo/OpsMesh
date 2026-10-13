@@ -1,5 +1,7 @@
 """Portable unit database creation mirrors required Alembic seed data."""
 
+import asyncio
+import sys
 from collections.abc import Iterator
 from uuid import uuid4
 
@@ -8,10 +10,17 @@ from sqlalchemy import Connection, Table, event
 
 from opsmesh.bootstrap.models import register_models
 from opsmesh.governance.policies.models import PlatformPolicy
-from opsmesh.platform.settings.policy import CONFIGURATION_KEY, OperationalConfiguration
+from opsmesh.platform.settings.configuration import CONFIGURATION_KEY, OperationalConfiguration
 from opsmesh.platform.updates.models import PlatformInstallation
+from tests.fixtures.database import managed_product_databases  # noqa: F401
 
 register_models()
+
+
+def pytest_configure() -> None:
+    # Psycopg's Windows async transport requires a selector loop.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @pytest.fixture(autouse=True)

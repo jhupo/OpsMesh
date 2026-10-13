@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any
 
 from agents import (
-    AgentOutputSchemaBase,
+    AgentOutputSchema,
     GuardrailFunctionOutput,
     InputGuardrail,
     OutputGuardrail,
@@ -15,22 +15,23 @@ from agents.exceptions import ModelBehaviorError
 from agents.strict_schema import ensure_strict_json_schema
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeGuardrail,
-    AgentRuntimeGuardrailResult,
-    AgentRuntimeOutputSchema,
+    AgentGuardrailResult,
+    AgentGuardrailSpec,
+    AgentOutputSchemaSpec,
 )
-from opsmesh.agents.execution.errors import AgentRuntimeOutputValidationError
+from opsmesh.agents.execution.errors import AgentOutputValidationError
 from opsmesh.agents.execution.guardrails import evaluate_guardrail, validated_structured_output
 
 
-class OpenAIRuntimeOutputSchemaError(ModelBehaviorError):
-    def __init__(self, policy_error: AgentRuntimeOutputValidationError) -> None:
+class SDKOutputValidationError(ModelBehaviorError):
+    def __init__(self, policy_error: AgentOutputValidationError) -> None:
         self.policy_error = policy_error
         super().__init__(policy_error.message)
 
 
-class OpenAIRuntimeOutputSchema(AgentOutputSchemaBase):
-    def __init__(self, definition: AgentRuntimeOutputSchema) -> None:
+class SDKOutputSchemaAdapter(AgentOutputSchema):
+    def __init__(self, definition: AgentOutputSchemaSpec) -> None:
+        super().__init__(dict[str, Any], strict_json_schema=False)
         self.definition = definition
 
     def is_plain_text(self) -> bool:
@@ -50,8 +51,8 @@ class OpenAIRuntimeOutputSchema(AgentOutputSchemaBase):
         try:
             value = json.loads(json_str)
         except json.JSONDecodeError as exc:
-            raise OpenAIRuntimeOutputSchemaError(
-                AgentRuntimeOutputValidationError(
+            raise SDKOutputValidationError(
+                AgentOutputValidationError(
                     schema_name=self.definition.name,
                     schema_version=self.definition.version,
                     validator="json",
@@ -59,13 +60,13 @@ class OpenAIRuntimeOutputSchema(AgentOutputSchemaBase):
             ) from exc
         try:
             return validated_structured_output(self.definition, value).value
-        except AgentRuntimeOutputValidationError as exc:
-            raise OpenAIRuntimeOutputSchemaError(exc) from exc
+        except AgentOutputValidationError as exc:
+            raise SDKOutputValidationError(exc) from exc
 
 
 def openai_input_guardrails(
-    definitions: tuple[AgentRuntimeGuardrail, ...],
-    results: list[AgentRuntimeGuardrailResult],
+    definitions: tuple[AgentGuardrailSpec, ...],
+    results: list[AgentGuardrailResult],
 ) -> list[InputGuardrail[Any]]:
     guardrails: list[InputGuardrail[Any]] = []
     for definition in definitions:
@@ -75,7 +76,7 @@ def openai_input_guardrails(
             agent: object,
             value: object,
             *,
-            item: AgentRuntimeGuardrail = definition,
+            item: AgentGuardrailSpec = definition,
         ) -> GuardrailFunctionOutput:
             del context, agent
             result = evaluate_guardrail(item, value, stage="input")
@@ -96,8 +97,8 @@ def openai_input_guardrails(
 
 
 def openai_output_guardrails(
-    definitions: tuple[AgentRuntimeGuardrail, ...],
-    results: list[AgentRuntimeGuardrailResult],
+    definitions: tuple[AgentGuardrailSpec, ...],
+    results: list[AgentGuardrailResult],
 ) -> list[OutputGuardrail[Any]]:
     guardrails: list[OutputGuardrail[Any]] = []
     for definition in definitions:
@@ -107,7 +108,7 @@ def openai_output_guardrails(
             agent: object,
             value: object,
             *,
-            item: AgentRuntimeGuardrail = definition,
+            item: AgentGuardrailSpec = definition,
         ) -> GuardrailFunctionOutput:
             del context, agent
             result = evaluate_guardrail(item, value, stage="output")
@@ -128,9 +129,9 @@ def openai_output_guardrails(
 
 def merged_openai_guardrail_results(
     sdk_result: object,
-    collected: list[AgentRuntimeGuardrailResult],
-) -> list[AgentRuntimeGuardrailResult]:
-    merged: list[AgentRuntimeGuardrailResult] = []
+    collected: list[AgentGuardrailResult],
+) -> list[AgentGuardrailResult]:
+    merged: list[AgentGuardrailResult] = []
     for attribute in ("input_guardrail_results", "output_guardrail_results"):
         for sdk_guardrail_result in getattr(sdk_result, attribute, ()) or ():
             output = getattr(sdk_guardrail_result, "output", None)
@@ -142,7 +143,7 @@ def merged_openai_guardrail_results(
     return merged
 
 
-def _guardrail_result_from_info(value: object) -> AgentRuntimeGuardrailResult | None:
+def _guardrail_result_from_info(value: object) -> AgentGuardrailResult | None:
     if not isinstance(value, dict):
         return None
     stage = value.get("stage")
@@ -160,7 +161,7 @@ def _guardrail_result_from_info(value: object) -> AgentRuntimeGuardrailResult | 
         or not isinstance(evidence, dict)
     ):
         return None
-    return AgentRuntimeGuardrailResult(
+    return AgentGuardrailResult(
         stage=stage,
         name=name,
         kind=kind,
@@ -171,8 +172,8 @@ def _guardrail_result_from_info(value: object) -> AgentRuntimeGuardrailResult | 
 
 
 def _append_unique(
-    results: list[AgentRuntimeGuardrailResult],
-    candidate: AgentRuntimeGuardrailResult,
+    results: list[AgentGuardrailResult],
+    candidate: AgentGuardrailResult,
 ) -> None:
     identity = (candidate.stage, candidate.name, candidate.kind, candidate.status)
     if any((item.stage, item.name, item.kind, item.status) == identity for item in results):

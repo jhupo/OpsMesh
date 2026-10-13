@@ -30,7 +30,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "workspace_export_jobs",
-        sa.Column("verification_status", sa.String(length=32), nullable=False, server_default="unverified"),
+        sa.Column(
+            "verification_status", sa.String(length=32), nullable=False, server_default="unverified"
+        ),
     )
     op.add_column(
         "workspace_export_jobs",

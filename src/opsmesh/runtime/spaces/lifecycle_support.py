@@ -9,7 +9,7 @@ from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 
 
-class RuntimeSpaceBlockerService:
+class RuntimeSpaceUnblockService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -66,7 +66,7 @@ class RuntimeSpaceBlockerService:
         return cleared
 
 
-class RuntimeSpaceEventLog:
+class RuntimeSpaceEventRecorder:
     def __init__(self, session: Session) -> None:
         self._session = session
 

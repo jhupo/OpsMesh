@@ -1,23 +1,24 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import asyncio
+from contextlib import closing
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from redis import Redis
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette import status
+from temporalio.api.workflowservice.v1 import DescribeNamespaceRequest
+from temporalio.client import Client
 
-from opsmesh.platform.settings.policy import operational_configuration
-from opsmesh.resources.storage.storage import create_storage
-from opsmesh.runtime.workers.models import WorkerNode
+from opsmesh.resources.storage.backends import create_storage
+from opsmesh.runtime.temporal.client import connect_temporal
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
-from opsmesh.shared.utils import ensure_aware_utc
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -56,6 +57,7 @@ def startup_check(request: Request) -> ReadinessResponse:
         dependencies={
             "configuration": "ok",
             "storage": _check_storage(settings),
+            "temporal": _check_temporal_configuration(settings),
         },
     )
 
@@ -71,18 +73,23 @@ def _health_response(request: Request) -> HealthResponse:
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
-def readiness_check(
+async def readiness_check(
     request: Request,
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
 ) -> ReadinessResponse:
     settings: Settings = request.app.state.settings
+    database, redis_status, storage, temporal = await asyncio.gather(
+        asyncio.to_thread(_check_database, session),
+        asyncio.to_thread(_check_redis, redis),
+        asyncio.to_thread(_check_storage, settings),
+        _check_temporal(request),
+    )
     dependencies = {
-        "database": _check_database(session),
-        "redis": _check_redis(redis),
-        "storage": _check_storage(settings),
-        "worker_queue": _check_worker_queue(redis, settings),
-        "workers_online": _check_workers_online(session, settings),
+        "database": database,
+        "redis": redis_status,
+        "storage": storage,
+        "temporal": temporal,
     }
     if any(_dependency_failed(value) for value in dependencies.values()):
         raise HTTPException(
@@ -117,45 +124,39 @@ def _check_redis(redis: RedisClient) -> str:
 
 def _check_storage(settings: Settings) -> str:
     try:
-        storage = create_storage(settings)
-        probe = ".healthcheck"
-        storage.write(probe, b"ok")
-        storage.delete(probe)
+        with closing(create_storage(settings)) as storage:
+            probe = ".healthcheck"
+            storage.write(probe, b"ok")
+            storage.delete(probe)
     except Exception:
         return "unavailable"
     return "ok"
 
 
-def _check_worker_queue(redis: RedisClient, settings: Settings) -> str:
-    try:
-        queue_key = RedisKeyBuilder(settings.redis_key_prefix).queue(settings.worker_queue_name)
-        redis.llen(queue_key)
-    except Exception:
+def _check_temporal_configuration(settings: Settings) -> str:
+    if not settings.temporal_address.strip():
+        return "unavailable"
+    if not settings.temporal_namespace.strip() or not settings.temporal_task_queue.strip():
         return "unavailable"
     return "ok"
 
 
-def _check_workers_online(session: Session, settings: Settings) -> str:
-    if not settings.readiness_worker_check_enabled:
-        return "disabled"
+async def _check_temporal(request: Request) -> str:
+    settings: Settings = request.app.state.settings
     try:
-        stale_before = datetime.now(UTC) - timedelta(
-            seconds=operational_configuration(session).worker_stale_after_seconds
-        )
-        workers = session.scalars(
-            select(WorkerNode).where(
-                WorkerNode.queue_name == settings.worker_queue_name,
-                WorkerNode.status == "online",
-                WorkerNode.drain_requested_at.is_(None),
+        async with asyncio.timeout(5):
+            async with request.app.state.temporal_client_lock:
+                client: Client | None = request.app.state.temporal_client
+                if client is None:
+                    client = await connect_temporal(settings)
+                    request.app.state.temporal_client = client
+            await client.workflow_service.describe_namespace(
+                DescribeNamespaceRequest(namespace=settings.temporal_namespace),
+                timeout=timedelta(seconds=4),
             )
-        ).all()
     except Exception:
         return "unavailable"
-    if not workers:
-        return "none_online"
-    if any(ensure_aware_utc(worker.last_seen_at) >= stale_before for worker in workers):
-        return "ok"
-    return "stale"
+    return "ok"
 
 
 def _dependency_failed(value: str) -> bool:

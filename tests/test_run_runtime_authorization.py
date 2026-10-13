@@ -2,19 +2,16 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.agents.execution.contracts import AgentRuntimeExecutionBinding
+from opsmesh.agents.execution.contracts import AgentEnvironmentBinding
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from opsmesh.governance.security_events.models import SecurityEvent
@@ -36,6 +33,7 @@ from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None:
@@ -48,9 +46,8 @@ def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="Runtime",
-        status="running",
-        connection_status="online",
-        network_policy={"mode": "none"},
+        status="active",
+        sandbox_backend_id="docker",
     )
     workspace_file = WorkspaceFile(
         workspace_id=workspace.id,
@@ -96,7 +93,6 @@ def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None
         task=task,
         step=step,
         capability_catalog=catalog,
-        runtime_policy={"mcp": {"network_policy": {"mode": "none"}}},
     )
 
     assert binding.mode == "capability_runtime"
@@ -104,17 +100,15 @@ def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None
     assert binding.runtime_space_id == runtime_space.id
     assert binding.capability_resource_ids == (runtime_resource_id,)
     assert binding.allowed_file_ids == (workspace_file.id,)
-    assert binding.network_disabled is True
     assert binding.as_snapshot()["file_access_scope"] == {
         "mode": "gateway_only",
         "allowed_file_ids": [str(workspace_file.id)],
     }
-    assert binding.as_runtime_context() == AgentRuntimeExecutionBinding(
+    assert binding.as_runtime_context() == AgentEnvironmentBinding(
         mode="capability_runtime",
         workspace_runtime_id=runtime.id,
         runtime_space_id=runtime_space.id,
         capability_resource_ids=(runtime_resource_id,),
-        network_disabled=True,
         allowed_file_ids=(workspace_file.id,),
     )
 
@@ -151,7 +145,6 @@ def test_ambiguous_runtime_resource_placement_is_rejected() -> None:
             task=task,
             step=step,
             capability_catalog=catalog,
-            runtime_policy={},
         )
 
     assert exc_info.value.code == "runtime_grant_ambiguous"
@@ -167,7 +160,7 @@ def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: boo
         role="worker",
         tool_policy={"allowed_tools": ["local_tool"]},
     )
-    server = McpServer(
+    server = MCPServer(
         workspace_id=workspace.id,
         name="Local MCP",
         server_type="stdio",
@@ -178,7 +171,7 @@ def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: boo
     session.add_all([profile, server])
     session.flush()
     session.add(
-        McpToolAllowlist(
+        MCPToolAllowlist(
             workspace_id=workspace.id,
             mcp_server_id=server.id,
             tool_name="local_tool",
@@ -214,7 +207,6 @@ def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: boo
             task=task,
             step=step,
             capability_catalog=catalog,
-            runtime_policy={},
         )
         assert binding.mode == "none"
         assert binding.workspace_runtime_id is None
@@ -236,7 +228,6 @@ def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: boo
             task=task,
             step=step,
             capability_catalog=catalog,
-            runtime_policy={},
         )
 
     assert exc_info.value.code == "stdio_runtime_required"
@@ -253,9 +244,8 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="Runtime",
-        status="running",
-        connection_status="online",
-        network_policy={"mode": "none"},
+        status="active",
+        sandbox_backend_id="docker",
     )
     task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
     session.add_all([profile, runtime, task])
@@ -294,7 +284,6 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
         task=task,
         step=step,
         capability_catalog=catalog,
-        runtime_policy={"network": {"mode": "none"}},
     )
     snapshot = _snapshot(
         workspace_id=workspace.id,
@@ -315,8 +304,8 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
     )
     session.add(run)
     session.commit()
-    runtime.status = "stopped"
-    runtime.connection_status = "offline"
+    runtime.status = "disabled"
+    runtime.status = "disabled"
     session.flush()
 
     with pytest.raises(RunRuntimeAuthorizationError) as exc_info:
@@ -371,7 +360,7 @@ def test_queued_run_rechecks_installed_skill_platform_blocks() -> None:
     session.flush()
     catalog = _catalog(workspace.id, agent_profile_id=profile.id, resources=[])
     binding = RunRuntimeAuthorizationService(session).resolve_for_snapshot(
-        task=task, step=step, capability_catalog=catalog, runtime_policy={}
+        task=task, step=step, capability_catalog=catalog
     )
     snapshot = _snapshot(
         workspace_id=workspace.id,
@@ -509,9 +498,8 @@ def test_team_runtime_unbinding_revokes_frozen_run() -> None:
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
         name="Team runtime",
-        status="running",
-        connection_status="online",
-        network_policy={"mode": "none"},
+        status="active",
+        sandbox_backend_id="docker",
     )
     session.add(runtime)
     session.flush()
@@ -540,7 +528,6 @@ def test_team_runtime_unbinding_revokes_frozen_run() -> None:
         task=task,
         step=step,
         capability_catalog=None,
-        runtime_policy={},
     )
     snapshot = {
         "capability_catalog": None,
@@ -664,8 +651,7 @@ def _resource_entry(
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -678,12 +664,3 @@ def _seed_workspace(session: Session) -> tuple[User, Workspace]:
     )
     session.commit()
     return user, workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

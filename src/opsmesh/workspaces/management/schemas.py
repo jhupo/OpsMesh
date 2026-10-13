@@ -10,7 +10,7 @@ from pydantic import (
 )
 
 from opsmesh.governance.reviews.approval_config import approval_configuration
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -67,7 +67,7 @@ def _validate_resource_review_settings(settings: dict[str, object]) -> None:
     approval_configuration(settings)
 
 
-class WorkspaceResponse(TimestampedModel):
+class WorkspaceResponse(TimestampedContract):
     owner_user_id: UUID
     name: str
     slug: str
@@ -98,7 +98,7 @@ class WorkspaceHealthResponse(BaseModel):
         return [redact_sensitive_payload(item) for item in value]
 
 
-class WorkspaceHealthSnapshotResponse(TimestampedModel):
+class WorkspaceHealthSnapshotResponse(TimestampedContract):
     workspace_id: UUID
     status: str
     score: int

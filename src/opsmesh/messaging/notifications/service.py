@@ -7,11 +7,11 @@ from sqlalchemy.sql import ColumnElement
 
 from opsmesh.governance.audit.models import AuditIntegrityCheck
 from opsmesh.governance.costs.models import ModelUsageRecord
-from opsmesh.messaging.notifications.contracts import NotificationCreateRequest
 from opsmesh.messaging.notifications.models import (
     UserNotificationPreference,
     WorkspaceNotification,
 )
+from opsmesh.messaging.notifications.schemas import NotificationCreateRequest
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
@@ -43,7 +43,7 @@ class NotificationCenterService:
         self._session.flush([notification])
         return notification
 
-    def create_once(
+    def get_or_create_unread(
         self,
         workspace_id: UUID,
         data: NotificationCreateRequest,
@@ -378,7 +378,7 @@ class GovernanceNotificationService:
     def record_audit_integrity(self, check: AuditIntegrityCheck) -> None:
         if check.valid:
             return
-        self._notifications.create_once(
+        self._notifications.get_or_create_unread(
             check.workspace_id,
             NotificationCreateRequest(
                 notification_type="audit.integrity_invalid",
@@ -407,7 +407,7 @@ class GovernanceNotificationService:
 
     def record_model_attempt(self, record: ModelUsageRecord) -> None:
         if record.metering_status in {"unpriced", "missing_usage"}:
-            self._notifications.create_once(
+            self._notifications.get_or_create_unread(
                 record.workspace_id,
                 NotificationCreateRequest(
                     notification_type=f"cost.{record.metering_status}",
@@ -446,7 +446,7 @@ class GovernanceNotificationService:
         if budget_state not in {"warning", "exhausted"}:
             return
         budget_id = _uuid_or_none(record.budget_decision.get("budget_id"))
-        self._notifications.create_once(
+        self._notifications.get_or_create_unread(
             record.workspace_id,
             NotificationCreateRequest(
                 notification_type=f"cost.budget_{budget_state}",
@@ -478,7 +478,7 @@ class GovernanceNotificationService:
         decision: dict[str, object],
     ) -> None:
         reason = decision.get("reason")
-        self._notifications.create_once(
+        self._notifications.get_or_create_unread(
             workspace_id,
             NotificationCreateRequest(
                 notification_type=(

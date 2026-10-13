@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.workspaces.projects.models import AgentRunProjectIOState
 from opsmesh.workspaces.projects.snapshots.manifest import (
@@ -15,7 +15,7 @@ from opsmesh.workspaces.projects.snapshots.manifest import (
 from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 
-class ProjectRunIOError(AgentRuntimePolicyError):
+class RunProjectIOError(AgentExecutionPolicyError):
     def __init__(
         self,
         *,
@@ -32,6 +32,8 @@ class ProjectRunIOError(AgentRuntimePolicyError):
             metadata={"stage": stage, **(metadata or {})},
             retryable=retryable,
         )
+
+
 class RunProjectIOQueryService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -47,6 +49,8 @@ class RunProjectIOQueryService:
                 AgentRunProjectIOState.agent_run_id == run_id,
             )
         )
+
+
 def project_runtime_context(
     session: Session,
     run: AgentRun,
@@ -55,20 +59,19 @@ def project_runtime_context(
         select(AgentRunProjectIOState).where(
             AgentRunProjectIOState.workspace_id == run.workspace_id,
             AgentRunProjectIOState.agent_run_id == run.id,
-            AgentRunProjectIOState.status.in_(("staged", "harvesting", "harvested")),
+            AgentRunProjectIOState.status.in_(("staged", "harvested")),
         )
     )
-    if state is None:
-        return None
     snapshot = RunProjectSnapshotService(session).get_for_run(run.workspace_id, run.id)
-    if snapshot is None or snapshot.id != state.project_snapshot_id:
+    if snapshot is None:
+        return None
+    if state is not None and snapshot.id != state.project_snapshot_id:
         raise ValueError("Run project I/O state has no matching snapshot")
     manifest = parse_run_project_manifest(snapshot, workspace_id=run.workspace_id)
     return {
-        "root_path": state.root_path,
-        "state_id": str(state.id),
+        "root_path": state.root_path if state is not None else "/workspace",
+        "state_id": str(state.id) if state is not None else None,
         "snapshot_id": str(snapshot.id),
         "fingerprint_sha256": snapshot.fingerprint_sha256,
         **public_run_project_manifest(manifest),
     }
-

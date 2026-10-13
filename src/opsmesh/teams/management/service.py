@@ -4,13 +4,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.service import AgentManagementService
-from opsmesh.capabilities.references.schema import reject_embedded_secrets
+from opsmesh.agents.profiles.service import AgentProfileService
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.runtime.spaces.service import RuntimeSpaceService
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
+from opsmesh.teams.management.policy import (
+    validate_team_configuration,
+    validate_team_reporting_line,
+)
 from opsmesh.teams.organization.org_chart import TeamOrgChartBuilder
 
 
@@ -91,7 +94,9 @@ class WorkspaceTeamService:
             )
         if command.manager_agent_profile_id is not None:
             self._require_agent(workspace_id, command.manager_agent_profile_id)
-        team = AgentTeam(workspace_id=workspace_id, **_team_payload(command))
+        payload = _team_payload(command)
+        validate_team_configuration(payload)
+        team = AgentTeam(workspace_id=workspace_id, **payload)
         self._session.add(team)
         self._session.flush()
         if actor_user_id is not None:
@@ -144,15 +149,7 @@ class WorkspaceTeamService:
                 target_type="workspace",
                 target_id=workspace_id,
             )
-        for key in ("coordination_rules", "default_task_policy"):
-            if key in changes:
-                value = changes[key]
-                if not isinstance(value, dict):
-                    raise ValueError(f"{key} must be an object")
-                try:
-                    reject_embedded_secrets(value, path=key)
-                except ValueError as exc:
-                    raise ValueError(str(exc)) from exc
+        validate_team_configuration(changes)
         before = _team_snapshot(team, changes)
         for field_name, value in changes.items():
             setattr(team, field_name, value)
@@ -299,7 +296,7 @@ class WorkspaceTeamService:
         return team
 
     def _require_agent(self, workspace_id: UUID, agent_id: UUID) -> None:
-        agent = AgentManagementService(self._session).get_agent(workspace_id, agent_id)
+        agent = AgentProfileService(self._session).get_agent(workspace_id, agent_id)
         if agent is None:
             raise ValueError("Agent not found")
         if agent.status != "active":
@@ -328,25 +325,13 @@ class WorkspaceTeamService:
         member_id: UUID,
         reports_to_member_id: UUID | None,
     ) -> None:
-        if reports_to_member_id is None:
-            return
-        reports_to_by_id = {
-            member.id: member.reports_to_member_id
-            for member in self._session.scalars(
-                select(AgentTeamMember).where(
-                    AgentTeamMember.workspace_id == workspace_id,
-                    AgentTeamMember.agent_team_id == team_id,
-                )
-            ).all()
-        }
-        reports_to_by_id[member_id] = reports_to_member_id
-        seen: set[UUID] = set()
-        current: UUID | None = member_id
-        while current is not None:
-            if current in seen:
-                raise ValueError("Team member reporting line cannot contain a cycle")
-            seen.add(current)
-            current = reports_to_by_id.get(current)
+        validate_team_reporting_line(
+            self._session,
+            workspace_id=workspace_id,
+            team_id=team_id,
+            member_id=member_id,
+            reports_to_member_id=reports_to_member_id,
+        )
 
 
 def _team_payload(command: TeamCreateCommand) -> dict[str, object]:

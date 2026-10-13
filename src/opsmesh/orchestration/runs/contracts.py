@@ -3,11 +3,12 @@ from uuid import UUID
 
 from pydantic import field_serializer
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.orchestration.runs.evidence import public_run_event_metadata
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AgentRunResponse(TimestampedModel):
+class AgentRunResponse(TimestampedContract):
     workspace_id: UUID
     task_id: UUID | None
     task_step_id: UUID | None
@@ -35,7 +36,7 @@ class AgentRunResponse(TimestampedModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class RunEventResponse(ORMModel):
+class RunEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     agent_run_id: UUID
@@ -52,10 +53,10 @@ class RunEventResponse(ORMModel):
 
     @field_serializer("event_metadata")
     def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
+        return public_run_event_metadata(value)
 
 
-class AgentRunProjectSnapshotResponse(ORMModel):
+class AgentRunProjectSnapshotResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     agent_run_id: UUID
@@ -71,7 +72,7 @@ class AgentRunProjectSnapshotResponse(ORMModel):
         return redact_sensitive_payload(value)
 
 
-class AgentRunProjectIOStateResponse(TimestampedModel):
+class AgentRunProjectIOStateResponse(TimestampedContract):
     workspace_id: UUID
     agent_run_id: UUID
     project_snapshot_id: UUID

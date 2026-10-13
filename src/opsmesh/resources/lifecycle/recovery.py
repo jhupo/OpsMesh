@@ -147,8 +147,7 @@ def _backup_coverage(
         "score": max(min(score, 100), 0),
         "current_counts": current_counts,
         "archived_counts": {
-            collection: int(archived_counts.get(collection, 0))
-            for collection in current_counts
+            collection: int(archived_counts.get(collection, 0)) for collection in current_counts
         },
         "uncovered_counts": {
             collection: count for collection, count in uncovered_counts.items() if count > 0
@@ -222,9 +221,7 @@ def _recovery_readiness_actions(
         if "run_archive_export" in recommended_actions:
             return ["run_archive_export"]
         return _unique_strings(
-            action
-            for action in recommended_actions
-            if action in RECOVERY_READINESS_APPLY_ACTIONS
+            action for action in recommended_actions if action in RECOVERY_READINESS_APPLY_ACTIONS
         )
     return _unique_strings(actions)
 

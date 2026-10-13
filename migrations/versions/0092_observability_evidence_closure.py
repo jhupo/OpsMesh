@@ -113,7 +113,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "model_usage_records",
-        sa.Column("attempt_outcome", sa.String(length=32), nullable=False, server_default="succeeded"),
+        sa.Column(
+            "attempt_outcome", sa.String(length=32), nullable=False, server_default="succeeded"
+        ),
     )
     op.add_column(
         "model_usage_records",

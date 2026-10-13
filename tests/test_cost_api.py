@@ -3,18 +3,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.execution.contracts import (
+    AgentExecutionContext,
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeContext,
-    AgentRuntimeUsage,
+    AgentUsageTotals,
 )
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.governance.audit.models import AuditEvent
@@ -27,6 +23,7 @@ from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 TOKEN = "cost-api-token"
 
@@ -95,7 +92,7 @@ def test_cost_api_is_workspace_scoped_audited_and_returns_summary() -> None:
     model_request = AgentRunRequest(
         agent_profile=profile,
         input_text="test",
-        context=AgentRuntimeContext(
+        context=AgentExecutionContext(
             workspace_id=workspace.id,
             task_id=None,
             run_id=run.id,
@@ -114,7 +111,7 @@ def test_cost_api_is_workspace_scoped_audited_and_returns_summary() -> None:
         request=model_request,
         result=AgentRunResult(
             final_output="done",
-            usage=AgentRuntimeUsage(
+            usage=AgentUsageTotals(
                 request_count=1,
                 input_tokens=1_000,
                 output_tokens=500,
@@ -216,13 +213,7 @@ def test_cost_api_rejects_invalid_configuration_inputs() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
@@ -231,7 +222,7 @@ def _client() -> tuple[TestClient, Session]:
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=engine.url.render_as_string(hide_password=False),
         )
     )
 
@@ -263,12 +254,3 @@ def _seed_workspace(session: Session, name: str, slug: str) -> tuple[User, Works
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

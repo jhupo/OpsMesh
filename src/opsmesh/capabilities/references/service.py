@@ -11,7 +11,7 @@ from opsmesh.capabilities.catalog.contracts import (
     CapabilityResourceCreatePayload,
     CapabilityResourceUpdatePayload,
 )
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer
 from opsmesh.capabilities.references.locator import normalize_resource_locator
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.capabilities.references.schema import (
@@ -33,8 +33,8 @@ from opsmesh.teams.management.models import AgentTeam
 OwnedResource = TypeVar(
     "OwnedResource",
     WorkspaceFile,
-    McpServer,
-    McpCredentialReference,
+    MCPServer,
+    MCPCredentialReference,
     RuntimeSpace,
     WorkspaceRuntime,
 )
@@ -252,7 +252,7 @@ class CapabilityResourceService:
             return
         if resource_type in {"mcp_resource", "external_service"}:
             server = self._require_owned(
-                McpServer,
+                MCPServer,
                 workspace_id,
                 UUID(str(locator["mcp_server_id"])),
                 "MCP server",
@@ -260,7 +260,7 @@ class CapabilityResourceService:
             credential_id = locator.get("credential_reference_id")
             if credential_id is not None:
                 credential = self._require_owned(
-                    McpCredentialReference,
+                    MCPCredentialReference,
                     workspace_id,
                     UUID(str(credential_id)),
                     "MCP credential reference",

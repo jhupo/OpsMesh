@@ -21,13 +21,13 @@ from opsmesh.capabilities.marketplace.models import (
     WorkspaceMarketplaceInstall,
 )
 from opsmesh.capabilities.marketplace.resource_installer import MarketplaceResourceInstaller
-from opsmesh.capabilities.mcp.models import McpServer
+from opsmesh.capabilities.mcp.models import MCPServer
 from opsmesh.capabilities.references.schema import reject_embedded_secrets
 from opsmesh.capabilities.skills.models import Skill
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.models import ResourceReview
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.contracts import ResourceReviewResult
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.errors import (
     DatabaseConflictError,
@@ -38,7 +38,7 @@ from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
 
 
-class MarketplaceService:
+class ResourceMarketplaceService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings
@@ -166,8 +166,8 @@ class MarketplaceService:
         self,
         workspace_id: UUID,
         data: MarketplaceListingCreateRequest,
-    ) -> ResourceReview:
-        reviewer = ResourcePolicyReviewBuilder(self._session, self._settings)
+    ) -> ResourceReviewResult:
+        reviewer = ResourcePolicyReviewService(self._session, self._settings)
         if data.listing_type == "agent" and data.source_resource_id is not None:
             agent = self._session.get(AgentProfile, data.source_resource_id)
             if agent is not None and agent.workspace_id == workspace_id:
@@ -195,7 +195,7 @@ class MarketplaceService:
                 )
             raise ValueError("Skill not found")
         if data.listing_type == "mcp_server" and data.source_resource_id is not None:
-            server = self._session.get(McpServer, data.source_resource_id)
+            server = self._session.get(MCPServer, data.source_resource_id)
             if server is not None and server.workspace_id == workspace_id:
                 return reviewer.review_mcp_server(
                     workspace_id=workspace_id,

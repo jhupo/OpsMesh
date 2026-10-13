@@ -14,23 +14,16 @@
 | POST | `/api/v1/admin/catalog/{kind}/{resource_id}/release` | Release Capability Resource |
 | GET | `/api/v1/admin/costs/summary` | Cost Summary |
 | GET | `/api/v1/admin/marketplace/reviews` | List Reviews |
-| GET | `/api/v1/admin/operations/audit-integrity` | Integrity |
+| GET | `/api/v1/admin/operations/audit-integrity` | Audit Status |
 | GET | `/api/v1/admin/operations/history` | History |
-| GET | `/api/v1/admin/operations/requests` | Operation Requests |
-| GET | `/api/v1/admin/operations/requests/{request_id}` | Operation |
-| GET | `/api/v1/admin/operations/runs` | Diagnostic Runs |
-| GET | `/api/v1/admin/operations/summary` | Admin Operations Summary |
+| GET | `/api/v1/admin/operations/requests` | Requests |
+| GET | `/api/v1/admin/operations/requests/{request_id}` | Request |
+| GET | `/api/v1/admin/operations/summary` | Summary |
 | GET | `/api/v1/admin/overview` | Admin Overview |
 | GET | `/api/v1/admin/platform-policies` | List Admin Platform Policies |
 | GET | `/api/v1/admin/platform-policies/risky-execution` | Get Admin Risky Execution Policy |
 | PATCH | `/api/v1/admin/platform-policies/risky-execution` | Update Admin Risky Execution Policy |
-| GET | `/api/v1/admin/platform-policies/worker-control` | Get Admin Worker Control Policy |
-| PATCH | `/api/v1/admin/platform-policies/worker-control` | Update Admin Worker Control Policy |
 | GET | `/api/v1/admin/platform-policies/{policy_key}/events` | List Admin Platform Policy Events |
-| GET | `/api/v1/admin/queues/{queue_name}/dead-letter-jobs` | List Admin Dead Letter Jobs |
-| POST | `/api/v1/admin/queues/{queue_name}/dead-letter-jobs/{job_id}/requeue` | Requeue Admin Dead Letter Job |
-| GET | `/api/v1/admin/queues/{queue_name}/metrics` | Admin Queue Metrics |
-| GET | `/api/v1/admin/runtime-leases` | List Admin Runtime Leases |
 | GET | `/api/v1/admin/runtime-spaces` | List Admin Runtime Spaces |
 | POST | `/api/v1/admin/runtime-spaces/{runtime_space_id}/quarantine` | Quarantine Admin Runtime Space |
 | GET | `/api/v1/admin/runtimes` | List Admin Runtimes |
@@ -59,10 +52,6 @@
 | POST | `/api/v1/admin/users/{user_id}/reset-password` | Reset Admin User Password |
 | POST | `/api/v1/admin/users/{user_id}/revoke-tokens` | Revoke Admin User Tokens |
 | PUT | `/api/v1/admin/users/{user_id}/status` | Update Admin User Status |
-| GET | `/api/v1/admin/worker-leases` | List Admin Worker Leases |
-| GET | `/api/v1/admin/workers` | List Admin Workers |
-| PATCH | `/api/v1/admin/workers/{worker_id}` | Update Admin Worker |
-| POST | `/api/v1/admin/workers/{worker_id}/drain` | Drain Admin Worker |
 | GET | `/api/v1/admin/workspaces` | List Admin Workspaces |
 | GET | `/api/v1/admin/workspaces/{workspace_id}` | Get Admin Workspace |
 | POST | `/api/v1/admin/workspaces/{workspace_id}/marketplace/reviews/{approval_id}/decision` | Decide Review |
@@ -70,9 +59,8 @@
 | POST | `/api/v1/admin/workspaces/{workspace_id}/members` | Add Admin Workspace Member |
 | DELETE | `/api/v1/admin/workspaces/{workspace_id}/members/{member_id}` | Remove Admin Workspace Member |
 | PATCH | `/api/v1/admin/workspaces/{workspace_id}/members/{member_id}` | Update Admin Workspace Member |
-| POST | `/api/v1/admin/workspaces/{workspace_id}/operations/audit-integrity/verify` | Verify |
-| GET | `/api/v1/admin/workspaces/{workspace_id}/operations/scheduler` | Scheduler |
-| POST | `/api/v1/admin/workspaces/{workspace_id}/operations/stale-runs/recover` | Recover |
+| POST | `/api/v1/admin/workspaces/{workspace_id}/operations/audit-integrity/verify` | Verify Audit |
+| POST | `/api/v1/admin/workspaces/{workspace_id}/operations/runs/{run_id}/cancel` | Cancel Run |
 | POST | `/api/v1/admin/workspaces/{workspace_id}/plugin-trust-keys/{key_id}/revoke` | Revoke Publisher Key |
 | POST | `/api/v1/admin/workspaces/{workspace_id}/plugins/{install_id}/disable` | Disable Plugin |
 | POST | `/api/v1/admin/workspaces/{workspace_id}/plugins/{install_id}/release` | Release Plugin |
@@ -411,11 +399,11 @@ Operation ID：`list_reviews_api_v1_admin_marketplace_reviews_get`。
 
 ## GET `/api/v1/admin/operations/audit-integrity`
 
-Integrity
+Audit Status
 
-Operation ID：`integrity_api_v1_admin_operations_audit_integrity_get`。
+Operation ID：`audit_status_api_v1_admin_operations_audit_integrity_get`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `integrity`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `audit_status`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
 
@@ -423,7 +411,6 @@ Operation ID：`integrity_api_v1_admin_operations_audit_integrity_get`。
 
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
-| `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -432,7 +419,7 @@ Operation ID：`integrity_api_v1_admin_operations_audit_integrity_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_IntegrityResponse_](schemas.md#schema-PageResponse_IntegrityResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_WorkspaceAuditStatus_](schemas.md#schema-PageResponse_WorkspaceAuditStatus_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -443,7 +430,7 @@ History
 
 Operation ID：`history_api_v1_admin_operations_history_get`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `history`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `history`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
 
@@ -451,8 +438,8 @@ Operation ID：`history_api_v1_admin_operations_history_get`。
 
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
-| `start_at` | query | 否 | string (date-time) anyOf null | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `end_at` | query | 否 | string (date-time) anyOf null | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `start_at` | query | 是 | string (date-time) | `format="date-time"` |
+| `end_at` | query | 是 | string (date-time) | `format="date-time"` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -461,18 +448,18 @@ Operation ID：`history_api_v1_admin_operations_history_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_HistoryResponse_](schemas.md#schema-PageResponse_HistoryResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_PlatformMetricResponse_](schemas.md#schema-PageResponse_PlatformMetricResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
 ## GET `/api/v1/admin/operations/requests`
 
-Operation Requests
+Requests
 
-Operation ID：`operation_requests_api_v1_admin_operations_requests_get`。
+Operation ID：`requests_api_v1_admin_operations_requests_get`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `operation_requests`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `requests`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
 
@@ -481,7 +468,6 @@ Operation ID：`operation_requests_api_v1_admin_operations_requests_get`。
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
 | `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `status` | query | 否 | string anyOf null | `anyOf=[{"enum": ["pending", "running", "completed", "failed"], "type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -497,11 +483,11 @@ Operation ID：`operation_requests_api_v1_admin_operations_requests_get`。
 
 ## GET `/api/v1/admin/operations/requests/{request_id}`
 
-Operation
+Request
 
-Operation ID：`operation_api_v1_admin_operations_requests__request_id__get`。
+Operation ID：`request_api_v1_admin_operations_requests__request_id__get`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `operation`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `request`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
 
@@ -521,43 +507,13 @@ Operation ID：`operation_api_v1_admin_operations_requests__request_id__get`。
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
-## GET `/api/v1/admin/operations/runs`
-
-Diagnostic Runs
-
-Operation ID：`diagnostic_runs_api_v1_admin_operations_runs_get`。
-
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `diagnostic_runs`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `kind` | query | 否 | string | `default="failed"`; `enum=["failed", "stale"]` |
-| `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `stale_after_seconds` | query | 否 | integer | `default=900`; `maximum=86400`; `minimum=60` |
-| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
-| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_AgentRunResponse_](schemas.md#schema-PageResponse_AgentRunResponse_) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
 ## GET `/api/v1/admin/operations/summary`
 
-Admin Operations Summary
+Summary
 
-Operation ID：`admin_operations_summary_api_v1_admin_operations_summary_get`。
+Operation ID：`summary_api_v1_admin_operations_summary_get`。
 
-实现：[src/opsmesh/runtime/queues/admin_routes.py](../../src/opsmesh/runtime/queues/admin_routes.py) · `admin_operations_summary`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `summary`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
 
@@ -565,14 +521,14 @@ Operation ID：`admin_operations_summary_api_v1_admin_operations_summary_get`。
 
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
-| `queue_name` | query | 否 | string | `default="agent_runs"` |
+| `window_seconds` | query | 否 | integer | `default=86400`; `maximum=2592000`; `minimum=60` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminOperationsSummaryResponse](schemas.md#schema-AdminOperationsSummaryResponse) |
+| 200 | Successful Response | application/json | [PlatformExecutionSummary](schemas.md#schema-PlatformExecutionSummary) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -694,70 +650,6 @@ Content-Type：`application/json`。
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
-## GET `/api/v1/admin/platform-policies/worker-control`
-
-Get Admin Worker Control Policy
-
-Operation ID：`get_admin_worker_control_policy_api_v1_admin_platform_policies_worker_control_get`。
-
-实现：[src/opsmesh/governance/policies/routes.py](../../src/opsmesh/governance/policies/routes.py) · `get_admin_worker_control_policy`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminPlatformPolicyResponse](schemas.md#schema-AdminPlatformPolicyResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## PATCH `/api/v1/admin/platform-policies/worker-control`
-
-Update Admin Worker Control Policy
-
-Operation ID：`update_admin_worker_control_policy_api_v1_admin_platform_policies_worker_control_patch`。
-
-实现：[src/opsmesh/governance/policies/routes.py](../../src/opsmesh/governance/policies/routes.py) · `update_admin_worker_control_policy`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/AdminWorkerControlPolicyUpdateRequest"
-}
-```
-
-模型：[AdminWorkerControlPolicyUpdateRequest](schemas.md#schema-AdminWorkerControlPolicyUpdateRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminPlatformPolicyResponse](schemas.md#schema-AdminPlatformPolicyResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
 ## GET `/api/v1/admin/platform-policies/{policy_key}/events`
 
 List Admin Platform Policy Events
@@ -783,117 +675,6 @@ Operation ID：`list_admin_platform_policy_events_api_v1_admin_platform_policies
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [PageResponse_AdminPlatformPolicyEventResponse_](schemas.md#schema-PageResponse_AdminPlatformPolicyEventResponse_) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/admin/queues/{queue_name}/dead-letter-jobs`
-
-List Admin Dead Letter Jobs
-
-Operation ID：`list_admin_dead_letter_jobs_api_v1_admin_queues__queue_name__dead_letter_jobs_get`。
-
-实现：[src/opsmesh/runtime/queues/admin_routes.py](../../src/opsmesh/runtime/queues/admin_routes.py) · `list_admin_dead_letter_jobs`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `queue_name` | path | 是 | string | — |
-| `limit` | query | 否 | integer | `default=50`; `maximum=200`; `minimum=1` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminDeadLetterJobsResponse](schemas.md#schema-AdminDeadLetterJobsResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/admin/queues/{queue_name}/dead-letter-jobs/{job_id}/requeue`
-
-Requeue Admin Dead Letter Job
-
-Operation ID：`requeue_admin_dead_letter_job_api_v1_admin_queues__queue_name__dead_letter_jobs__job_id__requeue_post`。
-
-实现：[src/opsmesh/runtime/queues/admin_routes.py](../../src/opsmesh/runtime/queues/admin_routes.py) · `requeue_admin_dead_letter_job`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `queue_name` | path | 是 | string | — |
-| `job_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminRequeueDeadLetterResponse](schemas.md#schema-AdminRequeueDeadLetterResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/admin/queues/{queue_name}/metrics`
-
-Admin Queue Metrics
-
-Operation ID：`admin_queue_metrics_api_v1_admin_queues__queue_name__metrics_get`。
-
-实现：[src/opsmesh/runtime/queues/admin_routes.py](../../src/opsmesh/runtime/queues/admin_routes.py) · `admin_queue_metrics`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `queue_name` | path | 是 | string | — |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [QueueMetricsResponse](schemas.md#schema-QueueMetricsResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/admin/runtime-leases`
-
-List Admin Runtime Leases
-
-Operation ID：`list_admin_runtime_leases_api_v1_admin_runtime_leases_get`。
-
-实现：[src/opsmesh/runtime/instances/lease_admin_routes.py](../../src/opsmesh/runtime/instances/lease_admin_routes.py) · `list_admin_runtime_leases`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `status` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `workspace_runtime_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
-| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_AdminRuntimeLeaseResponse_](schemas.md#schema-PageResponse_AdminRuntimeLeaseResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -984,7 +765,6 @@ Operation ID：`list_admin_runtimes_api_v1_admin_runtimes_get`。
 | `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `status` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `connection_status` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -993,7 +773,7 @@ Operation ID：`list_admin_runtimes_api_v1_admin_runtimes_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_AdminWorkspaceRuntimeResponse_](schemas.md#schema-PageResponse_AdminWorkspaceRuntimeResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_WorkspaceRuntimeResponse_](schemas.md#schema-PageResponse_WorkspaceRuntimeResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1033,7 +813,7 @@ Content-Type：`application/json`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [AdminWorkspaceRuntimeResponse](schemas.md#schema-AdminWorkspaceRuntimeResponse) |
+| 200 | Successful Response | application/json | [WorkspaceRuntimeResponse](schemas.md#schema-WorkspaceRuntimeResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1147,7 +927,7 @@ Operation ID：`list_admin_system_logs_api_v1_admin_system_logs_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_AdminSystemLogResponse_](schemas.md#schema-PageResponse_AdminSystemLogResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_AuditEventResponse_](schemas.md#schema-PageResponse_AuditEventResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1201,11 +981,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/MailConfigurationUpdate"
+  "$ref": "#/components/schemas/MailConfigurationUpdateRequest"
 }
 ```
 
-模型：[MailConfigurationUpdate](schemas.md#schema-MailConfigurationUpdate)
+模型：[MailConfigurationUpdateRequest](schemas.md#schema-MailConfigurationUpdateRequest)
 
 ### 响应
 
@@ -1344,17 +1124,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/PlanRequest"
+  "$ref": "#/components/schemas/PlatformUpdatePlanRequest"
 }
 ```
 
-模型：[PlanRequest](schemas.md#schema-PlanRequest)
+模型：[PlatformUpdatePlanRequest](schemas.md#schema-PlatformUpdatePlanRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [JobResponse](schemas.md#schema-JobResponse) |
+| 202 | Successful Response | application/json | [PlatformUpdateJobResponse](schemas.md#schema-PlatformUpdateJobResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1380,7 +1160,7 @@ Operation ID：`read_job_api_v1_admin_system_updates__job_id__get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [JobResponse](schemas.md#schema-JobResponse) |
+| 200 | Successful Response | application/json | [PlatformUpdateJobResponse](schemas.md#schema-PlatformUpdateJobResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1410,17 +1190,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/ApplyRequest"
+  "$ref": "#/components/schemas/PlatformUpdateApplyRequest"
 }
 ```
 
-模型：[ApplyRequest](schemas.md#schema-ApplyRequest)
+模型：[PlatformUpdateApplyRequest](schemas.md#schema-PlatformUpdateApplyRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [JobResponse](schemas.md#schema-JobResponse) |
+| 202 | Successful Response | application/json | [PlatformUpdateJobResponse](schemas.md#schema-PlatformUpdateJobResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1446,7 +1226,7 @@ Operation ID：`cancel_job_api_v1_admin_system_updates__job_id__cancel_post`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [JobResponse](schemas.md#schema-JobResponse) |
+| 200 | Successful Response | application/json | [PlatformUpdateJobResponse](schemas.md#schema-PlatformUpdateJobResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1472,7 +1252,7 @@ Operation ID：`read_events_api_v1_admin_system_updates__job_id__events_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | array&lt;[opsmesh__platform__updates__routes__EventResponse](schemas.md#schema-opsmesh__platform__updates__routes__EventResponse)&gt; |
+| 200 | Successful Response | application/json | array&lt;[PlatformUpdateEventResponse](schemas.md#schema-PlatformUpdateEventResponse)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1564,7 +1344,7 @@ Operation ID：`list_admin_users_api_v1_admin_users_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_AdminUserListResponse_](schemas.md#schema-PageResponse_AdminUserListResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_AdminUserListItemResponse_](schemas.md#schema-PageResponse_AdminUserListItemResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1788,131 +1568,6 @@ Content-Type：`application/json`。
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [AdminUserResponse](schemas.md#schema-AdminUserResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/admin/worker-leases`
-
-List Admin Worker Leases
-
-Operation ID：`list_admin_worker_leases_api_v1_admin_worker_leases_get`。
-
-实现：[src/opsmesh/runtime/instances/lease_admin_routes.py](../../src/opsmesh/runtime/instances/lease_admin_routes.py) · `list_admin_worker_leases`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `status` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `workspace_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `worker_id` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
-| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_WorkerLeaseResponse_](schemas.md#schema-PageResponse_WorkerLeaseResponse_) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/admin/workers`
-
-List Admin Workers
-
-Operation ID：`list_admin_workers_api_v1_admin_workers_get`。
-
-实现：[src/opsmesh/runtime/workers/admin_routes.py](../../src/opsmesh/runtime/workers/admin_routes.py) · `list_admin_workers`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `status` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_type` | query | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
-| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_WorkerNodeResponse_](schemas.md#schema-PageResponse_WorkerNodeResponse_) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## PATCH `/api/v1/admin/workers/{worker_id}`
-
-Update Admin Worker
-
-Operation ID：`update_admin_worker_api_v1_admin_workers__worker_id__patch`。
-
-实现：[src/opsmesh/runtime/workers/admin_routes.py](../../src/opsmesh/runtime/workers/admin_routes.py) · `update_admin_worker`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `worker_id` | path | 是 | string | — |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/AdminWorkerUpdateRequest"
-}
-```
-
-模型：[AdminWorkerUpdateRequest](schemas.md#schema-AdminWorkerUpdateRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [WorkerNodeResponse](schemas.md#schema-WorkerNodeResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/admin/workers/{worker_id}/drain`
-
-Drain Admin Worker
-
-Operation ID：`drain_admin_worker_api_v1_admin_workers__worker_id__drain_post`。
-
-实现：[src/opsmesh/runtime/workers/admin_routes.py](../../src/opsmesh/runtime/workers/admin_routes.py) · `drain_admin_worker`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `worker_id` | path | 是 | string | — |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [WorkerNodeResponse](schemas.md#schema-WorkerNodeResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -2152,11 +1807,11 @@ Content-Type：`application/json`。
 
 ## POST `/api/v1/admin/workspaces/{workspace_id}/operations/audit-integrity/verify`
 
-Verify
+Verify Audit
 
-Operation ID：`verify_api_v1_admin_workspaces__workspace_id__operations_audit_integrity_verify_post`。
+Operation ID：`verify_audit_api_v1_admin_workspaces__workspace_id__operations_audit_integrity_verify_post`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `verify`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `verify_audit`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -2176,11 +1831,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/OperationRequest"
+  "$ref": "#/components/schemas/AdminOperationSubmitRequest"
 }
 ```
 
-模型：[OperationRequest](schemas.md#schema-OperationRequest)
+模型：[AdminOperationSubmitRequest](schemas.md#schema-AdminOperationSubmitRequest)
 
 ### 响应
 
@@ -2191,39 +1846,13 @@ Content-Type：`application/json`。
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
-## GET `/api/v1/admin/workspaces/{workspace_id}/operations/scheduler`
+## POST `/api/v1/admin/workspaces/{workspace_id}/operations/runs/{run_id}/cancel`
 
-Scheduler
+Cancel Run
 
-Operation ID：`scheduler_api_v1_admin_workspaces__workspace_id__operations_scheduler_get`。
+Operation ID：`cancel_run_api_v1_admin_workspaces__workspace_id__operations_runs__run_id__cancel_post`。
 
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `scheduler`。
-
-权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [OperationsSchedulerResponse](schemas.md#schema-OperationsSchedulerResponse) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/admin/workspaces/{workspace_id}/operations/stale-runs/recover`
-
-Recover
-
-Operation ID：`recover_api_v1_admin_workspaces__workspace_id__operations_stale_runs_recover_post`。
-
-实现：[src/opsmesh/runtime/operations/admin_dashboard_routes.py](../../src/opsmesh/runtime/operations/admin_dashboard_routes.py) · `recover`。
+实现：[src/opsmesh/platform/operations/routes.py](../../src/opsmesh/platform/operations/routes.py) · `cancel_run`。
 
 权限依赖：`opsmesh.identity.authorization.admin_dependencies.require_platform_admin`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -2232,6 +1861,7 @@ Operation ID：`recover_api_v1_admin_workspaces__workspace_id__operations_stale_
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
 | `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `run_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 
@@ -2243,11 +1873,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/RecoveryRequest"
+  "$ref": "#/components/schemas/AdminOperationSubmitRequest"
 }
 ```
 
-模型：[RecoveryRequest](schemas.md#schema-RecoveryRequest)
+模型：[AdminOperationSubmitRequest](schemas.md#schema-AdminOperationSubmitRequest)
 
 ### 响应
 

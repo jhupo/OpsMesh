@@ -12,7 +12,7 @@ from opsmesh.shared.utils import string_list, uuid_or_none
 
 
 @dataclass(frozen=True)
-class MemberMatch:
+class TeamMemberMatch:
     agent_profile_id: UUID
     team_member_id: UUID | None
     team_role: str
@@ -22,7 +22,7 @@ class MemberMatch:
     max_concurrent_tasks: int
 
 
-class MemberMatchingService:
+class TeamMemberMatcher:
     def __init__(self, session: Session | None = None) -> None:
         self._session = session
 
@@ -33,7 +33,7 @@ class MemberMatchingService:
         required_role: str,
         required_skills: list[str],
         workspace_id: UUID | None = None,
-    ) -> MemberMatch | None:
+    ) -> TeamMemberMatch | None:
         candidates = self.rank(
             team_snapshot=team_snapshot,
             required_role=required_role,
@@ -49,8 +49,8 @@ class MemberMatchingService:
         required_role: str,
         required_skills: list[str],
         workspace_id: UUID | None = None,
-    ) -> list[MemberMatch]:
-        matches: list[MemberMatch] = []
+    ) -> list[TeamMemberMatch]:
+        matches: list[TeamMemberMatch] = []
         for member in _snapshot_members(team_snapshot):
             if member.get("accepts_tasks") is False:
                 continue
@@ -79,7 +79,7 @@ class MemberMatchingService:
                 reasons.append(f"load_penalty:{load_penalty:.2f}")
 
             matches.append(
-                MemberMatch(
+                TeamMemberMatch(
                     agent_profile_id=agent_profile_id,
                     team_member_id=uuid_or_none(member.get("id")),
                     team_role=team_role,

@@ -23,7 +23,7 @@ from opsmesh_operator.commands import run_command
 from opsmesh_operator.contracts import ReleaseManifest
 from opsmesh_operator.files import atomic_write
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.releases import ReleaseSource
+from opsmesh_operator.releases import ReleaseDownloader
 from psycopg import sql
 
 ROOT = Path("/opt/opsmesh-acceptance")
@@ -38,7 +38,7 @@ def wait_for(predicate: Callable[[], bool], description: str, timeout: int = 900
     raise TimeoutError(f"Acceptance timed out: {description}")
 
 
-class Unavailable(BaseHTTPRequestHandler):
+class UnavailableReleaseHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self.send_response(503)
         self.end_headers()
@@ -47,7 +47,7 @@ class Unavailable(BaseHTTPRequestHandler):
         pass
 
 
-class Acceptance:
+class ManagedDeliveryAcceptance:
     def __init__(self, mode: str, tag: str, previous: str) -> None:
         self.mode, self.tag, self.previous = mode, tag, previous
         self.installation = Installation(root=ROOT, mode=mode)
@@ -108,13 +108,13 @@ class Acceptance:
 
     def install(self) -> None:
         if ROOT.exists():
-            raise ValueError("Acceptance refuses to reuse an installation directory")
+            raise ValueError("ManagedDeliveryAcceptance refuses to reuse an installation directory")
         ROOT.mkdir(mode=0o750)
         # A temporary workflow token lets this disposable runner install the attested,
         # unpublished candidate before publication. Public hosts require only the repository name.
         release_token = os.environ["OPSMESH_RELEASE_TOKEN"]
         atomic_write(ROOT / "updater.env", f"OPSMESH_RELEASE_TOKEN={release_token}\n")
-        source = ReleaseSource("jhupo/OpsMesh")
+        source = ReleaseDownloader("jhupo/OpsMesh")
         directory = ROOT / "client-download"
         manifest = source.fetch_manifest(self.tag, directory)
         record = next(
@@ -136,7 +136,8 @@ class Acceptance:
                 "OPSMESH_REDIS_URL": "redis://127.0.0.1:6379/0",
                 "OPSMESH_STORAGE_ROOT": str(ROOT / "data/storage"),
                 "OPSMESH_RELEASE_UPDATE_ENABLED": "true",
-                "OPSMESH_READINESS_WORKER_CHECK_ENABLED": "true",
+                "OPSMESH_TEMPORAL_ADDRESS": "127.0.0.1:7233",
+                "OPSMESH_TEMPORAL_NAMESPACE": "default",
                 "OPSMESH_TRACING_ENABLED": "false",
                 "OPSMESH_OTEL_LOGS_ENABLED": "false",
                 "OPSMESH_ENABLE_API_DOCS": "false",
@@ -148,7 +149,6 @@ class Acceptance:
                 "PLATFORM_ADMIN_TOKEN",
                 "TOKEN_HASH_PEPPER",
                 "CREDENTIAL_ENCRYPTION_SECRET",
-                "WORKER_HEARTBEAT_TOKEN",
             ):
                 values[f"OPSMESH_{name}"] = secrets.token_hex(32)
             atomic_write(
@@ -337,7 +337,7 @@ class Acceptance:
     def failed_start(self, *, action: str = "plan") -> None:
         job_id = self.plan(self.tag, action)
         wait_for(lambda: self.journal(job_id).get("phase") == "backup", "stopped application")
-        server = ThreadingHTTPServer(("127.0.0.1", 8000), Unavailable)
+        server = ThreadingHTTPServer(("127.0.0.1", 8000), UnavailableReleaseHandler)
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -355,15 +355,19 @@ class Acceptance:
         )
 
     def accepts_previous_application(self) -> bool:
-        source = ReleaseSource("jhupo/OpsMesh")
+        source = ReleaseDownloader("jhupo/OpsMesh")
         previous = source.fetch_manifest(self.previous, ROOT / "baseline-manifest")
         return previous.accepts_database_revision(self.installation.current().database_revision)
 
     def reject_incompatible_rollback(self) -> None:
         result = json.loads(
             self.command(
-                "update", "rollback", "--version", self.previous,
-                "--idempotency-key", uuid4().hex,
+                "update",
+                "rollback",
+                "--version",
+                self.previous,
+                "--idempotency-key",
+                uuid4().hex,
             )
         )
         job_id = str(result["id"])
@@ -390,7 +394,7 @@ def main() -> None:
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0 or os.name != "posix":
         raise ValueError("Run only as root on a fresh disposable GitHub Linux runner")
-    acceptance = Acceptance(args.mode, args.tag, args.previous)
+    acceptance = ManagedDeliveryAcceptance(args.mode, args.tag, args.previous)
     try:
         acceptance.install()
     except Exception:

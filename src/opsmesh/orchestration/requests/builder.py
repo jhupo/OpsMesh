@@ -6,37 +6,34 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
+    AgentExecutionContext,
     AgentInputAttachment,
+    AgentInvocationConfig,
+    AgentProfileSnapshot,
+    AgentResourceGrant,
     AgentRunRequest,
-    AgentRuntimeAgentTarget,
-    AgentRuntimeContext,
-    AgentRuntimeProfile,
-    AgentRuntimeResourceGrant,
-    AgentRuntimeToolDefinition,
-    AgentRunTracing,
-    AgentSessionBinding,
+    AgentSessionScope,
+    AgentToolSpec,
+    AgentTracingConfig,
 )
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
 from opsmesh.agents.execution.guardrails import runtime_controls_from_snapshot
-from opsmesh.agents.execution.state import AgentRunStateStore
+from opsmesh.agents.execution.state import AgentResumeStateStore
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.agents.profiles.routing import bounded_target_int
-from opsmesh.agents.sessions.models import PersistentAgentSessionRef
+from opsmesh.agents.sessions.models import AgentSessionIdentity
+from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.orchestration.approvals.pending_tools import PendingToolInvocationService
-from opsmesh.orchestration.conversations.models import ConversationExecution
 from opsmesh.orchestration.requests.attachments import message_attachments
-from opsmesh.orchestration.requests.context import RunRequestContextProvider
-from opsmesh.orchestration.requests.context_budget import (
-    ContextBudgetManager,
-    ContextBudgetResult,
+from opsmesh.orchestration.requests.context import (
     ContextFragment,
     ContextPriority,
+    RunRequestContextProvider,
 )
 from opsmesh.orchestration.requests.model_provider import RunRequestModelProviderService
 from opsmesh.orchestration.requests.prompt import RunRequestPromptRenderer
 from opsmesh.orchestration.requests.sessions import RunRequestSessionService
 from opsmesh.orchestration.requests.tracing import agent_run_tracing
-from opsmesh.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
 from opsmesh.orchestration.runs.authorization.runtime import (
     ResolvedRunRuntimeBinding,
     RunRuntimeAuthorizationService,
@@ -55,14 +52,10 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.queries import authorization_snapshot_for_run
 from opsmesh.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.platform.settings.policy import operational_configuration
 from opsmesh.resources.memory.context import AgentMemoryContext, AgentMemoryContextService
-from opsmesh.resources.memory.policy import agent_memory_policy, context_budget_policy
-from opsmesh.runtime.backends.registry import RuntimeBackendRegistry
-from opsmesh.runtime.contracts import SandboxBinding, SandboxManifest
-from opsmesh.runtime.instances.contracts import DockerRuntimeClient
+from opsmesh.resources.memory.policy import agent_memory_policy
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.projects.io.support import project_runtime_context
@@ -72,11 +65,11 @@ from opsmesh.workspaces.projects.io.support import project_runtime_context
 class _AuthorizedRequestInputs:
     task: Task | None
     profile: AgentProfile
-    runtime_profile: AgentRuntimeProfile
+    runtime_profile: AgentProfileSnapshot
     snapshot: dict[str, object]
     allowed_tools: tuple[str, ...]
-    tool_definitions: tuple[AgentRuntimeToolDefinition, ...]
-    resource_grants: tuple[AgentRuntimeResourceGrant, ...]
+    tool_definitions: tuple[AgentToolSpec, ...]
+    resource_grants: tuple[AgentResourceGrant, ...]
     file_scope_ids: tuple[UUID, ...]
     runtime_binding: ResolvedRunRuntimeBinding
     model_provider: dict[str, Any]
@@ -86,34 +79,32 @@ class _AuthorizedRequestInputs:
 class _RuntimeRequestState:
     metadata: dict[str, object]
     project_workspace: dict[str, object] | None
-    sandbox: SandboxBinding | None
+    sandbox_backend: str | None
 
 
 @dataclass(slots=True)
 class _MemoryRequestState:
-    persistent_session_ref: PersistentAgentSessionRef
+    persistent_session_ref: AgentSessionIdentity
     retrieved_memory: AgentMemoryContext
-    persistent_session: AgentSessionBinding | None
+    persistent_session: AgentSessionScope | None
 
 
 @dataclass(slots=True)
 class _ContextRequestState:
     attachments: tuple[AgentInputAttachment, ...]
-    runtime_context: AgentRuntimeContext
-    agent_tools: tuple[AgentRuntimeAgentTarget, ...]
-    handoffs: tuple[AgentRuntimeAgentTarget, ...]
+    runtime_context: AgentExecutionContext
+    agent_tools: tuple[AgentInvocationConfig, ...]
+    handoffs: tuple[AgentInvocationConfig, ...]
     output_schema: Any
     guardrails: Any
-    budget: ContextBudgetResult
-    tracing: AgentRunTracing
+    input_text: str
+    tracing: AgentTracingConfig
 
 
 @dataclass(slots=True)
 class RunRequestBuilder:
     session: Session
     settings: Settings | None
-    docker_client: DockerRuntimeClient | None = None
-    runtime_backends: RuntimeBackendRegistry | None = None
 
     @property
     def authorization(self) -> RunAuthorizationService:
@@ -142,7 +133,7 @@ class RunRequestBuilder:
     def build_agent_request(
         self,
         run: AgentRun,
-        job: JobPayload,
+        job: ExecutionRequest,
         model_provider_override: dict[str, Any] | None = None,
     ) -> AgentRunRequest:
         self.validate_job_scope(run, job)
@@ -166,29 +157,6 @@ class RunRequestBuilder:
             task=task,
             snapshot=snapshot,
         )
-        if (
-            self.session.scalar(
-                select(ConversationExecution.id).where(
-                    ConversationExecution.workspace_id == run.workspace_id,
-                    ConversationExecution.task_id == run.task_id,
-                )
-            )
-            is not None
-        ):
-            runtime_id = runtime_binding.execution_runtime_id
-            runtime = self.session.scalar(
-                select(WorkspaceRuntime).where(
-                    WorkspaceRuntime.workspace_id == run.workspace_id,
-                    WorkspaceRuntime.id == runtime_id,
-                    WorkspaceRuntime.execution_mode.in_(["isolated", "shared"]),
-                    WorkspaceRuntime.status.in_(["active", "running"]),
-                )
-            )
-            if runtime is None:
-                raise RunRuntimeAuthorizationError(
-                    "conversation_runtime_required",
-                    "Conversation execution requires an approved isolated or shared Runtime",
-                )
         runtime_profile = agent_runtime_profile_for_snapshot(
             snapshot,
             workspace_id=run.workspace_id,
@@ -235,21 +203,16 @@ class RunRequestBuilder:
             authorization_snapshot=inputs.snapshot,
         )
         binding = inputs.runtime_binding
-        runtime_id = binding.execution_runtime_id
+        runtime_id = binding.workspace_runtime_id
         if runtime_id is not None:
             metadata["runtime_execution"] = {
                 "mode": mode,
-                "execution_runtime_id": str(runtime_id),
-                "parent_runtime_id": (
-                    str(binding.workspace_runtime_id)
-                    if binding.workspace_runtime_id is not None
-                    else None
-                ),
+                "workspace_runtime_id": str(runtime_id),
             }
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
-        sandbox = None
+        sandbox_backend: str | None = None
         if runtime_id is not None and inputs.model_provider["provider"] in {
             "openai",
             "openai-compatible",
@@ -262,25 +225,9 @@ class RunRequestBuilder:
             )
             if runtime is None:
                 raise ValueError("Authorized execution runtime is missing")
-            root = (
-                project_workspace.get("working_directory")
-                if isinstance(project_workspace, dict)
-                else f"/workspace/runs/{run.id}"
-            )
-            manifest = SandboxManifest(run_id=run.id, root=str(root))
-            backend = self._runtime_backends().require(runtime.runtime_provider)
-            sandbox_session = backend.sandbox_session(
-                manifest,
-                runtime,
-            )
-            sandbox_metadata: dict[str, object] = {
-                "session_id": sandbox_session.session_id,
-                "root": sandbox_session.root,
-                "backend": sandbox_session.backend,
-                "persistent": sandbox_session.persistent,
-            }
-            metadata["sandbox_session"] = sandbox_metadata
-            sandbox = SandboxBinding(manifest=manifest, session=sandbox_session)
+            sandbox_backend = runtime.sandbox_backend_id
+            metadata["sandbox_backend_id"] = sandbox_backend
+            metadata["sandbox_options"] = dict(runtime.sandbox_options)
         if mode == "none":
             metadata["sandbox_mode"] = "none"
         elif runtime_id is None:
@@ -288,7 +235,7 @@ class RunRequestBuilder:
         return _RuntimeRequestState(
             metadata=metadata,
             project_workspace=project_workspace,
-            sandbox=sandbox,
+            sandbox_backend=sandbox_backend,
         )
 
     def _build_memory_state(
@@ -302,7 +249,7 @@ class RunRequestBuilder:
             "openai",
             "openai-compatible",
         }:
-            raise AgentRuntimePolicyError(
+            raise AgentExecutionPolicyError(
                 code="sdk_memory_provider_unsupported",
                 message="SDK file memory requires the OpenAI Agents SDK",
                 event_type="agent.memory.blocked",
@@ -330,11 +277,6 @@ class RunRequestBuilder:
             inputs.task,
             inputs.profile,
             ref=session_ref,
-            sdk_provider=(
-                "claude_agent_sdk"
-                if inputs.model_provider["provider"] == "anthropic"
-                else "openai_agents"
-            ),
         )
         if persistent_session is not None:
             metadata["persistent_session_key"] = persistent_session.session_id
@@ -348,16 +290,18 @@ class RunRequestBuilder:
     def _build_context_state(
         self,
         run: AgentRun,
-        job: JobPayload,
+        job: ExecutionRequest,
         inputs: _AuthorizedRequestInputs,
         runtime: _RuntimeRequestState,
         memory: _MemoryRequestState,
     ) -> _ContextRequestState:
-        runtime_context = AgentRuntimeContext(
+        runtime_context = AgentExecutionContext(
             workspace_id=run.workspace_id,
             task_id=run.task_id,
             run_id=run.id,
-            user_id=job.requested_by_user_id,
+            user_id=ExecutionIdentityService(self.session)
+            .for_run(run.workspace_id, run.id)
+            .user_id,
             allowed_tools=inputs.allowed_tools,
             tool_definitions=inputs.tool_definitions,
             resource_grants=inputs.resource_grants,
@@ -413,53 +357,16 @@ class RunRequestBuilder:
                     priority=ContextPriority.NORMAL,
                 ),
             )
-        policy = context_budget_policy(inputs.snapshot.get("memory_policy"))
-        provider_snapshot = inputs.snapshot.get("model_provider")
-        capability = (
-            provider_snapshot.get("model_capability")
-            if isinstance(provider_snapshot, dict)
-            else None
-        )
-        catalog_limit = (
-            capability.get("context_window_tokens") if isinstance(capability, dict) else None
-        )
-        configured_limit = policy.context_window_tokens
-        selected_limit = (
-            configured_limit
-            or catalog_limit
-            or operational_configuration(self.session).default_context_window_tokens
-        )
-        policy = policy.model_copy(update={"context_window_tokens": selected_limit})
-        budget = ContextBudgetManager().build(
-            fragments=fragments,
-            provider=inputs.model_provider["provider"],
-            model=inputs.model_provider["model"],
-            policy=policy,
-            instructions=inputs.runtime_profile.instructions,
-            tool_definitions=inputs.tool_definitions,
-            agent_tools=agent_tools,
-            handoffs=handoffs,
-            output_schema=output_schema,
-        )
-        runtime.metadata["context_budget"] = budget.evidence()
+        input_text = "\n\n".join(fragment.text for fragment in fragments if fragment.text).strip()
+        runtime.metadata["context_assembly"] = {
+            "fragment_count": len(fragments),
+            "attachment_count": len(attachments),
+            "memory_included": bool(memory.retrieved_memory.text),
+        }
         retrieval_evidence = runtime.metadata["memory_retrieval"]
         if isinstance(retrieval_evidence, dict):
-            retrieval_decision = next(
-                (item for item in budget.decisions if item.key == "memory.retrieved"),
-                None,
-            )
-            retrieval_evidence.update(
-                {
-                    "context_status": retrieval_decision.status
-                    if retrieval_decision is not None
-                    else "not_applicable",
-                    "context_estimated_tokens": retrieval_decision.estimated_tokens
-                    if retrieval_decision is not None
-                    else 0,
-                    "context_included_tokens": retrieval_decision.included_tokens
-                    if retrieval_decision is not None
-                    else 0,
-                }
+            retrieval_evidence["context_status"] = (
+                "included" if memory.retrieved_memory.text else "not_applicable"
             )
         tracing = agent_run_tracing(
             run=run,
@@ -475,7 +382,7 @@ class RunRequestBuilder:
             handoffs=handoffs,
             output_schema=output_schema,
             guardrails=guardrails,
-            budget=budget,
+            input_text=input_text,
             tracing=tracing,
         )
 
@@ -491,7 +398,7 @@ class RunRequestBuilder:
         return AgentRunRequest(
             agent_profile=inputs.runtime_profile,
             max_turns=bounded_target_int(inputs.snapshot.get("max_turns", 10), "max_turns", 1, 20),
-            input_text=context.budget.text,
+            input_text=context.input_text,
             attachments=context.attachments,
             context=context.runtime_context,
             model=inputs.model_provider["model"],
@@ -503,8 +410,7 @@ class RunRequestBuilder:
             tool_executor=None,
             session=memory.persistent_session,
             tracing=context.tracing,
-            sandbox=runtime.sandbox,
-            resume_state=AgentRunStateStore(self.session, secret_service).load(
+            resume_state=AgentResumeStateStore(self.session, secret_service).load(
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
@@ -526,8 +432,8 @@ class RunRequestBuilder:
     def build_direct_tool_context(
         self,
         run: AgentRun,
-        job: JobPayload,
-    ) -> AgentRuntimeContext:
+        job: ExecutionRequest,
+    ) -> AgentExecutionContext:
         """Build frozen authorization for direct workflow tools without a model call."""
         self.validate_job_scope(run, job)
         task = authorized_task_for_run(self.session, run)
@@ -550,22 +456,19 @@ class RunRequestBuilder:
             "node_execution": "direct_tool",
         }
         mode = _runtime_execution_mode(run)
-        runtime_id = runtime_binding.execution_runtime_id
+        runtime_id = runtime_binding.workspace_runtime_id
         if runtime_id is not None:
             metadata["runtime_execution"] = {
                 "mode": mode,
-                "execution_runtime_id": str(runtime_id),
-                "parent_runtime_id": (
-                    str(runtime_binding.workspace_runtime_id)
-                    if runtime_binding.workspace_runtime_id is not None
-                    else None
-                ),
+                "workspace_runtime_id": str(runtime_id),
             }
-        context = AgentRuntimeContext(
+        context = AgentExecutionContext(
             workspace_id=run.workspace_id,
             task_id=run.task_id,
             run_id=run.id,
-            user_id=job.requested_by_user_id,
+            user_id=ExecutionIdentityService(self.session)
+            .for_run(run.workspace_id, run.id)
+            .user_id,
             allowed_tools=self.allowed_tools_for_run(run),
             tool_definitions=tool_definitions_for_snapshot(snapshot),
             resource_grants=resource_grants_for_snapshot(snapshot),
@@ -575,18 +478,13 @@ class RunRequestBuilder:
         )
         return context
 
-    def _runtime_backends(self) -> RuntimeBackendRegistry:
-        if self.runtime_backends is None:
-            raise RuntimeError("Runtime backend registry was not composed for run execution")
-        return self.runtime_backends
-
     def runtime_metadata(
         self,
         *,
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-        runtime_profile: AgentRuntimeProfile,
+        runtime_profile: AgentProfileSnapshot,
         model_provider: dict[str, Any],
         authorization_snapshot: dict[str, object],
     ) -> dict[str, object]:
@@ -604,13 +502,9 @@ class RunRequestBuilder:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-        ref: PersistentAgentSessionRef | None = None,
-        *,
-        sdk_provider: str,
-    ) -> AgentSessionBinding | None:
-        return self.session_service.persistent_session_for_run(
-            run, task, profile, ref, sdk_provider=sdk_provider
-        )
+        ref: AgentSessionIdentity | None = None,
+    ) -> AgentSessionScope | None:
+        return self.session_service.persistent_session_for_run(run, task, profile, ref)
 
     def mailbox_context_for_run(
         self,
@@ -633,12 +527,12 @@ class RunRequestBuilder:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-    ) -> PersistentAgentSessionRef:
+    ) -> AgentSessionIdentity:
         return self.session_service.persistent_session_ref_for_run(run, task, profile)
 
-    def validate_job_scope(self, run: AgentRun, job: JobPayload) -> None:
-        if job.job_type != JobType.AGENT_RUN:
-            raise ValueError("Worker job type does not match agent run execution")
+    def validate_job_scope(self, run: AgentRun, job: ExecutionRequest) -> None:
+        if job.kind not in {ExecutionKind.AGENT, ExecutionKind.ORCHESTRATION}:
+            raise ValueError("Execution kind does not match run")
         if job.workspace_id != run.workspace_id:
             raise ValueError("Worker job workspace mismatch")
         if job.resource_id != run.id:

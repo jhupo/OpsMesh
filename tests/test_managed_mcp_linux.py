@@ -1,100 +1,156 @@
-"""Run the private-socket lifecycle in Linux (also runnable in an isolated container)."""
+"""Managed stdio uses the SDK native Docker session and SDK protocol client."""
 
-import json
-import os
-import subprocess
+import asyncio
 import sys
-import time
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
-from opsmesh.capabilities.mcp.catalog.discovery import McpToolDiscoveryService
+import pytest
+from agents.mcp import MCPServerStdio
+from mcp.client.stdio import StdioServerParameters
+
+from opsmesh.capabilities.mcp.sandbox_stdio import SandboxMCPServerStdio
+from opsmesh.runtime.sandboxes.service import SandboxReferenceSnapshot
+from opsmesh.shared.security.secrets import SecretEncryptionService
+from tests.fixtures.native_sandbox import native_boundary
 
 
-def exercise_process() -> dict[str, object]:
-    identifier = str(uuid4())
-    fixture = str(Path(__file__).parent / "fixtures" / "mcp_persistent_server.py")
-    runtime_source = Path(__file__).resolve().parents[1] / "runtime"
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(runtime_source), environment.get("PYTHONPATH")))
+@pytest.mark.parametrize("failure", [False, True])
+def test_trusted_duplex_transport_uses_only_native_container_and_cleanup_scope(
+    monkeypatch, failure
+):
+    native, _, registry = native_boundary()
+    workspace_id, runtime_id, server_id = uuid4(), uuid4(), uuid4()
+    reference = SandboxReferenceSnapshot(
+        uuid4(), runtime_id, "docker", str(native.state.session_id), "running", None, None
     )
-    with TemporaryDirectory() as directory:
-        request_file = Path(directory) / "request.json"
+    sandbox = AsyncMock()
+    sandbox.create.return_value = reference
+    sandbox.resume.return_value = native
+    monkeypatch.setattr(
+        "opsmesh.capabilities.mcp.sandbox_stdio.SandboxService", lambda *args: sandbox
+    )
+    executable = str(Path("docker.exe").resolve())
+    monkeypatch.setattr(
+        "opsmesh.capabilities.mcp.sandbox_stdio.shutil.which", lambda name: executable
+    )
+    connect = AsyncMock(side_effect=RuntimeError("handshake failed") if failure else None)
+    cleanup = AsyncMock()
+    monkeypatch.setattr(MCPServerStdio, "connect", connect)
+    monkeypatch.setattr(MCPServerStdio, "cleanup", cleanup)
+    client = SandboxMCPServerStdio(
+        session_factory=lambda: None,
+        backends=registry,
+        secrets=SecretEncryptionService(secret="test-key", key_id="test"),
+        workspace_id=workspace_id,
+        runtime_id=runtime_id,
+        server_id=server_id,
+        command=["python", "/app/server.py"],
+        environment={"BUSINESS_KEY": "private-canary"},
+        cwd="/workspace",
+        name="Managed",
+        timeout_seconds=5,
+    )
 
-        def request(action: str, **kwargs: object) -> dict:
-            request_file.write_text(json.dumps({"id": identifier, "action": action, **kwargs}))
-            os.chmod(request_file, 0o600)
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "opsmesh_runtime.mcp_process",
-                    "--request-file",
-                    str(request_file),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=80,
-                env=environment,
-            )
-            assert "smoke-only-secret" not in result.stderr
-            assert result.stdout, result.stderr
-            return json.loads(result.stdout)
+    async def exercise():
+        if failure:
+            with pytest.raises(RuntimeError):
+                await client.connect()
+        else:
+            await client.connect()
+            assert client.params.args == [
+                "exec",
+                "-i",
+                "--workdir",
+                "/workspace",
+                "--env",
+                "BUSINESS_KEY",
+                "native-fixture",
+                "python",
+                "/app/server.py",
+            ]
+            assert "private-canary" not in str(client.params.args)
+            assert client.params.env["BUSINESS_KEY"] == "private-canary"
+            await client.cleanup()
+        sandbox.delete.assert_awaited_once_with(workspace_id, reference.id)
+        assert not client._environment
+        assert client.params.env is None
+        assert not client.params.args
 
+    asyncio.run(exercise())
+
+
+def test_native_deletion_failure_does_not_retain_decrypted_credentials(monkeypatch):
+    _, _, registry = native_boundary()
+    sandbox = AsyncMock()
+    sandbox.delete.side_effect = RuntimeError("native deletion uncertain")
+    monkeypatch.setattr(
+        "opsmesh.capabilities.mcp.sandbox_stdio.SandboxService", lambda *args: sandbox
+    )
+    monkeypatch.setattr(
+        "opsmesh.capabilities.mcp.sandbox_stdio.shutil.which",
+        lambda name: str(Path("docker.exe").resolve()) if name == "docker" else name,
+    )
+    monkeypatch.setattr(MCPServerStdio, "cleanup", AsyncMock())
+    client = SandboxMCPServerStdio(
+        session_factory=lambda: None,
+        backends=registry,
+        secrets=SecretEncryptionService(secret="test-key", key_id="test"),
+        workspace_id=uuid4(),
+        runtime_id=uuid4(),
+        server_id=uuid4(),
+        command=["python", "/app/server.py"],
+        environment={"BUSINESS_KEY": "private-canary"},
+        cwd="/workspace",
+        name="Managed",
+        timeout_seconds=5,
+    )
+    client._reference_id = uuid4()
+    client.params = client.params.model_copy(update={"env": dict(client._environment)})
+    with pytest.raises(RuntimeError, match="native deletion uncertain"):
+        asyncio.run(client.cleanup())
+    assert not client._environment
+    assert client.params.env is None
+    assert client._reference_id is not None
+
+
+def test_public_sdk_stream_extension_does_not_write_private_stderr_to_worker_logs(
+    monkeypatch, capfd
+):
+    _, _, registry = native_boundary()
+    monkeypatch.setattr(
+        "opsmesh.capabilities.mcp.sandbox_stdio.shutil.which",
+        lambda name: str(Path("docker.exe").resolve()) if name == "docker" else name,
+    )
+    client = SandboxMCPServerStdio(
+        session_factory=lambda: None,
+        backends=registry,
+        secrets=SecretEncryptionService(secret="test-key", key_id="test"),
+        workspace_id=uuid4(),
+        runtime_id=uuid4(),
+        server_id=uuid4(),
+        command=["python", "/app/server.py"],
+        environment={},
+        cwd="/workspace",
+        name="Trusted test protocol fixture",
+        timeout_seconds=5,
+    )
+    # Only this trusted test fixture executes on the test process host; production
+    # connect() always sets the native sandbox's Docker exec transport.
+    client.params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(Path("tests/fixtures/mcp_stdio_server.py").resolve())],
+        env={"MCP_PRIVATE_FIXTURE": "private-stderr-canary"},
+    )
+
+    async def exercise():
+        await MCPServerStdio.connect(client)
         try:
-            assert (
-                request(
-                    "start",
-                    server={
-                        "command": sys.executable,
-                        "args": [fixture],
-                        "env": {"TEST_PASSWORD": "smoke-only-secret"},
-                        "restart_policy": {
-                            "max_restarts": 2,
-                            "initial_backoff_seconds": 1,
-                            "max_backoff_seconds": 2,
-                            "stable_after_seconds": 300,
-                        },
-                    },
-                )["status"]
-                == "running"
-            )
-            tools = request("discover")["tools"]
-            assert len(tools) == 2
-            for tool in tools:
-                McpToolDiscoveryService._normalize_tool(tool)
-            first = request("call", name="count", arguments={})["structuredContent"]
-            second = request("call", name="count", arguments={})["structuredContent"]
-            assert first["pid"] == second["pid"] and second["calls"] == 2
-            assert second["configured"] is True
-            # Repeated start must not spawn a duplicate process or reset its state.
-            assert request("start", server={})["status"] == "running"
-            assert request("call", name="count", arguments={})["structuredContent"]["calls"] == 3
-            assert "error" in request("call", name="crash", arguments={})
-            deadline = time.monotonic() + 30
-            while request("status")["status"] != "running":
-                assert time.monotonic() < deadline
-                time.sleep(0.2)
-            recovered = request("call", name="count", arguments={})["structuredContent"]
-            assert recovered["pid"] != first["pid"] and recovered["calls"] == 1
-            return {"same_process_reused": True, "restart_recovered": True, "env_injected": True}
+            result = await client.call_tool("emit_private_stderr", {})
+            assert result.structured_content == {"emitted": True}
         finally:
-            assert request("stop")["status"] in {"stopping", "stopped"}
-            deadline = time.monotonic() + 15
-            while request("status")["status"] != "stopped":
-                assert time.monotonic() < deadline
-                time.sleep(0.2)
+            await client.cleanup()
 
-
-def test_linux_private_socket_process_lifecycle() -> None:
-    import pytest
-
-    if sys.platform != "linux":
-        pytest.skip("The isolated Runtime supervisor uses Linux private sockets")
-    exercise_process()
-
-
-if __name__ == "__main__":
-    print(json.dumps(exercise_process()))
+    asyncio.run(exercise())
+    assert "private-stderr-canary" not in "".join(capfd.readouterr())

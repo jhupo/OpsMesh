@@ -48,16 +48,17 @@ class WorkspaceProjectMetadataImporter:
                 configuration = validate_project_configuration(_dict_field(item, "configuration"))
             except ValueError as exc:
                 context.skipped_counts["projects"] += 1
-                context.conflict_plan.append(
-                    self._conflict("projects", source_id, str(exc))
-                )
+                context.conflict_plan.append(self._conflict("projects", source_id, str(exc)))
                 continue
-            if self._session.scalar(
-                select(WorkspaceProject.id).where(
-                    WorkspaceProject.workspace_id == context.workspace.id,
-                    WorkspaceProject.slug == slug,
+            if (
+                self._session.scalar(
+                    select(WorkspaceProject.id).where(
+                        WorkspaceProject.workspace_id == context.workspace.id,
+                        WorkspaceProject.slug == slug,
+                    )
                 )
-            ) is not None:
+                is not None
+            ):
                 context.skipped_counts["projects"] += 1
                 context.conflict_plan.append(
                     self._conflict(
@@ -73,9 +74,7 @@ class WorkspaceProjectMetadataImporter:
                 created_by_user_id=context.user_id,
                 name=name,
                 slug=slug,
-                description=normalize_project_description(
-                    _string_field(item, "description")
-                ),
+                description=normalize_project_description(_string_field(item, "description")),
                 input_path=_string_field(item, "input_path", "inputs"),
                 work_path=_string_field(item, "work_path", "work"),
                 output_path=_string_field(item, "output_path", "outputs"),
@@ -152,9 +151,7 @@ class WorkspaceProjectMetadataImporter:
             context.created_counts["project_outputs"] += 1
 
     @staticmethod
-    def _conflict(
-        collection: str, source_id: str, message: str
-    ) -> WorkspaceImportConflict:
+    def _conflict(collection: str, source_id: str, message: str) -> WorkspaceImportConflict:
         return WorkspaceImportConflict(
             collection=collection,
             source_id=source_id,

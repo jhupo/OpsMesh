@@ -1,18 +1,11 @@
-import asyncio
 import os
 
 import pytest
 
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.session import create_database_engine, database_pool_snapshot
-from opsmesh.shared.executors import (
-    blocking_executor_snapshot,
-    get_blocking_executor,
-    run_blocking,
-    shutdown_blocking_executor,
-)
+from opsmesh.shared.pool_sizing import recommend_connection_pools
 from opsmesh.shared.redis.client import create_redis_client, redis_pool_snapshot
-from opsmesh.shared.resources import recommend_runtime_resources
 
 
 def test_settings_defaults_are_local_development_friendly(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,48 +18,48 @@ def test_settings_defaults_are_local_development_friendly(monkeypatch: pytest.Mo
     assert settings.service_name == "opsmesh-backend"
     assert settings.api_prefix == "/api/v1"
     assert settings.enable_api_docs is True
-    recommendation = recommend_runtime_resources()
+    recommendation = recommend_connection_pools()
     assert settings.database_pool_size == recommendation.database_pool_size
     assert settings.database_max_overflow == recommendation.database_max_overflow
     assert settings.database_statement_timeout_ms == 30_000
-    assert settings.blocking_thread_pool_workers == recommendation.blocking_thread_pool_workers
     assert settings.redis_max_connections == recommendation.redis_max_connections
     assert settings.tracing_enabled is True
     assert settings.request_slow_log_threshold_ms == 1_000
-    assert settings.worker_heartbeat_token is None
-    assert settings.readiness_worker_check_enabled is False
+    assert settings.temporal_task_queue == "opsmesh"
+    assert settings.temporal_workflow_concurrency == 128
+    assert settings.temporal_activity_concurrency == 64
+    assert settings.temporal_blocking_activity_workers >= settings.temporal_activity_concurrency
     assert settings.mcp_health_check_stale_after_seconds == 86_400
     assert settings.audit_event_retention_days is None
-    assert settings.audit_event_worm_enabled is True
     assert settings.storage_backend == "local"
     assert settings.auth_rate_limit_requests == 20
     assert settings.admin_rate_limit_requests == 120
     assert settings.trusted_proxy_hops == 0
-    assert settings.secret_vault_providers == {}
     assert settings.release_update_enabled is False
-    assert settings.release_update_timeout_seconds == 900
     assert settings.release_update_github_api_url == "https://api.github.com"
     assert settings.release_update_http_timeout_seconds == 10.0
     assert settings.release_update_repository == "jhupo/OpsMesh"
     assert settings.release_update_check_cache_seconds == 1_200
-    assert settings.feature_flags == {}
+
+
+def test_temporal_configuration_rejects_a_second_execution_queue_in_the_thread_pool() -> None:
+    with pytest.raises(ValueError, match="must be at least temporal_activity_concurrency"):
+        Settings(
+            _env_file=None,
+            temporal_activity_concurrency=64,
+            temporal_blocking_activity_workers=16,
+        )
 
 
 def test_runtime_resource_recommendations_scale_with_cpu_count() -> None:
-    small = recommend_runtime_resources(cpu_count=1)
-    medium = recommend_runtime_resources(cpu_count=8)
-    large = recommend_runtime_resources(cpu_count=128)
+    small = recommend_connection_pools(cpu_count=1)
+    medium = recommend_connection_pools(cpu_count=8)
+    large = recommend_connection_pools(cpu_count=128)
 
     assert small.database_pool_size == 5
-    assert small.blocking_thread_pool_workers == 8
-    assert small.worker_max_jobs == 1
     assert medium.database_pool_size == 16
-    assert medium.blocking_thread_pool_workers == 32
-    assert medium.worker_max_jobs == 8
     assert large.database_pool_size == 32
-    assert large.blocking_thread_pool_workers == 64
     assert large.redis_max_connections == 96
-    assert large.worker_max_jobs == 16
 
 
 def test_production_requires_real_token_and_disabled_docs() -> None:
@@ -124,16 +117,6 @@ def test_production_requires_platform_admin_token() -> None:
         )
 
 
-def test_production_requires_worker_heartbeat_token() -> None:
-    with pytest.raises(ValueError, match="OPSMESH_WORKER_HEARTBEAT_TOKEN"):
-        _production_settings(worker_heartbeat_token=None)
-
-
-def test_production_requires_worker_readiness_check() -> None:
-    with pytest.raises(ValueError, match="OPSMESH_READINESS_WORKER_CHECK_ENABLED"):
-        _production_settings(readiness_worker_check_enabled=False)
-
-
 def test_production_requires_secure_or_loopback_trace_export() -> None:
     with pytest.raises(ValueError, match="OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT"):
         _production_settings(otel_exporter_otlp_endpoint=None)
@@ -177,15 +160,7 @@ def test_settings_redacted_summary_hides_secrets() -> None:
             "old-key": "old-credential-secret",
             "older-key": "older-credential-secret",
         },
-        secret_vault_providers={
-            "vault": {
-                "url": "https://vault.example.test/v1/secret?token=secret",
-                "token": "vault-secret",
-                "namespace": "platform",
-            }
-        },
         cors_origins=["https://console.example.com"],
-        feature_flags={"workspace_memory": True, "docker_runtimes": False},
     )
 
     summary = settings.redacted_summary()
@@ -197,25 +172,15 @@ def test_settings_redacted_summary_hides_secrets() -> None:
     assert "old-credential-secret" not in serialized
     assert "older-credential-secret" not in serialized
     assert "redis-secret" not in serialized
-    assert "vault-secret" not in serialized
     assert "token=secret" not in serialized
     assert summary["cors_origins_count"] == 1
     assert summary["audit_event_retention_days"] is None
-    assert summary["audit_event_worm_enabled"] is True
     assert summary["storage_backend"] == "local"
     assert summary["mcp_health_check_stale_after_seconds"] == 86_400
     assert summary["tracing_enabled"] is True
     assert summary["credential_encryption_key_id"] == "current-key"
     assert summary["credential_encryption_previous_key_ids"] == ["old-key", "older-key"]
-    assert summary["secret_vault_providers"] == {
-        "vault": {
-            "url_configured": True,
-            "url_host": "vault.example.test",
-            "token": "[redacted]",
-            "namespace": "platform",
-        }
-    }
-    assert summary["enabled_feature_flags"] == ["workspace_memory"]
+    assert "enabled_feature_flags" not in summary
 
 
 def test_s3_storage_requires_bucket() -> None:
@@ -262,8 +227,6 @@ def test_settings_reject_unsafe_endpoint_configuration(field: str, value: str) -
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("release_update_timeout_seconds", 29),
-        ("release_update_timeout_seconds", 7_201),
         ("release_update_check_cache_seconds", -1),
         ("release_update_check_cache_seconds", 86_401),
         ("release_update_http_timeout_seconds", 0),
@@ -327,16 +290,11 @@ def test_database_engine_uses_pool_settings_for_postgres_url() -> None:
     engine.dispose()
 
 
-def test_database_engine_skips_queue_pool_settings_for_sqlite() -> None:
+def test_database_engine_rejects_unsupported_database() -> None:
     settings = Settings(database_url="sqlite+pysqlite:///:memory:")
 
-    engine = create_database_engine(settings)
-
-    assert engine.url.get_backend_name() == "sqlite"
-    snapshot = database_pool_snapshot(engine)
-    assert snapshot.backend == "sqlite"
-    assert snapshot.pool_class is not None
-    engine.dispose()
+    with pytest.raises(ValueError, match="requires PostgreSQL"):
+        create_database_engine(settings)
 
 
 def test_redis_client_uses_configured_connection_pool() -> None:
@@ -365,35 +323,11 @@ def test_redis_client_uses_configured_connection_pool() -> None:
     client.connection_pool.disconnect()
 
 
-def test_blocking_executor_reuses_configured_thread_pool() -> None:
-    settings = Settings(blocking_thread_pool_workers=2)
-    try:
-        initial_snapshot = blocking_executor_snapshot(settings)
-        first = get_blocking_executor(settings)
-        second = get_blocking_executor(settings)
-        result = asyncio.run(run_blocking(lambda value: value + 1, 41, settings=settings))
-        running_snapshot = blocking_executor_snapshot(settings)
-
-        assert initial_snapshot.initialized is False
-        assert initial_snapshot.configured_workers == 2
-        assert first is second
-        assert first._max_workers == 2  # noqa: SLF001
-        assert result == 42
-        assert running_snapshot.initialized is True
-        assert running_snapshot.configured_workers == 2
-        assert running_snapshot.active_threads >= 1
-        assert running_snapshot.queued_work_items >= 0
-    finally:
-        shutdown_blocking_executor(wait=True)
-
-
 def _production_settings(**overrides: object) -> Settings:
     values = {
         "environment": "production",
         "internal_api_token": "secret",
         "platform_admin_token": "admin-secret",
-        "worker_heartbeat_token": "worker-heartbeat-secret",
-        "readiness_worker_check_enabled": True,
         "token_hash_pepper": "pepper",
         "enable_api_docs": False,
         "api_rate_limit_enabled": True,

@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.knowledge.models import KnowledgeSource

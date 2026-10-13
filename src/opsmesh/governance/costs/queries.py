@@ -15,7 +15,7 @@ from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
 from opsmesh.governance.costs.pricing import normalize_currency
 from opsmesh.identity.authorization.resource_queries import resource_query_scope
-from opsmesh.identity.authorization.resources import ResourceAccessDenied
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError
 from opsmesh.shared.utils import ensure_aware_utc
 
 
@@ -131,7 +131,7 @@ class CostQueryService:
     ) -> CostBudgetStatus:
         scope = resource_query_scope(self._session)
         if scope is not None and scope.workspace_id != workspace_id:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         now = now or datetime.now(UTC)
         period_start, period_end = _month_window(now)
         normalized_currency = normalize_currency(currency)

@@ -12,13 +12,11 @@ from opsmesh.orchestration.tasks.control.execution import TASK_PAUSED_REASON
 from opsmesh.orchestration.tasks.control.service import task_control_state
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.orchestration.tasks.state import TERMINAL_TASK_STATUSES, TaskStatus
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.workers.models import WorkerLease
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -63,7 +61,7 @@ class TaskControlDiagnosticsService:
         cancelled_runs = [run for run in runs if _is_pause_cancelled_run(run)]
         scheduled_runs = [run for run in runs if _is_resume_scheduled_run(run)]
         active_runs = [run for run in runs if run.status in ACTIVE_RUN_STATUSES]
-        worker_cancel_requests = self._worker_cancel_requests(
+        temporal_dispatches = self._temporal_dispatches(
             workspace_id,
             [run.id for run in runs],
         )
@@ -73,7 +71,7 @@ class TaskControlDiagnosticsService:
             "active_run_count": len(active_runs),
             "paused_blocked_step_count": len(paused_steps),
             "cancelled_by_pause_run_count": len(cancelled_runs),
-            "worker_cancel_request_count": len(worker_cancel_requests),
+            "temporal_dispatch_count": len(temporal_dispatches),
             "scheduled_resume_run_count": len(scheduled_runs),
             "control_message_count": sum(
                 1 for message in messages if message.message_type.startswith("task.control.")
@@ -97,8 +95,8 @@ class TaskControlDiagnosticsService:
             "cancelled_runs": [_run_payload(run) for run in cancelled_runs],
             "scheduled_runs": [_run_payload(run) for run in scheduled_runs],
             "active_runs": [_run_payload(run) for run in active_runs],
-            "worker_cancel_requests": [
-                _worker_cancel_request_payload(lease) for lease in worker_cancel_requests
+            "temporal_dispatches": [
+                _temporal_dispatch_payload(dispatch) for dispatch in temporal_dispatches
             ],
             "recent_control_messages": [_message_payload(message) for message in messages],
             "recommended_actions": _recommended_actions(task, summary),
@@ -126,28 +124,28 @@ class TaskControlDiagnosticsService:
             ).all()
         )
 
-    def _worker_cancel_requests(
+    def _temporal_dispatches(
         self,
         workspace_id: UUID,
         run_ids: list[UUID],
-    ) -> list[WorkerLease]:
+    ) -> list[TemporalOutboxEntry]:
         if not run_ids:
             return []
-        leases = self._session.scalars(
-            select(WorkerLease)
-            .where(
-                WorkerLease.workspace_id == workspace_id,
-                WorkerLease.job_type == JobType.AGENT_RUN.value,
-                WorkerLease.resource_id.in_(run_ids),
-            )
-            .order_by(WorkerLease.started_at.desc(), WorkerLease.created_at.desc())
-        ).all()
-        return [
-            lease
-            for lease in leases
-            if isinstance(lease.lease_metadata, dict)
-            and lease.lease_metadata.get("cancel_requested") is True
+        workflow_ids = [
+            f"opsmesh:{workspace_id}:{kind}:{run_id}"
+            for run_id in run_ids
+            for kind in ("agent", "orchestration")
         ]
+        return list(
+            self._session.scalars(
+                select(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.workspace_id == workspace_id,
+                    TemporalOutboxEntry.workflow_id.in_(workflow_ids),
+                )
+                .order_by(TemporalOutboxEntry.created_at.desc(), TemporalOutboxEntry.id.desc())
+            ).all()
+        )
 
 
 def _status(task: Task, summary: dict[str, object]) -> str:
@@ -243,25 +241,15 @@ def _message_payload(message: TaskMessage) -> dict[str, object]:
     }
 
 
-def _worker_cancel_request_payload(lease: WorkerLease) -> dict[str, object]:
-    metadata = lease.lease_metadata if isinstance(lease.lease_metadata, dict) else {}
-    lifecycle_events = metadata.get("lifecycle_events")
+def _temporal_dispatch_payload(dispatch: TemporalOutboxEntry) -> dict[str, object]:
     return {
-        "agent_run_id": lease.resource_id,
-        "worker_id": lease.worker_id,
-        "queue_name": lease.queue_name,
-        "status": lease.status,
-        "attempt": lease.attempt,
-        "started_at": lease.started_at,
-        "finished_at": lease.finished_at,
-        "cancel_requested": metadata.get("cancel_requested") is True,
-        "cancel_requested_at": metadata.get("cancel_requested_at"),
-        "last_lifecycle_event": metadata.get("last_lifecycle_event")
-        if isinstance(metadata.get("last_lifecycle_event"), dict)
-        else None,
-        "lifecycle_event_count": len(lifecycle_events)
-        if isinstance(lifecycle_events, list)
-        else 0,
+        "dispatch_id": dispatch.id,
+        "workflow_id": dispatch.workflow_id,
+        "operation": dispatch.operation,
+        "published_at": dispatch.published_at,
+        "available_at": dispatch.available_at,
+        "attempts": dispatch.attempts,
+        "last_error_code": dispatch.last_error_code,
     }
 
 

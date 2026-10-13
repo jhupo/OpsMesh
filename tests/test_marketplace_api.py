@@ -8,12 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from opsmesh_plugin_sdk.packaging.manifest import CapabilityDeclaration, PluginManifest
 from opsmesh_plugin_sdk.packaging.packages import sign_package
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.agents.providers.models import ModelProviderCredential
@@ -24,8 +19,8 @@ from opsmesh.capabilities.marketplace.models import (
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,
 )
-from opsmesh.capabilities.marketplace.resource_service import MarketplaceService
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.marketplace.resource_service import ResourceMarketplaceService
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from opsmesh.governance.reviews.llm import LlmReviewResult
 from opsmesh.identity.users.models import User
@@ -39,6 +34,7 @@ from opsmesh.shared.redis.dependencies import get_redis_client
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-token"
 
@@ -80,7 +76,7 @@ def _plugin_install_config(
         },
     )
     assert trusted.status_code == 201
-    server = McpServer(
+    server = MCPServer(
         workspace_id=workspace.id,
         name="Remote connector",
         server_type="streamable_http",
@@ -90,7 +86,8 @@ def _plugin_install_config(
     session.add(server)
     session.commit()
     return {
-        "bindings": {"mcp": {"resource_id": str(server.id)}},
+        "instance_name": "market-connector",
+        "bindings": [{"capability_key": "mcp", "resource_id": str(server.id)}],
         "approved_permissions": ["mcp.call"],
     }
 
@@ -199,7 +196,7 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     )
     assert removed.status_code == 200
     assert removed.json()["status"] == "uninstalled"
-    resource_id = installed_body["config"]["bindings"]["mcp"]["resource_id"]
+    resource_id = installed_body["config"]["bindings"][0]["resource_id"]
     denied_discovery = client.post(
         f"/api/v1/workspaces/{buyer_workspace.id}/capabilities/mcp-servers/{resource_id}/discover",
         headers=_headers(buyer.id),
@@ -266,9 +263,7 @@ def test_private_plugin_listing_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
@@ -316,9 +311,7 @@ def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
@@ -426,7 +419,7 @@ def test_marketplace_install_rolls_back_provisioned_agent_on_install_conflict() 
     )
 
     with pytest.raises(DatabaseConflictError):
-        MarketplaceService(session).install_listing(
+        ResourceMarketplaceService(session).install_listing(
             workspace_id=buyer_workspace.id,
             user_id=buyer.id,
             listing_id=listing.id,
@@ -517,7 +510,7 @@ def test_marketplace_install_mcp_server_listing_creates_server_and_tools() -> No
         email="mcp-buyer@example.com",
         slug="mcp-buyer",
     )
-    source_server = McpServer(
+    source_server = MCPServer(
         workspace_id=publisher_workspace.id,
         name="Public Search MCP",
         server_type="streamable_http",
@@ -556,12 +549,12 @@ def test_marketplace_install_mcp_server_listing_creates_server_and_tools() -> No
     )
 
     assert installed.status_code == 201
-    server = session.get(McpServer, UUID(installed.json()["installed_resource_id"]))
+    server = session.get(MCPServer, UUID(installed.json()["installed_resource_id"]))
     assert server is not None
     assert server.workspace_id == buyer_workspace.id
     assert server.name == "Public Search MCP"
     assert server.visibility == "private"
-    allow = session.query(McpToolAllowlist).filter_by(mcp_server_id=server.id).one()
+    allow = session.query(MCPToolAllowlist).filter_by(mcp_server_id=server.id).one()
     assert allow.tool_name == "search"
     assert allow.capability_key == "web.search"
 
@@ -580,9 +573,7 @@ def test_public_plugin_listing_requires_resource_review_before_market_visibility
             signals={"reviewer": "codex-auto-review", "verdict": "review"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
@@ -635,7 +626,7 @@ def test_owner_can_publish_and_another_workspace_can_hire_agent_into_team() -> N
         description="Finds market evidence",
         instructions="Research deeply.",
         skills={"skills": ["web-research"]},
-        tool_policy={"mcp_tools": ["search"]},
+        tool_policy={"allowed_tools": ["search"]},
         runtime_policy={"provider": "docker"},
     )
     team = AgentTeam(
@@ -689,7 +680,7 @@ def test_owner_can_publish_and_another_workspace_can_hire_agent_into_team() -> N
     assert hired_body["workspace_id"] == str(buyer_workspace.id)
     assert hired_body["agent"]["workspace_id"] == str(buyer_workspace.id)
     assert hired_body["agent"]["name"] == "Research Pro Copy"
-    assert hired_body["agent"]["tool_policy"] == {"mcp_tools": ["search"]}
+    assert hired_body["agent"]["tool_policy"] == {"allowed_tools": ["search"]}
 
     assert session.query(TalentListing).count() == 1
     assert session.query(WorkspaceAgentInstall).count() == 1
@@ -792,7 +783,7 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
             "nested": {"skill_install_id": "source-private-install"},
         },
         tool_policy={
-            "mcp_tools": ["generate_image"],
+            "allowed_tools": ["generate_image"],
             "mcp_server_ids": ["source-server"],
             "nested": {"credential_reference_id": "source-secret"},
         },
@@ -847,7 +838,7 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
     assert "Publisher OpenAI" not in str(agent["model_provider"])
     assert "encrypted" not in str(hired.json())
     assert agent["skills"] == {"skills": ["image"], "nested": {}}
-    assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
+    assert agent["tool_policy"] == {"allowed_tools": ["generate_image"], "nested": {}}
     assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}
     assert agent["memory_policy"] == {
         "sdk_memory": {
@@ -862,12 +853,6 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
             "max_context_tokens": 4_096,
             "max_results": 12,
             "query_max_tokens": 1_024,
-        },
-        "context_budget": {
-            "max_input_tokens": None,
-            "context_window_tokens": None,
-            "output_reserve_tokens": 4_096,
-            "safety_margin_tokens": 1_024,
         },
         "episodic_memory": {
             "capture_enabled": False,
@@ -902,7 +887,7 @@ def test_talent_install_can_be_pinned_checked_and_upgraded_to_new_listing_versio
         description="v1 research",
         instructions="Research v1.",
         version=1,
-        tool_policy={"mcp_tools": ["search"]},
+        tool_policy={"allowed_tools": ["search"]},
     )
     session.add(source_agent)
     session.commit()
@@ -1444,13 +1429,7 @@ def test_task_gap_hire_rejects_already_assigned_work_package() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
@@ -1580,12 +1559,3 @@ def _approve_resource_review(
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

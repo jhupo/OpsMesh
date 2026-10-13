@@ -34,8 +34,12 @@ def upgrade() -> None:
         sa.Column("last_failure_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_failure_message", sa.String(length=1000), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "status in ('active', 'disabled')",
             name=op.f("ck_webhook_subscriptions_status_valid"),
@@ -78,8 +82,12 @@ def upgrade() -> None:
         sa.Column("response_headers", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("signature_verified", sa.Boolean(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "status in ('pending', 'queued', 'delivering', 'succeeded', 'retrying', 'dead_lettered')",
             name=op.f("ck_webhook_delivery_attempts_status_valid"),
@@ -92,7 +100,9 @@ def upgrade() -> None:
             "max_attempts >= 1",
             name=op.f("ck_webhook_delivery_attempts_max_attempts_positive"),
         ),
-        sa.ForeignKeyConstraint(["subscription_id"], ["webhook_subscriptions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["subscription_id"], ["webhook_subscriptions.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_webhook_delivery_attempts")),
     )
@@ -119,9 +129,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_webhook_delivery_attempts_workspace_status", table_name="webhook_delivery_attempts")
-    op.drop_index("ix_webhook_delivery_attempts_workspace_event", table_name="webhook_delivery_attempts")
-    op.drop_index("ix_webhook_delivery_attempts_subscription_created", table_name="webhook_delivery_attempts")
+    op.drop_index(
+        "ix_webhook_delivery_attempts_workspace_status", table_name="webhook_delivery_attempts"
+    )
+    op.drop_index(
+        "ix_webhook_delivery_attempts_workspace_event", table_name="webhook_delivery_attempts"
+    )
+    op.drop_index(
+        "ix_webhook_delivery_attempts_subscription_created", table_name="webhook_delivery_attempts"
+    )
     op.drop_index("ix_webhook_delivery_attempts_due", table_name="webhook_delivery_attempts")
     op.drop_table("webhook_delivery_attempts")
     op.drop_index("ix_webhook_subscriptions_workspace_status", table_name="webhook_subscriptions")

@@ -1,6 +1,6 @@
 from typing import Any
 
-from opsmesh.agents.execution.contracts import AgentRuntimeProfile
+from opsmesh.agents.execution.contracts import AgentProfileSnapshot
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.requests.context import RunRequestContextProvider
 from opsmesh.orchestration.runs.authorization.validation import RunAuthorizationService
@@ -24,14 +24,12 @@ class RunRuntimeMetadataBuilder:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
-        runtime_profile: AgentRuntimeProfile,
+        runtime_profile: AgentProfileSnapshot,
         model_provider: dict[str, Any],
         authorization_snapshot: dict[str, object],
     ) -> dict[str, object]:
         metadata: dict[str, object] = {
-            "agent_profile_id": str(runtime_profile.id)
-            if runtime_profile.id is not None
-            else None,
+            "agent_profile_id": str(runtime_profile.id) if runtime_profile.id is not None else None,
             "agent_profile_version": runtime_profile.version,
             "agent_role": runtime_profile.role,
             "run_model": model_provider["model"],
@@ -75,7 +73,6 @@ def _runtime_binding_metadata(snapshot: dict[str, object]) -> dict[str, object]:
             "workspace_runtime_id",
             "runtime_space_id",
             "capability_resource_ids",
-            "network_disabled",
             "file_access_scope",
         )
     }

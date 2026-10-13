@@ -61,7 +61,7 @@ Operation ID：`list_grants_api_v1_workspaces__workspace_id__access__kind___reso
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | array&lt;[GrantResponse](schemas.md#schema-GrantResponse)&gt; |
+| 200 | Successful Response | application/json | array&lt;[ResourceGrantResponse](schemas.md#schema-ResourceGrantResponse)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -95,17 +95,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/GrantRequest"
+  "$ref": "#/components/schemas/ResourceGrantUpdateRequest"
 }
 ```
 
-模型：[GrantRequest](schemas.md#schema-GrantRequest)
+模型：[ResourceGrantUpdateRequest](schemas.md#schema-ResourceGrantUpdateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [GrantResponse](schemas.md#schema-GrantResponse) |
+| 200 | Successful Response | application/json | [ResourceGrantResponse](schemas.md#schema-ResourceGrantResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -138,11 +138,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/OwnerRequest"
+  "$ref": "#/components/schemas/ResourceOwnerUpdateRequest"
 }
 ```
 
-模型：[OwnerRequest](schemas.md#schema-OwnerRequest)
+模型：[ResourceOwnerUpdateRequest](schemas.md#schema-ResourceOwnerUpdateRequest)
 
 ### 响应
 
@@ -177,7 +177,7 @@ Operation ID：`effective_permissions_api_v1_workspaces__workspace_id__access__k
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PermissionResponse](schemas.md#schema-PermissionResponse) |
+| 200 | Successful Response | application/json | [ResourcePermissionsResponse](schemas.md#schema-ResourcePermissionsResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

@@ -6,11 +6,11 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from opsmesh.agents.sessions.models import PersistentAgentSession, SDKAgentMessage
+from opsmesh.agents.sessions.models import AgentSessionMetadata, SDKSessionMessageRecord
 
 
 @dataclass(frozen=True)
-class PersistentSessionItemView:
+class AgentSessionItemView:
     id: int
     item: dict[str, Any]
     created_at: datetime
@@ -18,7 +18,7 @@ class PersistentSessionItemView:
 
 
 @dataclass(frozen=True)
-class PersistentSessionSummary:
+class AgentSessionSummary:
     id: UUID
     workspace_id: UUID
     session_key: str
@@ -36,15 +36,15 @@ class PersistentSessionSummary:
 
 
 @dataclass(frozen=True)
-class PersistentSessionDetail:
-    session: PersistentSessionSummary
-    items: list[PersistentSessionItemView]
+class AgentSessionDetail:
+    session: AgentSessionSummary
+    items: list[AgentSessionItemView]
     item_limit: int
     item_offset: int
 
 
-def session_item_view(row: SDKAgentMessage) -> PersistentSessionItemView:
-    return PersistentSessionItemView(
+def session_item_view(row: SDKSessionMessageRecord) -> AgentSessionItemView:
+    return AgentSessionItemView(
         id=row.id,
         item=json.loads(row.message_data),
         created_at=row.created_at,
@@ -53,12 +53,12 @@ def session_item_view(row: SDKAgentMessage) -> PersistentSessionItemView:
 
 
 def session_summary(
-    session: PersistentAgentSession,
+    session: AgentSessionMetadata,
     *,
     item_count: int,
-    latest_item: SDKAgentMessage | None,
-) -> PersistentSessionSummary:
-    return PersistentSessionSummary(
+    latest_item: SDKSessionMessageRecord | None,
+) -> AgentSessionSummary:
+    return AgentSessionSummary(
         id=session.id,
         workspace_id=session.workspace_id,
         session_key=session.session_key,
@@ -78,7 +78,7 @@ def session_summary(
     )
 
 
-def session_item_metadata(row: SDKAgentMessage) -> dict[str, Any]:
+def session_item_metadata(row: SDKSessionMessageRecord) -> dict[str, Any]:
     item = json.loads(row.message_data)
     content = item.get("content")
     return {

@@ -14,16 +14,16 @@ from opsmesh.capabilities.catalog.effective import effective_catalog_fingerprint
 from opsmesh.capabilities.mcp.catalog.rules import (
     requires_credentials as mcp_server_requires_credentials,
 )
-from opsmesh.capabilities.mcp.execution.blocking import McpExecutionBlocker
-from opsmesh.capabilities.mcp.execution.contracts import McpExecutionRequest
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.execution.blocking import MCPExecutionBlocker
+from opsmesh.capabilities.mcp.execution.contracts import MCPExecutionRequest
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.mcp.policy import mcp_health_check_stale
 from opsmesh.capabilities.plugins.policy import plugin_resource_available
 from opsmesh.capabilities.references.schema import validate_parameters
 from opsmesh.capabilities.tools.contracts import ToolResourceNotFoundError
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
@@ -39,32 +39,69 @@ from opsmesh.shared.config import Settings
 
 
 @dataclass(frozen=True, slots=True)
-class ValidatedMcpExecution:
-    request: McpExecutionRequest
+class ValidatedMCPExecution:
+    request: MCPExecutionRequest
     run: AgentRun
     snapshot: dict[str, object]
     descriptor: CapabilityToolDescriptor
-    server: McpServer
-    credentials: tuple[McpCredentialReference, ...]
+    server: MCPServer
+    credentials: tuple[MCPCredentialReference, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedMCPConnection:
+    run: AgentRun
+    server: MCPServer
+    credentials: tuple[MCPCredentialReference, ...]
+    tool_names: tuple[str, ...]
 
 
 @dataclass(slots=True)
-class McpExecutionValidator:
+class MCPExecutionValidator:
     session: Session
     settings: Settings
 
-    def validate(self, request: McpExecutionRequest) -> ValidatedMcpExecution:
+    def authorize_connection(self, request: MCPExecutionRequest) -> AuthorizedMCPConnection:
+        """Authorize the frozen server scope before exposing credentials or connecting."""
         run = self._require_run(request.workspace_id, request.agent_run_id)
-        snapshot = authorization_snapshot_for_run(run)
-        self._validate_snapshot_scope(snapshot, request)
-        try:
-            snapshot = agent_execution_scope(
-                snapshot, request.agent_profile_id, request.capability_catalog_fingerprint
-            )
-        except ValueError:
-            self._block(request, "agent_capability_scope_mismatch")
-        self._validate_catalog_scope(snapshot, request)
-        self._require_runtime_context_tool(request)
+        snapshot = self._scoped_snapshot(run, request)
+        catalog = snapshot.get("capability_catalog")
+        tools = catalog.get("tools") if isinstance(catalog, dict) else None
+        if not isinstance(tools, list):
+            self._block(request, "mcp_tool_snapshot_missing")
+        names: list[str] = []
+        server: MCPServer | None = None
+        credentials: tuple[MCPCredentialReference, ...] = ()
+        for item in tools:
+            descriptor = item.get("descriptor") if isinstance(item, dict) else None
+            if (
+                not isinstance(descriptor, dict)
+                or descriptor.get("source") != "mcp"
+                or descriptor.get("mcp_server_id") != str(request.mcp_server_id)
+            ):
+                continue
+            name = descriptor.get("name")
+            if not isinstance(name, str) or not name:
+                self._block(request, "mcp_tool_snapshot_invalid")
+            scoped = replace(request, tool_name=name)
+            parsed, _, _ = self._require_snapshot_tool(snapshot, scoped)
+            allow, current = self._resolve_allowed_tool(scoped, parsed)
+            self._authorize_resources(scoped, run, allow, current)
+            self._require_server_health(scoped, current)
+            resolved = self._resolve_credentials(scoped, parsed, current)
+            if server is not None and tuple(item.id for item in credentials) != tuple(
+                item.id for item in resolved
+            ):
+                self._block(scoped, "mcp_credential_binding_stale", mcp_server_id=current.id)
+            server, credentials = current, resolved
+            names.append(name)
+        if server is None:
+            self._block(request, "mcp_tool_not_in_run_snapshot")
+        return AuthorizedMCPConnection(run, server, credentials, tuple(names))
+
+    def validate(self, request: MCPExecutionRequest) -> ValidatedMCPExecution:
+        run = self._require_run(request.workspace_id, request.agent_run_id)
+        snapshot = self._scoped_snapshot(run, request)
         descriptor, parameters, locked = self._require_snapshot_tool(snapshot, request)
         snapshot_server_id = descriptor.mcp_server_id
         if snapshot_server_id is None:
@@ -80,6 +117,37 @@ class McpExecutionValidator:
             ),
         )
         allow, server = self._resolve_allowed_tool(prepared_request, descriptor)
+        self._authorize_resources(prepared_request, run, allow, server)
+        self._require_server_health(prepared_request, server)
+        credentials = self._resolve_credentials(prepared_request, descriptor, server)
+        return ValidatedMCPExecution(
+            request=prepared_request,
+            run=run,
+            snapshot=snapshot,
+            descriptor=descriptor,
+            server=server,
+            credentials=credentials,
+        )
+
+    def _scoped_snapshot(self, run: AgentRun, request: MCPExecutionRequest) -> dict[str, object]:
+        snapshot = authorization_snapshot_for_run(run)
+        self._validate_snapshot_scope(snapshot, request)
+        try:
+            snapshot = agent_execution_scope(
+                snapshot, request.agent_profile_id, request.capability_catalog_fingerprint
+            )
+        except ValueError:
+            self._block(request, "agent_capability_scope_mismatch")
+        self._validate_catalog_scope(snapshot, request)
+        return snapshot
+
+    def _authorize_resources(
+        self,
+        request: MCPExecutionRequest,
+        run: AgentRun,
+        allow: MCPToolAllowlist,
+        server: MCPServer,
+    ) -> None:
         try:
             user = ExecutionIdentityService(self.session).for_run(request.workspace_id, run.id)
             ResourceAuthorizationService(self.session, user).require_many(
@@ -89,22 +157,12 @@ class McpExecutionValidator:
                     (ResourceKind.MCP_TOOL, allow.id, ResourceAction.INVOKE),
                 ],
             )
-        except ResourceAccessDenied:
+        except ResourceAccessDeniedError:
             self._block(request, "user_access_revoked", mcp_server_id=server.id)
         if not plugin_resource_available(
             self.session, request.workspace_id, "mcp_server", server.id
         ):
             self._block(request, "plugin_unavailable", mcp_server_id=server.id)
-        self._require_server_health(prepared_request, server)
-        credentials = self._resolve_credentials(prepared_request, descriptor, server)
-        return ValidatedMcpExecution(
-            request=prepared_request,
-            run=run,
-            snapshot=snapshot,
-            descriptor=descriptor,
-            server=server,
-            credentials=credentials,
-        )
 
     def _require_run(self, workspace_id: UUID, run_id: UUID) -> AgentRun:
         run = self.session.scalar(
@@ -120,7 +178,7 @@ class McpExecutionValidator:
     def _validate_snapshot_scope(
         self,
         snapshot: dict[str, object],
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
     ) -> None:
         if snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
             self._block(request, "authorization_snapshot_version_unsupported")
@@ -135,7 +193,7 @@ class McpExecutionValidator:
             self._block(request, "authorization_snapshot_run_mismatch")
 
     def _validate_catalog_scope(
-        self, snapshot: dict[str, object], request: McpExecutionRequest
+        self, snapshot: dict[str, object], request: MCPExecutionRequest
     ) -> None:
         catalog = snapshot.get("capability_catalog")
         catalog_fingerprint = catalog.get("fingerprint") if isinstance(catalog, dict) else None
@@ -146,33 +204,26 @@ class McpExecutionValidator:
         ):
             self._block(request, "capability_catalog_fingerprint_mismatch")
 
-    def _require_runtime_context_tool(self, request: McpExecutionRequest) -> None:
-        if request.runtime_allowed_tools is None:
-            return
-        if request.tool_name in request.runtime_allowed_tools:
-            return
-        self._block(request, "mcp_tool_not_in_runtime_context")
-
     def _resolve_allowed_tool(
         self,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         descriptor: CapabilityToolDescriptor,
-    ) -> tuple[McpToolAllowlist, McpServer]:
+    ) -> tuple[MCPToolAllowlist, MCPServer]:
         statement = (
-            select(McpToolAllowlist, McpServer)
-            .join(McpServer, McpServer.id == McpToolAllowlist.mcp_server_id)
+            select(MCPToolAllowlist, MCPServer)
+            .join(MCPServer, MCPServer.id == MCPToolAllowlist.mcp_server_id)
             .where(
-                McpToolAllowlist.workspace_id == request.workspace_id,
-                McpToolAllowlist.tool_name == request.tool_name,
-                McpToolAllowlist.status == "active",
-                McpToolAllowlist.platform_blocked.is_(False),
-                McpServer.workspace_id == request.workspace_id,
-                McpServer.status == "active",
-                McpServer.platform_blocked.is_(False),
+                MCPToolAllowlist.workspace_id == request.workspace_id,
+                MCPToolAllowlist.tool_name == request.tool_name,
+                MCPToolAllowlist.status == "active",
+                MCPToolAllowlist.platform_blocked.is_(False),
+                MCPServer.workspace_id == request.workspace_id,
+                MCPServer.status == "active",
+                MCPServer.platform_blocked.is_(False),
             )
         )
         if request.mcp_server_id is not None:
-            statement = statement.where(McpServer.id == request.mcp_server_id)
+            statement = statement.where(MCPServer.id == request.mcp_server_id)
         rows = self.session.execute(statement).all()
         if len(rows) != 1:
             self._block(request, "mcp_tool_not_allowed")
@@ -201,7 +252,7 @@ class McpExecutionValidator:
     def _require_snapshot_tool(
         self,
         snapshot: dict[str, object],
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
     ) -> tuple[CapabilityToolDescriptor, dict[str, object], tuple[str, ...]]:
         catalog = snapshot.get("capability_catalog")
         tools = catalog.get("tools") if isinstance(catalog, dict) else None
@@ -259,7 +310,7 @@ class McpExecutionValidator:
 
     def _validated_arguments(
         self,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         *,
         descriptor: CapabilityToolDescriptor,
         parameters: dict[str, object],
@@ -280,7 +331,7 @@ class McpExecutionValidator:
             self._block(request, "mcp_tool_arguments_invalid")
         return arguments
 
-    def _require_server_health(self, request: McpExecutionRequest, server: McpServer) -> None:
+    def _require_server_health(self, request: MCPExecutionRequest, server: MCPServer) -> None:
         if server.discovery_version > 0 and server.discovery_status != "succeeded":
             self._block(request, "mcp_discovery_unready", mcp_server_id=server.id)
         if server.health_status != "healthy":
@@ -298,10 +349,10 @@ class McpExecutionValidator:
 
     def _resolve_credentials(
         self,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         descriptor: CapabilityToolDescriptor,
-        server: McpServer,
-    ) -> tuple[McpCredentialReference, ...]:
+        server: MCPServer,
+    ) -> tuple[MCPCredentialReference, ...]:
         if descriptor.mcp_requires_credentials != mcp_server_requires_credentials(server):
             self._block(request, "mcp_server_configuration_stale", mcp_server_id=server.id)
 
@@ -320,14 +371,14 @@ class McpExecutionValidator:
         current = {
             credential.id: credential
             for credential in self.session.scalars(
-                select(McpCredentialReference).where(
-                    McpCredentialReference.workspace_id == request.workspace_id,
-                    McpCredentialReference.id.in_(seen_ids),
-                    McpCredentialReference.status == "active",
+                select(MCPCredentialReference).where(
+                    MCPCredentialReference.workspace_id == request.workspace_id,
+                    MCPCredentialReference.id.in_(seen_ids),
+                    MCPCredentialReference.status == "active",
                 )
             )
         }
-        resolved: list[McpCredentialReference] = []
+        resolved: list[MCPCredentialReference] = []
         for binding in bindings:
             credential = current.get(binding.credential_reference_id)
             if credential is None:
@@ -351,12 +402,12 @@ class McpExecutionValidator:
 
     def _block(
         self,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         reason: str,
         *,
         mcp_server_id: UUID | None = None,
     ) -> NoReturn:
-        McpExecutionBlocker(self.session).block(
+        MCPExecutionBlocker(self.session).block(
             request,
             reason,
             mcp_server_id=mcp_server_id,

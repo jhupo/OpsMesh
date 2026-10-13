@@ -76,7 +76,7 @@ class WorkflowCondition(BaseModel):
         return self
 
 
-class McpToolSelection(BaseModel):
+class MCPToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     mcp_server_id: UUID
@@ -123,7 +123,7 @@ class WorkflowNode(BaseModel):
     assigned_agent_profile_id: UUID | None = None
     depends_on: list[str] = Field(default_factory=list, max_length=128)
     required_tools: list[str] = Field(default_factory=list, max_length=32)
-    required_mcp_tools: list[McpToolSelection] = Field(default_factory=list, max_length=32)
+    required_mcp_tools: list[MCPToolSelection] = Field(default_factory=list, max_length=32)
     required_resource_ids: list[UUID] = Field(default_factory=list, max_length=32)
     resource_requirements: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
     expected_artifacts: list[str] = Field(default_factory=list, max_length=32)

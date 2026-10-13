@@ -71,7 +71,7 @@ def test_bundle_contains_migration_config_without_local_secrets(tmp_path: Path) 
     assert "migrations/env.py" in names
     assert "opsmesh-server" in names
     assert "scripts/server-smoke-test.sh" in names
-    assert "scripts/render-alertmanager-config.py" in names
+    assert "scripts/render_alertmanager_config.py" in names
     assert "operator/pyproject.toml" not in names
     assert not any("__pycache__" in name or name.endswith(".env") for name in names)
     assert file_record(bundle).size > 0
@@ -89,7 +89,6 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
         database_revision="0070_memory_lifecycle",
         upgrade_from_revisions=[],
         rollback_database_revisions=[],
-        connector_protocol=2,
         platforms=["linux/amd64"],
         files=[file],
     )
@@ -107,26 +106,35 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
 
 
 def test_release_record_migration_preserves_source_and_rejects_overwrite(tmp_path: Path) -> None:
-    source = tmp_path / "installed-v1.json"
-    original = json.dumps({
-        "schema_version": 1, "tag": "v0.1.0", "commit": "b" * 40,
-        "repository": "jhupo/OpsMesh", "backend_digest": "sha256:" + "c" * 64,
-        "runtime_digest": "sha256:" + "d" * 64, "database_revision": "revision",
-        "upgrade_from_revisions": [], "rollback_database_revisions": [],
-        "connector_protocol": 2, "platforms": ["linux/amd64"],
-        "files": [{"name": "bundle.tar.gz", "sha256": "e" * 64, "size": 10}],
-    })
-    source.write_text(original)
-    destination = tmp_path / "installed-v2.json"
-    manifest = convert(source, destination)
-    assert manifest.api_image == manifest.worker_image == (
-        "ghcr.io/jhupo/opsmesh-backend@sha256:" + "c" * 64
+    source = tmp_path / "installed-v2.json"
+    original = json.dumps(
+        {
+            "schema_version": 2,
+            "tag": "v0.1.0",
+            "commit": "b" * 40,
+            "repository": "jhupo/OpsMesh",
+            "api_image": "sha256:" + "c" * 64,
+            "worker_image": "sha256:" + "f" * 64,
+            "runtime_image": "sha256:" + "d" * 64,
+            "database_revision": "revision",
+            "upgrade_from_revisions": [],
+            "rollback_database_revisions": [],
+            "connector_protocol": 2,
+            "platforms": ["linux/amd64"],
+            "files": [{"name": "bundle.tar.gz", "sha256": "e" * 64, "size": 10}],
+        }
     )
+    source.write_text(original)
+    destination = tmp_path / "installed-v3.json"
+    manifest = convert(source, destination)
+    assert manifest.api_image == "sha256:" + "c" * 64
+    assert manifest.worker_image == "sha256:" + "f" * 64
+    assert manifest.schema_version == 3
     assert source.read_text() == original
     assert ReleaseManifest.model_validate_json(destination.read_bytes()) == manifest
     with pytest.raises(ValueError, match="new destination"):
         convert(source, destination)
-    with pytest.raises(ValueError, match="version-1"):
+    with pytest.raises(ValueError, match="version-2"):
         convert(destination, tmp_path / "invalid.json")
     assert not (tmp_path / "invalid.json").exists()
 
@@ -185,15 +193,24 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     delivery = (ROOT / ".github/workflows/delivery-validation.yml").read_text("utf-8")
     assert "scripts/check_runtime_image.py" in delivery
     runtime_probe = (ROOT / "scripts/check_runtime_image.py").read_text("utf-8")
-    assert '"--network"' in runtime_probe
-    assert '"none"' in runtime_probe
+    assert "DockerSandboxClient" in runtime_probe
+    assert "await session.shutdown()" in runtime_probe
     assert "uv build" not in publish
-    assert "docker build" not in commands
+    compute_builds = [step["run"] for step in steps if "docker build" in step.get("run", "")]
+    assert len(compute_builds) == 1
+    assert "Dockerfile.runtime" in compute_builds[0]
+    assert "OPSMESH_TEST_COMPUTE_IMAGE" in compute_builds[0]
+    assert "OPSMESH_API_IMAGE" not in compute_builds[0]
     assert "candidate-${{ github.run_id }}-${{ github.run_attempt }}" in publish
     ci = (ROOT / ".github/workflows/backend-ci.yml").read_text("utf-8")
     assert "branches: [master]" in ci
     assert "uv run lint-imports --no-cache" in ci
-    assert "uv run pytest\n" not in ci
+    ci_jobs = yaml.safe_load(ci)["jobs"]
+    assert not any(
+        step.get("run", "").strip().endswith("uv run pytest")
+        for job in ci_jobs.values()
+        for step in job.get("steps", [])
+    )
 
 
 def test_checksums_cover_artifacts_not_their_own_digest(tmp_path: Path) -> None:
@@ -214,13 +231,16 @@ def test_native_builder_rejects_wrong_identity_before_writing(tmp_path: Path, ta
 
 
 def test_images_use_locked_dependencies_and_explicit_migrations() -> None:
-    for name in ("deploy/images/Dockerfile", "deploy/images/Dockerfile.runtime"):
-        dockerfile = (ROOT / name).read_text("utf-8")
-        assert "uv sync --frozen --no-dev --no-editable" in dockerfile
-        assert "pip install ." not in dockerfile
-        assert "USER opsmesh" in dockerfile
-        assert "uv.lock" in dockerfile
-    assert "alembic upgrade" not in (ROOT / "deploy/images/Dockerfile").read_text("utf-8")
+    application = (ROOT / "deploy/images/Dockerfile").read_text("utf-8")
+    compute = (ROOT / "deploy/images/Dockerfile.runtime").read_text("utf-8")
+    assert "uv sync --frozen --no-dev --no-editable" in application
+    assert "USER opsmesh" in application
+    assert "uv.lock" in application
+    assert "alembic upgrade" not in application
+    assert "--require-hashes -r /tmp/compute-requirements.txt" in compute
+    assert "USER sandbox" in compute
+    assert "opsmesh_runtime" not in compute
+    assert "pip install ." not in application + compute
 
 
 def test_public_installer_recovers_interrupted_release_downloads() -> None:

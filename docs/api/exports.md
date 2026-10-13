@@ -4,14 +4,18 @@
 
 | 方法 | 路径 | 操作 |
 | --- | --- | --- |
-| POST | `/api/v1/workspaces/{workspace_id}/exports/archive` | Export Workspace Archive |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/archive/import` | Import Workspace Archive |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/archive/import/preview` | Preview Workspace Archive Import |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs` | Create Workspace Archive Export Job |
 | GET | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}` | Get Workspace Archive Export Job |
 | GET | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/download` | Download Workspace Archive Export Job |
+| POST | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/reconcile` | Reconcile Workspace Archive Export Job |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/restore-drill` | Run Workspace Archive Restore Drill |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/verify` | Verify Workspace Archive Export Job |
+| GET | `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills` | List Workspace Restore Drill Operations |
+| GET | `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills/{operation_id}` | Get Workspace Restore Drill Operation |
+| POST | `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills/{operation_id}/reconcile` | Reconcile Workspace Restore Drill Operation |
+| GET | `/api/v1/workspaces/{workspace_id}/exports/archive/verifications/{operation_id}` | Get Workspace Archive Verification |
 | GET | `/api/v1/workspaces/{workspace_id}/exports/lifecycle-diagnostics` | Get Workspace Data Lifecycle Diagnostics |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/metadata` | Export Workspace Metadata |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/metadata/import` | Import Workspace Metadata |
@@ -20,47 +24,6 @@
 | POST | `/api/v1/workspaces/{workspace_id}/exports/recovery-readiness/actions/apply` | Apply Workspace Recovery Readiness Actions |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/retention/apply` | Apply Workspace Retention |
 | POST | `/api/v1/workspaces/{workspace_id}/exports/retention/preview` | Preview Workspace Retention |
-
-## POST `/api/v1/workspaces/{workspace_id}/exports/archive`
-
-Export Workspace Archive
-
-Operation ID：`export_workspace_archive_api_v1_workspaces__workspace_id__exports_archive_post`。
-
-实现：[src/opsmesh/resources/transfers/routes/archive.py](../../src/opsmesh/resources/transfers/routes/archive.py) · `export_workspace_archive`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/WorkspaceArchiveExportRequest"
-}
-```
-
-模型：[WorkspaceArchiveExportRequest](schemas.md#schema-WorkspaceArchiveExportRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | any |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
 ## POST `/api/v1/workspaces/{workspace_id}/exports/archive/import`
 
@@ -241,6 +204,48 @@ Operation ID：`download_workspace_archive_export_job_api_v1_workspaces__workspa
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
+## POST `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/reconcile`
+
+Reconcile Workspace Archive Export Job
+
+Operation ID：`reconcile_workspace_archive_export_job_api_v1_workspaces__workspace_id__exports_archive_jobs__job_id__reconcile_post`。
+
+实现：[src/opsmesh/resources/transfers/routes/archive_jobs.py](../../src/opsmesh/resources/transfers/routes/archive_jobs.py) · `reconcile_workspace_archive_export_job`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `job_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/WorkspaceArchiveExportReconciliation"
+}
+```
+
+模型：[WorkspaceArchiveExportReconciliation](schemas.md#schema-WorkspaceArchiveExportReconciliation)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [WorkspaceExportJobResponse](schemas.md#schema-WorkspaceExportJobResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
 ## POST `/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/restore-drill`
 
 Run Workspace Archive Restore Drill
@@ -278,7 +283,7 @@ Content-Type：`application/json`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [WorkspaceRestoreDrillResponse](schemas.md#schema-WorkspaceRestoreDrillResponse) |
+| 202 | Successful Response | application/json | [WorkspaceRestoreDrillOperationResponse](schemas.md#schema-WorkspaceRestoreDrillOperationResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -306,7 +311,134 @@ Operation ID：`verify_workspace_archive_export_job_api_v1_workspaces__workspace
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [WorkspaceArchiveIntegrityResponse](schemas.md#schema-WorkspaceArchiveIntegrityResponse) |
+| 202 | Successful Response | application/json | [WorkspaceArchiveVerificationResponse](schemas.md#schema-WorkspaceArchiveVerificationResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills`
+
+List Workspace Restore Drill Operations
+
+Operation ID：`list_workspace_restore_drill_operations_api_v1_workspaces__workspace_id__exports_archive_restore_drills_get`。
+
+实现：[src/opsmesh/resources/transfers/routes/archive_jobs.py](../../src/opsmesh/resources/transfers/routes/archive_jobs.py) · `list_workspace_restore_drill_operations`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
+| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [PageResponse_WorkspaceRestoreDrillOperationResponse_](schemas.md#schema-PageResponse_WorkspaceRestoreDrillOperationResponse_) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills/{operation_id}`
+
+Get Workspace Restore Drill Operation
+
+Operation ID：`get_workspace_restore_drill_operation_api_v1_workspaces__workspace_id__exports_archive_restore_drills__operation_id__get`。
+
+实现：[src/opsmesh/resources/transfers/routes/archive_jobs.py](../../src/opsmesh/resources/transfers/routes/archive_jobs.py) · `get_workspace_restore_drill_operation`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `operation_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [WorkspaceRestoreDrillOperationResponse](schemas.md#schema-WorkspaceRestoreDrillOperationResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills/{operation_id}/reconcile`
+
+Reconcile Workspace Restore Drill Operation
+
+Operation ID：`reconcile_workspace_restore_drill_operation_api_v1_workspaces__workspace_id__exports_archive_restore_drills__operation_id__reconcile_post`。
+
+实现：[src/opsmesh/resources/transfers/routes/archive_jobs.py](../../src/opsmesh/resources/transfers/routes/archive_jobs.py) · `reconcile_workspace_restore_drill_operation`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `operation_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/WorkspaceRestoreDrillReconciliation"
+}
+```
+
+模型：[WorkspaceRestoreDrillReconciliation](schemas.md#schema-WorkspaceRestoreDrillReconciliation)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [WorkspaceRestoreDrillOperationResponse](schemas.md#schema-WorkspaceRestoreDrillOperationResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/exports/archive/verifications/{operation_id}`
+
+Get Workspace Archive Verification
+
+Operation ID：`get_workspace_archive_verification_api_v1_workspaces__workspace_id__exports_archive_verifications__operation_id__get`。
+
+实现：[src/opsmesh/resources/transfers/routes/archive_jobs.py](../../src/opsmesh/resources/transfers/routes/archive_jobs.py) · `get_workspace_archive_verification`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `operation_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [WorkspaceArchiveVerificationResponse](schemas.md#schema-WorkspaceArchiveVerificationResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

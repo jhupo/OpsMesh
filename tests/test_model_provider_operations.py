@@ -1,12 +1,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from test_workspace_api import _client, _headers, _seed_workspace
-
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
+from tests.fixtures.workspace_api import _client, _headers, _seed_workspace
 
 
-def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() -> None:
+def test_model_provider_operations_exposes_frozen_run_provider_and_failure_diagnostics() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     primary = client.post(
@@ -30,10 +29,10 @@ def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() 
         f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
         headers=_headers(owner.id),
         json={
-            "name": "Anthropic backup",
-            "provider": "anthropic",
+            "name": "OpenAI provider",
+            "provider": "openai",
             "api_key": "sk-backup-operations",
-            "default_model": "claude-sonnet-4-6",
+            "default_model": "gpt-4.1-mini",
         },
     )
     agent_response = client.post(
@@ -50,19 +49,6 @@ def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() 
     assert backup.status_code == 201
     assert agent_response.status_code == 201
 
-    workspace.settings = {
-        "model_provider_fallback": {
-            "enabled": True,
-            "retry_error_codes": ["RuntimeError"],
-            "candidates": [
-                {
-                    "credential_id": backup.json()["id"],
-                    "model": "claude-sonnet-4-6",
-                    "model_api": "anthropic_messages",
-                }
-            ],
-        }
-    }
     run = AgentRun(
         workspace_id=workspace.id,
         agent_profile_id=UUID(agent_response.json()["id"]),
@@ -87,12 +73,11 @@ def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() 
         RunEvent(
             workspace_id=workspace.id,
             agent_run_id=run.id,
-            event_type="model_provider.fallback_selected",
+            event_type="model.request_failed",
             sequence=1,
-            message="fallback",
+            message="Model request failed",
             event_metadata={
-                "failed_provider": {"provider": "openai", "api_key": "sk-hidden"},
-                "model_provider": {"provider": "anthropic"},
+                "reason": {"code": "provider_unavailable", "api_key": "sk-hidden"},
             },
             created_at=now,
         )
@@ -115,9 +100,6 @@ def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() 
         "active_credential_count": 2,
         "healthy_credential_count": 0,
         "active_run_count": 1,
-        "fallback_enabled": True,
-        "fallback_selected_run_count": 1,
-        "fallback_unavailable_run_count": 0,
     }
     assert body["agents"][0]["provider"] == "openai"
     assert body["agents"][0]["protocol"] == "responses"
@@ -128,11 +110,8 @@ def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() 
         "usage": {"monthly_tokens": 2500},
         "remaining": {"monthly_tokens": 7500},
     }
-    assert body["fallback"]["candidates"][0]["provider"] == "anthropic"
-    assert body["fallback"]["candidates"][0]["selectable"] is True
-    assert body["runs"][0]["fallback_status"] == "selected"
     assert body["runs"][0]["provider"] == "openai"
-    assert body["runs"][0]["fallback"]["failed_provider"]["api_key"] == "[redacted]"
+    assert body["runs"][0]["failure"] == {"code": "provider_unavailable", "api_key": "[redacted]"}
     assert "sk-hidden" not in str(body)
     assert "encrypted_api_key" not in str(body)
 
@@ -147,11 +126,17 @@ def test_model_provider_operations_is_workspace_scoped_and_admin_only() -> None:
         slug="provider-operations-viewer",
     )
 
-    assert client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/model-providers",
-        headers=_headers(viewer.id),
-    ).status_code == 403
-    assert client.get(
-        f"/api/v1/workspaces/{other_workspace.id}/operations/model-providers",
-        headers=_headers(owner.id),
-    ).status_code == 403
+    assert (
+        client.get(
+            f"/api/v1/workspaces/{workspace.id}/operations/model-providers",
+            headers=_headers(viewer.id),
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            f"/api/v1/workspaces/{other_workspace.id}/operations/model-providers",
+            headers=_headers(owner.id),
+        ).status_code
+        == 403
+    )

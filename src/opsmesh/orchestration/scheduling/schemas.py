@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_serializer, model_validator
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.runtime.temporal.contracts import ExecutionKind
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -30,25 +31,17 @@ class ScheduledJobScheduleRequest(BaseModel):
 
 
 class ScheduledJobCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=160)
     schedule: ScheduledJobScheduleRequest
-    action_type: str = Field(default="record_due_action", pattern="^(queue_job|record_due_action)$")
-    job_type: str | None = Field(
-        default=None,
-        pattern=(
-            "^(agent\\.run|mcp\\.tool_execution|task\\.plan|team\\.execution_loop|"
-            "runtime\\.cleanup|workspace\\.archive_export|memory\\.index|webhook\\.delivery|"
-            "secret\\.reencrypt|model_provider\\.health_check)$"
-        ),
-    )
+    action_type: str = Field(default="record_due_action", pattern="^(execute|record_due_action)$")
+    execution_kind: ExecutionKind | None = None
     resource_id: UUID | None = None
-    routing: dict[str, object] = Field(default_factory=dict)
-    priority: int = Field(default=0, ge=-100, le=100)
-    max_attempts: int = Field(default=3, ge=1, le=10)
+    parameters: dict[str, JsonValue] = Field(default_factory=dict)
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class ScheduledJobResponse(ORMModel):
+class ScheduledJobResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -57,11 +50,10 @@ class ScheduledJobResponse(ORMModel):
     schedule_config: dict[str, object]
     status: str
     action_type: str
-    job_type: str | None
+    execution_kind: str | None
     resource_id: UUID | None
-    routing: dict[str, object]
-    priority: int
-    max_attempts: int
+    parameters: dict[str, object]
+    revision: int
     metadata_: dict[str, object] = Field(serialization_alias="metadata")
     last_run_at: datetime | None
     next_run_at: datetime | None
@@ -70,6 +62,6 @@ class ScheduledJobResponse(ORMModel):
     created_at: datetime
     updated_at: datetime
 
-    @field_serializer("schedule_config", "routing", "metadata_")
+    @field_serializer("schedule_config", "parameters", "metadata_")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)

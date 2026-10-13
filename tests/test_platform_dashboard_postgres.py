@@ -14,15 +14,13 @@ from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.users.models import User
 from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.orchestration.runs.state import RunStatus
-from opsmesh.runtime.operations.admin_requests import AdminOperationService
-from opsmesh.runtime.operations.history import PlatformHistoryService
-from opsmesh.runtime.operations.models import AdminOperationRequest, PlatformMetricSnapshot
-from opsmesh.runtime.operations.recovery import StaleRunQueryService
+from opsmesh.platform.operations.history import PlatformHistoryService
+from opsmesh.platform.operations.models import AdminOperationRecord, PlatformMetricSnapshot
+from opsmesh.platform.operations.service import AdminOperationService
 from opsmesh.shared.config import Settings
 from opsmesh.shared.errors import ConflictError
 from opsmesh.workspaces.management.models import Workspace
-from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+from tests.fixtures.database import temporary_postgres_schema
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL integration URL required"
@@ -31,7 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("same_workspace", [True, False])
 def test_concurrent_admin_submission_has_one_intent_and_one_audit(same_workspace):
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         register_models().create_all(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)
         with factory() as session:
@@ -66,7 +64,7 @@ def test_concurrent_admin_submission_has_one_intent_and_one_audit(same_workspace
             results = [future.result(timeout=20) for future in futures]
         assert results.count("conflict") == (0 if same_workspace else 1)
         with factory() as session:
-            assert session.scalar(select(func.count()).select_from(AdminOperationRequest)) == 1
+            assert session.scalar(select(func.count()).select_from(AdminOperationRecord)) == 1
             assert (
                 session.scalar(
                     select(func.count())
@@ -78,7 +76,7 @@ def test_concurrent_admin_submission_has_one_intent_and_one_audit(same_workspace
 
 
 def test_parallel_history_sampling_commits_only_one_complete_snapshot():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         register_models().create_all(engine)
         factory = sessionmaker(bind=engine)
         barrier = Barrier(2)
@@ -97,11 +95,11 @@ def test_parallel_history_sampling_commits_only_one_complete_snapshot():
         with factory() as session:
             rows = session.scalars(select(PlatformMetricSnapshot)).all()
             assert len(rows) == 1
-            assert set(rows[0].values) == {"runs", "workers", "runtimes", "approvals"}
+            assert set(rows[0].values) == {"runs", "temporal_dispatch", "runtimes", "approvals"}
 
 
-def test_recovery_filters_before_limiting_and_skips_locked_runs():
-    with _temporary_postgres_schema() as engine:
+def test_explicit_admin_cancellation_stages_only_target_workspace():
+    with temporary_postgres_schema() as engine:
         register_models().create_all(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)
         now = datetime.now(UTC)
@@ -113,18 +111,6 @@ def test_recovery_filters_before_limiting_and_skips_locked_runs():
             agent = AgentProfile(workspace_id=workspace.id, name="Agent", role="operator")
             session.add(agent)
             session.flush()
-            for _ in range(6):
-                session.add(
-                    AgentRun(
-                        workspace_id=workspace.id,
-                        agent_profile_id=agent.id,
-                        model="test",
-                        input={},
-                        status="running",
-                        started_at=now,
-                        updated_at=now - timedelta(hours=3),
-                    )
-                )
             stale = AgentRun(
                 workspace_id=workspace.id,
                 agent_profile_id=agent.id,
@@ -137,14 +123,21 @@ def test_recovery_filters_before_limiting_and_skips_locked_runs():
             session.add(stale)
             session.commit()
             workspace_id, stale_id = workspace.id, stale.id
-        with factory() as first, factory() as second:
-            args = dict(
-                stale_after_seconds=900, statuses={RunStatus.RUNNING}, limit=1, now=now, lock=True
+        from opsmesh.orchestration.runs.control import RunControlService
+        from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+
+        with factory() as session:
+            assert (
+                RunControlService(session).cancel_run(
+                    workspace_id=uuid4(), run_id=stale_id, actor_user_id=user.id
+                )
+                is None
             )
-            claimed = StaleRunQueryService(first).stale_runs(workspace_id, **args)
-            assert [row.id for row in claimed] == [stale_id]
-            assert StaleRunQueryService(second).stale_runs(workspace_id, **args) == []
-            first.rollback()
-            assert [
-                row.id for row in StaleRunQueryService(second).stale_runs(workspace_id, **args)
-            ] == [stale_id]
+            assert session.scalar(select(func.count()).select_from(TemporalOutboxEntry)) == 0
+            RunControlService(session).cancel_run(
+                workspace_id=workspace_id, run_id=stale_id, actor_user_id=user.id
+            )
+            assert session.get(AgentRun, stale_id).status == "cancelled"
+            commands = session.scalars(select(TemporalOutboxEntry)).all()
+            assert len(commands) == 1
+            assert commands[0].workspace_id == workspace_id

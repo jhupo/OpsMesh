@@ -17,7 +17,7 @@ from opsmesh.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from opsmesh.orchestration.planning.agent_plan import PlannedWork
+from opsmesh.orchestration.planning.agent_plan import PlannedWorkPackage
 from opsmesh.orchestration.planning.feasibility import PlanFeasibilityService
 from opsmesh.orchestration.planning.mutation_materialization import project_step
 from opsmesh.orchestration.planning.mutation_operations import (
@@ -27,8 +27,8 @@ from opsmesh.orchestration.planning.mutation_operations import (
     package_map,
     raw_packages,
 )
-from opsmesh.orchestration.planning.team_project_plan import (
-    ProjectPlanStepMaterializer,
+from opsmesh.orchestration.planning.task_plan_steps import (
+    TaskPlanStepMaterializer,
     after_step_ids_for_package,
 )
 from opsmesh.orchestration.runs.models import AgentRun
@@ -36,9 +36,8 @@ from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService
-from opsmesh.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.orchestration.tasks.state import reset_task_to_draft
+from opsmesh.orchestration.tasks.steps import TaskStepStatus, transition_task_step
 from opsmesh.teams.sessions.snapshots import build_team_snapshot
 
 MUTABLE_STEP_STATUSES = frozenset({TaskStepStatus.QUEUED.value, TaskStepStatus.BLOCKED.value})
@@ -96,7 +95,6 @@ class TaskPlanMutationService:
         command: TaskPlanMutationCommand,
         *,
         enqueue_run: bool = False,
-        queue: RedisQueue | None = None,
     ) -> Task | None:
         task = self._get_task(workspace_id, task_id)
         if task is None:
@@ -148,7 +146,6 @@ class TaskPlanMutationService:
             state,
             actor_user_id,
             enqueue_run=enqueue_run,
-            queue=queue,
         )
         affected_ids = sorted(state.changed_package_ids | state.created_package_ids)
         preserved_ids = sorted(
@@ -594,7 +591,7 @@ class TaskPlanMutationService:
                 self._reject(exc.code, "Mutated future work is no longer feasible")
 
     def _sync_steps(self, task: Task, state: _MutationState, reason: str) -> None:
-        materializer = ProjectPlanStepMaterializer(self._session)
+        materializer = TaskPlanStepMaterializer(self._session)
         next_order = max((step.order_index for step in state.steps.values()), default=-100) + 100
         for package in state.packages:
             package_id = str(package["package_id"])
@@ -623,7 +620,7 @@ class TaskPlanMutationService:
                     **existing_step.dependencies,
                     "mutation": package.get("mutation", {}),
                 }
-                TaskStepStateService().transition(
+                transition_task_step(
                     existing_step,
                     TaskStepStatus.CANCELLED,
                     dependencies=cancellation_dependencies,
@@ -644,7 +641,7 @@ class TaskPlanMutationService:
                 existing_step.status == TaskStepStatus.BLOCKED.value
                 and package_id in state.changed_package_ids
             ):
-                TaskStepStateService().transition(existing_step, TaskStepStatus.QUEUED)
+                transition_task_step(existing_step, TaskStepStatus.QUEUED)
         self._session.flush()
 
     def _enqueue_if_requested(
@@ -654,7 +651,6 @@ class TaskPlanMutationService:
         actor_user_id: UUID,
         *,
         enqueue_run: bool,
-        queue: RedisQueue | None,
     ) -> AgentRun | None:
         if not enqueue_run:
             return None
@@ -663,15 +659,12 @@ class TaskPlanMutationService:
         if self._active_task_run_exists(task):
             return None
         if task.status in {"blocked", "failed"}:
-            TaskStateService().reset_to_draft(task)
+            reset_task_to_draft(task)
         from opsmesh.orchestration.runs.service import RunOrchestrationService
 
         run = RunOrchestrationService(self._session).create_queued_run_for_task(task)
-        if run is not None and queue is not None:
-            RunOrchestrationService(self._session, queue=queue).enqueue_run(
-                run,
-                actor_user_id,
-            )
+        if run is not None:
+            RunOrchestrationService(self._session).request_run(run, actor_user_id)
         return run
 
     def _load_steps(self, task: Task) -> dict[str, TaskStep]:
@@ -704,7 +697,6 @@ class TaskPlanMutationService:
         active_step_ids: set[UUID] = set()
         side_effecting_statuses = {
             RunStatus.RUNNING.value,
-            RunStatus.WAITING_RUNTIME.value,
             RunStatus.WAITING_APPROVAL.value,
             RunStatus.WAITING_SUBWORKFLOW.value,
         }
@@ -751,7 +743,7 @@ class TaskPlanMutationService:
         if not isinstance(raw_package, dict):
             self._reject("plan_mutation_package_invalid", "Work package must be an object")
         try:
-            package = PlannedWork.model_validate(raw_package).model_dump(
+            package = PlannedWorkPackage.model_validate(raw_package).model_dump(
                 mode="json", by_alias=True, exclude_none=True
             )
         except ValidationError:

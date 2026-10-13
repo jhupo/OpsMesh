@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from opsmesh.capabilities.catalog.dependencies import router as capability_base_router
+from opsmesh.capabilities.catalog.catalog_routes import router as capability_base_router
 from opsmesh.capabilities.catalog.routes import router as capability_catalog_router
 from opsmesh.capabilities.governance.routes import router as capability_governance_router
 from opsmesh.capabilities.mcp.routes import router as capability_mcp_router

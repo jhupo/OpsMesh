@@ -45,7 +45,6 @@ class ModelProviderCredentialQueryService:
         allowed_actions = {
             "model_provider.used",
             "model_provider.request_failed",
-            "model_provider.fallback_unavailable",
         }
         statement = select(AuditEvent).where(
             AuditEvent.workspace_id == workspace_id,

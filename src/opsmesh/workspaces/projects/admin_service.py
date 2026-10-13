@@ -6,12 +6,12 @@ from sqlalchemy import select
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.shared.db.pagination import page_scalars
-from opsmesh.shared.db.read_service import AdminSessionService
+from opsmesh.shared.db.read_service import PagedQuerySupport
 from opsmesh.shared.pagination import PageParams
 from opsmesh.workspaces.projects.models import WorkspaceProject
 
 
-class AdminWorkspaceProjectService(AdminSessionService):
+class AdminWorkspaceProjectService(PagedQuerySupport):
     def list_projects(
         self,
         workspace_id: UUID,
@@ -19,9 +19,7 @@ class AdminWorkspaceProjectService(AdminSessionService):
         *,
         status: str | None = None,
     ) -> tuple[list[WorkspaceProject], int]:
-        statement = select(WorkspaceProject).where(
-            WorkspaceProject.workspace_id == workspace_id
-        )
+        statement = select(WorkspaceProject).where(WorkspaceProject.workspace_id == workspace_id)
         if status is not None:
             statement = statement.where(WorkspaceProject.status == status)
         return page_scalars(
@@ -70,4 +68,3 @@ class AdminWorkspaceProjectService(AdminSessionService):
         self._session.commit()
         self._session.refresh(project)
         return project
-

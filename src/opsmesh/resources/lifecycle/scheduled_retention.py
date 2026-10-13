@@ -58,7 +58,6 @@ class ScheduledRetentionService:
         if latest_run_at is not None and latest_run_at + timedelta(hours=interval_hours) > now:
             return ScheduledLifecycleSummary()
 
-
         response = WorkspaceRetentionService(self._session).apply_retention(
             workspace_id=workspace.id,
             user_id=workspace.owner_user_id,

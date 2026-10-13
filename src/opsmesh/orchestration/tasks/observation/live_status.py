@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.orchestration.runs.activity import run_activity
+from opsmesh.orchestration.runs.activity_summary import run_activity_summary
+from opsmesh.orchestration.runs.evidence import public_run_event_metadata
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.shared.utils import counts_by_value
@@ -13,7 +14,6 @@ from opsmesh.shared.utils import counts_by_value
 ACTIVE_RUN_STATUSES = {
     "queued",
     "running",
-    "waiting_runtime",
     "waiting_approval",
     "waiting_subworkflow",
 }
@@ -67,7 +67,7 @@ class TaskLiveStatusService:
                 "step_status_counts": counts_by_value(step.status for step in steps),
                 "run_status_counts": counts_by_value(run.status for run in runs),
                 "active_run_phase_counts": counts_by_value(
-                    run_activity(run, latest_events.get(run.id))["phase"]
+                    run_activity_summary(run, latest_events.get(run.id))["phase"]
                     for run in active_runs
                 ),
                 "active_run_count": len(active_runs),
@@ -86,7 +86,8 @@ class TaskLiveStatusService:
                     "assigned_agent_profile_id": step.assigned_agent_profile_id,
                     "assigned_agent": _agent_summary(
                         agents.get(step.assigned_agent_profile_id)
-                        if step.assigned_agent_profile_id else None
+                        if step.assigned_agent_profile_id
+                        else None
                     ),
                     "result_summary": step.result_summary,
                 }
@@ -228,7 +229,7 @@ class TaskLiveStatusService:
             "started_at": run.started_at,
             "completed_at": run.completed_at,
             "latest_event": _event_summary(latest_event),
-            "activity": run_activity(run, latest_event),
+            "activity": run_activity_summary(run, latest_event),
         }
 
 
@@ -251,6 +252,6 @@ def _event_summary(event: RunEvent | None) -> dict[str, object] | None:
         "event_type": event.event_type,
         "sequence": event.sequence,
         "message": event.message,
-        "metadata": event.event_metadata,
+        "metadata": public_run_event_metadata(event.event_metadata),
         "created_at": event.created_at,
     }

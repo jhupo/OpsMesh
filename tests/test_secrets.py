@@ -1,7 +1,6 @@
 from opsmesh.shared.security.secrets import (
     SecretEncryptionService,
     external_vault_reference_metadata,
-    redact_secret_provider_configs,
 )
 
 
@@ -38,7 +37,6 @@ def test_secret_encryption_keyring_decrypts_previous_key_payloads() -> None:
     encrypted = old_service.encrypt_payload(payload)
 
     assert new_service.decrypt_payload(encrypted.ciphertext, key_id=encrypted.key_id) == payload
-    assert new_service.needs_rotation(encrypted.key_id) is True
     assert new_service.encrypt_payload(payload).key_id == "new"
 
 
@@ -60,26 +58,3 @@ def test_external_vault_reference_metadata_is_redacted_and_versioned() -> None:
         "raw_secret_exposed": False,
     }
     assert "image-api-key" not in str(metadata)
-
-
-def test_secret_provider_config_redacts_urls_and_tokens() -> None:
-    redacted = redact_secret_provider_configs(
-        {
-            "vault": {
-                "url": "https://vault.example.test/v1/secret?token=raw",
-                "token": "vault-token",
-                "mount": "kv",
-                "headers": {"Authorization": "Bearer secret"},
-            }
-        }
-    )
-
-    assert redacted["vault"] == {
-        "url_configured": True,
-        "url_host": "vault.example.test",
-        "token": "[redacted]",
-        "mount": "kv",
-        "headers": "[redacted]",
-    }
-    assert "vault-token" not in str(redacted)
-    assert "secret?token=raw" not in str(redacted)

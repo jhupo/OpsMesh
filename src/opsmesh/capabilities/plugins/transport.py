@@ -1,5 +1,6 @@
 """Bounded data-only HTTPS downloads; DNS is resolved once and the connection is pinned."""
 
+import asyncio
 import ipaddress
 import socket
 import time
@@ -27,26 +28,28 @@ class PluginFetchError(Exception):
         super().__init__(code)
 
 
-class PluginHttpFetcher:
-    def __init__(self, transport: httpx.BaseTransport | None = None) -> None:
+class PluginHTTPFetcher:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.transport = transport
 
-    def fetch(self, url: str, allowed_hosts: list[str], *, max_bytes: int) -> bytes:
+    async def fetch(self, url: str, allowed_hosts: list[str], *, max_bytes: int) -> bytes:
         deadline = time.monotonic() + 30
         try:
             for _ in range(4):
                 host = validate_distribution_url(url, allowed_hosts)
                 addresses = {
                     ipaddress.ip_address(str(row[4][0]))
-                    for row in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+                    for row in await asyncio.get_running_loop().getaddrinfo(
+                        host, 443, type=socket.SOCK_STREAM
+                    )
                 }
                 if not addresses or any(not address.is_global for address in addresses):
                     raise PluginFetchError("non_public_address")
                 address = str(sorted(addresses, key=str)[0])
                 # A fresh client prevents cross-host pool reuse. SNI and certificate validation
                 # retain the approved hostname while the TCP connection uses the validated IP.
-                with (
-                    httpx.Client(
+                async with (
+                    httpx.AsyncClient(
                         timeout=5, trust_env=False, follow_redirects=False, transport=self.transport
                     ) as client,
                     client.stream(
@@ -66,7 +69,7 @@ class PluginHttpFetcher:
                     if response.headers.get("content-encoding", "identity") != "identity":
                         raise PluginFetchError("encoded_response")
                     content = bytearray()
-                    for chunk in response.iter_raw():
+                    async for chunk in response.aiter_raw():
                         if time.monotonic() > deadline:
                             raise PluginFetchError("download_timeout")
                         if len(content) + len(chunk) > max_bytes:

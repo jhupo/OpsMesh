@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 
 
 class ObjectStorageKeyConflictError(ValueError):

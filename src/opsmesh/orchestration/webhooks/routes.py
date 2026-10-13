@@ -20,14 +20,12 @@ from opsmesh.orchestration.webhooks.schemas import (
     WebhookSubscriptionUpdateRequest,
 )
 from opsmesh.orchestration.webhooks.subscriptions import WebhookSubscriptionService
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.egress import EgressUrlValidationError
+from opsmesh.shared.security.egress import EgressURLValidationError
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 router = APIRouter(
@@ -72,7 +70,7 @@ def create_webhook_subscription(
             event_types=request.event_types,
             signing_secret=request.signing_secret,
         )
-    except EgressUrlValidationError as exc:
+    except EgressURLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return WebhookSubscriptionResponse.model_validate(subscription)
 
@@ -93,7 +91,7 @@ def update_webhook_subscription(
             target_url=str(request.target_url) if request.target_url is not None else None,
             event_types=request.event_types,
         )
-    except EgressUrlValidationError as exc:
+    except EgressURLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -178,14 +176,12 @@ def replay_webhook_delivery_attempt(
     delivery_attempt_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> WebhookDeliveryAttemptResponse:
     try:
         attempt = WebhookDeliveryService(session).replay_attempt(
             workspace_id=context.workspace.id,
             subscription_id=subscription_id,
             delivery_attempt_id=delivery_attempt_id,
-            queue=queue,
             rate_limiter=request.app.state.rate_limiter,
         )
     except WebhookDeliveryReplayRateLimitError as exc:

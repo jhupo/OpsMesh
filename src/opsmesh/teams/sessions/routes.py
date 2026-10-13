@@ -1,16 +1,14 @@
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from redis import Redis
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.schemas import (
+from opsmesh.agents.sessions.schemas import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,
 )
-from opsmesh.agents.sessions.management import PersistentAgentSessionManagementService
+from opsmesh.agents.sessions.service import AgentSessionService
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
@@ -22,11 +20,6 @@ from opsmesh.teams.management.http_common import (
     _require_team_session,
     _set_team_session_status_response,
 )
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -43,7 +36,7 @@ def list_team_sessions(
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AgentSessionSummaryResponse]:
     _require_team(session, context.workspace.id, team_id)
-    service = PersistentAgentSessionManagementService(session)
+    service = AgentSessionService(session)
     try:
         total = service.count_sessions(
             workspace_id=context.workspace.id,
@@ -75,7 +68,7 @@ def get_team_session(
     session: Session = Depends(get_db_session),
 ) -> AgentSessionDetailResponse:
     _require_team(session, context.workspace.id, team_id)
-    detail = PersistentAgentSessionManagementService(session).get_session(
+    detail = AgentSessionService(session).get_session(
         workspace_id=context.workspace.id,
         session_id=session_id,
         item_limit=item_limit,
@@ -154,7 +147,7 @@ def clear_team_session_items(
     session: Session = Depends(get_db_session),
 ) -> AgentSessionClearResponse:
     _require_team_session(session, context.workspace.id, team_id, session_id)
-    deleted = PersistentAgentSessionManagementService(session).clear_session_items(
+    deleted = AgentSessionService(session).clear_session_items(
         workspace_id=context.workspace.id,
         session_id=session_id,
     )

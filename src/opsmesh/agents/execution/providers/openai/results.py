@@ -16,173 +16,185 @@ from agents.usage import Usage
 from pydantic import TypeAdapter
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeEvent,
-    AgentRuntimeHandoffResult,
-    AgentRuntimeInterruption,
-    AgentRuntimeResumeState,
-    AgentRuntimeStreamEvent,
-    AgentRuntimeStructuredOutput,
+    AgentExecutionContext,
+    AgentHandoffResult,
+    AgentLifecycleEvent,
+    AgentResumeState,
+    AgentStreamEvent,
+    AgentStructuredOutput,
+    AgentToolInterruption,
 )
-from opsmesh.agents.execution.providers.openai.mcp import RuntimeMCPServer
-from opsmesh.agents.execution.providers.openai.tools import OpenAIProductFunctionTool
+from opsmesh.agents.execution.providers.openai.mcp import GovernedAgent, GovernedSandboxAgent
+from opsmesh.agents.execution.providers.openai.tools import ProductFunctionTool
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class OpenAIAgentsResultMapper:
-    def final_output(self, result: Any) -> tuple[str, AgentRuntimeStructuredOutput | None]:
-        value = result.final_output
-        if value is None:
-            return "", None
-        if isinstance(value, str):
-            return value, None
-        normalized = jsonable(value)
-        output_schema = getattr(result.last_agent, "output_type", None)
-        schema_name = None
-        if output_schema is not None:
-            name = getattr(output_schema, "name", None)
-            if callable(name):
-                candidate = name()
-                schema_name = candidate if isinstance(candidate, str) else None
-        return (
-            json.dumps(normalized, ensure_ascii=False, sort_keys=True),
-            AgentRuntimeStructuredOutput(
-                value=normalized,
-                schema_name=schema_name,
-                validated=output_schema is not None,
-            ),
+def sdk_final_output(result: Any) -> tuple[str, AgentStructuredOutput | None]:
+    value = result.final_output
+    if value is None:
+        return "", None
+    if isinstance(value, str):
+        return value, None
+    normalized = jsonable(value)
+    output_schema = getattr(result.last_agent, "output_type", None)
+    schema_name = None
+    if output_schema is not None:
+        name = getattr(output_schema, "name", None)
+        if callable(name):
+            candidate = name()
+            schema_name = candidate if isinstance(candidate, str) else None
+    return (
+        json.dumps(normalized, ensure_ascii=False, sort_keys=True),
+        AgentStructuredOutput(
+            value=normalized,
+            schema_name=schema_name,
+            validated=output_schema is not None,
+        ),
+    )
+
+
+def sdk_safe_raw_output(result: Any) -> dict[str, object]:
+    final_output, _ = sdk_final_output(result)
+    payload: dict[str, object] = {"final_output": final_output}
+    last_agent = result.last_agent
+    if last_agent is not None:
+        payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
+    usage = result.context_wrapper.usage
+    if isinstance(usage, Usage):
+        payload["usage"] = TypeAdapter(Usage).dump_python(usage, mode="json")
+    return redact_sensitive_payload(payload)
+
+
+def sdk_resume_state(result: Any) -> AgentResumeState | None:
+    interruptions = result.interruptions
+    if not isinstance(interruptions, list | tuple) or not interruptions:
+        return None
+    state_payload = result.to_state().to_json(
+        context_serializer=_serialize_runtime_context,
+        strict_context=True,
+        include_tracing_api_key=False,
+    )
+    if not isinstance(state_payload, dict):
+        raise ValueError("Interrupted OpenAI Agents run state is invalid")
+    schema_version = state_payload.get("$schemaVersion")
+    return AgentResumeState(
+        provider="openai_agents",
+        serialized_state=json.dumps(
+            state_payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+        schema_version=str(schema_version) if schema_version is not None else None,
+        sdk_version=agents_sdk_version,
+    )
+
+
+def sdk_interruptions(result: Any) -> list[AgentToolInterruption]:
+    mapped: list[AgentToolInterruption] = []
+    for item in result.interruptions:
+        call_id = getattr(item, "call_id", None)
+        tool_name = getattr(item, "name", None)
+        raw_arguments = getattr(item, "arguments", None)
+        if not isinstance(call_id, str) or not call_id:
+            raise ValueError("OpenAI Agents interruption is missing a tool call ID")
+        if not isinstance(tool_name, str) or not tool_name:
+            raise ValueError("OpenAI Agents interruption is missing a tool name")
+        agent = getattr(item, "agent", None)
+        is_sandbox_tool = (
+            isinstance(agent, GovernedSandboxAgent) and call_id in agent.sandbox_approval_reviews
         )
-
-    def safe_raw_output(self, result: Any) -> dict[str, object]:
-        final_output, _ = self.final_output(result)
-        payload: dict[str, object] = {"final_output": final_output}
-        last_agent = result.last_agent
-        if last_agent is not None:
-            payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
-        usage = result.context_wrapper.usage
-        if isinstance(usage, Usage):
-            payload["usage"] = TypeAdapter(Usage).dump_python(usage, mode="json")
-        return redact_sensitive_payload(payload)
-
-    def resume_state(self, result: Any) -> AgentRuntimeResumeState | None:
-        interruptions = result.interruptions
-        if not isinstance(interruptions, list | tuple) or not interruptions:
-            return None
-        state_payload = result.to_state().to_json(
-            context_serializer=_serialize_runtime_context,
-            strict_context=True,
-            include_tracing_api_key=False,
+        try:
+            arguments = (
+                {"patch": raw_arguments}
+                if is_sandbox_tool and tool_name == "apply_patch"
+                else json.loads(raw_arguments or "{}")
+            )
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("OpenAI Agents interruption arguments are invalid") from exc
+        if not isinstance(arguments, dict):
+            raise ValueError("OpenAI Agents interruption arguments must be an object")
+        tool = _interrupted_tool(item, tool_name)
+        review = (
+            tool.approval_reviews.get(call_id, {}) if isinstance(tool, ProductFunctionTool) else {}
         )
-        if not isinstance(state_payload, dict):
-            raise ValueError("Interrupted OpenAI Agents run state is invalid")
-        schema_version = state_payload.get("$schemaVersion")
-        return AgentRuntimeResumeState(
-            provider="openai_agents",
-            serialized_state=json.dumps(
-                state_payload,
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            schema_version=str(schema_version) if schema_version is not None else None,
-            sdk_version=agents_sdk_version,
+        agent = getattr(item, "agent", None)
+        is_mcp_tool = (
+            isinstance(agent, GovernedAgent | GovernedSandboxAgent)
+            and agent.runtime_request is not None
+            and any(
+                definition.name == tool_name and definition.source == "mcp"
+                for definition in agent.runtime_request.context.tool_definitions
+            )
         )
-
-    def interruptions(self, result: Any) -> list[AgentRuntimeInterruption]:
-        mapped: list[AgentRuntimeInterruption] = []
-        for item in result.interruptions:
-            call_id = getattr(item, "call_id", None)
-            tool_name = getattr(item, "name", None)
-            raw_arguments = getattr(item, "arguments", None)
-            if not isinstance(call_id, str) or not call_id:
-                raise ValueError("OpenAI Agents interruption is missing a tool call ID")
-            if not isinstance(tool_name, str) or not tool_name:
-                raise ValueError("OpenAI Agents interruption is missing a tool name")
-            try:
-                arguments = json.loads(raw_arguments or "{}")
-            except (TypeError, json.JSONDecodeError) as exc:
-                raise ValueError("OpenAI Agents interruption arguments are invalid") from exc
-            if not isinstance(arguments, dict):
-                raise ValueError("OpenAI Agents interruption arguments must be an object")
-            tool = _interrupted_tool(item, tool_name)
-            review = (
-                tool.approval_reviews.get(call_id, {})
-                if isinstance(tool, OpenAIProductFunctionTool)
-                else {}
+        if is_mcp_tool and isinstance(agent, GovernedAgent | GovernedSandboxAgent):
+            review = agent.mcp_approval_reviews.get(call_id, {})
+        if is_sandbox_tool and isinstance(agent, GovernedSandboxAgent):
+            review = agent.sandbox_approval_reviews.get(call_id, {})
+        mapped.append(
+            AgentToolInterruption(
+                tool_call_id=call_id,
+                tool_name=tool_name,
+                tool_kind=tool.tool_kind
+                if isinstance(tool, ProductFunctionTool)
+                else "mcp"
+                if is_mcp_tool
+                else "sandbox"
+                if is_sandbox_tool
+                else "unknown",
+                arguments=arguments,
+                agent=getattr(agent, "runtime_ref", None),
+                policy_decision=dict(review),
             )
-            agent = getattr(item, "agent", None)
-            servers = agent.mcp_servers if isinstance(agent, AgentBase) else []
-            mcp_server = next(
-                (
-                    server
-                    for server in servers
-                    if isinstance(server, RuntimeMCPServer) and tool_name in server.definitions
-                ),
-                None,
-            )
-            if mcp_server is not None:
-                review = mcp_server.approval_reviews.get(call_id, {})
-            mapped.append(
-                AgentRuntimeInterruption(
-                    tool_call_id=call_id,
-                    tool_name=tool_name,
-                    tool_kind=tool.tool_kind
-                    if isinstance(tool, OpenAIProductFunctionTool)
-                    else "mcp"
-                    if mcp_server is not None
-                    else "unknown",
-                    arguments=arguments,
-                    agent=getattr(agent, "runtime_ref", None),
-                    policy_decision=dict(review),
-                )
-            )
-        return mapped
-
-    def runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
-        usage = result.context_wrapper.usage
-        return (
-            [
-                AgentRuntimeEvent(
-                    event_type="model.usage",
-                    message="Model usage recorded.",
-                    payload={"usage": TypeAdapter(Usage).dump_python(usage, mode="json")},
-                )
-            ]
-            if usage.requests
-            else []
         )
+    return mapped
 
-    def handoffs(
-        self,
-        result: Any,
-        audits: dict[str, dict[str, object]] | None = None,
-    ) -> list[AgentRuntimeHandoffResult]:
-        mapped: list[AgentRuntimeHandoffResult] = []
-        for item in result.new_items:
-            if getattr(item, "type", None) != "handoff_output_item":
-                continue
-            source_agent = getattr(item, "source_agent", None)
-            target_agent = getattr(item, "target_agent", None)
-            if source_agent is None or target_agent is None:
-                raise ValueError("SDK handoff lost its authorized agent identity")
-            target_name = str(getattr(target_agent, "name", target_agent or ""))
-            audit = dict((audits or {}).get(target_name, {}))
-            mapped.append(
-                AgentRuntimeHandoffResult(
-                    source=source_agent.runtime_ref,
-                    target=target_agent.runtime_ref,
-                    status="completed",
-                    metadata=redact_sensitive_payload(audit),
-                )
+
+def sdk_runtime_events(result: Any) -> list[AgentLifecycleEvent]:
+    usage = result.context_wrapper.usage
+    return (
+        [
+            AgentLifecycleEvent(
+                event_type="model.usage",
+                message="Model usage recorded.",
+                payload={"usage": TypeAdapter(Usage).dump_python(usage, mode="json")},
             )
-        return mapped
+        ]
+        if usage.requests
+        else []
+    )
+
+
+def sdk_handoffs(
+    result: Any,
+    audits: dict[str, dict[str, object]] | None = None,
+) -> list[AgentHandoffResult]:
+    mapped: list[AgentHandoffResult] = []
+    for item in result.new_items:
+        if getattr(item, "type", None) != "handoff_output_item":
+            continue
+        source_agent = getattr(item, "source_agent", None)
+        target_agent = getattr(item, "target_agent", None)
+        if source_agent is None or target_agent is None:
+            raise ValueError("SDK handoff lost its authorized agent identity")
+        target_name = str(getattr(target_agent, "name", target_agent or ""))
+        audit = dict((audits or {}).get(target_name, {}))
+        mapped.append(
+            AgentHandoffResult(
+                source=source_agent.runtime_ref,
+                target=target_agent.runtime_ref,
+                status="completed",
+                metadata=redact_sensitive_payload(audit),
+            )
+        )
+    return mapped
 
 
 def runtime_stream_event_from_sdk_item(
     item: StreamEvent,
     *,
     sequence: int,
-) -> AgentRuntimeStreamEvent | None:
+) -> AgentStreamEvent | None:
     delta: object = None
     if isinstance(item, RawResponsesStreamEvent):
         event_type = _openai_raw_stream_event_type(item.data.type)
@@ -208,7 +220,7 @@ def runtime_stream_event_from_sdk_item(
     if delta is not None:
         redacted_delta = redact_sensitive_payload({"value": delta}).get("value")
         delta = redacted_delta if isinstance(redacted_delta, str) else str(redacted_delta)
-    return AgentRuntimeStreamEvent(
+    return AgentStreamEvent(
         sequence=sequence,
         event_type=event_type,
         payload=normalized_payload,
@@ -253,9 +265,9 @@ def jsonable(value: object) -> object:
 
 
 def _serialize_runtime_context(value: object) -> dict[str, object]:
-    if not isinstance(value, AgentRuntimeContext):
+    if not isinstance(value, AgentExecutionContext):
         raise ValueError("SDK state must carry its frozen OpsMesh context")
-    payload = TypeAdapter(AgentRuntimeContext).dump_python(value, mode="json")
+    payload = TypeAdapter(AgentExecutionContext).dump_python(value, mode="json")
     if not isinstance(payload, dict):
         raise ValueError("SDK context serialization must produce an object")
     return payload

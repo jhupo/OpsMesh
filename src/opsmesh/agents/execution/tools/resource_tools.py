@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from opsmesh.agents.execution.contracts import AgentRuntimeResourceGrant
+from opsmesh.agents.execution.contracts import AgentResourceGrant
 from opsmesh.agents.execution.tools.arguments import (
     bool_argument,
     int_argument,
@@ -37,7 +37,7 @@ def execute_resource_tool(
     context: ToolContext,
     tool_name: str,
     arguments: dict[str, object],
-    grants: tuple[AgentRuntimeResourceGrant, ...],
+    grants: tuple[AgentResourceGrant, ...],
     allowed_file_ids: set[UUID],
 ) -> dict[str, object]:
     read_scopes = memory_read_scopes(grants)

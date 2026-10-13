@@ -14,11 +14,11 @@ from opsmesh.capabilities.marketplace.models import TalentListing
 from opsmesh.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
 )
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 
@@ -39,7 +39,7 @@ class TalentPublishService:
         agent = self._repository.require_agent(workspace_id, data.agent_profile_id)
         metadata = dict(data.metadata)
         metadata[AGENT_SNAPSHOT_METADATA_KEY] = asdict(agent_marketplace_snapshot(agent))
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_agent_profile(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_agent_profile(
             workspace_id=workspace_id,
             visibility="public",
             name=agent.name,

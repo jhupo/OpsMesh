@@ -1,13 +1,13 @@
 import asyncio
 from contextlib import suppress
 
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRuntimeCancellation
-from opsmesh.agents.execution.errors import AgentRuntimeCancelledError
+from opsmesh.agents.execution.contracts import AgentCancellation, AgentRunRequest
+from opsmesh.agents.execution.errors import AgentExecutionCancelledError
 
 
-async def raise_if_cancelled(cancellation: AgentRuntimeCancellation | None) -> None:
+async def raise_if_cancelled(cancellation: AgentCancellation | None) -> None:
     if cancellation is not None and await cancellation.is_cancelled():
-        raise AgentRuntimeCancelledError
+        raise AgentExecutionCancelledError
 
 
 async def cancel_active_tools(request: AgentRunRequest) -> None:

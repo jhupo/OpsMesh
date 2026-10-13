@@ -1,37 +1,31 @@
 from collections.abc import Generator
 
-import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.bootstrap.job_handlers import WorkerJobHandler
 from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
+from opsmesh.orchestration.planning.activities import TaskPlanActivities
 from opsmesh.orchestration.tasks.models import TaskMessage, TaskStep
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.workspaces.domain_items.models import RevisionRequest
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
-from tests.test_worker_run_execution import _seed_default_model_provider
+from tests.fixtures.agent_product import _seed_default_model_provider
+from tests.fixtures.database import product_engine
+from tests.fixtures.temporal import durable_executions
 
 TOKEN = "test-token"
 
 
 def test_task_view_returns_domain_state_comments_and_revisions() -> None:
-    queue = _queue()
-    client, session = _client(queue)
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
 
     task = client.post(
@@ -102,12 +96,18 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
         == "Rewrite the first three paragraphs with stronger conflict."
     )
     assert session.query(RevisionRequest).count() == 1
-    job = _dequeue_job_type(queue, JobType.TASK_PLAN)
+    job = durable_executions(session, workspace.id, ExecutionKind.TASK_PLAN)[-1]
     assert job is not None
-    assert job.job_type == JobType.TASK_PLAN
+    assert job.kind == ExecutionKind.TASK_PLAN
     assert str(job.resource_id) == task_id
 
-    WorkerJobHandler(session=session, queue=queue).handle(job)
+    session.commit()
+    TaskPlanActivities(
+        ActivityDependencies(
+            sessionmaker(session.get_bind(), expire_on_commit=False), client.app.state.settings
+        )
+    ).execute(job)
+    session.expire_all()
 
     stored_revision = session.query(RevisionRequest).one()
     step = session.query(TaskStep).one()
@@ -119,8 +119,7 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
 
 
 def test_task_view_redacts_sensitive_domain_metadata() -> None:
-    queue = _queue()
-    client, session = _client(queue)
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
 
     task = client.post(
@@ -244,14 +243,8 @@ def test_domain_item_cannot_be_used_across_workspaces() -> None:
     assert denied.status_code == 400
 
 
-def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def _client() -> tuple[TestClient, Session]:
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
@@ -266,8 +259,6 @@ def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    worker_queue = queue or _queue()
-    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
     return TestClient(app), session
 
 
@@ -298,30 +289,6 @@ def _seed_workspace(
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _queue() -> RedisQueue:
-    return RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-    )
-
-
-def _dequeue_job_type(queue: RedisQueue, job_type: JobType) -> JobPayload | None:
-    while True:
-        job = queue.dequeue()
-        if job is None or job.job_type == job_type:
-            return job
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
 
 
 def _agent_id(session: Session, workspace_id: object) -> str:

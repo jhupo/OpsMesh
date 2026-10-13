@@ -147,10 +147,7 @@ class EffectiveCapabilityCatalogService:
     ) -> _CapabilityRequests:
         return _CapabilityRequests(
             tools=_string_set(
-                profile.tool_policy.get(
-                    "allowed_tools",
-                    profile.tool_policy.get("mcp_tools", []),
-                ),
+                profile.tool_policy.get("allowed_tools", []),
                 kind="tool",
                 key="agent.tool_policy.allowed_tools",
                 denied=denied,

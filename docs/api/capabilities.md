@@ -18,6 +18,7 @@
 | PATCH | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-credentials/{credential_id}` | Update Mcp Credential Reference |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-credentials/{credential_id}/disable` | Disable Mcp Credential Reference |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-credentials/{credential_id}/rotate` | Rotate Mcp Credential Reference |
+| GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-diagnostic-notifications/{event_id}` | Get Mcp Diagnostic Notification |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers` | List Mcp Servers |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers` | Create Mcp Server |
 | PATCH | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{mcp_server_id}` | Update Mcp Server |
@@ -31,7 +32,7 @@
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/enable` | Enable Discovered Mcp Tool |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment` | Get Managed Mcp |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment` | Control Managed Mcp |
-| PUT | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment/host` | Bind Managed Mcp Host |
+| PUT | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment/environment` | Bind Managed Mcp Environment |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs` | List Mcp Tool Call Logs |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs` | Log Mcp Tool Call |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs/{log_id}/diagnostic` | Get Mcp Tool Call Diagnostic |
@@ -64,7 +65,7 @@ List Capabilities
 
 Operation ID：`list_capabilities_api_v1_workspaces__workspace_id__capabilities_get`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `list_capabilities`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `list_capabilities`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -94,7 +95,7 @@ Create Capability
 
 Operation ID：`create_capability_api_v1_workspaces__workspace_id__capabilities_post`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `create_capability`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `create_capability`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -307,17 +308,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/ManagedMcpCreateRequest"
+  "$ref": "#/components/schemas/ManagedMCPCreateRequest"
 }
 ```
 
-模型：[ManagedMcpCreateRequest](schemas.md#schema-ManagedMcpCreateRequest)
+模型：[ManagedMCPCreateRequest](schemas.md#schema-ManagedMCPCreateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | array&lt;[ManagedMcpResponse](schemas.md#schema-ManagedMcpResponse)&gt; |
+| 202 | Successful Response | application/json | array&lt;[ManagedMCPResponse](schemas.md#schema-ManagedMCPResponse)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -347,7 +348,7 @@ Operation ID：`list_mcp_catalog_api_v1_workspaces__workspace_id__capabilities_m
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_McpCatalogServerResponse_](schemas.md#schema-PageResponse_McpCatalogServerResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_MCPCatalogServerResponse_](schemas.md#schema-PageResponse_MCPCatalogServerResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -378,7 +379,7 @@ Operation ID：`list_mcp_credential_references_api_v1_workspaces__workspace_id__
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_McpCredentialReferenceResponse_](schemas.md#schema-PageResponse_McpCredentialReferenceResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_MCPCredentialReferenceResponse_](schemas.md#schema-PageResponse_MCPCredentialReferenceResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -409,17 +410,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpCredentialReferenceCreateRequest"
+  "$ref": "#/components/schemas/MCPCredentialReferenceCreateRequest"
 }
 ```
 
-模型：[McpCredentialReferenceCreateRequest](schemas.md#schema-McpCredentialReferenceCreateRequest)
+模型：[MCPCredentialReferenceCreateRequest](schemas.md#schema-MCPCredentialReferenceCreateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [McpCredentialReferenceResponse](schemas.md#schema-McpCredentialReferenceResponse) |
+| 201 | Successful Response | application/json | [MCPCredentialReferenceResponse](schemas.md#schema-MCPCredentialReferenceResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -451,17 +452,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpCredentialReferenceUpdateRequest"
+  "$ref": "#/components/schemas/MCPCredentialReferenceUpdateRequest"
 }
 ```
 
-模型：[McpCredentialReferenceUpdateRequest](schemas.md#schema-McpCredentialReferenceUpdateRequest)
+模型：[MCPCredentialReferenceUpdateRequest](schemas.md#schema-MCPCredentialReferenceUpdateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpCredentialReferenceResponse](schemas.md#schema-McpCredentialReferenceResponse) |
+| 200 | Successful Response | application/json | [MCPCredentialReferenceResponse](schemas.md#schema-MCPCredentialReferenceResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -489,7 +490,7 @@ Operation ID：`disable_mcp_credential_reference_api_v1_workspaces__workspace_id
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpCredentialReferenceResponse](schemas.md#schema-McpCredentialReferenceResponse) |
+| 200 | Successful Response | application/json | [MCPCredentialReferenceResponse](schemas.md#schema-MCPCredentialReferenceResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -521,17 +522,45 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpCredentialReferenceRotateRequest"
+  "$ref": "#/components/schemas/MCPCredentialReferenceRotateRequest"
 }
 ```
 
-模型：[McpCredentialReferenceRotateRequest](schemas.md#schema-McpCredentialReferenceRotateRequest)
+模型：[MCPCredentialReferenceRotateRequest](schemas.md#schema-MCPCredentialReferenceRotateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpCredentialReferenceResponse](schemas.md#schema-McpCredentialReferenceResponse) |
+| 200 | Successful Response | application/json | [MCPCredentialReferenceResponse](schemas.md#schema-MCPCredentialReferenceResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/capabilities/mcp-diagnostic-notifications/{event_id}`
+
+Get Mcp Diagnostic Notification
+
+Operation ID：`get_mcp_diagnostic_notification_api_v1_workspaces__workspace_id__capabilities_mcp_diagnostic_notifications__event_id__get`。
+
+实现：[src/opsmesh/capabilities/mcp/observability_routes.py](../../src/opsmesh/capabilities/mcp/observability_routes.py) · `get_mcp_diagnostic_notification`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `event_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [MCPDiagnosticNotificationResponse](schemas.md#schema-MCPDiagnosticNotificationResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -560,7 +589,7 @@ Operation ID：`list_mcp_servers_api_v1_workspaces__workspace_id__capabilities_m
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_McpServerResponse_](schemas.md#schema-PageResponse_McpServerResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_MCPServerResponse_](schemas.md#schema-PageResponse_MCPServerResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -591,17 +620,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpServerCreateRequest"
+  "$ref": "#/components/schemas/MCPServerCreateRequest"
 }
 ```
 
-模型：[McpServerCreateRequest](schemas.md#schema-McpServerCreateRequest)
+模型：[MCPServerCreateRequest](schemas.md#schema-MCPServerCreateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [McpServerResponse](schemas.md#schema-McpServerResponse) |
+| 201 | Successful Response | application/json | [MCPServerResponse](schemas.md#schema-MCPServerResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -633,17 +662,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpServerUpdateRequest"
+  "$ref": "#/components/schemas/MCPServerUpdateRequest"
 }
 ```
 
-模型：[McpServerUpdateRequest](schemas.md#schema-McpServerUpdateRequest)
+模型：[MCPServerUpdateRequest](schemas.md#schema-MCPServerUpdateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpServerResponse](schemas.md#schema-McpServerResponse) |
+| 200 | Successful Response | application/json | [MCPServerResponse](schemas.md#schema-MCPServerResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -671,7 +700,7 @@ Operation ID：`disable_mcp_server_api_v1_workspaces__workspace_id__capabilities
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpServerResponse](schemas.md#schema-McpServerResponse) |
+| 200 | Successful Response | application/json | [MCPServerResponse](schemas.md#schema-MCPServerResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -703,17 +732,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpServerDiscoveryRequest"
+  "$ref": "#/components/schemas/MCPServerDiscoveryRequest"
 }
 ```
 
-模型：[McpServerDiscoveryRequest](schemas.md#schema-McpServerDiscoveryRequest)
+模型：[MCPServerDiscoveryRequest](schemas.md#schema-MCPServerDiscoveryRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpServerDiscoveryResponse](schemas.md#schema-McpServerDiscoveryResponse) |
+| 200 | Successful Response | application/json | [MCPServerDiscoveryResponse](schemas.md#schema-MCPServerDiscoveryResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -741,7 +770,7 @@ Operation ID：`list_discovered_mcp_tools_api_v1_workspaces__workspace_id__capab
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | array&lt;[McpToolAllowResponse](schemas.md#schema-McpToolAllowResponse)&gt; |
+| 200 | Successful Response | application/json | array&lt;[MCPToolAllowResponse](schemas.md#schema-MCPToolAllowResponse)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -773,17 +802,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpServerHealthCheckRequest"
+  "$ref": "#/components/schemas/MCPServerHealthCheckRequest"
 }
 ```
 
-模型：[McpServerHealthCheckRequest](schemas.md#schema-McpServerHealthCheckRequest)
+模型：[MCPServerHealthCheckRequest](schemas.md#schema-MCPServerHealthCheckRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpServerResponse](schemas.md#schema-McpServerResponse) |
+| 200 | Successful Response | application/json | [MCPServerResponse](schemas.md#schema-MCPServerResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -815,17 +844,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpToolAllowRequest"
+  "$ref": "#/components/schemas/MCPToolAllowRequest"
 }
 ```
 
-模型：[McpToolAllowRequest](schemas.md#schema-McpToolAllowRequest)
+模型：[MCPToolAllowRequest](schemas.md#schema-MCPToolAllowRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [McpToolAllowResponse](schemas.md#schema-McpToolAllowResponse) |
+| 201 | Successful Response | application/json | [MCPToolAllowResponse](schemas.md#schema-MCPToolAllowResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -858,17 +887,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpToolAllowUpdateRequest"
+  "$ref": "#/components/schemas/MCPToolAllowUpdateRequest"
 }
 ```
 
-模型：[McpToolAllowUpdateRequest](schemas.md#schema-McpToolAllowUpdateRequest)
+模型：[MCPToolAllowUpdateRequest](schemas.md#schema-MCPToolAllowUpdateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpToolAllowResponse](schemas.md#schema-McpToolAllowResponse) |
+| 200 | Successful Response | application/json | [MCPToolAllowResponse](schemas.md#schema-MCPToolAllowResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -897,7 +926,7 @@ Operation ID：`disable_mcp_tool_api_v1_workspaces__workspace_id__capabilities_m
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpToolAllowResponse](schemas.md#schema-McpToolAllowResponse) |
+| 200 | Successful Response | application/json | [MCPToolAllowResponse](schemas.md#schema-MCPToolAllowResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -926,7 +955,7 @@ Operation ID：`enable_discovered_mcp_tool_api_v1_workspaces__workspace_id__capa
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpToolAllowResponse](schemas.md#schema-McpToolAllowResponse) |
+| 200 | Successful Response | application/json | [MCPToolAllowResponse](schemas.md#schema-MCPToolAllowResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -954,7 +983,7 @@ Operation ID：`get_managed_mcp_api_v1_workspaces__workspace_id__capabilities_mc
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [ManagedMcpResponse](schemas.md#schema-ManagedMcpResponse) |
+| 200 | Successful Response | application/json | [ManagedMCPResponse](schemas.md#schema-ManagedMCPResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -986,28 +1015,28 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/ManagedMcpActionRequest"
+  "$ref": "#/components/schemas/ManagedMCPActionRequest"
 }
 ```
 
-模型：[ManagedMcpActionRequest](schemas.md#schema-ManagedMcpActionRequest)
+模型：[ManagedMCPActionRequest](schemas.md#schema-ManagedMCPActionRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [ManagedMcpResponse](schemas.md#schema-ManagedMcpResponse) |
+| 202 | Successful Response | application/json | [ManagedMCPResponse](schemas.md#schema-ManagedMCPResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
 
-## PUT `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment/host`
+## PUT `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment/environment`
 
-Bind Managed Mcp Host
+Bind Managed Mcp Environment
 
-Operation ID：`bind_managed_mcp_host_api_v1_workspaces__workspace_id__capabilities_mcp_servers__server_id__deployment_host_put`。
+Operation ID：`bind_managed_mcp_environment_api_v1_workspaces__workspace_id__capabilities_mcp_servers__server_id__deployment_environment_put`。
 
-实现：[src/opsmesh/capabilities/mcp/managed_routes.py](../../src/opsmesh/capabilities/mcp/managed_routes.py) · `bind_managed_mcp_host`。
+实现：[src/opsmesh/capabilities/mcp/managed_routes.py](../../src/opsmesh/capabilities/mcp/managed_routes.py) · `bind_managed_mcp_environment`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1028,17 +1057,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/ManagedMcpHostRequest"
+  "$ref": "#/components/schemas/ManagedMCPEnvironmentRequest"
 }
 ```
 
-模型：[ManagedMcpHostRequest](schemas.md#schema-ManagedMcpHostRequest)
+模型：[ManagedMCPEnvironmentRequest](schemas.md#schema-ManagedMCPEnvironmentRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [ManagedMcpResponse](schemas.md#schema-ManagedMcpResponse) |
+| 200 | Successful Response | application/json | [ManagedMCPResponse](schemas.md#schema-ManagedMCPResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1075,7 +1104,7 @@ Operation ID：`list_mcp_tool_call_logs_api_v1_workspaces__workspace_id__capabil
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_McpToolCallLogResponse_](schemas.md#schema-PageResponse_McpToolCallLogResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_MCPToolCallLogResponse_](schemas.md#schema-PageResponse_MCPToolCallLogResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1106,17 +1135,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/McpToolCallLogRequest"
+  "$ref": "#/components/schemas/MCPToolCallLogRequest"
 }
 ```
 
-模型：[McpToolCallLogRequest](schemas.md#schema-McpToolCallLogRequest)
+模型：[MCPToolCallLogRequest](schemas.md#schema-MCPToolCallLogRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [McpToolCallLogResponse](schemas.md#schema-McpToolCallLogResponse) |
+| 201 | Successful Response | application/json | [MCPToolCallLogResponse](schemas.md#schema-MCPToolCallLogResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1144,7 +1173,7 @@ Operation ID：`get_mcp_tool_call_diagnostic_api_v1_workspaces__workspace_id__ca
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [McpToolCallDiagnosticResponse](schemas.md#schema-McpToolCallDiagnosticResponse) |
+| 200 | Successful Response | application/json | [MCPToolCallDiagnosticResponse](schemas.md#schema-MCPToolCallDiagnosticResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1172,7 +1201,7 @@ Operation ID：`list_mapped_mcp_tools_api_v1_workspaces__workspace_id__capabilit
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | array&lt;[McpToolDescriptor](schemas.md#schema-McpToolDescriptor)&gt; |
+| 200 | Successful Response | application/json | array&lt;[MCPToolDescriptor](schemas.md#schema-MCPToolDescriptor)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -1324,7 +1353,7 @@ List Skills
 
 Operation ID：`list_skills_api_v1_workspaces__workspace_id__capabilities_skills_get`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `list_skills`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `list_skills`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1353,7 +1382,7 @@ Create Skill
 
 Operation ID：`create_skill_api_v1_workspaces__workspace_id__capabilities_skills_post`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `create_skill`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `create_skill`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1394,7 +1423,7 @@ Update Skill
 
 Operation ID：`update_skill_api_v1_workspaces__workspace_id__capabilities_skills__skill_id__patch`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `update_skill`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `update_skill`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1520,7 +1549,7 @@ List Tool Groups
 
 Operation ID：`list_tool_groups_api_v1_workspaces__workspace_id__capabilities_tool_groups_get`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `list_tool_groups`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `list_tool_groups`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1549,7 +1578,7 @@ Create Tool Group
 
 Operation ID：`create_tool_group_api_v1_workspaces__workspace_id__capabilities_tool_groups_post`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `create_tool_group`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `create_tool_group`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1590,7 +1619,7 @@ Update Tool Group
 
 Operation ID：`update_tool_group_api_v1_workspaces__workspace_id__capabilities_tool_groups__group_id__patch`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `update_tool_group`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `update_tool_group`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 
@@ -1899,7 +1928,7 @@ Update Capability
 
 Operation ID：`update_capability_api_v1_workspaces__workspace_id__capabilities__capability_id__patch`。
 
-实现：[src/opsmesh/capabilities/catalog/dependencies.py](../../src/opsmesh/capabilities/catalog/dependencies.py) · `update_capability`。
+实现：[src/opsmesh/capabilities/catalog/catalog_routes.py](../../src/opsmesh/capabilities/catalog/catalog_routes.py) · `update_capability`。
 
 权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=manage_capability, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
 

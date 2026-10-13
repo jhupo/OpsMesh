@@ -5,16 +5,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Resp
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.contracts import AgentProfileResponse
+from opsmesh.agents.profiles.contracts import AgentProfileCreateRequest, AgentProfileResponse
 from opsmesh.agents.profiles.http_errors import agent_management_http_error
 from opsmesh.agents.profiles.schemas import (
     AgentProfileCloneRequest,
-    AgentProfileCreateRequest,
     AgentProfileRollbackRequest,
     AgentProfileUpdateRequest,
     AgentProfileVersionResponse,
 )
-from opsmesh.agents.profiles.service import AgentManagementService
+from opsmesh.agents.profiles.service import AgentProfileService
 from opsmesh.agents.providers.views import agent_profile_response
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
@@ -46,7 +45,7 @@ def list_agents(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AgentProfileResponse]:
-    items, total = AgentManagementService(session).list_agents(
+    items, total = AgentProfileService(session).list_agents(
         context.workspace.id,
         page,
         status_filter,
@@ -65,7 +64,7 @@ def get_agent(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
-    agent = AgentManagementService(session).get_agent(context.workspace.id, agent_id)
+    agent = AgentProfileService(session).get_agent(context.workspace.id, agent_id)
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     return agent_profile_response(session, agent)
@@ -80,7 +79,7 @@ def create_agent(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentProfileResponse:
-    agent_service = AgentManagementService(session, settings)
+    agent_service = AgentProfileService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         agent = run_idempotent_create(
@@ -117,7 +116,7 @@ def update_agent(
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
     try:
-        agent = AgentManagementService(session).update_agent(
+        agent = AgentProfileService(session).update_agent(
             context.workspace.id,
             agent_id,
             request,
@@ -137,7 +136,7 @@ def archive_agent(
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
     try:
-        agent = AgentManagementService(session).archive_agent(
+        agent = AgentProfileService(session).archive_agent(
             context.workspace.id,
             agent_id,
             context.user.user_id,
@@ -156,7 +155,7 @@ def activate_agent(
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
     try:
-        agent = AgentManagementService(session).activate_agent(
+        agent = AgentProfileService(session).activate_agent(
             context.workspace.id,
             agent_id,
             context.user.user_id,
@@ -175,7 +174,7 @@ def delete_agent(
     session: Session = Depends(get_db_session),
 ) -> Response:
     try:
-        deleted = AgentManagementService(session).delete_agent(
+        deleted = AgentProfileService(session).delete_agent(
             context.workspace.id,
             agent_id,
             context.user.user_id,
@@ -201,7 +200,7 @@ def clone_agent(
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),
 ) -> AgentProfileResponse:
-    agent_service = AgentManagementService(session, settings)
+    agent_service = AgentProfileService(session, settings)
     idempotency = IdempotencyService(redis, RedisKeyBuilder(settings.redis_key_prefix))
     try:
         agent = run_idempotent_create(
@@ -242,7 +241,7 @@ def list_agent_versions(
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AgentProfileVersionResponse]:
     try:
-        items, total = AgentManagementService(session).list_agent_versions(
+        items, total = AgentProfileService(session).list_agent_versions(
             context.workspace.id,
             agent_id,
             page,
@@ -264,7 +263,7 @@ def rollback_agent_version(
     session: Session = Depends(get_db_session),
 ) -> AgentProfileResponse:
     try:
-        agent = AgentManagementService(session).rollback_agent_version(
+        agent = AgentProfileService(session).rollback_agent_version(
             context.workspace.id,
             agent_id,
             version,

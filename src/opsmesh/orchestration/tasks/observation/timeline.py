@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.orchestration.runs.evidence import public_run_event_metadata
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.runs.queries import run_events_for_runs
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
@@ -69,7 +70,7 @@ class TaskTimelineService:
                 ),
                 "phase_counts": dict(sorted(Counter(event["phase"] for event in events).items())),
                 "active_run_count": len(
-                    [run for run in runs if run.status in {"queued", "running", "waiting_runtime"}]
+                    [run for run in runs if run.status in {"queued", "running"}]
                 ),
                 "artifact_count": len(artifacts),
                 "correction_count": len(
@@ -324,7 +325,7 @@ def run_event_timeline_event(
         "artifact_id": None,
         "sequence": event.sequence,
         "agent": agent_payload(agent),
-        "metadata": redact_sensitive_payload(event.event_metadata),
+        "metadata": public_run_event_metadata(event.event_metadata),
     }
 
 
@@ -399,6 +400,7 @@ def run_metadata(run: AgentRun) -> dict[str, object]:
             "error": run.error,
         }
     )
+
 
 def run_scope_snapshot_summary(run_input: dict[str, object]) -> dict[str, object] | None:
     snapshot = run_input.get("authorization_snapshot")

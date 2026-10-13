@@ -5,10 +5,10 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from opsmesh.agents.providers.resolution import ModelProviderResolutionService
+from opsmesh.agents.providers.resolution import ModelProviderResolver
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_config import ApprovalConfiguration
-from opsmesh.governance.reviews.configured import ConfiguredApprovalService
+from opsmesh.governance.reviews.configured import ApprovalPolicyEvaluationService
 from opsmesh.governance.reviews.llm import LlmResourceReviewer, LlmReviewResult
 from opsmesh.shared.config import Settings
 from opsmesh.workspaces.management.schemas import WorkspaceCreateRequest, WorkspaceUpdateRequest
@@ -17,13 +17,12 @@ from opsmesh.workspaces.management.schemas import WorkspaceCreateRequest, Worksp
 def reviewer(config):
     session = Mock()
     session.get.return_value = SimpleNamespace(settings={"approvals": config})
-    return ConfiguredApprovalService(session, Settings(environment="test"))
+    return ApprovalPolicyEvaluationService(session, Settings(environment="test"))
 
 
 @pytest.mark.parametrize(
     "action,name,args",
     [
-        ("model_request", "model.run", {"input": "解释删除权限 password token"}),
         ("mcp_tool", "delete_record", {"password": "secret"}),
         ("product_tool", "write_artifact", {}),
         ("runtime_command", "rm", {"command": ["rm", "file"]}),
@@ -119,7 +118,7 @@ def test_model_decision_not_overridden_by_risk_and_audited(
         },
     }
     provider = Mock(return_value=SimpleNamespace())
-    monkeypatch.setattr(ModelProviderResolutionService, "resolve_for_review", provider)
+    monkeypatch.setattr(ModelProviderResolver, "resolve_for_review", provider)
     model = Mock(
         return_value=LlmReviewResult(False, "high", ["scope.checked"], {"verdict": verdict})
     )
@@ -148,7 +147,7 @@ def test_model_failure_never_approves_or_exposes_exception(
     monkeypatch, fallback, required, blocked
 ):
     monkeypatch.setattr(
-        ModelProviderResolutionService,
+        ModelProviderResolver,
         "resolve_for_review",
         Mock(side_effect=TimeoutError("token=secret-value")),
     )
@@ -165,7 +164,7 @@ def test_model_failure_never_approves_or_exposes_exception(
             },
         }
     ).review(
-        workspace_id=uuid4(), action="model_request", name="model.run", arguments={}, context={}
+        workspace_id=uuid4(), action="product_tool", name="write_artifact", arguments={}, context={}
     )
     assert (result.required, result.blocked) == (required, blocked)
     assert result.signals["verdict"] == "unavailable"

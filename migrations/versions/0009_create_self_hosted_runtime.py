@@ -33,8 +33,12 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(), nullable=True),
         sa.Column("used_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runtime_enrollment_tokens")),
@@ -55,10 +59,16 @@ def upgrade() -> None:
         sa.Column("last_used_at", sa.DateTime(), nullable=True),
         sa.Column("revoked_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runtime_credentials")),
         sa.UniqueConstraint("token_hash", name="uq_runtime_credentials_hash"),
     )
@@ -79,10 +89,16 @@ def upgrade() -> None:
         sa.Column("capabilities", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("last_heartbeat_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_self_hosted_workers")),
         sa.UniqueConstraint("workspace_runtime_id", name="uq_self_hosted_workers_runtime"),
     )
@@ -101,8 +117,12 @@ def upgrade() -> None:
         sa.Column("claimed_at", sa.DateTime(), nullable=False),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_run_id"], ["agent_runs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["worker_id"], ["self_hosted_workers.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
@@ -130,11 +150,17 @@ def upgrade() -> None:
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_local_file_references")),
     )
     op.create_index(
@@ -159,8 +185,12 @@ def upgrade() -> None:
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_run_id"], ["agent_runs.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["worker_id"], ["self_hosted_workers.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
@@ -179,8 +209,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_self_hosted_artifact_uploads_workspace_status", table_name="self_hosted_artifact_uploads")
-    op.drop_index("ix_self_hosted_artifact_uploads_workspace_run", table_name="self_hosted_artifact_uploads")
+    op.drop_index(
+        "ix_self_hosted_artifact_uploads_workspace_status",
+        table_name="self_hosted_artifact_uploads",
+    )
+    op.drop_index(
+        "ix_self_hosted_artifact_uploads_workspace_run", table_name="self_hosted_artifact_uploads"
+    )
     op.drop_table("self_hosted_artifact_uploads")
     op.drop_index("ix_local_file_references_workspace_task", table_name="local_file_references")
     op.drop_index("ix_local_file_references_workspace_runtime", table_name="local_file_references")

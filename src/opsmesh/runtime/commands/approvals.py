@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.approvals.service import ApprovalService
 from opsmesh.runtime.instances.models import RuntimeCommand
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.workspaces.management.models import Workspace
 
@@ -76,9 +76,7 @@ def request_command_approval(session: Session, record: RuntimeCommand) -> None:
 def apply_command_decision(
     session: Session,
     approval: Approval,
-    user_id: UUID,
     status: str,
-    queue: RedisQueue | None,
 ) -> None:
     if approval.approval_type != "runtime.command.control":
         return
@@ -96,19 +94,14 @@ def apply_command_decision(
         raise ValueError("Runtime command or approval policy changed; resubmit the command")
     record.status = "queued" if status == "approved" else "blocked"
     if status == "approved":
-        if queue is None:
-            raise ValueError("Runtime command resume queue unavailable")
-        queue.enqueue(
-            JobPayload(
+        stage_execution(
+            session,
+            ExecutionRequest(
+                execution_id=record.id,
                 workspace_id=record.workspace_id,
-                job_type=JobType.RUNTIME_CONTROL,
-                resource_id=record.workspace_runtime_id,
-                requested_by_user_id=user_id,
-                idempotency_key=f"runtime.command.approved:{approval.id}",
-                routing={
-                    "action": "command",
-                    "runtime_command_id": str(record.id),
-                    "command": record.command,
-                },
-            )
+                resource_id=record.id,
+                kind=ExecutionKind.SANDBOX_CONTROL,
+                requested_by_user_id=record.requested_by_user_id,
+                parameters={"action": "execute"},
+            ),
         )

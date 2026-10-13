@@ -6,7 +6,7 @@ from uuid import UUID
 
 from opsmesh.capabilities.mcp.catalog.rules import credential_status as _credential_status
 from opsmesh.capabilities.mcp.catalog.rules import execution_mode as _execution_mode
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.mcp.policy import mcp_health_check_stale
 
 
@@ -24,7 +24,7 @@ class WorkspaceSkillToolAvailability:
 
 def skill_tool_availability(
     tool_name: str,
-    allowed_tool: tuple[McpToolAllowlist, McpServer] | None,
+    allowed_tool: tuple[MCPToolAllowlist, MCPServer] | None,
     *,
     credential_count: int,
     workspace_credential_count: int,

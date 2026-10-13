@@ -4,7 +4,6 @@ from typing import Protocol
 from fastapi import FastAPI
 
 from opsmesh.shared.config import Settings
-from opsmesh.shared.executors import shutdown_blocking_executor
 from opsmesh.shared.redis.client import close_redis_client, create_redis_client
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 
@@ -41,4 +40,3 @@ def shutdown_api_resources(app: FastAPI) -> None:
     )
     if telemetry_runtime is not None:
         telemetry_runtime.shutdown()
-    shutdown_blocking_executor(wait=False)

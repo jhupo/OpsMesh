@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from opsmesh.resources.artifacts.models import Artifact
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.storage.transactions import (
     CompensatingObjectStorageWrites,
     ObjectStorageCompensationError,

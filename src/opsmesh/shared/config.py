@@ -5,17 +5,12 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from opsmesh.shared.resources import recommend_runtime_resources
+from opsmesh.shared.pool_sizing import recommend_connection_pools
 from opsmesh.shared.security.egress import validate_url_shape
-from opsmesh.shared.security.secrets import redact_secret_provider_configs
 
 LogFormat = Literal["json", "text"]
 StorageBackend = Literal["local", "s3"]
-_RESOURCE_RECOMMENDATION = recommend_runtime_resources()
-
-
-def _default_worker_runtime_modes() -> list[Literal["isolated", "shared"]]:
-    return ["isolated", "shared"]
+_RESOURCE_RECOMMENDATION = recommend_connection_pools()
 
 
 class Settings(BaseSettings):
@@ -35,6 +30,7 @@ class Settings(BaseSettings):
     mcp_diagnostic_retention_days: int = Field(default=7, ge=1, le=365)
     enable_api_docs: bool = Field(default=True)
     platform_history_enabled: bool = Field(default=True)
+    platform_maintenance_interval_seconds: int = Field(default=300, ge=60, le=86400)
     platform_history_interval_seconds: int = Field(default=60, ge=60, le=3600)
     platform_history_retention_days: int = Field(default=30, ge=1, le=366)
     cors_origins: list[str] = Field(default_factory=list)
@@ -53,25 +49,22 @@ class Settings(BaseSettings):
     redis_socket_connect_timeout_seconds: float = Field(default=5.0, gt=0)
     redis_health_check_interval_seconds: int = Field(default=30, ge=0)
     redis_key_prefix: str = Field(default="opsmesh")
-    worker_queue_name: str = Field(default="agent_runs")
-    worker_concurrency: int = Field(default=32, ge=1)
-    worker_task_concurrency: int | None = Field(default=None, ge=1)
-    worker_mcp_concurrency: int | None = Field(default=None, ge=1)
-    worker_blocking_io_concurrency: int = Field(default=8, ge=1)
-    worker_region: str | None = Field(default=None)
-    worker_capabilities: list[str] = Field(default_factory=list)
-    worker_runtime_modes: list[Literal["isolated", "shared"]] = Field(
-        default_factory=_default_worker_runtime_modes
-    )
-    worker_cpu_count: int | None = Field(default=None, ge=1)
-    worker_memory_mb: int | None = Field(default=None, ge=1)
-    readiness_worker_check_enabled: bool = Field(default=False)
+    temporal_address: str = Field(default="localhost:7233", min_length=1)
+    temporal_namespace: str = Field(default="default", min_length=1)
+    temporal_task_queue: str = Field(default="opsmesh", min_length=1)
+    temporal_worker_identity: str | None = Field(default=None, min_length=1, max_length=256)
+    temporal_tls_enabled: bool = Field(default=False)
+    temporal_api_key: str | None = Field(default=None)
+    temporal_workflow_concurrency: int = Field(default=128, ge=1)
+    temporal_activity_concurrency: int = Field(default=64, ge=1)
+    temporal_archive_activity_concurrency: int = Field(default=4, ge=1)
+    temporal_blocking_activity_workers: int = Field(default=64, ge=1)
+    temporal_dispatch_concurrency: int = Field(default=16, ge=1)
+    temporal_outbox_database_pool_size: int = Field(default=4, ge=1)
+    temporal_shutdown_grace_seconds: int = Field(default=120, ge=1)
+    model_request_timeout_seconds: int = Field(default=600, ge=1, le=86_400)
     mcp_health_check_stale_after_seconds: int = Field(default=24 * 60 * 60, ge=1)
     mcp_tool_timeout_seconds: int = Field(default=30, ge=1, le=300)
-    blocking_thread_pool_workers: int = Field(
-        default=_RESOURCE_RECOMMENDATION.blocking_thread_pool_workers,
-        ge=1,
-    )
     tracing_enabled: bool = Field(default=True)
     otel_logs_enabled: bool = Field(default=True)
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
@@ -86,14 +79,10 @@ class Settings(BaseSettings):
     request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
-    worker_heartbeat_token: str | None = Field(default=None)
-    self_hosted_attestation_secret: str | None = Field(default=None)
     token_hash_pepper: str = Field(default="change-me-token-pepper")
     audit_event_retention_days: int | None = Field(default=None, ge=1)
-    audit_event_worm_enabled: bool = Field(default=True)
     audit_integrity_check_interval_seconds: int = Field(default=3_600, ge=60)
     audit_integrity_stale_after_seconds: int = Field(default=7_200, ge=60)
-    agent_tool_approval_timeout_seconds: int = Field(default=86_400, ge=60)
     storage_backend: StorageBackend = Field(default="local")
     storage_root: str = Field(default=".opsmesh-storage")
     s3_bucket: str = Field(default="")
@@ -106,22 +95,6 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = Field(default=True)
     s3_addressing_style: Literal["auto", "virtual", "path"] = Field(default="auto")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024)
-    agent_file_read_max_bytes: int = Field(default=1024 * 1024, ge=1)
-    agent_file_read_content_types: list[str] = Field(
-        default_factory=lambda: [
-            "application/json",
-            "application/toml",
-            "application/x-yaml",
-            "application/xml",
-            "text/csv",
-            "text/markdown",
-            "text/plain",
-            "text/tab-separated-values",
-            "text/x-python",
-            "text/xml",
-            "text/yaml",
-        ]
-    )
     api_rate_limit_enabled: bool = Field(default=False)
     api_rate_limit_requests: int = Field(default=600, ge=1)
     api_rate_limit_window_seconds: int = Field(default=60, ge=1)
@@ -131,15 +104,20 @@ class Settings(BaseSettings):
     credential_encryption_secret: str = Field(default="change-me-credential-encryption-secret")
     credential_encryption_key_id: str = Field(default="local")
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
-    secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
     runtime_allowed_images: list[str] = Field(default_factory=list)
     release_update_enabled: bool = Field(default=False)
-    release_update_timeout_seconds: int = Field(default=900, ge=30, le=7_200)
     release_update_repository: str = Field(default="jhupo/OpsMesh")
     release_update_check_cache_seconds: int = Field(default=1_200, ge=0, le=86_400)
     release_update_github_api_url: str = Field(default="https://api.github.com")
     release_update_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
-    feature_flags: dict[str, bool] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_temporal_activity_capacity(self) -> "Settings":
+        if self.temporal_blocking_activity_workers < self.temporal_activity_concurrency:
+            raise ValueError(
+                "temporal_blocking_activity_workers must be at least temporal_activity_concurrency"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -152,7 +130,7 @@ class Settings(BaseSettings):
             "s3_secret_access_key",
             "s3_session_token",
             "otel_exporter_otlp_endpoint",
-            "self_hosted_attestation_secret",
+            "temporal_api_key",
         ):
             value = getattr(self, field_name)
             if value is not None:
@@ -189,12 +167,6 @@ class Settings(BaseSettings):
                 raise ValueError("OPSMESH_API_RATE_LIMIT_ENABLED must be true in production")
             if self.credential_encryption_secret == "change-me-credential-encryption-secret":
                 raise ValueError("OPSMESH_CREDENTIAL_ENCRYPTION_SECRET must be set in production")
-            if not self.worker_heartbeat_token or not self.worker_heartbeat_token.strip():
-                raise ValueError("OPSMESH_WORKER_HEARTBEAT_TOKEN must be set in production")
-            if not self.readiness_worker_check_enabled:
-                raise ValueError(
-                    "OPSMESH_READINESS_WORKER_CHECK_ENABLED must be true in production"
-                )
             if "localhost" in self.database_url or "opsmesh:opsmesh" in self.database_url:
                 raise ValueError("OPSMESH_DATABASE_URL must not use local default credentials")
             if self.redis_url == "redis://localhost:6379/0":
@@ -237,20 +209,21 @@ class Settings(BaseSettings):
             "database_max_overflow": self.database_max_overflow,
             "redis_url": _redact_url(self.redis_url),
             "redis_max_connections": self.redis_max_connections,
-            "worker_queue_name": self.worker_queue_name,
-            "worker_concurrency": self.worker_concurrency,
-            "worker_task_concurrency": self.worker_task_concurrency,
-            "worker_mcp_concurrency": self.worker_mcp_concurrency,
-            "worker_blocking_io_concurrency": self.worker_blocking_io_concurrency,
-            "worker_region": self.worker_region,
-            "worker_capabilities": list(self.worker_capabilities),
-            "worker_runtime_modes": list(self.worker_runtime_modes),
-            "worker_cpu_count": self.worker_cpu_count,
-            "worker_memory_mb": self.worker_memory_mb,
-            "readiness_worker_check_enabled": self.readiness_worker_check_enabled,
+            "temporal_address": self.temporal_address,
+            "temporal_namespace": self.temporal_namespace,
+            "temporal_task_queue": self.temporal_task_queue,
+            "temporal_worker_identity": self.temporal_worker_identity,
+            "temporal_tls_enabled": self.temporal_tls_enabled,
+            "temporal_api_key_configured": bool(self.temporal_api_key),
+            "temporal_workflow_concurrency": self.temporal_workflow_concurrency,
+            "temporal_activity_concurrency": self.temporal_activity_concurrency,
+            "temporal_archive_activity_concurrency": self.temporal_archive_activity_concurrency,
+            "temporal_blocking_activity_workers": self.temporal_blocking_activity_workers,
+            "temporal_dispatch_concurrency": self.temporal_dispatch_concurrency,
+            "temporal_outbox_database_pool_size": self.temporal_outbox_database_pool_size,
+            "model_request_timeout_seconds": self.model_request_timeout_seconds,
             "mcp_health_check_stale_after_seconds": (self.mcp_health_check_stale_after_seconds),
             "mcp_tool_timeout_seconds": self.mcp_tool_timeout_seconds,
-            "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
             "tracing_enabled": self.tracing_enabled,
             "otel_logs_enabled": self.otel_logs_enabled,
             "otel_exporter_otlp_endpoint": _redact_url(self.otel_exporter_otlp_endpoint)
@@ -266,13 +239,10 @@ class Settings(BaseSettings):
             "admin_rate_limit_requests": self.admin_rate_limit_requests,
             "trusted_proxy_hops": self.trusted_proxy_hops,
             "audit_event_retention_days": self.audit_event_retention_days,
-            "audit_event_worm_enabled": self.audit_event_worm_enabled,
             "audit_integrity_check_interval_seconds": (self.audit_integrity_check_interval_seconds),
             "audit_integrity_stale_after_seconds": self.audit_integrity_stale_after_seconds,
             "storage_backend": self.storage_backend,
             "storage_root": self.storage_root,
-            "agent_file_read_max_bytes": self.agent_file_read_max_bytes,
-            "agent_file_read_content_types": sorted(self.agent_file_read_content_types),
             "s3_bucket": self.s3_bucket if self.storage_backend == "s3" else "",
             "s3_endpoint_url": _redact_url(self.s3_endpoint_url)
             if self.s3_endpoint_url is not None
@@ -284,9 +254,7 @@ class Settings(BaseSettings):
             "s3_session_token_configured": bool(self.s3_session_token),
             "s3_use_ssl": self.s3_use_ssl,
             "s3_addressing_style": self.s3_addressing_style,
-            "secret_vault_providers": redact_secret_provider_configs(self.secret_vault_providers),
             "release_update_enabled": self.release_update_enabled,
-            "release_update_timeout_seconds": self.release_update_timeout_seconds,
             "release_update_repository": self.release_update_repository,
             "release_update_check_cache_seconds": self.release_update_check_cache_seconds,
             "release_update_github_api_url": _redact_url(self.release_update_github_api_url),
@@ -294,12 +262,7 @@ class Settings(BaseSettings):
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_secrets
             ),
-            "worker_heartbeat_token_configured": bool(self.worker_heartbeat_token),
-            "self_hosted_attestation_secret_configured": bool(self.self_hosted_attestation_secret),
             "cors_origins_count": len(self.cors_origins),
-            "enabled_feature_flags": sorted(
-                key for key, value in self.feature_flags.items() if value
-            ),
         }
 
 

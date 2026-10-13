@@ -22,13 +22,13 @@
 | POST | `/api/v1/workspaces/{workspace_id}/plugins/trust-keys/{key_id}/revoke` | Revoke Key |
 | POST | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/actions` | Plugin Action |
 | GET | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings` | Bindings |
+| POST | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings` | Bind Plugin Resource |
+| DELETE | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings/{binding_id}` | Unbind Plugin Resource |
+| POST | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings/{binding_id}/reauthorize` | Reauthorize Plugin Resource |
 | PUT | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/configuration` | Configure Plugin |
 | DELETE | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/credentials` | Revoke Credentials |
 | POST | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/credentials` | Rotate Credential |
 | GET | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/dependencies` | Dependencies |
-| GET | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment` | Deployment Status |
-| PUT | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment` | Configure Deployment |
-| POST | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment/stop` | Stop Deployment |
 | GET | `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/releases` | Releases |
 
 ## GET `/api/v1/workspaces/{workspace_id}/plugins`
@@ -126,7 +126,7 @@ Operation ID：`candidates_api_v1_workspaces__workspace_id__plugins_candidates_g
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_CandidateResponse_](schemas.md#schema-PageResponse_CandidateResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_PluginCandidateResponse_](schemas.md#schema-PageResponse_PluginCandidateResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -158,17 +158,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/DownloadRequest"
+  "$ref": "#/components/schemas/PluginDownloadRequest"
 }
 ```
 
-模型：[DownloadRequest](schemas.md#schema-DownloadRequest)
+模型：[PluginDownloadRequest](schemas.md#schema-PluginDownloadRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [DownloadResponse](schemas.md#schema-DownloadResponse) |
+| 202 | Successful Response | application/json | [PluginDownloadResponse](schemas.md#schema-PluginDownloadResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -200,11 +200,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/CandidateApproval"
+  "$ref": "#/components/schemas/PluginCandidateInstallRequest"
 }
 ```
 
-模型：[CandidateApproval](schemas.md#schema-CandidateApproval)
+模型：[PluginCandidateInstallRequest](schemas.md#schema-PluginCandidateInstallRequest)
 
 ### 响应
 
@@ -242,17 +242,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/CandidatePreviewRequest"
+  "$ref": "#/components/schemas/PluginCandidatePreviewRequest"
 }
 ```
 
-模型：[CandidatePreviewRequest](schemas.md#schema-CandidatePreviewRequest)
+模型：[PluginCandidatePreviewRequest](schemas.md#schema-PluginCandidatePreviewRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [CandidatePreviewResponse](schemas.md#schema-CandidatePreviewResponse) |
+| 200 | Successful Response | application/json | [PluginCandidatePreviewResponse](schemas.md#schema-PluginCandidatePreviewResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -281,7 +281,7 @@ Operation ID：`downloads_api_v1_workspaces__workspace_id__plugins_downloads_get
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_DownloadResponse_](schemas.md#schema-PageResponse_DownloadResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_PluginDownloadResponse_](schemas.md#schema-PageResponse_PluginDownloadResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -309,7 +309,7 @@ Operation ID：`download_status_api_v1_workspaces__workspace_id__plugins_downloa
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [DownloadResponse](schemas.md#schema-DownloadResponse) |
+| 200 | Successful Response | application/json | [PluginDownloadResponse](schemas.md#schema-PluginDownloadResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -337,7 +337,7 @@ Operation ID：`retry_download_api_v1_workspaces__workspace_id__plugins_download
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [DownloadResponse](schemas.md#schema-DownloadResponse) |
+| 202 | Successful Response | application/json | [PluginDownloadResponse](schemas.md#schema-PluginDownloadResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -366,7 +366,7 @@ Operation ID：`sources_api_v1_workspaces__workspace_id__plugins_sources_get`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_SourceResponse_](schemas.md#schema-PageResponse_SourceResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_PluginSourceResponse_](schemas.md#schema-PageResponse_PluginSourceResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -397,17 +397,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/SourceSettings"
+  "$ref": "#/components/schemas/PluginSourceSettings"
 }
 ```
 
-模型：[SourceSettings](schemas.md#schema-SourceSettings)
+模型：[PluginSourceSettings](schemas.md#schema-PluginSourceSettings)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [SourceResponse](schemas.md#schema-SourceResponse) |
+| 201 | Successful Response | application/json | [PluginSourceResponse](schemas.md#schema-PluginSourceResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -439,17 +439,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/SourceUpdate"
+  "$ref": "#/components/schemas/PluginSourceUpdateRequest"
 }
 ```
 
-模型：[SourceUpdate](schemas.md#schema-SourceUpdate)
+模型：[PluginSourceUpdateRequest](schemas.md#schema-PluginSourceUpdateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [SourceResponse](schemas.md#schema-SourceResponse) |
+| 200 | Successful Response | application/json | [PluginSourceResponse](schemas.md#schema-PluginSourceResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -481,17 +481,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/DownloadRequest"
+  "$ref": "#/components/schemas/PluginDownloadRequest"
 }
 ```
 
-模型：[DownloadRequest](schemas.md#schema-DownloadRequest)
+模型：[PluginDownloadRequest](schemas.md#schema-PluginDownloadRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [DownloadResponse](schemas.md#schema-DownloadResponse) |
+| 202 | Successful Response | application/json | [PluginDownloadResponse](schemas.md#schema-PluginDownloadResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -520,7 +520,7 @@ Operation ID：`list_trust_keys_api_v1_workspaces__workspace_id__plugins_trust_k
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_TrustKeyResponse_](schemas.md#schema-PageResponse_TrustKeyResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_PluginTrustKeyResponse_](schemas.md#schema-PageResponse_PluginTrustKeyResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -551,17 +551,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/TrustKeyCreate"
+  "$ref": "#/components/schemas/PluginTrustKeyCreateRequest"
 }
 ```
 
-模型：[TrustKeyCreate](schemas.md#schema-TrustKeyCreate)
+模型：[PluginTrustKeyCreateRequest](schemas.md#schema-PluginTrustKeyCreateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [TrustKeyResponse](schemas.md#schema-TrustKeyResponse) |
+| 201 | Successful Response | application/json | [PluginTrustKeyResponse](schemas.md#schema-PluginTrustKeyResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -589,7 +589,7 @@ Operation ID：`revoke_key_api_v1_workspaces__workspace_id__plugins_trust_keys__
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [TrustKeyResponse](schemas.md#schema-TrustKeyResponse) |
+| 200 | Successful Response | application/json | [PluginTrustKeyResponse](schemas.md#schema-PluginTrustKeyResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -621,11 +621,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/PluginAction"
+  "$ref": "#/components/schemas/PluginActionRequest"
 }
 ```
 
-模型：[PluginAction](schemas.md#schema-PluginAction)
+模型：[PluginActionRequest](schemas.md#schema-PluginActionRequest)
 
 ### 响应
 
@@ -652,7 +652,6 @@ Operation ID：`bindings_api_v1_workspaces__workspace_id__plugins__install_id__b
 | --- | --- | --- | --- | --- |
 | `install_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `version` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 64, "type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -663,6 +662,121 @@ Operation ID：`bindings_api_v1_workspaces__workspace_id__plugins__install_id__b
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [PageResponse_PluginBindingResponse_](schemas.md#schema-PageResponse_PluginBindingResponse_) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings`
+
+Bind Plugin Resource
+
+Operation ID：`bind_plugin_resource_api_v1_workspaces__workspace_id__plugins__install_id__bindings_post`。
+
+实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `bind_plugin_resource`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/PluginBindingRequest"
+}
+```
+
+模型：[PluginBindingRequest](schemas.md#schema-PluginBindingRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 201 | Successful Response | application/json | [PluginBindingResponse](schemas.md#schema-PluginBindingResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## DELETE `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings/{binding_id}`
+
+Unbind Plugin Resource
+
+Operation ID：`unbind_plugin_resource_api_v1_workspaces__workspace_id__plugins__install_id__bindings__binding_id__delete`。
+
+实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `unbind_plugin_resource`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `binding_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `expected_generation` | query | 是 | integer | `minimum=1` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 204 | Successful Response | — | 无响应体 |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## POST `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/bindings/{binding_id}/reauthorize`
+
+Reauthorize Plugin Resource
+
+Operation ID：`reauthorize_plugin_resource_api_v1_workspaces__workspace_id__plugins__install_id__bindings__binding_id__reauthorize_post`。
+
+实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `reauthorize_plugin_resource`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `binding_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/PluginBindingReauthorizeRequest"
+}
+```
+
+模型：[PluginBindingReauthorizeRequest](schemas.md#schema-PluginBindingReauthorizeRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [PluginBindingResponse](schemas.md#schema-PluginBindingResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -764,17 +878,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/CredentialRequest"
+  "$ref": "#/components/schemas/PluginCredentialRotateRequest"
 }
 ```
 
-模型：[CredentialRequest](schemas.md#schema-CredentialRequest)
+模型：[PluginCredentialRotateRequest](schemas.md#schema-PluginCredentialRotateRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [CredentialResponse](schemas.md#schema-CredentialResponse) |
+| 201 | Successful Response | application/json | [PluginCredentialResponse](schemas.md#schema-PluginCredentialResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -803,104 +917,6 @@ Operation ID：`dependencies_api_v1_workspaces__workspace_id__plugins__install_i
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | object |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## GET `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment`
-
-Deployment Status
-
-Operation ID：`deployment_status_api_v1_workspaces__workspace_id__plugins__install_id__deployment_get`。
-
-实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `deployment_status`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [DeploymentView](schemas.md#schema-DeploymentView) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## PUT `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment`
-
-Configure Deployment
-
-Operation ID：`configure_deployment_api_v1_workspaces__workspace_id__plugins__install_id__deployment_put`。
-
-实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `configure_deployment`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/DeploymentRequest"
-}
-```
-
-模型：[DeploymentRequest](schemas.md#schema-DeploymentRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [DeploymentView](schemas.md#schema-DeploymentView) |
-| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
-
-## POST `/api/v1/workspaces/{workspace_id}/plugins/{install_id}/deployment/stop`
-
-Stop Deployment
-
-Operation ID：`stop_deployment_api_v1_workspaces__workspace_id__plugins__install_id__deployment_stop_post`。
-
-实现：[src/opsmesh/capabilities/plugins/routes.py](../../src/opsmesh/capabilities/plugins/routes.py) · `stop_deployment`。
-
-权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `install_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [DeploymentView](schemas.md#schema-DeploymentView) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

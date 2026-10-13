@@ -1,14 +1,13 @@
 import os
 import threading
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
@@ -16,25 +15,29 @@ from opsmesh.identity.users.models import User
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.runs.state import RunStatus
+from opsmesh.orchestration.scheduling.activities import ScheduleActivities
+from opsmesh.orchestration.scheduling.contracts import ScheduleOccurrence
 from opsmesh.orchestration.scheduling.models import (
     WorkspaceScheduledJob,
     WorkspaceScheduledJobEvent,
 )
-from opsmesh.orchestration.scheduling.service import WorkspaceScheduledJobService
-from opsmesh.orchestration.scheduling.types import ScheduledJobMaintenanceSummary
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.orchestration.tasks.state import TaskStatus
-from opsmesh.runtime.queues.contracts import JobPayload
 from opsmesh.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import temporary_postgres_schema
 from tests.fixtures.execution import test_agent_id
-from tests.test_worker_run_execution import _seed_default_model_provider
+from tests.fixtures.model_provider import seed_default_model_provider
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 
@@ -56,7 +59,7 @@ def test_parallel_schedulers_do_not_over_reserve_runtime_space_quota() -> None:
     if _metadata_has_sqlite_json_columns():
         pytest.skip("PostgreSQL concurrency test must run before SQLite metadata patching")
 
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
         fixture = _seed_scheduler_fixture(session_factory)
@@ -97,9 +100,7 @@ def test_parallel_schedulers_do_not_over_reserve_runtime_space_quota() -> None:
                     RuntimeSpaceQuota.quota_key == "active_runs",
                 )
             )
-            assert len(runs) == 1, [
-                step.dependencies for step in session.scalars(select(TaskStep))
-            ]
+            assert len(runs) == 1, [step.dependencies for step in session.scalars(select(TaskStep))]
 
         assert quota is not None
         assert quota.reserved_value == 1
@@ -113,96 +114,58 @@ def test_parallel_schedulers_do_not_over_reserve_runtime_space_quota() -> None:
         assert active_reservations[0].resource_usage == {"active_runs": 1}
 
 
-def test_parallel_scheduled_job_maintenance_scans_do_not_duplicate_actions() -> None:
+def test_parallel_temporal_schedule_occurrences_do_not_duplicate_actions() -> None:
     if _metadata_has_sqlite_json_columns():
         pytest.skip("PostgreSQL concurrency test must run before SQLite metadata patching")
-
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
-        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
         now = datetime.now(UTC)
-        workspace_id, scheduled_job_id = _seed_due_scheduled_job(session_factory, now=now)
-        barrier = threading.Barrier(2)
-        first_enqueue_started = threading.Event()
-        release_first_enqueue = threading.Event()
-        queue = _BlockingScheduledJobQueue(
-            first_enqueue_started=first_enqueue_started,
-            release_first_enqueue=release_first_enqueue,
+        workspace_id, schedule_id = _seed_due_scheduled_job(factory, now=now)
+        occurrence = ScheduleOccurrence(
+            request=ExecutionRequest(
+                workspace_id=workspace_id,
+                resource_id=schedule_id,
+                kind=ExecutionKind.SCHEDULE_TICK,
+                parameters={"owner_kind": "scheduled_job"},
+            ),
+            occurrence_id="one-native-occurrence",
+            started_at=now,
         )
+        barrier = threading.Barrier(2)
+        services = ActivityDependencies(sessions=factory, settings=Settings(environment="test"))
+        # Materialization is the synchronous DB boundary also used by the Activity.
+        scheduler = ScheduleActivities(services, None)
 
-        def scan_once() -> ScheduledJobMaintenanceSummary:
-            with session_factory() as session:
-                barrier.wait(timeout=10)
-                return WorkspaceScheduledJobService(session).enqueue_due(
-                    queue=queue,
-                    now=now,
-                )
+        def materialize() -> None:
+            barrier.wait(timeout=10)
+            scheduler._materialize(occurrence)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [executor.submit(scan_once) for _ in range(2)]
-            assert first_enqueue_started.wait(timeout=10)
-            done, _ = wait(futures, timeout=5, return_when=FIRST_COMPLETED)
-            try:
-                assert len(done) == 1
-            finally:
-                release_first_enqueue.set()
-            summaries = [future.result(timeout=20) for future in futures]
-
-        with session_factory() as session:
-            scheduled_job = session.get(WorkspaceScheduledJob, scheduled_job_id)
+            futures = [executor.submit(materialize) for _ in range(2)]
+            for future in futures:
+                future.result(timeout=20)
+        with factory() as session:
             events = list(
                 session.scalars(
                     select(WorkspaceScheduledJobEvent).where(
-                        WorkspaceScheduledJobEvent.scheduled_job_id == scheduled_job_id
+                        WorkspaceScheduledJobEvent.scheduled_job_id == schedule_id
                     )
-                ).all()
+                )
             )
-
-        assert scheduled_job is not None
-        assert scheduled_job.workspace_id == workspace_id
-        assert scheduled_job.status == "completed"
-        assert scheduled_job.next_run_at is None
-        assert sum(summary.enqueued for summary in summaries) == 1
-        assert sum(summary.recorded for summary in summaries) == 0
-        assert sum(summary.skipped for summary in summaries) == 0
-        assert len(queue.enqueued_jobs) == 1
-        assert queue.enqueued_jobs[0].workspace_id == workspace_id
-        assert queue.enqueued_jobs[0].resource_id == scheduled_job.resource_id
-        assert len(events) == 1
-        assert events[0].status == "enqueued"
-
-
-class _temporary_postgres_schema:
-    def __init__(self) -> None:
-        self._schema = f"cc_test_{uuid4().hex}"
-        self._admin_engine: Engine | None = None
-        self._schema_engine: Engine | None = None
-
-    def __enter__(self) -> Engine:
-        database_url = os.environ[POSTGRES_TEST_URL_ENV]
-        quoted_schema = _quote_identifier(self._schema)
-        self._admin_engine = create_engine(database_url, future=True)
-        with self._admin_engine.begin() as connection:
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public"))
-            connection.execute(text(f"CREATE SCHEMA {quoted_schema}"))
-        self._schema_engine = create_engine(
-            database_url,
-            future=True,
-            pool_size=4,
-            max_overflow=0,
-            connect_args={"options": f"-csearch_path={self._schema},public"},
-        )
-        return self._schema_engine
-
-    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
-        quoted_schema = _quote_identifier(self._schema)
-        if self._admin_engine is not None:
-            with self._admin_engine.begin() as connection:
-                connection.execute(text(f"DROP SCHEMA IF EXISTS {quoted_schema} CASCADE"))
-        if self._schema_engine is not None:
-            self._schema_engine.dispose()
-        if self._admin_engine is not None:
-            self._admin_engine.dispose()
+            dispatches = list(
+                session.scalars(
+                    select(TemporalOutboxEntry).where(
+                        TemporalOutboxEntry.workspace_id == workspace_id
+                    )
+                )
+            )
+            job = session.get(WorkspaceScheduledJob, schedule_id)
+            assert job.status == "completed"
+            assert len(events) == 1
+            assert events[0].status == "dispatched"
+            assert len(dispatches) == 1
+            assert dispatches[0].payload["execution"]["resource_id"] == str(job.resource_id)
 
 
 def _seed_scheduler_fixture(session_factory: sessionmaker[Session]) -> SchedulerFixture:
@@ -217,7 +180,7 @@ def _seed_scheduler_fixture(session_factory: sessionmaker[Session]) -> Scheduler
         membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
         session.add_all([user, workspace, membership])
         session.flush()
-        _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
+        seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
         runtime_space = RuntimeSpace(
             workspace_id=workspace.id,
             name="Workspace runtime space",
@@ -280,10 +243,10 @@ def _seed_due_scheduled_job(
             schedule_type="one_shot",
             schedule_config={"run_at": (now - timedelta(minutes=1)).isoformat()},
             status="active",
-            action_type="queue_job",
-            job_type="task.plan",
+            action_type="execute",
+            execution_kind="task_plan",
             resource_id=uuid4(),
-            routing={},
+            parameters={},
             metadata_={},
             next_run_at=now - timedelta(minutes=1),
         )
@@ -328,29 +291,6 @@ def _seed_task_step(
     session.add(step)
     session.flush()
     return step
-
-
-class _BlockingScheduledJobQueue:
-    def __init__(
-        self,
-        *,
-        first_enqueue_started: threading.Event,
-        release_first_enqueue: threading.Event,
-    ) -> None:
-        self.enqueued_jobs: list[JobPayload] = []
-        self._first_enqueue_started = first_enqueue_started
-        self._release_first_enqueue = release_first_enqueue
-        self._lock = threading.Lock()
-
-    def enqueue(self, job: JobPayload) -> bool:
-        with self._lock:
-            self.enqueued_jobs.append(job)
-            is_first_enqueue = len(self.enqueued_jobs) == 1
-        if is_first_enqueue:
-            self._first_enqueue_started.set()
-            if not self._release_first_enqueue.wait(timeout=10):
-                raise AssertionError("Timed out waiting to release first scheduled job enqueue")
-        return True
 
 
 def _metadata_has_sqlite_json_columns() -> bool:

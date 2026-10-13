@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ActionKind = Literal["model_request", "mcp_tool", "product_tool", "runtime_command", "resource"]
+ActionKind = Literal["mcp_tool", "product_tool", "runtime_command", "resource"]
 Disposition = Literal["allow", "review", "deny"]
 
 
@@ -48,7 +48,6 @@ class ApprovalRule(BaseModel):
 
 class ApprovalConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    claude_permission_mode: Literal["default", "auto"] = "default"
     default: Disposition = "allow"
     reviewer: Literal["human", "model"] = "human"
     opaque_commands: Literal["review", "deny"] = "review"

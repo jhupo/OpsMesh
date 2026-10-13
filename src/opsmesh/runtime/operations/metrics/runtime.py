@@ -6,9 +6,6 @@ from sqlalchemy.orm import Session
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.operations.runtimes.provider_capacity import (
-    capacity_slots_from_metadata,
-)
 from opsmesh.runtime.spaces.models import RuntimeSpaceQuota
 from opsmesh.shared.telemetry.metrics import GaugeMetric
 
@@ -35,40 +32,31 @@ class RuntimePrometheusMetrics:
             .tuples()
             .all()
         )
-        grouped: dict[tuple[str, str], dict[str, int]] = {}
+        grouped: dict[str, dict[str, int]] = {}
         for runtime in self._session.scalars(
-            select(WorkspaceRuntime).where(WorkspaceRuntime.execution_run_id.is_(None))
+            select(WorkspaceRuntime).where(WorkspaceRuntime.status == "active")
         ).all():
-            key = (runtime.runtime_provider, runtime.runtime_type)
-            bucket = grouped.setdefault(key, {"capacity_slots": 0, "active_runs": 0})
-            bucket["capacity_slots"] += capacity_slots_from_metadata(runtime.capabilities)
+            key = runtime.sandbox_backend_id
+            bucket = grouped.setdefault(key, {"environments": 0, "active_runs": 0})
+            bucket["environments"] += 1
             bucket["active_runs"] += int(active_runs_by_runtime.get(runtime.id, 0))
 
         gauges: list[GaugeMetric] = []
-        for (provider, runtime_type), values in sorted(grouped.items()):
-            labels = {"provider": provider, "runtime_type": runtime_type}
-            capacity_slots = values["capacity_slots"]
-            active_runs = values["active_runs"]
-            saturation = active_runs / capacity_slots if capacity_slots > 0 else 0.0
+        for backend, values in sorted(grouped.items()):
+            labels = {"sandbox_backend": backend}
             gauges.extend(
                 [
                     GaugeMetric(
-                        "opsmesh_runtime_capacity_slots",
-                        capacity_slots,
+                        "opsmesh_sandbox_environments",
+                        values["environments"],
                         labels=labels,
-                        help_text="Runtime capacity slots by provider and runtime type.",
+                        help_text="Active configured execution environments by SDK backend.",
                     ),
                     GaugeMetric(
                         "opsmesh_runtime_active_runs",
-                        active_runs,
+                        values["active_runs"],
                         labels=labels,
-                        help_text="Active runs assigned to runtimes by provider and type.",
-                    ),
-                    GaugeMetric(
-                        "opsmesh_runtime_saturation_ratio",
-                        round(saturation, 4),
-                        labels=labels,
-                        help_text="Runtime active-run saturation by provider and type.",
+                        help_text="Active runs assigned to SDK execution environments.",
                     ),
                 ]
             )

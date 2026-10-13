@@ -1,44 +1,36 @@
-from uuid import uuid4
-
 import pytest
 
 from opsmesh.agents.execution.contracts import (
-    AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeContext,
-    AgentRuntimeStructuredOutput,
-    AgentRuntimeToolResult,
+    AgentStructuredOutput,
+    ToolExecutionResult,
 )
-from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.definitions.conditions import evaluate_task_step_condition
 from opsmesh.orchestration.definitions.contracts import WorkflowNode
 from opsmesh.orchestration.definitions.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
 )
+from opsmesh.orchestration.definitions.models import OrchestrationDefinition
 from opsmesh.orchestration.definitions.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
-from opsmesh.orchestration.runs.direct_execution import DirectToolCall, DirectWorkflowExecutor
 from opsmesh.orchestration.runs.eligibility import RunEligibilityService
-from opsmesh.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.runs.steps.completion import TaskStepCompletionService
 from opsmesh.orchestration.runs.subworkflow_models import SubworkflowInvocation
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.runtime.backends.factory import build_runtime_backend_registry
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from tests.test_worker_run_execution import _seed_workspace, _session
+from tests.fixtures.agent_product import _seed_workspace, _session
 
 
 class _ToolExecutor:
     async def review_tool_call(self, **kwargs: object) -> dict[str, object]:
         return {"decision": "allow"}
 
-    async def execute_tool(self, **kwargs: object) -> AgentRuntimeToolResult:
-        return AgentRuntimeToolResult(status="completed", output={"ok": True})
+    async def execute_tool(self, **kwargs: object) -> ToolExecutionResult:
+        return ToolExecutionResult(status="completed", output={"ok": True})
 
 
 def test_typed_workflow_nodes_require_explicit_execution_targets() -> None:
@@ -67,58 +59,6 @@ def test_typed_workflow_nodes_require_explicit_execution_targets() -> None:
         input_bindings={"source": {"reference": "task.input.customer", "required": False}},
     )
     assert optional.input_bindings["source"].required is False
-
-
-def test_direct_tool_node_uses_authorized_executor_without_model_execution() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Tool task")
-    session.add(task)
-    session.flush()
-    step = TaskStep(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        title="Call tool",
-        work_package_id="call-tool",
-        status="running",
-        dependencies={"node_type": "tool", "tool_name": "echo", "arguments": {"value": 1}},
-    )
-    session.add(step)
-    session.flush()
-    run = AgentRun(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        task_step_id=step.id,
-        status="running",
-        input={},
-    )
-    session.add(run)
-    session.flush()
-    context = AgentRuntimeContext(workspace_id=workspace.id, task_id=task.id, run_id=run.id)
-    request = AgentRunRequest(
-        agent_profile=AgentProfile(workspace_id=workspace.id, name="Tool", role="worker"),
-        input_text="",
-        context=context,
-        tool_executor=_ToolExecutor(),
-    )
-    job = JobPayload(
-        workspace_id=workspace.id,
-        job_type=JobType.AGENT_RUN,
-        resource_id=run.id,
-        idempotency_key=str(uuid4()),
-    )
-    call = DirectWorkflowExecutor(
-        RunExecutionService(
-            session,
-            RunExecutionDependencies(
-                lifecycle=None, runtime_backends=build_runtime_backend_registry(None, lambda: 60)
-            ),
-        )
-    ).prepare_node(run, job, request, "tool")
-    assert isinstance(call, DirectToolCall)
-    assert call.tool_name == "echo"
-    assert call.arguments == {"value": 1}
-    assert call.context == request.context
 
 
 def test_control_only_workflow_finishes_after_control_nodes_complete() -> None:
@@ -188,7 +128,13 @@ def test_subworkflow_invocation_is_idempotent_and_workspace_scoped() -> None:
         status=RunStatus.COMPLETED.value,
         input={},
     )
-    session.add_all([parent_step, parent_run, child_run])
+    session.add(parent_step)
+    session.flush()
+    parent_run.task_step_id = parent_step.id
+    session.add_all([parent_run, child_run])
+    session.flush()
+    definition = OrchestrationDefinition(workspace_id=workspace.id, key="child", name="Child")
+    session.add(definition)
     session.flush()
     invocation = SubworkflowInvocation(
         workspace_id=workspace.id,
@@ -196,7 +142,7 @@ def test_subworkflow_invocation_is_idempotent_and_workspace_scoped() -> None:
         parent_task_step_id=parent_step.id,
         parent_run_id=parent_run.id,
         child_task_id=child_task.id,
-        definition_id=uuid4(),
+        definition_id=definition.id,
         definition_version=1,
         status="running",
         input_payload={},
@@ -291,7 +237,7 @@ def test_workflow_data_bindings_resolve_task_and_completed_step_outputs() -> Non
         run,
         AgentRunResult(
             final_output="",
-            structured_output=AgentRuntimeStructuredOutput(
+            structured_output=AgentStructuredOutput(
                 value=run.output["structured_output"]["value"],
                 schema_name="workflow_result",
                 validated=True,
@@ -304,7 +250,7 @@ def test_workflow_data_bindings_resolve_task_and_completed_step_outputs() -> Non
             run,
             AgentRunResult(
                 final_output="",
-                structured_output=AgentRuntimeStructuredOutput(
+                structured_output=AgentStructuredOutput(
                     value=run.output["structured_output"]["value"],
                     schema_name="workflow_result",
                     validated=True,

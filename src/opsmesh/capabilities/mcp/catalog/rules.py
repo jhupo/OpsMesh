@@ -2,8 +2,8 @@ from datetime import timedelta
 from urllib.parse import urlparse
 from uuid import UUID
 
-from opsmesh.capabilities.mcp.catalog.catalog import McpCatalogTool
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer
+from opsmesh.capabilities.mcp.catalog.catalog import MCPCatalogTool
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer
 from opsmesh.capabilities.mcp.policy import mcp_health_check_stale
 from opsmesh.capabilities.references.schema import reject_embedded_secrets
 from opsmesh.shared.security.egress import validate_url_shape
@@ -19,7 +19,6 @@ MCP_AUTH_METHODS = {
 
 def normalize_connection(server_type: str, value: dict[str, object]) -> dict[str, object]:
     """Normalize transport/auth metadata without accepting secret-bearing headers."""
-
     connection = dict(value)
     if "endpoint" in connection:
         raise ValueError("MCP connection uses url; endpoint is not a supported field")
@@ -73,7 +72,7 @@ def normalize_connection(server_type: str, value: dict[str, object]) -> dict[str
 
 
 def credential_status(
-    server: McpServer,
+    server: MCPServer,
     *,
     credential_count: int,
     workspace_credential_count: int,
@@ -87,7 +86,7 @@ def credential_status(
     return "not_required"
 
 
-def requires_credentials(server: McpServer) -> bool:
+def requires_credentials(server: MCPServer) -> bool:
     configured = server.connection.get("requires_credentials")
     if isinstance(configured, bool):
         return configured
@@ -95,9 +94,9 @@ def requires_credentials(server: McpServer) -> bool:
 
 
 def selected_remote_credentials(
-    server: McpServer,
-    credentials: list[McpCredentialReference],
-) -> list[McpCredentialReference]:
+    server: MCPServer,
+    credentials: list[MCPCredentialReference],
+) -> list[MCPCredentialReference]:
     if not requires_credentials(server):
         return []
     eligible = [
@@ -117,15 +116,13 @@ def selected_remote_credentials(
     return eligible if len(eligible) == 1 else []
 
 
-def execution_mode(server: McpServer) -> str:
+def execution_mode(server: MCPServer) -> str:
     server_type = normalized_server_type(server)
     if server_type == "stdio":
         runtime = server.connection.get("runtime")
         if runtime == "managed":
             return "managed_stdio"
-        if runtime == "self_hosted":
-            return "self_hosted_stdio"
-        return "isolated_runtime_stdio"
+        return "sandbox_stdio"
     if server_type == "streamable_http":
         return "remote_http"
     if server_type == "sse":
@@ -136,9 +133,9 @@ def execution_mode(server: McpServer) -> str:
 
 
 def mcp_blocked_reasons(
-    server: McpServer,
+    server: MCPServer,
     *,
-    tools: list[McpCatalogTool],
+    tools: list[MCPCatalogTool],
     credential_status: str,
     stale_after: timedelta,
 ) -> list[str]:
@@ -153,7 +150,7 @@ def mcp_blocked_reasons(
 
 
 def mcp_server_execution_blockers(
-    server: McpServer,
+    server: MCPServer,
     *,
     credentials_ready: bool,
     stale_after: timedelta,
@@ -189,7 +186,7 @@ def mcp_server_execution_blockers(
     return reasons
 
 
-def connection_summary(server: McpServer) -> dict[str, object]:
+def connection_summary(server: MCPServer) -> dict[str, object]:
     connection = server.connection
     summary: dict[str, object] = {
         "requires_credentials": requires_credentials(server),
@@ -211,7 +208,7 @@ def connection_summary(server: McpServer) -> dict[str, object]:
     return summary
 
 
-def has_stdio_command(server: McpServer) -> bool:
+def has_stdio_command(server: MCPServer) -> bool:
     command = server.connection.get("command")
     if isinstance(command, str):
         return bool(command.strip())
@@ -220,12 +217,12 @@ def has_stdio_command(server: McpServer) -> bool:
     return False
 
 
-def has_remote_url(server: McpServer) -> bool:
+def has_remote_url(server: MCPServer) -> bool:
     url = server.connection.get("url")
     return isinstance(url, str) and url.lower().startswith(("https://", "http://"))
 
 
-def mcp_server_probeable(server: McpServer) -> bool:
+def mcp_server_probeable(server: MCPServer) -> bool:
     server_type = normalized_server_type(server)
     if server_type == "stdio":
         return has_stdio_command(server)
@@ -236,9 +233,9 @@ def mcp_server_probeable(server: McpServer) -> bool:
     return False
 
 
-def normalized_server_type(server: McpServer) -> str:
+def normalized_server_type(server: MCPServer) -> str:
     return server.server_type.lower().strip()
 
 
-def normalized_transport(server: McpServer) -> str:
+def normalized_transport(server: MCPServer) -> str:
     return str(server.connection.get("transport") or "").lower().strip()

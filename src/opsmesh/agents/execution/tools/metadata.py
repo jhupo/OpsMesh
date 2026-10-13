@@ -4,14 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeContext
+from opsmesh.agents.execution.contracts import AgentExecutionContext
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.shared.utils import uuid_or_none
 
 
 def tool_metadata(
     *,
-    context: AgentRuntimeContext,
+    context: AgentExecutionContext,
     tool_name: str,
     tool_kind: str,
     extra: dict[str, object] | None = None,
@@ -40,7 +40,7 @@ def tool_metadata(
     return metadata
 
 
-def product_review_context(context: AgentRuntimeContext) -> dict[str, object]:
+def product_review_context(context: AgentExecutionContext) -> dict[str, object]:
     return {
         "agent_run_id": str(context.run_id),
         "task_id": str(context.task_id) if context.task_id is not None else None,
@@ -51,7 +51,7 @@ def product_review_context(context: AgentRuntimeContext) -> dict[str, object]:
 
 def agent_profile_id_for_context(
     session: Session,
-    context: AgentRuntimeContext,
+    context: AgentExecutionContext,
 ) -> UUID | None:
     run = session.get(AgentRun, context.run_id)
     if run is None or run.workspace_id != context.workspace_id:

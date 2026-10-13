@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from opsmesh.orchestration.webhooks.http_client import WebhookHttpResponse
+from opsmesh.orchestration.webhooks.http_client import WebhookHTTPResponse
 from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from opsmesh.orchestration.webhooks.policy import (
     WEBHOOK_ERROR_MAX_LENGTH,
@@ -38,7 +38,7 @@ class WebhookDeliveryStateRecorder:
         *,
         attempt: WebhookDeliveryAttempt,
         subscription: WebhookSubscription,
-        response: WebhookHttpResponse,
+        response: WebhookHTTPResponse,
     ) -> None:
         now = datetime.now(UTC)
         attempt.status = "succeeded"

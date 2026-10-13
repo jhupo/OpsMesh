@@ -9,21 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from opsmesh.shared.security.egress import url_host
-from opsmesh.shared.security.redaction import REDACTED_VALUE, is_sensitive_payload_key
-
-_URL_CONFIG_KEYS = {
-    "address",
-    "endpoint",
-    "url",
-    "vault_addr",
-    "vault_url",
-}
 _SAFE_METADATA_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "0123456789"
-    "._-"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
 )
 
 
@@ -98,9 +85,6 @@ class SecretEncryptionService:
     @property
     def current_key_id(self) -> str:
         return self._key_id
-
-    def needs_rotation(self, key_id: str | None) -> bool:
-        return bool(key_id) and key_id != self._key_id
 
     def _fingerprint(self, normalized_payload: str) -> str:
         # Keyed payload fingerprint, not a password verifier. Preserve the existing
@@ -208,50 +192,6 @@ def vault_reference_version(external_ref: str) -> str | None:
     if "@" in leaf:
         return _safe_metadata_token(leaf.rsplit("@", 1)[1])
     return None
-
-
-def redact_secret_provider_configs(
-    configs: dict[str, dict[str, object]],
-) -> dict[str, dict[str, object]]:
-    return {
-        str(provider): _redact_secret_provider_config(config)
-        for provider, config in configs.items()
-    }
-
-
-def _redact_secret_provider_config(config: dict[str, object]) -> dict[str, object]:
-    redacted: dict[str, object] = {}
-    for key, value in config.items():
-        key_text = str(key)
-        if is_sensitive_payload_key(key_text):
-            redacted[key_text] = REDACTED_VALUE
-            continue
-        if _is_url_config_key(key_text) and isinstance(value, str):
-            redacted[f"{key_text}_configured"] = bool(value)
-            redacted[f"{key_text}_host"] = _url_host(value)
-            continue
-        if isinstance(value, dict):
-            redacted[key_text] = _redact_secret_provider_config(value)
-            continue
-        if isinstance(value, list):
-            redacted[key_text] = [_redact_secret_provider_config_item(item) for item in value]
-            continue
-        redacted[key_text] = value
-    return redacted
-
-
-def _redact_secret_provider_config_item(value: object) -> object:
-    if isinstance(value, dict):
-        return _redact_secret_provider_config(value)
-    return value
-
-
-def _is_url_config_key(key: str) -> bool:
-    return key.lower().replace("-", "_") in _URL_CONFIG_KEYS
-
-
-def _url_host(value: str) -> str | None:
-    return url_host(value)
 
 
 def _safe_metadata_token(value: str) -> str:

@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeStructuredOutput
+from opsmesh.agents.execution.contracts import AgentStructuredOutput
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskMessage
 
@@ -20,7 +20,7 @@ class TaskProgressUpdate:
 
 
 def task_progress_from_output(
-    structured_output: AgentRuntimeStructuredOutput | None,
+    structured_output: AgentStructuredOutput | None,
 ) -> TaskProgressUpdate | None:
     if structured_output is None or not structured_output.validated:
         return None
@@ -98,7 +98,7 @@ class RunTaskProgressService:
         task: Task,
         *,
         run: AgentRun,
-        structured_output: AgentRuntimeStructuredOutput | None,
+        structured_output: AgentStructuredOutput | None,
     ) -> None:
         progress = task_progress_from_output(structured_output)
         if progress is None:

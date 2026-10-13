@@ -3,14 +3,14 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 
 
 class ApprovalDecisionRequest(BaseModel):
     reason: str | None = None
 
 
-class ApprovalResponse(ORMModel):
+class ApprovalResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     task_id: UUID | None
@@ -24,4 +24,3 @@ class ApprovalResponse(ORMModel):
     decision_reason: str | None
     created_at: datetime
     decided_at: datetime | None
-

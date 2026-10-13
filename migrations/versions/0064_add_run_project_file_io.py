@@ -95,9 +95,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_run_project_io_states")),
         sa.UniqueConstraint("agent_run_id", name="uq_agent_run_project_io_states_run"),
-        sa.UniqueConstraint(
-            "project_snapshot_id", name="uq_agent_run_project_io_states_snapshot"
-        ),
+        sa.UniqueConstraint("project_snapshot_id", name="uq_agent_run_project_io_states_snapshot"),
     )
     op.create_index(
         "ix_agent_run_project_io_states_workspace_status",

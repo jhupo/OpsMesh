@@ -1,40 +1,26 @@
-from __future__ import annotations
-
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.policies.reader import PlatformPolicyService
 from opsmesh.runtime.commands.service import RuntimeCommandService
-from opsmesh.runtime.contracts import RuntimeExecutionMode
-from opsmesh.runtime.instances.contracts import RuntimeLimits, RuntimeManagerProvider
+from opsmesh.runtime.instances import queries
 from opsmesh.runtime.instances.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from opsmesh.runtime.instances.policies.safety import RuntimeSafetyPolicy
-from opsmesh.runtime.instances.provisioning import RuntimeProvisioningService
-from opsmesh.runtime.instances.queries import RuntimeControlQueryService
 from opsmesh.shared.config import Settings
+from opsmesh.shared.errors import NotFoundError, PolicyDeniedError
 
 
-class RuntimeControlService:
-    def __init__(
-        self,
-        session: Session,
-        settings: Settings,
-        manager_provider: RuntimeManagerProvider,
-    ) -> None:
+class RuntimeEnvironmentService:
+    """Manage execution environment configuration; SDK clients own external resources."""
+
+    def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
         self._settings = settings
-        self._manager_factory = manager_provider
-        self._safety = RuntimeSafetyPolicy(
-            tuple(settings.runtime_allowed_images),
-            PlatformPolicyService(session).risky_execution_policy(),
-        )
 
     def list_templates(self) -> list[RuntimeTemplate]:
         return list(
@@ -51,69 +37,39 @@ class RuntimeControlService:
         workspace_id: UUID,
         template_id: UUID,
         name: str,
-        limits: RuntimeLimits | None,
-        network_disabled: bool,
         runtime_space_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "shared",
-    ) -> WorkspaceRuntime | None:
-        return self._provisioning().create_runtime(
-            workspace_id=workspace_id,
-            template_id=template_id,
-            name=name,
-            limits=limits,
-            network_disabled=network_disabled,
-            runtime_space_id=runtime_space_id,
-            execution_mode=execution_mode,
-        )
+    ) -> WorkspaceRuntime:
+        template = self._session.get(RuntimeTemplate, template_id)
+        if template is None or template.status != "active":
+            raise NotFoundError("Execution environment template not found")
+        if template.image not in self._settings.runtime_allowed_images:
+            raise PolicyDeniedError("Sandbox image is not approved by the platform")
+        if runtime_space_id is not None:
+            from opsmesh.runtime.spaces.models import RuntimeSpace
 
-    def queue_runtime_create(
-        self,
-        *,
-        workspace_id: UUID,
-        template_id: UUID,
-        name: str,
-        limits: RuntimeLimits | None,
-        network_disabled: bool,
-        runtime_space_id: UUID | None = None,
-        requested_by_user_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "shared",
-    ) -> WorkspaceRuntime | None:
-        return self._provisioning().queue_runtime_create(
+            space = self._session.scalar(
+                select(RuntimeSpace).where(
+                    RuntimeSpace.workspace_id == workspace_id,
+                    RuntimeSpace.id == runtime_space_id,
+                    RuntimeSpace.status == "active",
+                )
+            )
+            if space is None:
+                raise NotFoundError("Runtime space not found")
+        sandbox_options = {**template.sandbox_options, "image": template.image}
+        runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
-            template_id=template_id,
-            name=name,
-            limits=limits,
-            network_disabled=network_disabled,
+            runtime_template_id=template.id,
             runtime_space_id=runtime_space_id,
-            requested_by_user_id=requested_by_user_id,
-            execution_mode=execution_mode,
-        )
-
-    def complete_queued_runtime_create(
-        self,
-        *,
-        workspace_id: UUID,
-        runtime_id: UUID,
-        template_id: UUID,
-        name: str,
-        limits: RuntimeLimits | None,
-        network_disabled: bool,
-        runtime_space_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "shared",
-    ) -> WorkspaceRuntime | None:
-        runtime = self.get_runtime(workspace_id, runtime_id)
-        if runtime is None:
-            return None
-        return self._provisioning().complete_queued_runtime_create(
-            runtime=runtime,
-            workspace_id=workspace_id,
-            template_id=template_id,
             name=name,
-            limits=limits,
-            network_disabled=network_disabled,
-            runtime_space_id=runtime_space_id,
-            execution_mode=execution_mode,
+            status="active",
+            sandbox_backend_id=template.sandbox_backend_id,
+            sandbox_options=sandbox_options,
         )
+        self._session.add(runtime)
+        self._session.commit()
+        self._session.refresh(runtime)
+        return runtime
 
     def list_runtimes(
         self,
@@ -123,30 +79,17 @@ class RuntimeControlService:
         offset: int,
         status: str | None = None,
     ) -> tuple[list[WorkspaceRuntime], int]:
-        return RuntimeControlQueryService(self._session).list_runtimes(
-            workspace_id,
-            limit=limit,
-            offset=offset,
-            status=status,
+        return queries.list_runtimes(
+            self._session, workspace_id, limit=limit, offset=offset, status=status
         )
 
     def get_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        return RuntimeControlQueryService(self._session).get_runtime(workspace_id, runtime_id)
+        return queries.get_runtime(self._session, workspace_id, runtime_id)
 
-    def start_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        runtime = self._lock_runtime(workspace_id, runtime_id)
-        if runtime is None:
-            return None
-        return self._manager_factory.require().start_runtime(runtime)
-
-    def stop_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        runtime = self._lock_runtime(workspace_id, runtime_id)
-        if runtime is None:
-            return None
-        return self._manager_factory.require().stop_runtime(runtime)
-
-    def _lock_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        return self._session.scalar(
+    def set_status(self, workspace_id: UUID, runtime_id: UUID, status: str) -> WorkspaceRuntime:
+        if status not in {"active", "disabled", "deleted"}:
+            raise ValueError("Invalid execution environment status")
+        runtime = self._session.scalar(
             select(WorkspaceRuntime)
             .where(
                 WorkspaceRuntime.workspace_id == workspace_id,
@@ -154,31 +97,24 @@ class RuntimeControlService:
                 WorkspaceRuntime.status != "deleted",
             )
             .with_for_update()
-            .execution_options(populate_existing=True)
         )
-
-    def delete_runtime(self, workspace_id: UUID, runtime_id: UUID) -> bool:
-        runtime = self._lock_runtime(workspace_id, runtime_id)
         if runtime is None:
-            return False
-        self._manager_factory.require().delete_runtime(runtime)
-        return True
+            raise NotFoundError("Execution environment not found")
+        runtime.status = status
+        if status in {"disabled", "deleted"}:
+            from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+            from opsmesh.runtime.temporal.outbox import stage_execution
 
-    def execute_command(
-        self,
-        *,
-        workspace_id: UUID,
-        runtime_id: UUID,
-        command: list[str],
-    ) -> RuntimeCommand | None:
-        runtime = self.get_runtime(workspace_id, runtime_id)
-        if runtime is None:
-            return None
-        return self._commands().execute_command(
-            workspace_id=workspace_id,
-            runtime=runtime,
-            command=command,
-        )
+            stage_execution(
+                self._session,
+                ExecutionRequest(
+                    workspace_id=workspace_id,
+                    resource_id=runtime_id,
+                    kind=ExecutionKind.SANDBOX_CLEANUP,
+                ),
+            )
+        self._session.commit()
+        return runtime
 
     def queue_command(
         self,
@@ -186,33 +122,18 @@ class RuntimeControlService:
         workspace_id: UUID,
         runtime_id: UUID,
         command: list[str],
+        requested_by_user_id: UUID,
     ) -> RuntimeCommand | None:
         runtime = self.get_runtime(workspace_id, runtime_id)
         if runtime is None:
             return None
-        return self._commands().queue_command(
+        if runtime.status != "active":
+            raise PolicyDeniedError("Execution environment is disabled")
+        return RuntimeCommandService(self._session, self._settings).queue_command(
             workspace_id=workspace_id,
             runtime=runtime,
             command=command,
-        )
-
-    def execute_queued_command(
-        self,
-        *,
-        workspace_id: UUID,
-        runtime_id: UUID,
-        command_id: UUID,
-        command: list[str],
-    ) -> RuntimeCommand | None:
-        runtime = self.get_runtime(workspace_id, runtime_id)
-        if runtime is None:
-            return None
-        return self._commands().execute_queued_command(
-            workspace_id=workspace_id,
-            runtime=runtime,
-            runtime_id=runtime_id,
-            command_id=command_id,
-            command=command,
+            requested_by_user_id=requested_by_user_id,
         )
 
     def list_commands(
@@ -222,14 +143,9 @@ class RuntimeControlService:
         *,
         limit: int,
         offset: int,
-    ) -> tuple[list[RuntimeCommand], int] | None:
-        if self.get_runtime(workspace_id, runtime_id) is None:
-            return None
-        return RuntimeControlQueryService(self._session).list_commands(
-            workspace_id,
-            runtime_id,
-            limit=limit,
-            offset=offset,
+    ) -> tuple[list[RuntimeCommand], int]:
+        return queries.list_commands(
+            self._session, workspace_id, runtime_id, limit=limit, offset=offset
         )
 
     def list_events(
@@ -239,18 +155,7 @@ class RuntimeControlService:
         *,
         limit: int,
         offset: int,
-    ) -> tuple[list[RuntimeEvent], int] | None:
-        if self.get_runtime(workspace_id, runtime_id) is None:
-            return None
-        return RuntimeControlQueryService(self._session).list_events(
-            workspace_id,
-            runtime_id,
-            limit=limit,
-            offset=offset,
+    ) -> tuple[list[RuntimeEvent], int]:
+        return queries.list_events(
+            self._session, workspace_id, runtime_id, limit=limit, offset=offset
         )
-
-    def _provisioning(self) -> RuntimeProvisioningService:
-        return RuntimeProvisioningService(self._session, self._safety, self._manager_factory)
-
-    def _commands(self) -> RuntimeCommandService:
-        return RuntimeCommandService(self._session, self._manager_factory, self._settings)

@@ -6,13 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeProfile,
-    AgentRuntimeResourceGrant,
-    AgentRuntimeToolDefinition,
+    AgentProfileSnapshot,
+    AgentResourceGrant,
+    AgentToolSpec,
 )
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.catalog.effective import effective_catalog_fingerprint
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.plugins.policy import require_plugin_resource
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
@@ -277,7 +277,7 @@ class RunAuthorizationService:
     def _require_active_capability_resources(
         self,
         workspace_id: UUID,
-        grants: tuple[AgentRuntimeResourceGrant, ...],
+        grants: tuple[AgentResourceGrant, ...],
         *,
         lock: bool,
     ) -> None:
@@ -414,19 +414,19 @@ class RunAuthorizationService:
 
     def installed_skill_mcp_tool_snapshots(self, workspace_id: UUID) -> list[dict[str, object]]:
         rows = self.session.execute(
-            select(McpToolAllowlist, McpServer)
+            select(MCPToolAllowlist, MCPServer)
             .join(
-                McpServer,
-                McpServer.id == McpToolAllowlist.mcp_server_id,
+                MCPServer,
+                MCPServer.id == MCPToolAllowlist.mcp_server_id,
             )
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.status == "active",
-                McpToolAllowlist.platform_blocked.is_(False),
-                McpServer.status == "active",
-                McpServer.platform_blocked.is_(False),
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.status == "active",
+                MCPToolAllowlist.platform_blocked.is_(False),
+                MCPServer.status == "active",
+                MCPServer.platform_blocked.is_(False),
             )
-            .order_by(McpServer.name.asc(), McpToolAllowlist.tool_name.asc())
+            .order_by(MCPServer.name.asc(), MCPToolAllowlist.tool_name.asc())
         ).all()
         credential_refs = self.mcp_credential_reference_snapshots(workspace_id)
         tools: list[dict[str, object]] = []
@@ -460,12 +460,12 @@ class RunAuthorizationService:
         workspace_id: UUID,
     ) -> list[dict[str, object]]:
         refs = self.session.scalars(
-            select(McpCredentialReference)
+            select(MCPCredentialReference)
             .where(
-                McpCredentialReference.workspace_id == workspace_id,
-                McpCredentialReference.status == "active",
+                MCPCredentialReference.workspace_id == workspace_id,
+                MCPCredentialReference.status == "active",
             )
-            .order_by(McpCredentialReference.created_at.asc())
+            .order_by(MCPCredentialReference.created_at.asc())
         ).all()
         return [
             {
@@ -487,7 +487,7 @@ def agent_runtime_profile_for_snapshot(
     *,
     workspace_id: UUID,
     profile_id: UUID | None,
-) -> AgentRuntimeProfile:
+) -> AgentProfileSnapshot:
     raw_profile = snapshot.get("agent_profile")
     if not isinstance(raw_profile, dict):
         raise ValueError("Authorization snapshot agent profile is invalid")
@@ -516,7 +516,7 @@ def agent_runtime_profile_for_snapshot(
         raise ValueError("Authorization snapshot agent profile model is invalid")
     if not isinstance(model_settings, dict):
         raise ValueError("Authorization snapshot agent profile model settings are invalid")
-    return AgentRuntimeProfile(
+    return AgentProfileSnapshot(
         id=parsed_profile_id,
         workspace_id=parsed_workspace_id,
         version=version,
@@ -530,14 +530,14 @@ def agent_runtime_profile_for_snapshot(
 
 def tool_definitions_for_snapshot(
     snapshot: dict[str, object],
-) -> tuple[AgentRuntimeToolDefinition, ...]:
+) -> tuple[AgentToolSpec, ...]:
     catalog = catalog_for_snapshot(snapshot)
     raw_tools = catalog.get("tools") if catalog is not None else None
     if raw_tools is None:
         return ()
     if not isinstance(raw_tools, list):
         raise ValueError("Capability catalog tools are invalid")
-    definitions: list[AgentRuntimeToolDefinition] = []
+    definitions: list[AgentToolSpec] = []
     for item in raw_tools:
         if not isinstance(item, dict):
             raise ValueError("Capability catalog tool entry is invalid")
@@ -565,7 +565,7 @@ def tool_definitions_for_snapshot(
         ):
             raise ValueError("Capability catalog tool contract is invalid")
         definitions.append(
-            AgentRuntimeToolDefinition(
+            AgentToolSpec(
                 name=name,
                 source=source,
                 description=description,
@@ -597,14 +597,14 @@ def tool_definitions_for_snapshot(
 
 def resource_grants_for_snapshot(
     snapshot: dict[str, object],
-) -> tuple[AgentRuntimeResourceGrant, ...]:
+) -> tuple[AgentResourceGrant, ...]:
     catalog = catalog_for_snapshot(snapshot)
     raw_resources = catalog.get("resources") if catalog is not None else None
     if raw_resources is None:
         return ()
     if not isinstance(raw_resources, list):
         raise ValueError("Capability catalog resources are invalid")
-    grants: list[AgentRuntimeResourceGrant] = []
+    grants: list[AgentResourceGrant] = []
     for item in raw_resources:
         if not isinstance(item, dict):
             raise ValueError("Capability catalog resource entry is invalid")
@@ -626,7 +626,7 @@ def resource_grants_for_snapshot(
         ):
             raise ValueError("Capability catalog resource fields are invalid")
         grants.append(
-            AgentRuntimeResourceGrant(
+            AgentResourceGrant(
                 resource_id=resource_id,
                 resource_type=resource_type,
                 access_mode=access_mode,

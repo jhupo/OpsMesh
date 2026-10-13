@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import IntEnum
 from uuid import UUID
 
 from sqlalchemy import select
@@ -11,7 +12,22 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.shared.security.redaction import redact_sensitive_text
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
-from opsmesh.teams.sessions.service import TeamRuntimeService
+from opsmesh.teams.sessions.service import TeamOperationService
+
+
+class ContextPriority(IntEnum):
+    LOW = 100
+    NORMAL = 200
+    HIGH = 300
+    CRITICAL = 400
+
+
+@dataclass(frozen=True)
+class ContextFragment:
+    key: str
+    text: str
+    priority: ContextPriority
+    required: bool = False
 
 
 @dataclass(slots=True)
@@ -29,7 +45,7 @@ class RunRequestContextProvider:
         thread_id: UUID | None = None
         task_id: UUID | None = None
         if task is not None and task.agent_team_id is not None:
-            runtime_state = TeamRuntimeService(self.session).get_state(
+            runtime_state = TeamOperationService(self.session).get_or_initialize_state(
                 workspace_id=run.workspace_id,
                 team_id=task.agent_team_id,
                 initialize=True,
@@ -37,7 +53,6 @@ class RunRequestContextProvider:
             thread_id = runtime_state.thread_id if runtime_state is not None else None
         else:
             task_id = run.task_id
-        scope = mailbox_scope_metadata(thread_id=thread_id, task_id=task_id)
         inbox = AgentMailboxService(self.session).get_agent_inbox(
             run.workspace_id,
             profile.id,
@@ -49,7 +64,7 @@ class RunRequestContextProvider:
         latest_messages = inbox.get("latest_messages")
         return {
             "agent_mailbox": {
-                "scope": scope,
+                "scope": mailbox_scope_metadata(thread_id=thread_id, task_id=task_id),
                 "thread_count": inbox.get("thread_count", 0),
                 "message_count": inbox.get("message_count", 0),
                 "unread_count": inbox.get("unread_count", 0),
@@ -80,7 +95,7 @@ class RunRequestContextProvider:
         )
         if team is None:
             return {}
-        runtime_state = TeamRuntimeService(self.session).get_state(
+        runtime_state = TeamOperationService(self.session).get_or_initialize_state(
             workspace_id=run.workspace_id,
             team_id=team.id,
             initialize=True,
@@ -136,11 +151,7 @@ def mailbox_message_context(message: AgentMessage) -> dict[str, object]:
     }
 
 
-def mailbox_scope_metadata(
-    *,
-    thread_id: UUID | None,
-    task_id: UUID | None,
-) -> dict[str, str]:
+def mailbox_scope_metadata(*, thread_id: UUID | None, task_id: UUID | None) -> dict[str, str]:
     scope: dict[str, str] = {}
     if thread_id is not None:
         scope["thread_id"] = str(thread_id)

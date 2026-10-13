@@ -15,8 +15,8 @@ from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.orchestration.tasks.state import reset_task_to_draft
+from opsmesh.platform.updates.admission import require_execution_admission
 from opsmesh.teams.sessions.snapshots import build_team_snapshot
 
 
@@ -44,7 +44,6 @@ class TaskPlanLifecycleService:
         command: TaskPlanRetryCommand,
         *,
         enqueue_run: bool = False,
-        queue: RedisQueue | None = None,
     ) -> Task | None:
         task = self._get_task(workspace_id, task_id)
         if task is None:
@@ -53,12 +52,13 @@ class TaskPlanLifecycleService:
             raise ValueError("Task is not team-backed")
         require_automatic_plan_ownership(task)
         self._require_initial_retry(task)
+        require_execution_admission(self._session)
         if command.input is not None:
             task.input = command.input
         self._refresh_team_snapshot(task, task.agent_team_id, refresh=command.refresh_team_snapshot)
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
-            TaskStateService().reset_to_draft(task)
+            reset_task_to_draft(task)
         TaskPlanningAttemptService(self._session).ensure_initial_plan(
             task,
             transition_to_planning=task.status in {"draft", "queued", "blocked", "failed"},
@@ -67,10 +67,7 @@ class TaskPlanLifecycleService:
         if task.project_plan is not None:
             run = RunOrchestrationService(self._session).create_queued_run_for_task(task)
             if enqueue_run and run is not None:
-                RunOrchestrationService(self._session, queue=queue).enqueue_run(
-                    run,
-                    actor_user_id,
-                )
+                RunOrchestrationService(self._session).request_run(run, actor_user_id)
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,
             user_id=actor_user_id,
@@ -96,7 +93,6 @@ class TaskPlanLifecycleService:
         command: TaskPlanRegenerateCommand,
         *,
         enqueue_run: bool = False,
-        queue: RedisQueue | None = None,
     ) -> Task | None:
         task = self._get_task(workspace_id, task_id)
         if task is None:
@@ -106,6 +102,7 @@ class TaskPlanLifecycleService:
 
         require_automatic_plan_ownership(task)
         self._require_regeneration_safe(task)
+        require_execution_admission(self._session)
         completed_work_package_ids = self._completed_work_package_ids(workspace_id, task.id)
         if command.input is not None:
             task.input = command.input
@@ -114,7 +111,7 @@ class TaskPlanLifecycleService:
         previous_plan = task.project_plan
         task.project_plan = None
         if task.status in {"blocked", "failed"}:
-            TaskStateService().reset_to_draft(task)
+            reset_task_to_draft(task)
         TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
         if task.project_plan is not None:
             task.project_plan = {
@@ -134,10 +131,7 @@ class TaskPlanLifecycleService:
         if task.project_plan is not None and not completed_work_package_ids:
             run = RunOrchestrationService(self._session).create_queued_run_for_task(task)
             if enqueue_run and run is not None:
-                RunOrchestrationService(self._session, queue=queue).enqueue_run(
-                    run,
-                    actor_user_id,
-                )
+                RunOrchestrationService(self._session).request_run(run, actor_user_id)
 
         self._append_plan_regenerated_message(
             task,
@@ -245,7 +239,6 @@ class TaskPlanLifecycleService:
         }
         side_effecting_statuses = {
             RunStatus.RUNNING.value,
-            RunStatus.WAITING_RUNTIME.value,
             RunStatus.WAITING_APPROVAL.value,
             RunStatus.WAITING_SUBWORKFLOW.value,
         }

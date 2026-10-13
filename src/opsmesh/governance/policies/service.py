@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from opsmesh.governance.policies.events import AdminPolicyEventService
+from opsmesh.governance.policies.events import append_policy_event
 from opsmesh.governance.policies.models import PlatformPolicy, PlatformPolicyEvent
 from opsmesh.governance.policies.risky_values import (
     RISKY_EXECUTION_POLICY_KEY,
     default_risky_execution_policy_value,
     normalize_risky_execution_policy_value,
 )
-from opsmesh.shared.db.read_service import AdminSessionService
+from opsmesh.shared.db.read_service import PagedQuerySupport
 from opsmesh.shared.pagination import PageParams
 
 
-class AdminPolicyService(AdminSessionService):
-    def __init__(self, session: Session) -> None:
-        super().__init__(session)
-        self._events = AdminPolicyEventService(session)
-
+class AdminPolicyService(PagedQuerySupport):
     def list_platform_policies(
         self,
         page: PageParams,
@@ -65,11 +60,10 @@ class AdminPolicyService(AdminSessionService):
         )
         self._session.add(policy)
         self._session.flush([policy])
-        self._events.append_policy_event(policy, "platform_policy.created", "Policy created", {})
+        append_policy_event(self._session, policy, "platform_policy.created", "Policy created", {})
         self._session.commit()
         self._session.refresh(policy)
         return policy
-
 
     def update_risky_execution_policy(
         self,
@@ -83,7 +77,8 @@ class AdminPolicyService(AdminSessionService):
         if description is not None:
             policy.description = description
         policy.updated_by = updated_by
-        self._events.append_policy_event(
+        append_policy_event(
+            self._session,
             policy,
             "platform_policy.updated",
             "Risky execution policy updated",
@@ -92,7 +87,6 @@ class AdminPolicyService(AdminSessionService):
         self._session.commit()
         self._session.refresh(policy)
         return policy
-
 
     def normalize_risky_execution_policy(self, value: dict[str, object]) -> dict[str, object]:
         return normalize_risky_execution_policy_value(

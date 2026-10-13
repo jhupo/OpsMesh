@@ -13,9 +13,9 @@ from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
-    OperationsSchedulerResponse,
     SchedulerBacklogResponse,
     SchedulerBlockedReasonResponse,
+    SchedulerOverviewResponse,
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
 )
@@ -30,7 +30,7 @@ from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.management.settings import scheduler_settings
 
 
-class SchedulerPolicyService:
+class SchedulerPolicyQuery:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -65,11 +65,11 @@ def positive_number_dict(value: object) -> dict[str, float]:
     }
 
 
-class SchedulerBacklogService:
+class SchedulerOverviewQuery:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def scheduler_payload(self, workspace_id: UUID) -> OperationsSchedulerResponse:
+    def scheduler_payload(self, workspace_id: UUID) -> SchedulerOverviewResponse:
         task_steps = self._session.execute(
             select(TaskStep, Task)
             .join(Task, Task.id == TaskStep.task_id)
@@ -109,7 +109,7 @@ class SchedulerBacklogService:
                 bucket["blocked_steps"] += 1
                 reason = str(dependencies.get("blocked_reason") or "unknown")
                 blocked_reasons[reason] = blocked_reasons.get(reason, 0) + 1
-        return OperationsSchedulerResponse(
+        return SchedulerOverviewResponse(
             generated_at=now,
             backlog=SchedulerBacklogResponse(
                 queued_steps=queued_steps,
@@ -135,7 +135,7 @@ class SchedulerBacklogService:
                 for reason, count in sorted(blocked_reasons.items())
                 for explanation in [explain_blocked_reason(reason)]
             ],
-            policy=SchedulerPolicyService(self._session).scheduler_policy(workspace_id),
+            policy=SchedulerPolicyQuery(self._session).scheduler_policy(workspace_id),
         )
 
     def _active_runs(self, workspace_id: UUID) -> int:
@@ -162,7 +162,7 @@ class SchedulerBacklogService:
         )
 
 
-class SchedulerBlockedStepService:
+class BlockedStepQuery:
     def __init__(self, session: Session) -> None:
         self._session = session
 

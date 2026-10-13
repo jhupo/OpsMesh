@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 from opsmesh.messaging.email.models import PlatformMailSettings
 from opsmesh.messaging.email.schemas import (
     MailConfigurationResponse,
-    MailConfigurationUpdate,
+    MailConfigurationUpdateRequest,
 )
 from opsmesh.messaging.email.smtp import send_smtp_message
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.shared.config import Settings
 from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.secrets import SecretEncryptionService
@@ -30,7 +30,7 @@ class PlatformMailService:
             password_configured=bool(record and record.password_ciphertext),
         )
 
-    def save(self, payload: MailConfigurationUpdate) -> MailConfigurationResponse:
+    def save(self, payload: MailConfigurationUpdateRequest) -> MailConfigurationResponse:
         record = self._session.get(PlatformMailSettings, 1, with_for_update=True)
         if record is None:
             record = PlatformMailSettings(id=1)

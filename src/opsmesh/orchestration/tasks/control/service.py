@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.runs.control import RunControlService
-from opsmesh.orchestration.runs.service import RunOrchestrationService
+from opsmesh.orchestration.runs.release import task_has_unreleased_execution
 from opsmesh.orchestration.tasks.contracts import (
     TaskControlActionRequest,
     TaskCorrectionRequest,
@@ -19,10 +19,11 @@ from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage
 from opsmesh.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
-    TaskStateService,
     TaskStatus,
+    transition_task,
 )
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.platform.updates.admission import require_execution_admission
+from opsmesh.shared.errors import ConflictError
 
 
 class TaskControlMessageWriter:
@@ -71,9 +72,8 @@ def with_task_control_state(
 class TaskControlService:
     """Owner/operator controls for pausing, resuming, correcting and cancelling tasks."""
 
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def apply_action(
         self,
@@ -88,13 +88,13 @@ class TaskControlService:
         if task is None:
             return None
         action = request.action
+        if action in {"resume", "create_correction"}:
+            require_execution_admission(self._session)
         if action == "pause":
             return self._pause_task(
                 task, actor_user_id=actor_user_id, request=request, commit=commit
             )
         if action == "resume":
-            if not commit and request.enqueue and self._queue is not None:
-                raise ValueError("Transactional resume cannot enqueue Redis jobs before commit")
             return self._resume_task(
                 task, actor_user_id=actor_user_id, request=request, commit=commit
             )
@@ -119,8 +119,8 @@ class TaskControlService:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be paused")
         now = datetime.now(UTC)
-        execution = TaskControlExecutionService(self._session, queue=self._queue)
-        cancelled_runs, worker_cancel_requests = execution.cancel_active_runs(
+        execution = TaskControlExecutionService(self._session)
+        cancelled_runs, temporal_cancellations = execution.cancel_active_runs(
             task,
             now=now,
             actor_user_id=actor_user_id,
@@ -128,7 +128,7 @@ class TaskControlService:
         blocked_steps = execution.block_schedulable_steps(task, request=request, now=now)
         previous_status = task.status
         if TaskStatus(task.status) != TaskStatus.BLOCKED:
-            TaskStateService().transition(task, TaskStatus.BLOCKED)
+            transition_task(task, TaskStatus.BLOCKED)
         control = task_control_state(task)
         control.update(
             {
@@ -148,7 +148,7 @@ class TaskControlService:
             metadata={
                 **request.metadata,
                 "cancelled_run_count": cancelled_runs,
-                "worker_cancel_request_count": worker_cancel_requests,
+                "temporal_cancellation_count": temporal_cancellations,
                 "blocked_step_count": blocked_steps,
             },
         )
@@ -159,7 +159,7 @@ class TaskControlService:
             metadata={
                 "previous_status": previous_status,
                 "cancelled_run_count": cancelled_runs,
-                "worker_cancel_request_count": worker_cancel_requests,
+                "temporal_cancellation_count": temporal_cancellations,
                 "blocked_step_count": blocked_steps,
                 "reason": request.reason,
             },
@@ -174,7 +174,7 @@ class TaskControlService:
             details={
                 "previous_status": previous_status,
                 "cancelled_run_count": cancelled_runs,
-                "worker_cancel_request_count": worker_cancel_requests,
+                "temporal_cancellation_count": temporal_cancellations,
                 "blocked_step_count": blocked_steps,
             },
         )
@@ -189,6 +189,8 @@ class TaskControlService:
     ) -> dict[str, object]:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be resumed")
+        if task_has_unreleased_execution(self._session, task.workspace_id, task.id):
+            raise ConflictError("Previous execution cancellation has not completed")
         control = task_control_state(task)
         was_paused = control.get("paused") is True
         control.update(
@@ -200,11 +202,11 @@ class TaskControlService:
         )
         control.pop("pause_reason", None)
         task.generic_state = with_task_control_state(task.generic_state, control)
-        execution = TaskControlExecutionService(self._session, queue=self._queue)
+        execution = TaskControlExecutionService(self._session)
         unblocked_steps = execution.unblock_paused_steps(task)
         previous_status = task.status
         if TaskStatus(task.status) == TaskStatus.BLOCKED:
-            TaskStateService().transition(task, TaskStatus.RUNNING)
+            transition_task(task, TaskStatus.RUNNING)
         scheduled_runs = execution.schedule_task_work(
             task,
             actor_user_id,
@@ -271,7 +273,7 @@ class TaskControlService:
                 "reason": request.reason,
             },
         )
-        result = TaskCorrectionService(self._session, queue=self._queue).create_correction(
+        result = TaskCorrectionService(self._session).create_correction(
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,
@@ -304,7 +306,6 @@ class TaskControlService:
     ) -> dict[str, object] | None:
         cancelled = RunControlService(
             session=self._session,
-            enqueue_run=RunOrchestrationService(self._session, queue=self._queue).enqueue_run,
         ).cancel_task(
             workspace_id=task.workspace_id,
             task_id=task.id,

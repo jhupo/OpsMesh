@@ -7,11 +7,11 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.workspaces.members.admin_schemas import AdminWorkspaceMemberResponse
 
 
-class AdminUserResponse(TimestampedModel):
+class AdminUserResponse(TimestampedContract):
     username: str | None
     email: str
     display_name: str
@@ -19,7 +19,7 @@ class AdminUserResponse(TimestampedModel):
     platform_admin: bool
 
 
-class AdminUserListResponse(AdminUserResponse):
+class AdminUserListItemResponse(AdminUserResponse):
     invitation_delivery_status: str | None = None
     workspace_count: int = 0
     active_workspace_count: int = 0

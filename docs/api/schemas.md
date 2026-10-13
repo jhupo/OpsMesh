@@ -712,39 +712,6 @@
 }
 ```
 
-<a id="schema-AdminDeadLetterJobsResponse"></a>
-
-## AdminDeadLetterJobsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[JobPayload](schemas.md#schema-JobPayload)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/JobPayload"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "title": "AdminDeadLetterJobsResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AdminForceStopRuntimeRequest"></a>
 
 ## AdminForceStopRuntimeRequest
@@ -778,6 +745,7 @@
 | `actor_user_id` | string (uuid) | 是 | `format="uuid"` |
 | `operation` | string | 是 | — |
 | `status` | string | 是 | — |
+| `parameters` | object | 是 | `additionalProperties=true` |
 | `result` | object | 是 | `additionalProperties=true` |
 | `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
@@ -816,6 +784,11 @@
       "title": "Operation",
       "type": "string"
     },
+    "parameters": {
+      "additionalProperties": true,
+      "title": "Parameters",
+      "type": "object"
+    },
     "result": {
       "additionalProperties": true,
       "title": "Result",
@@ -842,6 +815,7 @@
     "actor_user_id",
     "operation",
     "status",
+    "parameters",
     "result",
     "error_code",
     "created_at",
@@ -852,55 +826,36 @@
 }
 ```
 
-<a id="schema-AdminOperationsSummaryResponse"></a>
+<a id="schema-AdminOperationSubmitRequest"></a>
 
-## AdminOperationsSummaryResponse
+## AdminOperationSubmitRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `queue` | object | 是 | `additionalProperties=true` |
-| `workers` | object | 是 | `additionalProperties=true` |
-| `runtime_spaces` | object | 是 | `additionalProperties=true` |
-| `approvals` | object | 是 | `additionalProperties=true` |
-| `failures` | object | 是 | `additionalProperties=true` |
+| `request_id` | string (uuid) | 是 | `format="uuid"` |
+| `reason` | string | 是 | `maxLength=1000`; `minLength=1` |
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
-    "approvals": {
-      "additionalProperties": true,
-      "title": "Approvals",
-      "type": "object"
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
     },
-    "failures": {
-      "additionalProperties": true,
-      "title": "Failures",
-      "type": "object"
-    },
-    "queue": {
-      "additionalProperties": true,
-      "title": "Queue",
-      "type": "object"
-    },
-    "runtime_spaces": {
-      "additionalProperties": true,
-      "title": "Runtime Spaces",
-      "type": "object"
-    },
-    "workers": {
-      "additionalProperties": true,
-      "title": "Workers",
-      "type": "object"
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
     }
   },
   "required": [
-    "queue",
-    "workers",
-    "runtime_spaces",
-    "approvals",
-    "failures"
+    "request_id",
+    "reason"
   ],
-  "title": "AdminOperationsSummaryResponse",
+  "title": "AdminOperationSubmitRequest",
   "type": "object"
 }
 ```
@@ -913,23 +868,16 @@
 | --- | --- | --- | --- |
 | `workspaces_total` | integer | 是 | — |
 | `workspaces_active` | integer | 是 | — |
-| `workers_total` | integer | 是 | — |
-| `workers_online` | integer | 是 | — |
-| `workers_draining` | integer | 是 | — |
-| `active_worker_leases` | integer | 是 | — |
 | `runtime_spaces_total` | integer | 是 | — |
 | `runtime_spaces_quarantined` | integer | 是 | — |
-| `runtimes_running` | integer | 是 | — |
-| `runtimes_offline` | integer | 是 | — |
+| `runtimes_active` | integer | 是 | — |
+| `runtimes_disabled` | integer | 是 | — |
+| `temporal_dispatch_pending` | integer | 是 | — |
 | `critical_security_events` | integer | 是 | — |
 
 ```json
 {
   "properties": {
-    "active_worker_leases": {
-      "title": "Active Worker Leases",
-      "type": "integer"
-    },
     "critical_security_events": {
       "title": "Critical Security Events",
       "type": "integer"
@@ -942,24 +890,16 @@
       "title": "Runtime Spaces Total",
       "type": "integer"
     },
-    "runtimes_offline": {
-      "title": "Runtimes Offline",
+    "runtimes_active": {
+      "title": "Runtimes Active",
       "type": "integer"
     },
-    "runtimes_running": {
-      "title": "Runtimes Running",
+    "runtimes_disabled": {
+      "title": "Runtimes Disabled",
       "type": "integer"
     },
-    "workers_draining": {
-      "title": "Workers Draining",
-      "type": "integer"
-    },
-    "workers_online": {
-      "title": "Workers Online",
-      "type": "integer"
-    },
-    "workers_total": {
-      "title": "Workers Total",
+    "temporal_dispatch_pending": {
+      "title": "Temporal Dispatch Pending",
       "type": "integer"
     },
     "workspaces_active": {
@@ -974,14 +914,11 @@
   "required": [
     "workspaces_total",
     "workspaces_active",
-    "workers_total",
-    "workers_online",
-    "workers_draining",
-    "active_worker_leases",
     "runtime_spaces_total",
     "runtime_spaces_quarantined",
-    "runtimes_running",
-    "runtimes_offline",
+    "runtimes_active",
+    "runtimes_disabled",
+    "temporal_dispatch_pending",
     "critical_security_events"
   ],
   "title": "AdminOverviewResponse",
@@ -1159,14 +1096,21 @@
 | `id` | string (uuid) | 是 | `format="uuid"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `plugin_key` | string | 是 | — |
+| `instance_name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `platform_blocked` | boolean | 是 | — |
 | `generation` | integer | 是 | — |
 | `current_version` | string | 是 | — |
+| `current_release_id` | string (uuid) | 是 | `format="uuid"` |
 
 ```json
 {
   "properties": {
+    "current_release_id": {
+      "format": "uuid",
+      "title": "Current Release Id",
+      "type": "string"
+    },
     "current_version": {
       "title": "Current Version",
       "type": "string"
@@ -1178,6 +1122,10 @@
     "id": {
       "format": "uuid",
       "title": "Id",
+      "type": "string"
+    },
+    "instance_name": {
+      "title": "Instance Name",
       "type": "string"
     },
     "platform_blocked": {
@@ -1202,10 +1150,12 @@
     "id",
     "workspace_id",
     "plugin_key",
+    "instance_name",
     "status",
     "platform_blocked",
     "generation",
-    "current_version"
+    "current_version",
+    "current_release_id"
   ],
   "title": "AdminPluginGovernanceResponse",
   "type": "object"
@@ -1857,41 +1807,6 @@
 }
 ```
 
-<a id="schema-AdminRequeueDeadLetterResponse"></a>
-
-## AdminRequeueDeadLetterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `requeued` | boolean | 是 | — |
-| `job` | [JobPayload](schemas.md#schema-JobPayload) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/JobPayload"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "job": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/JobPayload"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "requeued": {
-      "title": "Requeued",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "requeued"
-  ],
-  "title": "AdminRequeueDeadLetterResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AdminResourceAuthorizationResponse"></a>
 
 ## AdminResourceAuthorizationResponse
@@ -2095,126 +2010,6 @@
 }
 ```
 
-<a id="schema-AdminRuntimeLeaseResponse"></a>
-
-## AdminRuntimeLeaseResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `docker_container_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `status` | string | 是 | — |
-| `lease_metadata` | object | 是 | `additionalProperties=true` |
-| `acquired_at` | string (date-time) | 是 | `format="date-time"` |
-| `released_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `has_docker_container` | boolean | 是 | `readOnly=true` |
-
-```json
-{
-  "properties": {
-    "acquired_at": {
-      "format": "date-time",
-      "title": "Acquired At",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "docker_container_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Docker Container Id"
-    },
-    "has_docker_container": {
-      "readOnly": true,
-      "title": "Has Docker Container",
-      "type": "boolean"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "lease_metadata": {
-      "additionalProperties": true,
-      "title": "Lease Metadata",
-      "type": "object"
-    },
-    "released_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Released At"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "workspace_runtime_id",
-    "runtime_space_id",
-    "status",
-    "lease_metadata",
-    "acquired_at",
-    "released_at",
-    "has_docker_container"
-  ],
-  "title": "AdminRuntimeLeaseResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AdminSecurityEventResponse"></a>
 
 ## AdminSecurityEventResponse
@@ -2367,27 +2162,12 @@
 | `recommended_resources` | object | 是 | `additionalProperties={"type": "integer"}` |
 | `configured_resources` | object | 是 | `additionalProperties={"type": "integer"}` |
 | `resource_deltas` | object | 是 | `additionalProperties={"type": "integer"}` |
-| `blocking_executor` | object | 是 | `additionalProperties={"anyOf": [{"type": "integer"}, {"type": "boolean"}]}` |
 | `database_pool` | object | 是 | `additionalProperties={"anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}]}` |
 | `redis_pool` | object | 是 | `additionalProperties={"anyOf": [{"type": "integer"}, {"type": "null"}]}` |
 
 ```json
 {
   "properties": {
-    "blocking_executor": {
-      "additionalProperties": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "boolean"
-          }
-        ]
-      },
-      "title": "Blocking Executor",
-      "type": "object"
-    },
     "configured_resources": {
       "additionalProperties": {
         "type": "integer"
@@ -2451,206 +2231,10 @@
     "recommended_resources",
     "configured_resources",
     "resource_deltas",
-    "blocking_executor",
     "database_pool",
     "redis_pool"
   ],
   "title": "AdminSystemConfigurationResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AdminSystemLogResponse"></a>
-
-## AdminSystemLogResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `actor_type` | string | 是 | — |
-| `actor_id` | string | 是 | — |
-| `user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `action` | string | 是 | — |
-| `target_type` | string | 是 | — |
-| `target_id` | string | 是 | — |
-| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `audit_metadata` | object | 是 | `additionalProperties=true` |
-| `previous_hash` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `current_hash` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "action": {
-      "title": "Action",
-      "type": "string"
-    },
-    "actor_id": {
-      "title": "Actor Id",
-      "type": "string"
-    },
-    "actor_type": {
-      "title": "Actor Type",
-      "type": "string"
-    },
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "audit_metadata": {
-      "additionalProperties": true,
-      "title": "Audit Metadata",
-      "type": "object"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "current_hash": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Current Hash"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "previous_hash": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Previous Hash"
-    },
-    "request_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Request Id"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Span Id"
-    },
-    "target_id": {
-      "title": "Target Id",
-      "type": "string"
-    },
-    "target_type": {
-      "title": "Target Type",
-      "type": "string"
-    },
-    "trace_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Trace Id"
-    },
-    "user_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "User Id"
-    },
-    "worker_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "actor_type",
-    "actor_id",
-    "user_id",
-    "agent_run_id",
-    "action",
-    "target_type",
-    "target_id",
-    "request_id",
-    "trace_id",
-    "span_id",
-    "worker_id",
-    "runtime_id",
-    "audit_metadata",
-    "previous_hash",
-    "current_hash",
-    "created_at"
-  ],
-  "title": "AdminSystemLogResponse",
   "type": "object"
 }
 ```
@@ -2890,9 +2474,9 @@
 }
 ```
 
-<a id="schema-AdminUserListResponse"></a>
+<a id="schema-AdminUserListItemResponse"></a>
 
-## AdminUserListResponse
+## AdminUserListItemResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -2992,7 +2576,7 @@
     "status",
     "platform_admin"
   ],
-  "title": "AdminUserListResponse",
+  "title": "AdminUserListItemResponse",
   "type": "object"
 }
 ```
@@ -3263,177 +2847,6 @@
 }
 ```
 
-<a id="schema-AdminWorkerControlPolicyUpdateRequest"></a>
-
-## AdminWorkerControlPolicyUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `value` | object | 是 | `additionalProperties=true` |
-| `description` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `updated_by` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]`; `default="platform_admin"` |
-
-```json
-{
-  "properties": {
-    "description": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Description"
-    },
-    "updated_by": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": "platform_admin",
-      "title": "Updated By"
-    },
-    "value": {
-      "additionalProperties": true,
-      "title": "Value",
-      "type": "object"
-    }
-  },
-  "required": [
-    "value"
-  ],
-  "title": "AdminWorkerControlPolicyUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-AdminWorkerUpdateRequest"></a>
-
-## AdminWorkerUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_type` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `queue_name` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_version` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `hostname` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `capacity` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `details` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `reason` | string | 否 | `default="Updated by platform admin"` |
-| `updated_by` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]`; `default="platform_admin"` |
-
-```json
-{
-  "properties": {
-    "capacity": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capacity"
-    },
-    "details": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Details"
-    },
-    "hostname": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Hostname"
-    },
-    "queue_name": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Queue Name"
-    },
-    "reason": {
-      "default": "Updated by platform admin",
-      "title": "Reason",
-      "type": "string"
-    },
-    "status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Status"
-    },
-    "updated_by": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": "platform_admin",
-      "title": "Updated By"
-    },
-    "worker_type": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Type"
-    },
-    "worker_version": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Version"
-    }
-  },
-  "title": "AdminWorkerUpdateRequest",
-  "type": "object"
-}
-```
-
 <a id="schema-AdminWorkspaceMemberCreateRequest"></a>
 
 ## AdminWorkspaceMemberCreateRequest
@@ -3681,188 +3094,6 @@
 }
 ```
 
-<a id="schema-AdminWorkspaceRuntimeResponse"></a>
-
-## AdminWorkspaceRuntimeResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_provider` | string | 是 | — |
-| `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
-| `name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `docker_container_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `limits` | object | 是 | `additionalProperties=true` |
-| `network_policy` | object | 是 | `additionalProperties=true` |
-| `capabilities` | object | 是 | `additionalProperties=true` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `has_docker_container` | boolean | 是 | `readOnly=true` |
-
-```json
-{
-  "properties": {
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "docker_container_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Docker Container Id"
-    },
-    "execution_mode": {
-      "enum": [
-        "isolated",
-        "shared"
-      ],
-      "title": "Execution Mode",
-      "type": "string"
-    },
-    "has_docker_container": {
-      "readOnly": true,
-      "title": "Has Docker Container",
-      "type": "boolean"
-    },
-    "host_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Host Id"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "limits": {
-      "additionalProperties": true,
-      "title": "Limits",
-      "type": "object"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "network_policy": {
-      "additionalProperties": true,
-      "title": "Network Policy",
-      "type": "object"
-    },
-    "runtime_provider": {
-      "title": "Runtime Provider",
-      "type": "string"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "runtime_template_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Template Id"
-    },
-    "runtime_type": {
-      "title": "Runtime Type",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "host_id",
-    "runtime_template_id",
-    "runtime_space_id",
-    "runtime_provider",
-    "runtime_type",
-    "execution_mode",
-    "name",
-    "status",
-    "connection_status",
-    "limits",
-    "network_policy",
-    "capabilities",
-    "last_heartbeat_at",
-    "has_docker_container"
-  ],
-  "title": "AdminWorkspaceRuntimeResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AdminWorkspaceStatusUpdateRequest"></a>
 
 ## AdminWorkspaceStatusUpdateRequest
@@ -3971,161 +3202,9 @@
 }
 ```
 
-<a id="schema-AgentMailboxLatestTaskMessage"></a>
+<a id="schema-AgentMCPToolPolicyDiagnosticResponse"></a>
 
-## AgentMailboxLatestTaskMessage
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `task_id` | string (uuid) | 是 | `format="uuid"` |
-| `message` | [AgentMessageResponse](schemas.md#schema-AgentMessageResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "message": {
-      "$ref": "#/components/schemas/AgentMessageResponse"
-    },
-    "task_id": {
-      "format": "uuid",
-      "title": "Task Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "task_id",
-    "message"
-  ],
-  "title": "AgentMailboxLatestTaskMessage",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentMailboxLatestTeamMessage"></a>
-
-## AgentMailboxLatestTeamMessage
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `team_id` | string (uuid) | 是 | `format="uuid"` |
-| `message` | [AgentMessageResponse](schemas.md#schema-AgentMessageResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "message": {
-      "$ref": "#/components/schemas/AgentMessageResponse"
-    },
-    "team_id": {
-      "format": "uuid",
-      "title": "Team Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "team_id",
-    "message"
-  ],
-  "title": "AgentMailboxLatestTeamMessage",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentMailboxSummaryResponse"></a>
-
-## AgentMailboxSummaryResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `thread_count` | integer | 是 | — |
-| `message_count` | integer | 是 | — |
-| `unread_count` | integer | 是 | — |
-| `pending_count` | integer | 是 | — |
-| `thread_status_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
-| `message_status_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
-| `latest_messages_by_task` | array&lt;[AgentMailboxLatestTaskMessage](schemas.md#schema-AgentMailboxLatestTaskMessage)&gt; | 是 | — |
-| `latest_messages_by_team` | array&lt;[AgentMailboxLatestTeamMessage](schemas.md#schema-AgentMailboxLatestTeamMessage)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "latest_messages_by_task": {
-      "items": {
-        "$ref": "#/components/schemas/AgentMailboxLatestTaskMessage"
-      },
-      "title": "Latest Messages By Task",
-      "type": "array"
-    },
-    "latest_messages_by_team": {
-      "items": {
-        "$ref": "#/components/schemas/AgentMailboxLatestTeamMessage"
-      },
-      "title": "Latest Messages By Team",
-      "type": "array"
-    },
-    "message_count": {
-      "title": "Message Count",
-      "type": "integer"
-    },
-    "message_status_counts": {
-      "additionalProperties": {
-        "type": "integer"
-      },
-      "title": "Message Status Counts",
-      "type": "object"
-    },
-    "pending_count": {
-      "title": "Pending Count",
-      "type": "integer"
-    },
-    "thread_count": {
-      "title": "Thread Count",
-      "type": "integer"
-    },
-    "thread_status_counts": {
-      "additionalProperties": {
-        "type": "integer"
-      },
-      "title": "Thread Status Counts",
-      "type": "object"
-    },
-    "unread_count": {
-      "title": "Unread Count",
-      "type": "integer"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "generated_at",
-    "thread_count",
-    "message_count",
-    "unread_count",
-    "pending_count",
-    "thread_status_counts",
-    "message_status_counts",
-    "latest_messages_by_task",
-    "latest_messages_by_team"
-  ],
-  "title": "AgentMailboxSummaryResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentMcpToolPolicyDiagnosticResponse"></a>
-
-## AgentMcpToolPolicyDiagnosticResponse
+## AgentMCPToolPolicyDiagnosticResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -4247,7 +3326,99 @@
     "allowed_in_workspace",
     "available"
   ],
-  "title": "AgentMcpToolPolicyDiagnosticResponse",
+  "title": "AgentMCPToolPolicyDiagnosticResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentMailboxSummaryResponse"></a>
+
+## AgentMailboxSummaryResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `generated_at` | string (date-time) | 是 | `format="date-time"` |
+| `thread_count` | integer | 是 | — |
+| `message_count` | integer | 是 | — |
+| `unread_count` | integer | 是 | — |
+| `pending_count` | integer | 是 | — |
+| `thread_status_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
+| `message_status_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
+| `latest_messages_by_task` | array&lt;[LatestTaskMessage](schemas.md#schema-LatestTaskMessage)&gt; | 是 | — |
+| `latest_messages_by_team` | array&lt;[LatestTeamMessage](schemas.md#schema-LatestTeamMessage)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "latest_messages_by_task": {
+      "items": {
+        "$ref": "#/components/schemas/LatestTaskMessage"
+      },
+      "title": "Latest Messages By Task",
+      "type": "array"
+    },
+    "latest_messages_by_team": {
+      "items": {
+        "$ref": "#/components/schemas/LatestTeamMessage"
+      },
+      "title": "Latest Messages By Team",
+      "type": "array"
+    },
+    "message_count": {
+      "title": "Message Count",
+      "type": "integer"
+    },
+    "message_status_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Message Status Counts",
+      "type": "object"
+    },
+    "pending_count": {
+      "title": "Pending Count",
+      "type": "integer"
+    },
+    "thread_count": {
+      "title": "Thread Count",
+      "type": "integer"
+    },
+    "thread_status_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Thread Status Counts",
+      "type": "object"
+    },
+    "unread_count": {
+      "title": "Unread Count",
+      "type": "integer"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "generated_at",
+    "thread_count",
+    "message_count",
+    "unread_count",
+    "pending_count",
+    "thread_status_counts",
+    "message_status_counts",
+    "latest_messages_by_task",
+    "latest_messages_by_team"
+  ],
+  "title": "AgentMailboxSummaryResponse",
   "type": "object"
 }
 ```
@@ -6742,422 +5913,6 @@
 }
 ```
 
-<a id="schema-AgentTeamExecutionLoopEnqueueRequest"></a>
-
-## AgentTeamExecutionLoopEnqueueRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `priority` | integer | 否 | `default=0`; `maximum=100.0`; `minimum=-100.0` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 1000, "type": "string"}, {"type": "null"}]` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "priority": {
-      "default": 0,
-      "maximum": 100.0,
-      "minimum": -100.0,
-      "title": "Priority",
-      "type": "integer"
-    },
-    "reason": {
-      "anyOf": [
-        {
-          "maxLength": 1000,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    }
-  },
-  "title": "AgentTeamExecutionLoopEnqueueRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamExecutionLoopEnqueueResponse"></a>
-
-## AgentTeamExecutionLoopEnqueueResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `team_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `queued` | boolean | 是 | — |
-| `job_type` | string | 是 | — |
-| `queue_name` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "job_type": {
-      "title": "Job Type",
-      "type": "string"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "boolean"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "team_id": {
-      "format": "uuid",
-      "title": "Team Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "team_id",
-    "status",
-    "queued",
-    "job_type",
-    "queue_name"
-  ],
-  "title": "AgentTeamExecutionLoopEnqueueResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamExecutionLoopFinalizeRequest"></a>
-
-## AgentTeamExecutionLoopFinalizeRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `dry_run` | boolean | 否 | `default=true` |
-| `max_tasks` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
-
-```json
-{
-  "properties": {
-    "dry_run": {
-      "default": true,
-      "title": "Dry Run",
-      "type": "boolean"
-    },
-    "max_tasks": {
-      "default": 50,
-      "maximum": 200.0,
-      "minimum": 1.0,
-      "title": "Max Tasks",
-      "type": "integer"
-    }
-  },
-  "title": "AgentTeamExecutionLoopFinalizeRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamExecutionLoopFinalizeResponse"></a>
-
-## AgentTeamExecutionLoopFinalizeResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `team_id` | string (uuid) | 是 | `format="uuid"` |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `dry_run` | boolean | 是 | — |
-| `status` | string | 是 | — |
-| `scanned_task_count` | integer | 是 | — |
-| `finalized_task_count` | integer | 是 | — |
-| `skipped_task_count` | integer | 是 | — |
-| `results` | array&lt;object&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "dry_run": {
-      "title": "Dry Run",
-      "type": "boolean"
-    },
-    "finalized_task_count": {
-      "title": "Finalized Task Count",
-      "type": "integer"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "results": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Results",
-      "type": "array"
-    },
-    "scanned_task_count": {
-      "title": "Scanned Task Count",
-      "type": "integer"
-    },
-    "skipped_task_count": {
-      "title": "Skipped Task Count",
-      "type": "integer"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "team_id": {
-      "format": "uuid",
-      "title": "Team Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "team_id",
-    "generated_at",
-    "dry_run",
-    "status",
-    "scanned_task_count",
-    "finalized_task_count",
-    "skipped_task_count",
-    "results"
-  ],
-  "title": "AgentTeamExecutionLoopFinalizeResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamExecutionLoopRunRequest"></a>
-
-## AgentTeamExecutionLoopRunRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `dry_run` | boolean | 否 | `default=true` |
-| `apply_command_center_actions` | boolean | 否 | `default=true` |
-| `enqueue_runs` | boolean | 否 | `default=true` |
-| `finalize_ready_tasks` | boolean | 否 | `default=true` |
-| `sources` | array&lt;string&gt; | 否 | `maxItems=5` |
-| `actions` | array&lt;string&gt; | 否 | `maxItems=10` |
-| `max_actions` | integer | 否 | `default=5`; `maximum=10.0`; `minimum=1.0` |
-| `max_tasks_per_action` | integer | 否 | `default=100`; `maximum=200.0`; `minimum=1.0` |
-| `max_finalize_tasks` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
-| `include_completed` | boolean | 否 | `default=false` |
-| `queue_limit` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 1000, "type": "string"}, {"type": "null"}]` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "actions": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 10,
-      "title": "Actions",
-      "type": "array"
-    },
-    "apply_command_center_actions": {
-      "default": true,
-      "title": "Apply Command Center Actions",
-      "type": "boolean"
-    },
-    "dry_run": {
-      "default": true,
-      "title": "Dry Run",
-      "type": "boolean"
-    },
-    "enqueue_runs": {
-      "default": true,
-      "title": "Enqueue Runs",
-      "type": "boolean"
-    },
-    "finalize_ready_tasks": {
-      "default": true,
-      "title": "Finalize Ready Tasks",
-      "type": "boolean"
-    },
-    "include_completed": {
-      "default": false,
-      "title": "Include Completed",
-      "type": "boolean"
-    },
-    "max_actions": {
-      "default": 5,
-      "maximum": 10.0,
-      "minimum": 1.0,
-      "title": "Max Actions",
-      "type": "integer"
-    },
-    "max_finalize_tasks": {
-      "default": 50,
-      "maximum": 200.0,
-      "minimum": 1.0,
-      "title": "Max Finalize Tasks",
-      "type": "integer"
-    },
-    "max_tasks_per_action": {
-      "default": 100,
-      "maximum": 200.0,
-      "minimum": 1.0,
-      "title": "Max Tasks Per Action",
-      "type": "integer"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "queue_limit": {
-      "default": 50,
-      "maximum": 200.0,
-      "minimum": 1.0,
-      "title": "Queue Limit",
-      "type": "integer"
-    },
-    "reason": {
-      "anyOf": [
-        {
-          "maxLength": 1000,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    },
-    "sources": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 5,
-      "title": "Sources",
-      "type": "array"
-    }
-  },
-  "title": "AgentTeamExecutionLoopRunRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamExecutionLoopRunResponse"></a>
-
-## AgentTeamExecutionLoopRunResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `team_id` | string (uuid) | 是 | `format="uuid"` |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `dry_run` | boolean | 是 | — |
-| `status` | string | 是 | — |
-| `summary` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `command_center_actions` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `finalization` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "command_center_actions": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Command Center Actions"
-    },
-    "dry_run": {
-      "title": "Dry Run",
-      "type": "boolean"
-    },
-    "finalization": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Finalization"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "summary": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Summary"
-    },
-    "team_id": {
-      "format": "uuid",
-      "title": "Team Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "team_id",
-    "generated_at",
-    "dry_run",
-    "status",
-    "summary",
-    "command_center_actions",
-    "finalization"
-  ],
-  "title": "AgentTeamExecutionLoopRunResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AgentTeamExecutionMemberResponse"></a>
 
 ## AgentTeamExecutionMemberResponse
@@ -8175,1626 +6930,6 @@
 }
 ```
 
-<a id="schema-AgentTeamOperationsConsoleActionPlanItem"></a>
-
-## AgentTeamOperationsConsoleActionPlanItem
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `source` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `source_index` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `automation` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `action` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `priority` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `task_ids` | array&lt;string (uuid)&gt; | 否 | — |
-| `task_step_ids` | array&lt;string (uuid)&gt; | 否 | — |
-| `agent_profile_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "additionalProperties": true,
-  "properties": {
-    "action": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Action"
-    },
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "automation": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Automation"
-    },
-    "priority": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Priority"
-    },
-    "reason": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    },
-    "source": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Source"
-    },
-    "source_index": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Source Index"
-    },
-    "task_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Task Ids",
-      "type": "array"
-    },
-    "task_step_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Task Step Ids",
-      "type": "array"
-    }
-  },
-  "title": "AgentTeamOperationsConsoleActionPlanItem",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleAgentSummary"></a>
-
-## AgentTeamOperationsConsoleAgentSummary
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `role` | string | 是 | — |
-| `status` | string | 是 | — |
-| `model` | string | 是 | — |
-| `model_provider_credential_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `model_provider` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "model": {
-      "title": "Model",
-      "type": "string"
-    },
-    "model_provider": {
-      "additionalProperties": true,
-      "title": "Model Provider",
-      "type": "object"
-    },
-    "model_provider_credential_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Model Provider Credential Id"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "role": {
-      "title": "Role",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "name",
-    "role",
-    "status",
-    "model",
-    "model_provider_credential_id",
-    "model_provider"
-  ],
-  "title": "AgentTeamOperationsConsoleAgentSummary",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleCommandCenterResponse"></a>
-
-## AgentTeamOperationsConsoleCommandCenterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `team_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `generated_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `summary` | object | 否 | `additionalProperties=true` |
-| `runtime` | [AgentTeamOperationsConsoleCommandRuntimeResponse](schemas.md#schema-AgentTeamOperationsConsoleCommandRuntimeResponse) | 否 | — |
-| `provider_readiness` | object | 否 | `additionalProperties=true` |
-| `operating_policy` | object | 否 | `additionalProperties=true` |
-| `memory_summary` | object | 否 | `additionalProperties=true` |
-| `overview` | [AgentTeamExecutionOverviewResponse](schemas.md#schema-AgentTeamExecutionOverviewResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamExecutionOverviewResponse"}, {"type": "null"}]` |
-| `queues` | [AgentTeamOperationsConsoleQueuesResponse](schemas.md#schema-AgentTeamOperationsConsoleQueuesResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamOperationsConsoleQueuesResponse"}, {"type": "null"}]` |
-| `action_plan` | array&lt;object&gt; | 否 | — |
-
-```json
-{
-  "properties": {
-    "action_plan": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Action Plan",
-      "type": "array"
-    },
-    "generated_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Generated At"
-    },
-    "memory_summary": {
-      "additionalProperties": true,
-      "title": "Memory Summary",
-      "type": "object"
-    },
-    "operating_policy": {
-      "additionalProperties": true,
-      "title": "Operating Policy",
-      "type": "object"
-    },
-    "overview": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamExecutionOverviewResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "provider_readiness": {
-      "additionalProperties": true,
-      "title": "Provider Readiness",
-      "type": "object"
-    },
-    "queues": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamOperationsConsoleQueuesResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "runtime": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleCommandRuntimeResponse"
-    },
-    "summary": {
-      "additionalProperties": true,
-      "title": "Summary",
-      "type": "object"
-    },
-    "team_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Team Id"
-    },
-    "workspace_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Id"
-    }
-  },
-  "title": "AgentTeamOperationsConsoleCommandCenterResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleCommandRuntimeResponse"></a>
-
-## AgentTeamOperationsConsoleCommandRuntimeResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `workspace_runtime_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `thread_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `team_session_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `member_session_count` | integer | 否 | `default=0` |
-| `ready` | boolean | 否 | `default=false` |
-| `operating_policy` | object | 否 | `additionalProperties=true` |
-| `memory_summary` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "member_session_count": {
-      "default": 0,
-      "title": "Member Session Count",
-      "type": "integer"
-    },
-    "memory_summary": {
-      "additionalProperties": true,
-      "title": "Memory Summary",
-      "type": "object"
-    },
-    "operating_policy": {
-      "additionalProperties": true,
-      "title": "Operating Policy",
-      "type": "object"
-    },
-    "ready": {
-      "default": false,
-      "title": "Ready",
-      "type": "boolean"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "runtime_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Status"
-    },
-    "status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Status"
-    },
-    "team_session_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Team Session Id"
-    },
-    "thread_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Thread Id"
-    },
-    "workspace_runtime_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Runtime Id"
-    }
-  },
-  "title": "AgentTeamOperationsConsoleCommandRuntimeResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleControlsResponse"></a>
-
-## AgentTeamOperationsConsoleControlsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `can_start` | boolean | 是 | — |
-| `can_pause` | boolean | 是 | — |
-| `can_resume` | boolean | 是 | — |
-| `can_stop` | boolean | 是 | — |
-| `can_ensure_workspace_runtime` | boolean | 是 | — |
-| `suggested_actions` | array&lt;object&gt; | 否 | — |
-
-```json
-{
-  "properties": {
-    "can_ensure_workspace_runtime": {
-      "title": "Can Ensure Workspace Runtime",
-      "type": "boolean"
-    },
-    "can_pause": {
-      "title": "Can Pause",
-      "type": "boolean"
-    },
-    "can_resume": {
-      "title": "Can Resume",
-      "type": "boolean"
-    },
-    "can_start": {
-      "title": "Can Start",
-      "type": "boolean"
-    },
-    "can_stop": {
-      "title": "Can Stop",
-      "type": "boolean"
-    },
-    "suggested_actions": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Suggested Actions",
-      "type": "array"
-    }
-  },
-  "required": [
-    "can_start",
-    "can_pause",
-    "can_resume",
-    "can_stop",
-    "can_ensure_workspace_runtime"
-  ],
-  "title": "AgentTeamOperationsConsoleControlsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleMailboxResponse"></a>
-
-## AgentTeamOperationsConsoleMailboxResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `thread_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `unread_count` | integer | 是 | — |
-| `latest_messages` | array&lt;[AgentTeamOperationsConsoleMessageResponse](schemas.md#schema-AgentTeamOperationsConsoleMessageResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "latest_messages": {
-      "items": {
-        "$ref": "#/components/schemas/AgentTeamOperationsConsoleMessageResponse"
-      },
-      "title": "Latest Messages",
-      "type": "array"
-    },
-    "thread_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Thread Id"
-    },
-    "unread_count": {
-      "title": "Unread Count",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "thread_id",
-    "unread_count",
-    "latest_messages"
-  ],
-  "title": "AgentTeamOperationsConsoleMailboxResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleMemberMailboxResponse"></a>
-
-## AgentTeamOperationsConsoleMemberMailboxResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `unread_count` | integer | 是 | — |
-| `latest_message_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "latest_message_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Latest Message At"
-    },
-    "unread_count": {
-      "title": "Unread Count",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "unread_count",
-    "latest_message_at"
-  ],
-  "title": "AgentTeamOperationsConsoleMemberMailboxResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleMemberResponse"></a>
-
-## AgentTeamOperationsConsoleMemberResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `team_member_id` | string (uuid) | 是 | `format="uuid"` |
-| `agent_profile_id` | string (uuid) | 是 | `format="uuid"` |
-| `agent` | [AgentTeamOperationsConsoleAgentSummary](schemas.md#schema-AgentTeamOperationsConsoleAgentSummary) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamOperationsConsoleAgentSummary"}, {"type": "null"}]` |
-| `reports_to_member_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `team_role` | string | 是 | — |
-| `department` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `position_title` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `responsibilities` | array&lt;string&gt; | 是 | — |
-| `accepts_tasks` | boolean | 是 | — |
-| `max_concurrent_tasks` | integer | 是 | — |
-| `status` | string | 是 | — |
-| `session` | [AgentTeamOperationsConsoleSessionResponse](schemas.md#schema-AgentTeamOperationsConsoleSessionResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionResponse"}, {"type": "null"}]` |
-| `mailbox` | [AgentTeamOperationsConsoleMemberMailboxResponse](schemas.md#schema-AgentTeamOperationsConsoleMemberMailboxResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "accepts_tasks": {
-      "title": "Accepts Tasks",
-      "type": "boolean"
-    },
-    "agent": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamOperationsConsoleAgentSummary"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "agent_profile_id": {
-      "format": "uuid",
-      "title": "Agent Profile Id",
-      "type": "string"
-    },
-    "department": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Department"
-    },
-    "mailbox": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleMemberMailboxResponse"
-    },
-    "max_concurrent_tasks": {
-      "title": "Max Concurrent Tasks",
-      "type": "integer"
-    },
-    "position_title": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Position Title"
-    },
-    "reports_to_member_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reports To Member Id"
-    },
-    "responsibilities": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Responsibilities",
-      "type": "array"
-    },
-    "session": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "team_member_id": {
-      "format": "uuid",
-      "title": "Team Member Id",
-      "type": "string"
-    },
-    "team_role": {
-      "title": "Team Role",
-      "type": "string"
-    }
-  },
-  "required": [
-    "team_member_id",
-    "agent_profile_id",
-    "agent",
-    "reports_to_member_id",
-    "team_role",
-    "department",
-    "position_title",
-    "responsibilities",
-    "accepts_tasks",
-    "max_concurrent_tasks",
-    "status",
-    "session",
-    "mailbox"
-  ],
-  "title": "AgentTeamOperationsConsoleMemberResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleMessageResponse"></a>
-
-## AgentTeamOperationsConsoleMessageResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `thread_id` | string (uuid) | 是 | `format="uuid"` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_team_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `sender_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `recipient_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `message_type` | string | 是 | — |
-| `status` | string | 是 | — |
-| `read_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `body_preview` | string | 是 | — |
-| `payload` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "agent_team_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Team Id"
-    },
-    "body_preview": {
-      "title": "Body Preview",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "message_type": {
-      "title": "Message Type",
-      "type": "string"
-    },
-    "payload": {
-      "additionalProperties": true,
-      "title": "Payload",
-      "type": "object"
-    },
-    "read_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Read At"
-    },
-    "recipient_agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Recipient Agent Profile Id"
-    },
-    "sender_agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Sender Agent Profile Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    },
-    "thread_id": {
-      "format": "uuid",
-      "title": "Thread Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "thread_id",
-    "task_id",
-    "agent_team_id",
-    "sender_agent_profile_id",
-    "recipient_agent_profile_id",
-    "message_type",
-    "status",
-    "read_at",
-    "created_at",
-    "body_preview",
-    "payload"
-  ],
-  "title": "AgentTeamOperationsConsoleMessageResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleProviderManagementResponse"></a>
-
-## AgentTeamOperationsConsoleProviderManagementResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `credential_count` | integer | 否 | `default=0` |
-| `active_credential_count` | integer | 否 | `default=0` |
-| `default_credential_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `credentials` | array&lt;object&gt; | 否 | — |
-| `agent_bindings` | array&lt;object&gt; | 否 | — |
-| `run_diagnostics` | object | 否 | `additionalProperties=true` |
-| `suggested_actions` | array&lt;object&gt; | 否 | — |
-
-```json
-{
-  "properties": {
-    "active_credential_count": {
-      "default": 0,
-      "title": "Active Credential Count",
-      "type": "integer"
-    },
-    "agent_bindings": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Agent Bindings",
-      "type": "array"
-    },
-    "credential_count": {
-      "default": 0,
-      "title": "Credential Count",
-      "type": "integer"
-    },
-    "credentials": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Credentials",
-      "type": "array"
-    },
-    "default_credential_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Default Credential Id"
-    },
-    "run_diagnostics": {
-      "additionalProperties": true,
-      "title": "Run Diagnostics",
-      "type": "object"
-    },
-    "suggested_actions": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Suggested Actions",
-      "type": "array"
-    }
-  },
-  "title": "AgentTeamOperationsConsoleProviderManagementResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleQueuesResponse"></a>
-
-## AgentTeamOperationsConsoleQueuesResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `handoff` | [TaskHandoffQueueResponse](schemas.md#schema-TaskHandoffQueueResponse) | 是 | — |
-| `manager` | [TaskManagerQueueResponse](schemas.md#schema-TaskManagerQueueResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "handoff": {
-      "$ref": "#/components/schemas/TaskHandoffQueueResponse"
-    },
-    "manager": {
-      "$ref": "#/components/schemas/TaskManagerQueueResponse"
-    }
-  },
-  "required": [
-    "handoff",
-    "manager"
-  ],
-  "title": "AgentTeamOperationsConsoleQueuesResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleReadinessResponse"></a>
-
-## AgentTeamOperationsConsoleReadinessResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | — |
-| `ready` | boolean | 是 | — |
-| `runtime_health` | string | 是 | — |
-| `runtime_status` | string | 是 | — |
-| `workspace_runtime_status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `stall` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `mailbox_unread_count` | integer | 否 | `default=0` |
-| `queue_backlog` | integer | 否 | `default=0` |
-| `blocked_step_count` | integer | 否 | `default=0` |
-| `provider_blocked` | boolean | 否 | `default=false` |
-| `action_plan_count` | integer | 否 | `default=0` |
-| `next_operator_action` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "action_plan_count": {
-      "default": 0,
-      "title": "Action Plan Count",
-      "type": "integer"
-    },
-    "blocked_step_count": {
-      "default": 0,
-      "title": "Blocked Step Count",
-      "type": "integer"
-    },
-    "mailbox_unread_count": {
-      "default": 0,
-      "title": "Mailbox Unread Count",
-      "type": "integer"
-    },
-    "next_operator_action": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Next Operator Action"
-    },
-    "provider_blocked": {
-      "default": false,
-      "title": "Provider Blocked",
-      "type": "boolean"
-    },
-    "queue_backlog": {
-      "default": 0,
-      "title": "Queue Backlog",
-      "type": "integer"
-    },
-    "ready": {
-      "title": "Ready",
-      "type": "boolean"
-    },
-    "runtime_health": {
-      "title": "Runtime Health",
-      "type": "string"
-    },
-    "runtime_status": {
-      "title": "Runtime Status",
-      "type": "string"
-    },
-    "stall": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Stall"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "workspace_runtime_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Runtime Status"
-    }
-  },
-  "required": [
-    "status",
-    "ready",
-    "runtime_health",
-    "runtime_status"
-  ],
-  "title": "AgentTeamOperationsConsoleReadinessResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleResponse"></a>
-
-## AgentTeamOperationsConsoleResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `team_id` | string (uuid) | 是 | `format="uuid"` |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `team` | [AgentTeamOperationsConsoleTeamResponse](schemas.md#schema-AgentTeamOperationsConsoleTeamResponse) | 是 | — |
-| `runtime` | [AgentTeamOperationsConsoleRuntimeResponse](schemas.md#schema-AgentTeamOperationsConsoleRuntimeResponse) | 是 | — |
-| `command_center` | [AgentTeamOperationsConsoleCommandCenterResponse](schemas.md#schema-AgentTeamOperationsConsoleCommandCenterResponse) | 是 | — |
-| `members` | array&lt;[AgentTeamOperationsConsoleMemberResponse](schemas.md#schema-AgentTeamOperationsConsoleMemberResponse)&gt; | 是 | — |
-| `provider_management` | [AgentTeamOperationsConsoleProviderManagementResponse](schemas.md#schema-AgentTeamOperationsConsoleProviderManagementResponse) | 是 | — |
-| `sessions` | [AgentTeamOperationsConsoleSessionsResponse](schemas.md#schema-AgentTeamOperationsConsoleSessionsResponse) | 是 | — |
-| `mailbox` | [AgentTeamOperationsConsoleMailboxResponse](schemas.md#schema-AgentTeamOperationsConsoleMailboxResponse) | 是 | — |
-| `controls` | [AgentTeamOperationsConsoleControlsResponse](schemas.md#schema-AgentTeamOperationsConsoleControlsResponse) | 是 | — |
-| `readiness` | [AgentTeamOperationsConsoleReadinessResponse](schemas.md#schema-AgentTeamOperationsConsoleReadinessResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "command_center": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleCommandCenterResponse"
-    },
-    "controls": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleControlsResponse"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "mailbox": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleMailboxResponse"
-    },
-    "members": {
-      "items": {
-        "$ref": "#/components/schemas/AgentTeamOperationsConsoleMemberResponse"
-      },
-      "title": "Members",
-      "type": "array"
-    },
-    "provider_management": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleProviderManagementResponse"
-    },
-    "readiness": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleReadinessResponse"
-    },
-    "runtime": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleRuntimeResponse"
-    },
-    "sessions": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionsResponse"
-    },
-    "team": {
-      "$ref": "#/components/schemas/AgentTeamOperationsConsoleTeamResponse"
-    },
-    "team_id": {
-      "format": "uuid",
-      "title": "Team Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "team_id",
-    "generated_at",
-    "team",
-    "runtime",
-    "command_center",
-    "members",
-    "provider_management",
-    "sessions",
-    "mailbox",
-    "controls",
-    "readiness"
-  ],
-  "title": "AgentTeamOperationsConsoleResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleRuntimeResponse"></a>
-
-## AgentTeamOperationsConsoleRuntimeResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | — |
-| `workspace_runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_health` | string | 是 | — |
-| `thread_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `team_session_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `team_session_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `member_session_count` | integer | 是 | — |
-| `member_agent_ids` | array&lt;string (uuid)&gt; | 是 | — |
-| `last_iteration` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `last_message_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `operating_policy` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `memory_summary` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `scheduling` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `blocked_steps` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `queue` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `ready` | boolean | 是 | — |
-| `metadata` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "blocked_steps": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Blocked Steps"
-    },
-    "last_iteration": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Iteration"
-    },
-    "last_message_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Message At"
-    },
-    "member_agent_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Member Agent Ids",
-      "type": "array"
-    },
-    "member_session_count": {
-      "title": "Member Session Count",
-      "type": "integer"
-    },
-    "memory_summary": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Memory Summary"
-    },
-    "metadata": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Metadata"
-    },
-    "operating_policy": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Operating Policy"
-    },
-    "queue": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Queue"
-    },
-    "ready": {
-      "title": "Ready",
-      "type": "boolean"
-    },
-    "runtime_health": {
-      "title": "Runtime Health",
-      "type": "string"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "runtime_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Status"
-    },
-    "scheduling": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Scheduling"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "team_session_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Team Session Id"
-    },
-    "team_session_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Team Session Key"
-    },
-    "thread_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Thread Id"
-    },
-    "workspace_runtime_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Runtime Id"
-    }
-  },
-  "required": [
-    "status",
-    "workspace_runtime_id",
-    "runtime_status",
-    "runtime_space_id",
-    "runtime_health",
-    "thread_id",
-    "team_session_id",
-    "team_session_key",
-    "member_session_count",
-    "member_agent_ids",
-    "last_iteration",
-    "last_message_at",
-    "operating_policy",
-    "memory_summary",
-    "ready",
-    "metadata"
-  ],
-  "title": "AgentTeamOperationsConsoleRuntimeResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleSessionResponse"></a>
-
-## AgentTeamOperationsConsoleSessionResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `session_key` | string | 是 | — |
-| `scope_type` | string | 是 | — |
-| `scope_id` | string | 是 | — |
-| `status` | string | 是 | — |
-| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_team_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `item_count` | integer | 是 | — |
-| `latest_item_metadata` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "agent_team_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Team Id"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "item_count": {
-      "title": "Item Count",
-      "type": "integer"
-    },
-    "latest_item_metadata": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Latest Item Metadata"
-    },
-    "scope_id": {
-      "title": "Scope Id",
-      "type": "string"
-    },
-    "scope_type": {
-      "title": "Scope Type",
-      "type": "string"
-    },
-    "session_key": {
-      "title": "Session Key",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "session_key",
-    "scope_type",
-    "scope_id",
-    "status",
-    "agent_profile_id",
-    "agent_team_id",
-    "item_count",
-    "latest_item_metadata",
-    "updated_at"
-  ],
-  "title": "AgentTeamOperationsConsoleSessionResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleSessionsResponse"></a>
-
-## AgentTeamOperationsConsoleSessionsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `team_session` | [AgentTeamOperationsConsoleSessionResponse](schemas.md#schema-AgentTeamOperationsConsoleSessionResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionResponse"}, {"type": "null"}]` |
-| `member_sessions` | array&lt;[AgentTeamOperationsConsoleSessionResponse](schemas.md#schema-AgentTeamOperationsConsoleSessionResponse)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "member_sessions": {
-      "items": {
-        "$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionResponse"
-      },
-      "title": "Member Sessions",
-      "type": "array"
-    },
-    "team_session": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamOperationsConsoleSessionResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "team_session",
-    "member_sessions",
-    "total"
-  ],
-  "title": "AgentTeamOperationsConsoleSessionsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AgentTeamOperationsConsoleTeamResponse"></a>
-
-## AgentTeamOperationsConsoleTeamResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `team_type` | string | 是 | — |
-| `description` | string | 是 | — |
-| `status` | string | 是 | — |
-| `manager_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `coordination_rules` | object | 是 | `additionalProperties=true` |
-| `default_task_policy` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "coordination_rules": {
-      "additionalProperties": true,
-      "title": "Coordination Rules",
-      "type": "object"
-    },
-    "default_task_policy": {
-      "additionalProperties": true,
-      "title": "Default Task Policy",
-      "type": "object"
-    },
-    "description": {
-      "title": "Description",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "manager_agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Manager Agent Profile Id"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "team_type": {
-      "title": "Team Type",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "name",
-    "team_type",
-    "description",
-    "status",
-    "manager_agent_profile_id",
-    "runtime_space_id",
-    "coordination_rules",
-    "default_task_policy"
-  ],
-  "title": "AgentTeamOperationsConsoleTeamResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AgentTeamOperatorActionRequest"></a>
 
 ## AgentTeamOperatorActionRequest
@@ -9982,6 +7117,490 @@
     "results"
   ],
   "title": "AgentTeamOperatorActionResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationAdvanceRequest"></a>
+
+## AgentTeamOrchestrationAdvanceRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `dry_run` | boolean | 否 | `default=true` |
+| `apply_command_center_actions` | boolean | 否 | `default=true` |
+| `enqueue_runs` | boolean | 否 | `default=true` |
+| `finalize_ready_tasks` | boolean | 否 | `default=true` |
+| `sources` | array&lt;string&gt; | 否 | `maxItems=5` |
+| `actions` | array&lt;string&gt; | 否 | `maxItems=10` |
+| `max_actions` | integer | 否 | `default=5`; `maximum=10.0`; `minimum=1.0` |
+| `max_tasks_per_action` | integer | 否 | `default=100`; `maximum=200.0`; `minimum=1.0` |
+| `max_finalize_tasks` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
+| `include_completed` | boolean | 否 | `default=false` |
+| `queue_limit` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
+| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 1000, "type": "string"}, {"type": "null"}]` |
+| `metadata` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Actions",
+      "type": "array"
+    },
+    "apply_command_center_actions": {
+      "default": true,
+      "title": "Apply Command Center Actions",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "enqueue_runs": {
+      "default": true,
+      "title": "Enqueue Runs",
+      "type": "boolean"
+    },
+    "finalize_ready_tasks": {
+      "default": true,
+      "title": "Finalize Ready Tasks",
+      "type": "boolean"
+    },
+    "include_completed": {
+      "default": false,
+      "title": "Include Completed",
+      "type": "boolean"
+    },
+    "max_actions": {
+      "default": 5,
+      "maximum": 10.0,
+      "minimum": 1.0,
+      "title": "Max Actions",
+      "type": "integer"
+    },
+    "max_finalize_tasks": {
+      "default": 50,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Max Finalize Tasks",
+      "type": "integer"
+    },
+    "max_tasks_per_action": {
+      "default": 100,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Max Tasks Per Action",
+      "type": "integer"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "queue_limit": {
+      "default": 50,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Queue Limit",
+      "type": "integer"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "sources": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "title": "AgentTeamOrchestrationAdvanceRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationAdvanceResponse"></a>
+
+## AgentTeamOrchestrationAdvanceResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `team_id` | string (uuid) | 是 | `format="uuid"` |
+| `generated_at` | string (date-time) | 是 | `format="date-time"` |
+| `dry_run` | boolean | 是 | — |
+| `status` | string | 是 | — |
+| `summary` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `command_center_actions` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `finalization` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "command_center_actions": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Command Center Actions"
+    },
+    "dry_run": {
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "finalization": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Finalization"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Summary"
+    },
+    "team_id": {
+      "format": "uuid",
+      "title": "Team Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "team_id",
+    "generated_at",
+    "dry_run",
+    "status",
+    "summary",
+    "command_center_actions",
+    "finalization"
+  ],
+  "title": "AgentTeamOrchestrationAdvanceResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationFinalizeRequest"></a>
+
+## AgentTeamOrchestrationFinalizeRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `dry_run` | boolean | 否 | `default=true` |
+| `max_tasks` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
+
+```json
+{
+  "properties": {
+    "dry_run": {
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "max_tasks": {
+      "default": 50,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Max Tasks",
+      "type": "integer"
+    }
+  },
+  "title": "AgentTeamOrchestrationFinalizeRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationFinalizeResponse"></a>
+
+## AgentTeamOrchestrationFinalizeResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `team_id` | string (uuid) | 是 | `format="uuid"` |
+| `generated_at` | string (date-time) | 是 | `format="date-time"` |
+| `dry_run` | boolean | 是 | — |
+| `status` | string | 是 | — |
+| `scanned_task_count` | integer | 是 | — |
+| `finalized_task_count` | integer | 是 | — |
+| `skipped_task_count` | integer | 是 | — |
+| `results` | array&lt;object&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "dry_run": {
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "finalized_task_count": {
+      "title": "Finalized Task Count",
+      "type": "integer"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "scanned_task_count": {
+      "title": "Scanned Task Count",
+      "type": "integer"
+    },
+    "skipped_task_count": {
+      "title": "Skipped Task Count",
+      "type": "integer"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "team_id": {
+      "format": "uuid",
+      "title": "Team Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "team_id",
+    "generated_at",
+    "dry_run",
+    "status",
+    "scanned_task_count",
+    "finalized_task_count",
+    "skipped_task_count",
+    "results"
+  ],
+  "title": "AgentTeamOrchestrationFinalizeResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationReconcileRequest"></a>
+
+## AgentTeamOrchestrationReconcileRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string | 是 | `enum=["completed", "failed"]` |
+| `reason` | string | 是 | `maxLength=1000`; `minLength=1` |
+| `evidence` | object | 是 | `additionalProperties=true`; `minProperties=1` |
+| `observed_result` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "evidence": {
+      "additionalProperties": true,
+      "minProperties": 1,
+      "title": "Evidence",
+      "type": "object"
+    },
+    "observed_result": {
+      "additionalProperties": true,
+      "title": "Observed Result",
+      "type": "object"
+    },
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "reason",
+    "evidence"
+  ],
+  "title": "AgentTeamOrchestrationReconcileRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-AgentTeamOrchestrationSubmitRequest"></a>
+
+## AgentTeamOrchestrationSubmitRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `dry_run` | boolean | 否 | `const=false`; `default=false` |
+| `apply_command_center_actions` | boolean | 否 | `default=true` |
+| `enqueue_runs` | boolean | 否 | `default=true` |
+| `finalize_ready_tasks` | boolean | 否 | `default=true` |
+| `sources` | array&lt;string&gt; | 否 | `maxItems=5` |
+| `actions` | array&lt;string&gt; | 否 | `maxItems=10` |
+| `max_actions` | integer | 否 | `default=5`; `maximum=10.0`; `minimum=1.0` |
+| `max_tasks_per_action` | integer | 否 | `default=100`; `maximum=200.0`; `minimum=1.0` |
+| `max_finalize_tasks` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
+| `include_completed` | boolean | 否 | `default=false` |
+| `queue_limit` | integer | 否 | `default=50`; `maximum=200.0`; `minimum=1.0` |
+| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 1000, "type": "string"}, {"type": "null"}]` |
+| `metadata` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Actions",
+      "type": "array"
+    },
+    "apply_command_center_actions": {
+      "default": true,
+      "title": "Apply Command Center Actions",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "const": false,
+      "default": false,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "enqueue_runs": {
+      "default": true,
+      "title": "Enqueue Runs",
+      "type": "boolean"
+    },
+    "finalize_ready_tasks": {
+      "default": true,
+      "title": "Finalize Ready Tasks",
+      "type": "boolean"
+    },
+    "include_completed": {
+      "default": false,
+      "title": "Include Completed",
+      "type": "boolean"
+    },
+    "max_actions": {
+      "default": 5,
+      "maximum": 10.0,
+      "minimum": 1.0,
+      "title": "Max Actions",
+      "type": "integer"
+    },
+    "max_finalize_tasks": {
+      "default": 50,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Max Finalize Tasks",
+      "type": "integer"
+    },
+    "max_tasks_per_action": {
+      "default": 100,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Max Tasks Per Action",
+      "type": "integer"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "queue_limit": {
+      "default": 50,
+      "maximum": 200.0,
+      "minimum": 1.0,
+      "title": "Queue Limit",
+      "type": "integer"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "sources": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "title": "AgentTeamOrchestrationSubmitRequest",
   "type": "object"
 }
 ```
@@ -10721,80 +8340,6 @@
 }
 ```
 
-<a id="schema-AgentTeamRuntimeEnsureLimitsRequest"></a>
-
-## AgentTeamRuntimeEnsureLimitsRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `cpu_count` | number | 是 | `exclusiveMinimum=0.0`; `maximum=8.0` |
-| `memory_mb` | integer | 是 | `maximum=32768.0`; `minimum=128.0` |
-| `disk_mb` | integer | 是 | `maximum=102400.0`; `minimum=256.0` |
-| `timeout_seconds` | integer | 是 | `maximum=3600.0`; `minimum=1.0` |
-| `max_output_bytes` | integer | 否 | `default=256000`; `maximum=2000000.0`; `minimum=1.0` |
-| `max_processes` | integer | 否 | `default=256`; `maximum=512.0`; `minimum=1.0` |
-| `max_concurrent_executions` | integer | 否 | `default=16`; `maximum=128.0`; `minimum=1.0` |
-
-```json
-{
-  "properties": {
-    "cpu_count": {
-      "exclusiveMinimum": 0.0,
-      "maximum": 8.0,
-      "title": "Cpu Count",
-      "type": "number"
-    },
-    "disk_mb": {
-      "maximum": 102400.0,
-      "minimum": 256.0,
-      "title": "Disk Mb",
-      "type": "integer"
-    },
-    "max_concurrent_executions": {
-      "default": 16,
-      "maximum": 128.0,
-      "minimum": 1.0,
-      "title": "Max Concurrent Executions",
-      "type": "integer"
-    },
-    "max_output_bytes": {
-      "default": 256000,
-      "maximum": 2000000.0,
-      "minimum": 1.0,
-      "title": "Max Output Bytes",
-      "type": "integer"
-    },
-    "max_processes": {
-      "default": 256,
-      "maximum": 512.0,
-      "minimum": 1.0,
-      "title": "Max Processes",
-      "type": "integer"
-    },
-    "memory_mb": {
-      "maximum": 32768.0,
-      "minimum": 128.0,
-      "title": "Memory Mb",
-      "type": "integer"
-    },
-    "timeout_seconds": {
-      "maximum": 3600.0,
-      "minimum": 1.0,
-      "title": "Timeout Seconds",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "cpu_count",
-    "memory_mb",
-    "disk_mb",
-    "timeout_seconds"
-  ],
-  "title": "AgentTeamRuntimeEnsureLimitsRequest",
-  "type": "object"
-}
-```
-
 <a id="schema-AgentTeamRuntimeEnsureRequest"></a>
 
 ## AgentTeamRuntimeEnsureRequest
@@ -10803,8 +8348,6 @@
 | --- | --- | --- | --- |
 | `template_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
-| `limits` | [AgentTeamRuntimeEnsureLimitsRequest](schemas.md#schema-AgentTeamRuntimeEnsureLimitsRequest) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamRuntimeEnsureLimitsRequest"}, {"type": "null"}]` |
-| `network_disabled` | boolean | 否 | `default=true` |
 | `start` | boolean | 否 | `default=true` |
 | `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 1000, "type": "string"}, {"type": "null"}]` |
 | `metadata` | object | 否 | `additionalProperties=true` |
@@ -10812,16 +8355,6 @@
 ```json
 {
   "properties": {
-    "limits": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AgentTeamRuntimeEnsureLimitsRequest"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "metadata": {
       "additionalProperties": true,
       "title": "Metadata",
@@ -10839,11 +8372,6 @@
         }
       ],
       "title": "Name"
-    },
-    "network_disabled": {
-      "default": true,
-      "title": "Network Disabled",
-      "type": "boolean"
     },
     "reason": {
       "anyOf": [
@@ -10896,7 +8424,7 @@
 | `workspace_runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `last_iteration` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `last_advancement` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
 | `last_message_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
 | `runtime_health` | string | 是 | — |
 | `member_session_count` | integer | 是 | — |
@@ -10913,7 +8441,7 @@
       "title": "Generated At",
       "type": "string"
     },
-    "last_iteration": {
+    "last_advancement": {
       "anyOf": [
         {
           "additionalProperties": true,
@@ -10923,7 +8451,7 @@
           "type": "null"
         }
       ],
-      "title": "Last Iteration"
+      "title": "Last Advancement"
     },
     "last_message_at": {
       "anyOf": [
@@ -11085,7 +8613,7 @@
     "workspace_runtime_id",
     "runtime_status",
     "runtime_space_id",
-    "last_iteration",
+    "last_advancement",
     "last_message_at",
     "runtime_health",
     "member_session_count",
@@ -11237,7 +8765,7 @@
 | `missing_policy_tools` | array&lt;string&gt; | 是 | — |
 | `missing_agent_skill_install_ids` | array&lt;string (uuid)&gt; | 是 | — |
 | `installed_skills` | array&lt;[AgentSkillPolicyDiagnosticResponse](schemas.md#schema-AgentSkillPolicyDiagnosticResponse)&gt; | 是 | — |
-| `effective_tools` | array&lt;[AgentMcpToolPolicyDiagnosticResponse](schemas.md#schema-AgentMcpToolPolicyDiagnosticResponse)&gt; | 是 | — |
+| `effective_tools` | array&lt;[AgentMCPToolPolicyDiagnosticResponse](schemas.md#schema-AgentMCPToolPolicyDiagnosticResponse)&gt; | 是 | — |
 | `blocked_reasons` | array&lt;string&gt; | 否 | — |
 
 ```json
@@ -11283,7 +8811,7 @@
     },
     "effective_tools": {
       "items": {
-        "$ref": "#/components/schemas/AgentMcpToolPolicyDiagnosticResponse"
+        "$ref": "#/components/schemas/AgentMCPToolPolicyDiagnosticResponse"
       },
       "title": "Effective Tools",
       "type": "array"
@@ -11334,32 +8862,6 @@
     "effective_tools"
   ],
   "title": "AgentToolPolicyDiagnosticsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-ApplyRequest"></a>
-
-## ApplyRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `plan_sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "plan_sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Plan Sha256",
-      "type": "string"
-    }
-  },
-  "required": [
-    "plan_sha256"
-  ],
-  "title": "ApplyRequest",
   "type": "object"
 }
 ```
@@ -11969,234 +9471,6 @@
 }
 ```
 
-<a id="schema-ArtifactUploadRequest"></a>
-
-## ArtifactUploadRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `filename` | string | 是 | `maxLength=260`; `minLength=1` |
-| `storage_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 1024, "type": "string"}, {"type": "null"}]` |
-| `checksum_sha256` | string anyOf null | 否 | `anyOf=[{"maxLength": 64, "type": "string"}, {"type": "null"}]` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "checksum_sha256": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Checksum Sha256"
-    },
-    "filename": {
-      "maxLength": 260,
-      "minLength": 1,
-      "title": "Filename",
-      "type": "string"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "storage_key": {
-      "anyOf": [
-        {
-          "maxLength": 1024,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Storage Key"
-    }
-  },
-  "required": [
-    "filename"
-  ],
-  "title": "ArtifactUploadRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-ArtifactUploadResponse"></a>
-
-## ArtifactUploadResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `filename` | string | 是 | — |
-| `storage_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `checksum_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `artifact_metadata` | object | 是 | `additionalProperties=true` |
-| `status` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "artifact_metadata": {
-      "additionalProperties": true,
-      "title": "Artifact Metadata",
-      "type": "object"
-    },
-    "checksum_sha256": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Checksum Sha256"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "filename": {
-      "title": "Filename",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "storage_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Storage Key"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "worker_id",
-    "agent_run_id",
-    "filename",
-    "storage_key",
-    "checksum_sha256",
-    "artifact_metadata",
-    "status"
-  ],
-  "title": "ArtifactUploadResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-AuditEventFilterResponse"></a>
-
-## AuditEventFilterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[AuditEventResponse](schemas.md#schema-AuditEventResponse)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-| `limit` | integer | 是 | — |
-| `offset` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/AuditEventResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "AuditEventFilterResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-AuditEventResponse"></a>
 
 ## AuditEventResponse
@@ -12518,15 +9792,15 @@
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `job_id` | string (uuid) | 是 | `format="uuid"` |
+| `execution_id` | string (uuid) | 是 | `format="uuid"` |
 | `status` | string | 是 | — |
 
 ```json
 {
   "properties": {
-    "job_id": {
+    "execution_id": {
       "format": "uuid",
-      "title": "Job Id",
+      "title": "Execution Id",
       "type": "string"
     },
     "status": {
@@ -12535,7 +9809,7 @@
     }
   },
   "required": [
-    "job_id",
+    "execution_id",
     "status"
   ],
   "title": "AuditIntegrityVerificationQueuedResponse",
@@ -12557,7 +9831,9 @@
 | `input_defaults` | object | 否 | `additionalProperties=true`; `maxProperties=64` |
 | `trigger_type` | string | 是 | `enum=["message", "schedule"]` |
 | `allowed_senders` | array&lt;string&gt; | 否 | `maxItems=256` |
-| `reply_subscription_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `channel_connection_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `allowed_conversations` | array&lt;string&gt; | 否 | `maxItems=256` |
+| `reply_connection_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `schedule_type` | string anyOf null | 否 | `anyOf=[{"enum": ["one_shot", "hourly", "daily"], "type": "string"}, {"type": "null"}]` |
 | `schedule_config` | object | 否 | `additionalProperties=true`; `maxProperties=4` |
 | `overlap_policy` | string | 否 | `default="queue"`; `enum=["queue", "skip"]` |
@@ -12594,6 +9870,14 @@
       "title": "Allowed Attachment Kinds",
       "type": "array"
     },
+    "allowed_conversations": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Allowed Conversations",
+      "type": "array"
+    },
     "allowed_message_actions": {
       "default": [
         "start"
@@ -12620,6 +9904,18 @@
       "maxItems": 256,
       "title": "Allowed Senders",
       "type": "array"
+    },
+    "channel_connection_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Channel Connection Id"
     },
     "contract_version": {
       "default": 1,
@@ -12697,7 +9993,7 @@
       "title": "Overlap Policy",
       "type": "string"
     },
-    "reply_subscription_id": {
+    "reply_connection_id": {
       "anyOf": [
         {
           "format": "uuid",
@@ -12707,7 +10003,7 @@
           "type": "null"
         }
       ],
-      "title": "Reply Subscription Id"
+      "title": "Reply Connection Id"
     },
     "schedule_config": {
       "additionalProperties": true,
@@ -12777,112 +10073,6 @@
 }
 ```
 
-<a id="schema-AutomationMessage"></a>
-
-## AutomationMessage
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `event_id` | string | 是 | `maxLength=160`; `minLength=1` |
-| `conversation_id` | string | 是 | `maxLength=160`; `minLength=1` |
-| `sender_id` | string | 是 | `maxLength=160`; `minLength=1` |
-| `occurred_at` | string (date-time) | 是 | `format="date-time"` |
-| `text` | string | 否 | `default=""`; `maxLength=16000` |
-| `contract_version` | integer | 否 | `default=1`; `minimum=1.0` |
-| `data` | object | 否 | `additionalProperties=true`; `maxProperties=64` |
-| `action` | string | 否 | `default="start"`; `enum=["start", "follow_up", "pause", "resume", "cancel"]` |
-| `reply_to_event_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `attachments` | array&lt;[MessageAttachment](schemas.md#schema-MessageAttachment)&gt; | 否 | `maxItems=5` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "action": {
-      "default": "start",
-      "enum": [
-        "start",
-        "follow_up",
-        "pause",
-        "resume",
-        "cancel"
-      ],
-      "title": "Action",
-      "type": "string"
-    },
-    "attachments": {
-      "items": {
-        "$ref": "#/components/schemas/MessageAttachment"
-      },
-      "maxItems": 5,
-      "title": "Attachments",
-      "type": "array"
-    },
-    "contract_version": {
-      "default": 1,
-      "minimum": 1.0,
-      "title": "Contract Version",
-      "type": "integer"
-    },
-    "conversation_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Conversation Id",
-      "type": "string"
-    },
-    "data": {
-      "additionalProperties": true,
-      "maxProperties": 64,
-      "title": "Data",
-      "type": "object"
-    },
-    "event_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Event Id",
-      "type": "string"
-    },
-    "occurred_at": {
-      "format": "date-time",
-      "title": "Occurred At",
-      "type": "string"
-    },
-    "reply_to_event_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reply To Event Id"
-    },
-    "sender_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Sender Id",
-      "type": "string"
-    },
-    "text": {
-      "default": "",
-      "maxLength": 16000,
-      "title": "Text",
-      "type": "string"
-    }
-  },
-  "required": [
-    "event_id",
-    "conversation_id",
-    "sender_id",
-    "occurred_at"
-  ],
-  "title": "AutomationMessage",
-  "type": "object"
-}
-```
-
 <a id="schema-AutomationResponse"></a>
 
 ## AutomationResponse
@@ -12946,9 +10136,9 @@
 }
 ```
 
-<a id="schema-AutomationUpdate"></a>
+<a id="schema-AutomationUpdateRequest"></a>
 
-## AutomationUpdate
+## AutomationUpdateRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -12982,39 +10172,7 @@
     "configuration",
     "status"
   ],
-  "title": "AutomationUpdate",
-  "type": "object"
-}
-```
-
-<a id="schema-BindingPreview"></a>
-
-## BindingPreview
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `resource_id` | string (uuid) | 是 | `format="uuid"` |
-| `configuration` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "configuration": {
-      "additionalProperties": true,
-      "title": "Configuration",
-      "type": "object"
-    },
-    "resource_id": {
-      "format": "uuid",
-      "title": "Resource Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "resource_id",
-    "configuration"
-  ],
-  "title": "BindingPreview",
+  "title": "AutomationUpdateRequest",
   "type": "object"
 }
 ```
@@ -13256,9 +10414,9 @@
 | `import_memory` | boolean | 否 | `default=true` |
 | `import_projects` | boolean | 否 | `default=true` |
 | `name_prefix` | string | 否 | `default="Imported "` |
-| `max_items_per_collection` | integer | 否 | `default=500` |
-| `max_bytes_per_object` | integer | 否 | `default=26214400` |
-| `max_total_bytes` | integer | 否 | `default=104857600` |
+| `max_items_per_collection` | integer | 否 | `default=500`; `maximum=5000.0`; `minimum=1.0` |
+| `max_bytes_per_object` | integer | 否 | `default=26214400`; `maximum=104857600.0`; `minimum=1.0` |
+| `max_total_bytes` | integer | 否 | `default=104857600`; `maximum=1073741824.0`; `minimum=1.0` |
 | `resolutions` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 
 ```json
@@ -13311,16 +10469,22 @@
     },
     "max_bytes_per_object": {
       "default": 26214400,
+      "maximum": 104857600.0,
+      "minimum": 1.0,
       "title": "Max Bytes Per Object",
       "type": "integer"
     },
     "max_items_per_collection": {
       "default": 500,
+      "maximum": 5000.0,
+      "minimum": 1.0,
       "title": "Max Items Per Collection",
       "type": "integer"
     },
     "max_total_bytes": {
       "default": 104857600,
+      "maximum": 1073741824.0,
+      "minimum": 1.0,
       "title": "Max Total Bytes",
       "type": "integer"
     },
@@ -13364,9 +10528,9 @@
 | `import_memory` | boolean | 否 | `default=true` |
 | `import_projects` | boolean | 否 | `default=true` |
 | `name_prefix` | string | 否 | `default="Imported "` |
-| `max_items_per_collection` | integer | 否 | `default=500` |
-| `max_bytes_per_object` | integer | 否 | `default=26214400` |
-| `max_total_bytes` | integer | 否 | `default=104857600` |
+| `max_items_per_collection` | integer | 否 | `default=500`; `maximum=5000.0`; `minimum=1.0` |
+| `max_bytes_per_object` | integer | 否 | `default=26214400`; `maximum=104857600.0`; `minimum=1.0` |
+| `max_total_bytes` | integer | 否 | `default=104857600`; `maximum=1073741824.0`; `minimum=1.0` |
 | `resolutions` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 
 ```json
@@ -13414,16 +10578,22 @@
     },
     "max_bytes_per_object": {
       "default": 26214400,
+      "maximum": 104857600.0,
+      "minimum": 1.0,
       "title": "Max Bytes Per Object",
       "type": "integer"
     },
     "max_items_per_collection": {
       "default": 500,
+      "maximum": 5000.0,
+      "minimum": 1.0,
       "title": "Max Items Per Collection",
       "type": "integer"
     },
     "max_total_bytes": {
       "default": 104857600,
+      "maximum": 1073741824.0,
+      "minimum": 1.0,
       "title": "Max Total Bytes",
       "type": "integer"
     },
@@ -13452,13 +10622,13 @@
 }
 ```
 
-<a id="schema-Body_upload_attachment_api_v1_plugin_runtime__workspace_id___install_id__automations__automation_id__attachments_post"></a>
+<a id="schema-Body_upload_attachment_api_v1_plugin_services__workspace_id___install_id__channels__connection_id__attachments_post"></a>
 
-## Body_upload_attachment_api_v1_plugin_runtime__workspace_id___install_id__automations__automation_id__attachments_post
+## Body_upload_attachment_api_v1_plugin_services__workspace_id___install_id__channels__connection_id__attachments_post
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `metadata` | string | 是 | `maxLength=24000` |
+| `metadata` | string | 是 | `maxLength=16000` |
 | `file` | string | 是 | `contentMediaType="application/octet-stream"` |
 
 ```json
@@ -13470,7 +10640,7 @@
       "type": "string"
     },
     "metadata": {
-      "maxLength": 24000,
+      "maxLength": 16000,
       "title": "Metadata",
       "type": "string"
     }
@@ -13479,7 +10649,7 @@
     "metadata",
     "file"
   ],
-  "title": "Body_upload_attachment_api_v1_plugin_runtime__workspace_id___install_id__automations__automation_id__attachments_post",
+  "title": "Body_upload_attachment_api_v1_plugin_services__workspace_id___install_id__channels__connection_id__attachments_post",
   "type": "object"
 }
 ```
@@ -13505,334 +10675,6 @@
     "file"
   ],
   "title": "Body_upload_file_api_v1_workspaces__workspace_id__files_post",
-  "type": "object"
-}
-```
-
-<a id="schema-CandidateApproval"></a>
-
-## CandidateApproval
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `bindings` | object | 是 | `additionalProperties={"$ref": "#/components/schemas/CapabilityBinding"}`; `maxProperties=128`; `minProperties=1` |
-| `approved_permissions` | array&lt;string&gt; | 否 | `maxItems=128` |
-| `expected_generation` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
-| `preview_digest` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "approved_permissions": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 128,
-      "title": "Approved Permissions",
-      "type": "array"
-    },
-    "bindings": {
-      "additionalProperties": {
-        "$ref": "#/components/schemas/CapabilityBinding"
-      },
-      "maxProperties": 128,
-      "minProperties": 1,
-      "title": "Bindings",
-      "type": "object"
-    },
-    "expected_generation": {
-      "anyOf": [
-        {
-          "minimum": 1.0,
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Expected Generation"
-    },
-    "preview_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Preview Digest",
-      "type": "string"
-    }
-  },
-  "required": [
-    "bindings",
-    "preview_digest"
-  ],
-  "title": "CandidateApproval",
-  "type": "object"
-}
-```
-
-<a id="schema-CandidatePreviewRequest"></a>
-
-## CandidatePreviewRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `bindings` | object | 否 | `additionalProperties={"$ref": "#/components/schemas/CapabilityBinding"}`; `maxProperties=128` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "bindings": {
-      "additionalProperties": {
-        "$ref": "#/components/schemas/CapabilityBinding"
-      },
-      "maxProperties": 128,
-      "title": "Bindings",
-      "type": "object"
-    }
-  },
-  "title": "CandidatePreviewRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-CandidatePreviewResponse"></a>
-
-## CandidatePreviewResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `candidate_id` | string (uuid) | 是 | `format="uuid"` |
-| `source_generation` | integer | 是 | — |
-| `sha256` | string | 是 | — |
-| `release` | [PluginReleaseDescriptor](schemas.md#schema-PluginReleaseDescriptor) | 是 | — |
-| `expected_generation` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `current_version` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `required_permissions` | array&lt;string&gt; | 是 | — |
-| `added_permissions` | array&lt;string&gt; | 是 | — |
-| `removed_permissions` | array&lt;string&gt; | 是 | — |
-| `configuration_schemas` | object | 是 | `additionalProperties={"additionalProperties": true, "type": "object"}` |
-| `current_bindings` | object | 是 | `additionalProperties={"$ref": "#/components/schemas/BindingPreview"}` |
-| `proposed_bindings` | object | 是 | `additionalProperties={"$ref": "#/components/schemas/BindingPreview"}` |
-| `preview_digest` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "added_permissions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Added Permissions",
-      "type": "array"
-    },
-    "candidate_id": {
-      "format": "uuid",
-      "title": "Candidate Id",
-      "type": "string"
-    },
-    "configuration_schemas": {
-      "additionalProperties": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Configuration Schemas",
-      "type": "object"
-    },
-    "current_bindings": {
-      "additionalProperties": {
-        "$ref": "#/components/schemas/BindingPreview"
-      },
-      "title": "Current Bindings",
-      "type": "object"
-    },
-    "current_version": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Current Version"
-    },
-    "expected_generation": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Expected Generation"
-    },
-    "preview_digest": {
-      "title": "Preview Digest",
-      "type": "string"
-    },
-    "proposed_bindings": {
-      "additionalProperties": {
-        "$ref": "#/components/schemas/BindingPreview"
-      },
-      "title": "Proposed Bindings",
-      "type": "object"
-    },
-    "release": {
-      "$ref": "#/components/schemas/PluginReleaseDescriptor"
-    },
-    "removed_permissions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Removed Permissions",
-      "type": "array"
-    },
-    "required_permissions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Required Permissions",
-      "type": "array"
-    },
-    "sha256": {
-      "title": "Sha256",
-      "type": "string"
-    },
-    "source_generation": {
-      "title": "Source Generation",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "candidate_id",
-    "source_generation",
-    "sha256",
-    "release",
-    "expected_generation",
-    "current_version",
-    "required_permissions",
-    "added_permissions",
-    "removed_permissions",
-    "configuration_schemas",
-    "current_bindings",
-    "proposed_bindings",
-    "preview_digest"
-  ],
-  "title": "CandidatePreviewResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-CandidateResponse"></a>
-
-## CandidateResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `source_id` | string (uuid) | 是 | `format="uuid"` |
-| `plugin_key` | string | 是 | — |
-| `version` | string | 是 | — |
-| `publisher_key_id` | string | 是 | — |
-| `sha256` | string | 是 | — |
-| `withdrawn` | boolean | 是 | — |
-| `verified_release` | [SignedPluginRelease](schemas.md#schema-SignedPluginRelease) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/SignedPluginRelease"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "plugin_key": {
-      "title": "Plugin Key",
-      "type": "string"
-    },
-    "publisher_key_id": {
-      "title": "Publisher Key Id",
-      "type": "string"
-    },
-    "sha256": {
-      "title": "Sha256",
-      "type": "string"
-    },
-    "source_id": {
-      "format": "uuid",
-      "title": "Source Id",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "verified_release": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/SignedPluginRelease"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "version": {
-      "title": "Version",
-      "type": "string"
-    },
-    "withdrawn": {
-      "title": "Withdrawn",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "source_id",
-    "plugin_key",
-    "version",
-    "publisher_key_id",
-    "sha256",
-    "withdrawn",
-    "verified_release"
-  ],
-  "title": "CandidateResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-CapabilityBinding"></a>
-
-## CapabilityBinding
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `resource_id` | string (uuid) | 是 | `format="uuid"` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "resource_id": {
-      "format": "uuid",
-      "title": "Resource Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "resource_id"
-  ],
-  "title": "CapabilityBinding",
   "type": "object"
 }
 ```
@@ -13898,11 +10740,12 @@
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
-| `kind` | string | 是 | `enum=["mcp_server", "skill", "message_trigger", "reply_channel"]` |
+| `kind` | string | 是 | `enum=["channel", "mcp_server", "skill"]` |
 | `title` | string | 是 | `maxLength=160`; `minLength=1` |
 | `description` | string | 否 | `default=""`; `maxLength=2000` |
 | `configuration_schema` | object | 否 | `additionalProperties=true` |
 | `required_permissions` | array&lt;string&gt; | 否 | `maxItems=32` |
+| `features` | array&lt;string&gt; | 否 | `maxItems=4` |
 
 ```json
 {
@@ -13919,6 +10762,20 @@
       "title": "Description",
       "type": "string"
     },
+    "features": {
+      "items": {
+        "enum": [
+          "receive",
+          "send",
+          "attachments",
+          "cards"
+        ],
+        "type": "string"
+      },
+      "maxItems": 4,
+      "title": "Features",
+      "type": "array"
+    },
     "key": {
       "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
       "title": "Key",
@@ -13926,10 +10783,9 @@
     },
     "kind": {
       "enum": [
+        "channel",
         "mcp_server",
-        "skill",
-        "message_trigger",
-        "reply_channel"
+        "skill"
       ],
       "title": "Kind",
       "type": "string"
@@ -13959,9 +10815,9 @@
 }
 ```
 
-<a id="schema-CapabilityMcpCredentialBinding"></a>
+<a id="schema-CapabilityMCPCredentialBinding"></a>
 
-## CapabilityMcpCredentialBinding
+## CapabilityMCPCredentialBinding
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -14039,7 +10895,7 @@
     "configuration_version",
     "provider"
   ],
-  "title": "CapabilityMcpCredentialBinding",
+  "title": "CapabilityMCPCredentialBinding",
   "type": "object"
 }
 ```
@@ -14633,7 +11489,7 @@
 | `mcp_server_configuration_version` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
 | `mcp_tool_configuration_version` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
 | `mcp_requires_credentials` | boolean | 否 | `default=false` |
-| `mcp_credential_references` | array&lt;[CapabilityMcpCredentialBinding](schemas.md#schema-CapabilityMcpCredentialBinding)&gt; | 否 | — |
+| `mcp_credential_references` | array&lt;[CapabilityMCPCredentialBinding](schemas.md#schema-CapabilityMCPCredentialBinding)&gt; | 否 | — |
 | `mcp_blocked_reasons` | array&lt;string&gt; | 否 | — |
 | `policy` | object | 否 | `additionalProperties=true` |
 | `required_resource_type` | string anyOf null | 否 | `anyOf=[{"enum": ["file_collection", "memory_collection", "mcp_resource", "runtime", "external_service"], "type": "string"}, {"type": "null"}]` |
@@ -14672,7 +11528,7 @@
     },
     "mcp_credential_references": {
       "items": {
-        "$ref": "#/components/schemas/CapabilityMcpCredentialBinding"
+        "$ref": "#/components/schemas/CapabilityMCPCredentialBinding"
       },
       "title": "Mcp Credential References",
       "type": "array"
@@ -14929,9 +11785,363 @@
 }
 ```
 
-<a id="schema-ConversationCreate"></a>
+<a id="schema-ChannelConnectionCreateRequest"></a>
 
-## ConversationCreate
+## ChannelConnectionCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `account_id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `endpoint_url` | string | 是 | `maxLength=2048`; `minLength=1` |
+| `configuration` | object | 否 | `additionalProperties=true` |
+| `install_id` | string (uuid) | 是 | `format="uuid"` |
+| `capability_key` | string | 是 | `maxLength=120`; `minLength=1` |
+| `signing_secret` | string (password) | 是 | `format="password"`; `maxLength=256`; `minLength=32`; `writeOnly=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Account Id",
+      "type": "string"
+    },
+    "capability_key": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Capability Key",
+      "type": "string"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "endpoint_url": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Endpoint Url",
+      "type": "string"
+    },
+    "install_id": {
+      "format": "uuid",
+      "title": "Install Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "signing_secret": {
+      "format": "password",
+      "maxLength": 256,
+      "minLength": 32,
+      "title": "Signing Secret",
+      "type": "string",
+      "writeOnly": true
+    }
+  },
+  "required": [
+    "name",
+    "account_id",
+    "endpoint_url",
+    "install_id",
+    "capability_key",
+    "signing_secret"
+  ],
+  "title": "ChannelConnectionCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelConnectionResponse"></a>
+
+## ChannelConnectionResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `install_id` | string (uuid) | 是 | `format="uuid"` |
+| `capability_key` | string | 是 | — |
+| `name` | string | 是 | — |
+| `account_id` | string | 是 | — |
+| `endpoint_url` | string | 是 | — |
+| `configuration` | object | 是 | `additionalProperties=true` |
+| `configuration_revision` | integer | 是 | — |
+| `status` | string | 是 | — |
+
+```json
+{
+  "properties": {
+    "account_id": {
+      "title": "Account Id",
+      "type": "string"
+    },
+    "capability_key": {
+      "title": "Capability Key",
+      "type": "string"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "configuration_revision": {
+      "title": "Configuration Revision",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "endpoint_url": {
+      "title": "Endpoint Url",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "install_id": {
+      "format": "uuid",
+      "title": "Install Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "install_id",
+    "capability_key",
+    "name",
+    "account_id",
+    "endpoint_url",
+    "configuration",
+    "configuration_revision",
+    "status"
+  ],
+  "title": "ChannelConnectionResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelConnectionUpdateRequest"></a>
+
+## ChannelConnectionUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `account_id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `endpoint_url` | string | 是 | `maxLength=2048`; `minLength=1` |
+| `configuration` | object | 否 | `additionalProperties=true` |
+| `expected_revision` | integer | 是 | `minimum=1.0` |
+| `status` | string | 是 | `enum=["active", "disabled"]` |
+| `signing_secret` | string (password) anyOf null | 否 | `anyOf=[{"format": "password", "maxLength": 256, "minLength": 32, "type": "string", "writeOnly": true}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Account Id",
+      "type": "string"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "endpoint_url": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Endpoint Url",
+      "type": "string"
+    },
+    "expected_revision": {
+      "minimum": 1.0,
+      "title": "Expected Revision",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "signing_secret": {
+      "anyOf": [
+        {
+          "format": "password",
+          "maxLength": 256,
+          "minLength": 32,
+          "type": "string",
+          "writeOnly": true
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Signing Secret"
+    },
+    "status": {
+      "enum": [
+        "active",
+        "disabled"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "account_id",
+    "endpoint_url",
+    "expected_revision",
+    "status"
+  ],
+  "title": "ChannelConnectionUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelEvent"></a>
+
+## ChannelEvent
+
+CloudEvents 1.0 envelope carrying the canonical incoming message.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `specversion` | string | 否 | `const="1.0"`; `default="1.0"` |
+| `id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `source` | string | 是 | `pattern="^opsmesh://channels/[0-9a-f-]{36}$"` |
+| `type` | string | 否 | `const="io.opsmesh.channel.message"`; `default="io.opsmesh.channel.message"` |
+| `datacontenttype` | string | 否 | `const="application/json"`; `default="application/json"` |
+| `time` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `traceparent` | string anyOf null | 否 | `anyOf=[{"maxLength": 512, "type": "string"}, {"type": "null"}]` |
+| `tracestate` | string anyOf null | 否 | `anyOf=[{"maxLength": 512, "type": "string"}, {"type": "null"}]` |
+| `data` | [IncomingMessage](schemas.md#schema-IncomingMessage) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "CloudEvents 1.0 envelope carrying the canonical incoming message.",
+  "properties": {
+    "data": {
+      "$ref": "#/components/schemas/IncomingMessage"
+    },
+    "datacontenttype": {
+      "const": "application/json",
+      "default": "application/json",
+      "title": "Datacontenttype",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "source": {
+      "pattern": "^opsmesh://channels/[0-9a-f-]{36}$",
+      "title": "Source",
+      "type": "string"
+    },
+    "specversion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Specversion",
+      "type": "string"
+    },
+    "time": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Time"
+    },
+    "traceparent": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Traceparent"
+    },
+    "tracestate": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tracestate"
+    },
+    "type": {
+      "const": "io.opsmesh.channel.message",
+      "default": "io.opsmesh.channel.message",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "source",
+    "data"
+  ],
+  "title": "ChannelEvent",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationCreateRequest"></a>
+
+## ConversationCreateRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -15038,7 +12248,140 @@
       "title": "Workspace Project Id"
     }
   },
-  "title": "ConversationCreate",
+  "title": "ConversationCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationEventResponse"></a>
+
+## ConversationEventResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | integer | 是 | — |
+| `turn_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "integer"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "turn_id": {
+      "format": "uuid",
+      "title": "Turn Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "turn_id",
+    "status",
+    "created_at"
+  ],
+  "title": "ConversationEventResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationExecutionResponse"></a>
+
+## ConversationExecutionResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `turn_id` | string (uuid) | 是 | `format="uuid"` |
+| `task_id` | string (uuid) | 是 | `format="uuid"` |
+| `runs` | array&lt;[ConversationRunResponse](schemas.md#schema-ConversationRunResponse)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "runs": {
+      "items": {
+        "$ref": "#/components/schemas/ConversationRunResponse"
+      },
+      "title": "Runs",
+      "type": "array"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "turn_id": {
+      "format": "uuid",
+      "title": "Turn Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "turn_id",
+    "task_id",
+    "runs"
+  ],
+  "title": "ConversationExecutionResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationMessageRequest"></a>
+
+## ConversationMessageRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `body` | string | 是 | `maxLength=32000`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "maxLength": 32000,
+      "minLength": 1,
+      "title": "Body",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body"
+  ],
+  "title": "ConversationMessageRequest",
   "type": "object"
 }
 ```
@@ -15187,6 +12530,173 @@
     "orchestration_version"
   ],
   "title": "ConversationResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationRunResponse"></a>
+
+## ConversationRunResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "status",
+    "error"
+  ],
+  "title": "ConversationRunResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ConversationTurnResponse"></a>
+
+## ConversationTurnResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `conversation_id` | string (uuid) | 是 | `format="uuid"` |
+| `sequence` | integer | 是 | — |
+| `body` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `reply` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `status` | string | 是 | — |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `final_agent` | [FinalAgentResponse](schemas.md#schema-FinalAgentResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/FinalAgentResponse"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "body": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Body"
+    },
+    "conversation_id": {
+      "format": "uuid",
+      "title": "Conversation Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "final_agent": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/FinalAgentResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "reply": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reply"
+    },
+    "sequence": {
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "conversation_id",
+    "sequence",
+    "body",
+    "reply",
+    "status",
+    "error_code",
+    "final_agent"
+  ],
+  "title": "ConversationTurnResponse",
   "type": "object"
 }
 ```
@@ -15530,91 +13040,6 @@
 }
 ```
 
-<a id="schema-CredentialRequest"></a>
-
-## CredentialRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `permissions` | array&lt;string&gt; | 是 | `maxItems=16`; `minItems=1` |
-| `lifetime_hours` | integer | 否 | `default=24`; `maximum=2160.0`; `minimum=1.0` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "lifetime_hours": {
-      "default": 24,
-      "maximum": 2160.0,
-      "minimum": 1.0,
-      "title": "Lifetime Hours",
-      "type": "integer"
-    },
-    "permissions": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 16,
-      "minItems": 1,
-      "title": "Permissions",
-      "type": "array"
-    }
-  },
-  "required": [
-    "permissions"
-  ],
-  "title": "CredentialRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-CredentialResponse"></a>
-
-## CredentialResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `token` | string | 是 | — |
-| `expires_at` | string (date-time) | 是 | `format="date-time"` |
-| `permissions` | array&lt;string&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "expires_at": {
-      "format": "date-time",
-      "title": "Expires At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "permissions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Permissions",
-      "type": "array"
-    },
-    "token": {
-      "title": "Token",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "token",
-    "expires_at",
-    "permissions"
-  ],
-  "title": "CredentialResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-CurrentUserResponse"></a>
 
 ## CurrentUserResponse
@@ -15717,227 +13142,6 @@
     "display_name"
   ],
   "title": "CurrentUserUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-DeadLetterJobsResponse"></a>
-
-## DeadLetterJobsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[JobPayload](schemas.md#schema-JobPayload)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/JobPayload"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "title": "DeadLetterJobsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-DeploymentRequest"></a>
-
-## DeploymentRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `expected_revision` | integer | 是 | `minimum=0.0` |
-| `template_id` | string (uuid) | 是 | `format="uuid"` |
-| `platform_url` | string | 是 | `maxLength=2048` |
-| `permissions` | array&lt;string&gt; | 是 | `maxItems=32`; `minItems=1` |
-| `environment` | object | 否 | `additionalProperties={"format": "password", "type": "string", "writeOnly": true}`; `maxProperties=32` |
-| `desired_state` | string | 否 | `default="running"`; `enum=["running", "stopped"]` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "desired_state": {
-      "default": "running",
-      "enum": [
-        "running",
-        "stopped"
-      ],
-      "title": "Desired State",
-      "type": "string"
-    },
-    "environment": {
-      "additionalProperties": {
-        "format": "password",
-        "type": "string",
-        "writeOnly": true
-      },
-      "maxProperties": 32,
-      "title": "Environment",
-      "type": "object"
-    },
-    "expected_revision": {
-      "minimum": 0.0,
-      "title": "Expected Revision",
-      "type": "integer"
-    },
-    "permissions": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 32,
-      "minItems": 1,
-      "title": "Permissions",
-      "type": "array"
-    },
-    "platform_url": {
-      "maxLength": 2048,
-      "title": "Platform Url",
-      "type": "string"
-    },
-    "template_id": {
-      "format": "uuid",
-      "title": "Template Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "expected_revision",
-    "template_id",
-    "platform_url",
-    "permissions"
-  ],
-  "title": "DeploymentRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-DeploymentView"></a>
-
-## DeploymentView
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `install_id` | string (uuid) | 是 | `format="uuid"` |
-| `template_id` | string (uuid) | 是 | `format="uuid"` |
-| `image` | string | 是 | — |
-| `desired_state` | string | 是 | — |
-| `status` | string | 是 | — |
-| `revision` | integer | 是 | — |
-| `applied_revision` | integer | 是 | — |
-| `runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `attempts` | integer | 是 | — |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `next_check_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "applied_revision": {
-      "title": "Applied Revision",
-      "type": "integer"
-    },
-    "attempts": {
-      "title": "Attempts",
-      "type": "integer"
-    },
-    "desired_state": {
-      "title": "Desired State",
-      "type": "string"
-    },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "image": {
-      "title": "Image",
-      "type": "string"
-    },
-    "install_id": {
-      "format": "uuid",
-      "title": "Install Id",
-      "type": "string"
-    },
-    "next_check_at": {
-      "format": "date-time",
-      "title": "Next Check At",
-      "type": "string"
-    },
-    "revision": {
-      "title": "Revision",
-      "type": "integer"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "template_id": {
-      "format": "uuid",
-      "title": "Template Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "install_id",
-    "template_id",
-    "image",
-    "desired_state",
-    "status",
-    "revision",
-    "applied_revision",
-    "runtime_id",
-    "attempts",
-    "error_code",
-    "next_check_at"
-  ],
-  "title": "DeploymentView",
   "type": "object"
 }
 ```
@@ -16316,117 +13520,6 @@
 }
 ```
 
-<a id="schema-DownloadRequest"></a>
-
-## DownloadRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `request_key` | string | 是 | `pattern="^[a-zA-Z0-9_.-]{1,120}$"` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "request_key": {
-      "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
-      "title": "Request Key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "request_key"
-  ],
-  "title": "DownloadRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-DownloadResponse"></a>
-
-## DownloadResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `source_id` | string (uuid) | 是 | `format="uuid"` |
-| `candidate_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `status` | string | 是 | — |
-| `attempts` | integer | 是 | — |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "attempts": {
-      "title": "Attempts",
-      "type": "integer"
-    },
-    "candidate_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Candidate Id"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "source_id": {
-      "format": "uuid",
-      "title": "Source Id",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "source_id",
-    "candidate_id",
-    "status",
-    "attempts",
-    "error_code"
-  ],
-  "title": "DownloadResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-EffectiveCapabilityCatalogResponse"></a>
 
 ## EffectiveCapabilityCatalogResponse
@@ -16722,137 +13815,6 @@
 }
 ```
 
-<a id="schema-EnrollmentTokenCreateRequest"></a>
-
-## EnrollmentTokenCreateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `expires_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "expires_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Expires At"
-    },
-    "name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "name"
-  ],
-  "title": "EnrollmentTokenCreateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-EnrollmentTokenCreateResponse"></a>
-
-## EnrollmentTokenCreateResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `expires_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `used_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `token` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "expires_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Expires At"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "token": {
-      "title": "Token",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "used_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Used At"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "name",
-    "status",
-    "expires_at",
-    "used_at",
-    "token"
-  ],
-  "title": "EnrollmentTokenCreateResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-ErrorInfo"></a>
 
 ## ErrorInfo
@@ -17015,110 +13977,148 @@
 }
 ```
 
-<a id="schema-ExecutionResponse"></a>
+<a id="schema-EvidenceCorrelationResponse"></a>
 
-## ExecutionResponse
+## EvidenceCorrelationResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `turn_id` | string (uuid) | 是 | `format="uuid"` |
-| `task_id` | string (uuid) | 是 | `format="uuid"` |
-| `runs` | array&lt;[ExecutionRunResponse](schemas.md#schema-ExecutionRunResponse)&gt; | 是 | — |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `trace_ids` | array&lt;string&gt; | 是 | — |
+| `request_ids` | array&lt;string&gt; | 是 | — |
+| `task_ids` | array&lt;string (uuid)&gt; | 是 | — |
+| `run_ids` | array&lt;string (uuid)&gt; | 是 | — |
+| `worker_ids` | array&lt;string&gt; | 是 | — |
+| `runtime_ids` | array&lt;string&gt; | 是 | — |
+| `evidence_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
+| `sampled_sources` | array&lt;string&gt; | 是 | — |
+| `drilldowns` | object | 是 | `additionalProperties={"type": "string"}` |
 
 ```json
 {
   "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "runs": {
-      "items": {
-        "$ref": "#/components/schemas/ExecutionRunResponse"
+    "drilldowns": {
+      "additionalProperties": {
+        "type": "string"
       },
-      "title": "Runs",
+      "title": "Drilldowns",
+      "type": "object"
+    },
+    "evidence_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Evidence Counts",
+      "type": "object"
+    },
+    "request_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Request Ids",
       "type": "array"
     },
-    "task_id": {
-      "format": "uuid",
-      "title": "Task Id",
-      "type": "string"
+    "run_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Run Ids",
+      "type": "array"
     },
-    "turn_id": {
-      "format": "uuid",
-      "title": "Turn Id",
-      "type": "string"
+    "runtime_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Runtime Ids",
+      "type": "array"
     },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
+    "sampled_sources": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Sampled Sources",
+      "type": "array"
+    },
+    "task_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Task Ids",
+      "type": "array"
+    },
+    "trace_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Trace Ids",
+      "type": "array"
+    },
+    "worker_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Worker Ids",
+      "type": "array"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
       "type": "string"
     }
   },
   "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "turn_id",
-    "task_id",
-    "runs"
+    "workspace_id",
+    "trace_ids",
+    "request_ids",
+    "task_ids",
+    "run_ids",
+    "worker_ids",
+    "runtime_ids",
+    "evidence_counts",
+    "sampled_sources",
+    "drilldowns"
   ],
-  "title": "ExecutionResponse",
+  "title": "EvidenceCorrelationResponse",
   "type": "object"
 }
 ```
 
-<a id="schema-ExecutionRunResponse"></a>
+<a id="schema-ExecutionKind"></a>
 
-## ExecutionRunResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+## ExecutionKind
 
 ```json
 {
-  "properties": {
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "status",
-    "error"
+  "enum": [
+    "conversation",
+    "agent",
+    "orchestration",
+    "team_orchestration",
+    "task_plan",
+    "mcp_control",
+    "plugin_download",
+    "sandbox_control",
+    "sandbox_cleanup",
+    "archive_export",
+    "archive_verify",
+    "archive_restore_drill",
+    "memory_index",
+    "memory_embed",
+    "knowledge_ingest",
+    "webhook_delivery",
+    "secret_reencrypt",
+    "model_provider_health",
+    "audit_integrity",
+    "admin_operation",
+    "entry_event",
+    "reply_delivery",
+    "schedule_control",
+    "schedule_tick"
   ],
-  "title": "ExecutionRunResponse",
-  "type": "object"
+  "title": "ExecutionKind",
+  "type": "string"
 }
 ```
 
@@ -17198,42 +14198,39 @@
 }
 ```
 
-<a id="schema-FailedJobInspectionResponse"></a>
+<a id="schema-FailureCodeCount"></a>
 
-## FailedJobInspectionResponse
+## FailureCodeCount
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `runs` | array&lt;[AgentRunResponse](schemas.md#schema-AgentRunResponse)&gt; | 是 | — |
-| `total` | integer | 是 | — |
+| `code` | string | 是 | — |
+| `count` | integer | 是 | — |
 
 ```json
 {
   "properties": {
-    "runs": {
-      "items": {
-        "$ref": "#/components/schemas/AgentRunResponse"
-      },
-      "title": "Runs",
-      "type": "array"
+    "code": {
+      "title": "Code",
+      "type": "string"
     },
-    "total": {
-      "title": "Total",
+    "count": {
+      "title": "Count",
       "type": "integer"
     }
   },
   "required": [
-    "runs",
-    "total"
+    "code",
+    "count"
   ],
-  "title": "FailedJobInspectionResponse",
+  "title": "FailureCodeCount",
   "type": "object"
 }
 ```
 
-<a id="schema-FileLimits"></a>
+<a id="schema-FileIOLimits"></a>
 
-## FileLimits
+## FileIOLimits
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -17302,7 +14299,7 @@
       "type": "integer"
     }
   },
-  "title": "FileLimits",
+  "title": "FileIOLimits",
   "type": "object"
 }
 ```
@@ -17444,70 +14441,6 @@
     "latest_version"
   ],
   "title": "FinalOutputArtifactHistoryResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-GrantRequest"></a>
-
-## GrantRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | `maxItems=7`; `uniqueItems=true` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "actions": {
-      "items": {
-        "$ref": "#/components/schemas/ResourceAction"
-      },
-      "maxItems": 7,
-      "title": "Actions",
-      "type": "array",
-      "uniqueItems": true
-    }
-  },
-  "required": [
-    "actions"
-  ],
-  "title": "GrantRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-GrantResponse"></a>
-
-## GrantResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `user_id` | string (uuid) | 是 | `format="uuid"` |
-| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "actions": {
-      "items": {
-        "$ref": "#/components/schemas/ResourceAction"
-      },
-      "title": "Actions",
-      "type": "array"
-    },
-    "user_id": {
-      "format": "uuid",
-      "title": "User Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "user_id",
-    "actions"
-  ],
-  "title": "GrantResponse",
   "type": "object"
 }
 ```
@@ -17700,45 +14633,6 @@
 }
 ```
 
-<a id="schema-HistoryResponse"></a>
-
-## HistoryResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `values` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "values": {
-      "additionalProperties": true,
-      "title": "Values",
-      "type": "object"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "values"
-  ],
-  "title": "HistoryResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-HybridMemoryRetrievalPolicyRequest"></a>
 
 ## HybridMemoryRetrievalPolicyRequest
@@ -17819,574 +14713,118 @@
 }
 ```
 
-<a id="schema-IntegrityResponse"></a>
+<a id="schema-IncomingMessage"></a>
 
-## IntegrityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_name` | string | 是 | — |
-| `status` | string | 是 | `enum=["missing", "invalid", "stale", "valid"]` |
-| `stale` | boolean | 是 | — |
-| `latest` | [AuditIntegrityCheckResponse](schemas.md#schema-AuditIntegrityCheckResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/AuditIntegrityCheckResponse"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "latest": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/AuditIntegrityCheckResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "stale": {
-      "title": "Stale",
-      "type": "boolean"
-    },
-    "status": {
-      "enum": [
-        "missing",
-        "invalid",
-        "stale",
-        "valid"
-      ],
-      "title": "Status",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    },
-    "workspace_name": {
-      "title": "Workspace Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "workspace_name",
-    "status",
-    "stale",
-    "latest"
-  ],
-  "title": "IntegrityResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-JobClaimResponse"></a>
-
-## JobClaimResponse
+## IncomingMessage
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `claim_id` | string (uuid) | 是 | `format="uuid"` |
-| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `claimed_at` | string (date-time) | 是 | `format="date-time"` |
-| `project` | [SelfHostedProjectContractResponse](schemas.md#schema-SelfHostedProjectContractResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/SelfHostedProjectContractResponse"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "format": "uuid",
-      "title": "Agent Run Id",
-      "type": "string"
-    },
-    "claim_id": {
-      "format": "uuid",
-      "title": "Claim Id",
-      "type": "string"
-    },
-    "claimed_at": {
-      "format": "date-time",
-      "title": "Claimed At",
-      "type": "string"
-    },
-    "project": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/SelfHostedProjectContractResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "claim_id",
-    "agent_run_id",
-    "status",
-    "claimed_at",
-    "project"
-  ],
-  "title": "JobClaimResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-JobCompleteRequest"></a>
-
-## JobCompleteRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | `pattern="^(completed&#124;failed)$"` |
-| `output` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "output": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Output"
-    },
-    "status": {
-      "pattern": "^(completed|failed)$",
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "status"
-  ],
-  "title": "JobCompleteRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-JobCompleteResponse"></a>
-
-## JobCompleteResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `claim_id` | string (uuid) | 是 | `format="uuid"` |
-| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `completed_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "format": "uuid",
-      "title": "Agent Run Id",
-      "type": "string"
-    },
-    "claim_id": {
-      "format": "uuid",
-      "title": "Claim Id",
-      "type": "string"
-    },
-    "completed_at": {
-      "format": "date-time",
-      "title": "Completed At",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "claim_id",
-    "agent_run_id",
-    "status",
-    "completed_at"
-  ],
-  "title": "JobCompleteResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-JobPayload"></a>
-
-## JobPayload
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `job_id` | string (uuid) | 否 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `job_type` | [JobType](schemas.md#schema-JobType) | 是 | — |
-| `resource_id` | string (uuid) | 是 | `format="uuid"` |
-| `idempotency_key` | string | 是 | — |
-| `requested_by_user_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `requested_by_agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `execution_identity` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `routing` | object | 否 | `additionalProperties=true` |
-| `priority` | integer | 否 | `default=0` |
-| `attempt` | integer | 否 | `default=0` |
-| `max_attempts` | integer | 否 | `default=3` |
-| `last_error` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `last_error_type` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `last_failed_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `request_id` | string anyOf null | 否 | `anyOf=[{"maxLength": 80, "type": "string"}, {"type": "null"}]` |
-| `trace_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `span_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `parent_span_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 否 | `format="date-time"` |
+| `event_id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `conversation_id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `sender_id` | string | 是 | `maxLength=160`; `minLength=1` |
+| `occurred_at` | string (date-time) | 是 | `format="date-time"` |
+| `text` | string | 否 | `default=""`; `maxLength=16000` |
+| `contract_version` | integer | 否 | `default=1`; `minimum=1.0` |
+| `data` | object | 否 | `additionalProperties=true`; `maxProperties=64` |
+| `action` | string | 否 | `default="start"`; `enum=["start", "follow_up", "pause", "resume", "cancel"]` |
+| `reply_to_event_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `attachments` | array&lt;[MessageAttachment](schemas.md#schema-MessageAttachment)&gt; | 否 | `maxItems=5` |
 
 ```json
 {
   "additionalProperties": false,
   "properties": {
-    "attempt": {
-      "default": 0,
-      "title": "Attempt",
-      "type": "integer"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "execution_identity": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Execution Identity"
-    },
-    "idempotency_key": {
-      "title": "Idempotency Key",
-      "type": "string"
-    },
-    "job_id": {
-      "format": "uuid",
-      "title": "Job Id",
-      "type": "string"
-    },
-    "job_type": {
-      "$ref": "#/components/schemas/JobType"
-    },
-    "last_error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Error"
-    },
-    "last_error_type": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Error Type"
-    },
-    "last_failed_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Failed At"
-    },
-    "max_attempts": {
-      "default": 3,
-      "title": "Max Attempts",
-      "type": "integer"
-    },
-    "parent_span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Parent Span Id"
-    },
-    "priority": {
-      "default": 0,
-      "title": "Priority",
-      "type": "integer"
-    },
-    "request_id": {
-      "anyOf": [
-        {
-          "maxLength": 80,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Request Id"
-    },
-    "requested_by_agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Requested By Agent Run Id"
-    },
-    "requested_by_user_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Requested By User Id"
-    },
-    "resource_id": {
-      "format": "uuid",
-      "title": "Resource Id",
-      "type": "string"
-    },
-    "routing": {
-      "additionalProperties": true,
-      "title": "Routing",
-      "type": "object"
-    },
-    "span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Span Id"
-    },
-    "trace_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Trace Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "job_type",
-    "resource_id",
-    "idempotency_key"
-  ],
-  "title": "JobPayload",
-  "type": "object"
-}
-```
-
-<a id="schema-JobResponse"></a>
-
-## JobResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `action` | string | 是 | — |
-| `tag` | string | 是 | — |
-| `status` | string | 是 | — |
-| `phase` | string | 是 | — |
-| `plan` | object | 是 | `additionalProperties=true` |
-| `plan_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `backup_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `approved_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
     "action": {
+      "default": "start",
+      "enum": [
+        "start",
+        "follow_up",
+        "pause",
+        "resume",
+        "cancel"
+      ],
       "title": "Action",
       "type": "string"
     },
-    "approved_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Approved At"
+    "attachments": {
+      "items": {
+        "$ref": "#/components/schemas/MessageAttachment"
+      },
+      "maxItems": 5,
+      "title": "Attachments",
+      "type": "array"
     },
-    "backup_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Backup Id"
+    "contract_version": {
+      "default": 1,
+      "minimum": 1.0,
+      "title": "Contract Version",
+      "type": "integer"
     },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
+    "conversation_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Conversation Id",
       "type": "string"
     },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "phase": {
-      "title": "Phase",
-      "type": "string"
-    },
-    "plan": {
+    "data": {
       "additionalProperties": true,
-      "title": "Plan",
+      "maxProperties": 64,
+      "title": "Data",
       "type": "object"
     },
-    "plan_sha256": {
+    "event_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "reply_to_event_id": {
       "anyOf": [
         {
+          "format": "uuid",
           "type": "string"
         },
         {
           "type": "null"
         }
       ],
-      "title": "Plan Sha256"
+      "title": "Reply To Event Id"
     },
-    "status": {
-      "title": "Status",
+    "sender_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Sender Id",
       "type": "string"
     },
-    "tag": {
-      "title": "Tag",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
+    "text": {
+      "default": "",
+      "maxLength": 16000,
+      "title": "Text",
       "type": "string"
     }
   },
   "required": [
-    "id",
-    "action",
-    "tag",
-    "status",
-    "phase",
-    "plan",
-    "plan_sha256",
-    "error_code",
-    "backup_id",
-    "approved_at",
-    "created_at",
-    "updated_at"
+    "event_id",
+    "conversation_id",
+    "sender_id",
+    "occurred_at"
   ],
-  "title": "JobResponse",
+  "title": "IncomingMessage",
   "type": "object"
 }
 ```
 
-<a id="schema-JobType"></a>
+<a id="schema-JsonValue"></a>
 
-## JobType
+## JsonValue
 
 ```json
-{
-  "enum": [
-    "conversation.advance",
-    "agent.run",
-    "mcp.process_control",
-    "task.plan",
-    "team.execution_loop",
-    "runtime.control",
-    "runtime.cleanup",
-    "workspace.archive_export",
-    "memory.index",
-    "memory.embed",
-    "knowledge.ingest",
-    "webhook.delivery",
-    "secret.reencrypt",
-    "model_provider.health_check",
-    "audit.integrity_check"
-  ],
-  "title": "JobType",
-  "type": "string"
-}
+{}
 ```
 
 <a id="schema-KnowledgeCitationResponse"></a>
@@ -19302,38 +15740,592 @@
 }
 ```
 
-<a id="schema-LocalFileReferenceRequest"></a>
+<a id="schema-LatestTaskMessage"></a>
 
-## LocalFileReferenceRequest
+## LatestTaskMessage
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `task_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `path` | string | 是 | `maxLength=1024`; `minLength=1` |
-| `label` | string | 否 | `default=""`; `maxLength=240` |
-| `metadata` | object | 否 | `additionalProperties=true` |
+| `task_id` | string (uuid) | 是 | `format="uuid"` |
+| `message` | [AgentMessageResponse](schemas.md#schema-AgentMessageResponse) | 是 | — |
 
 ```json
 {
   "properties": {
-    "label": {
-      "default": "",
-      "maxLength": 240,
-      "title": "Label",
-      "type": "string"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "path": {
-      "maxLength": 1024,
-      "minLength": 1,
-      "title": "Path",
-      "type": "string"
+    "message": {
+      "$ref": "#/components/schemas/AgentMessageResponse"
     },
     "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "message"
+  ],
+  "title": "LatestTaskMessage",
+  "type": "object"
+}
+```
+
+<a id="schema-LatestTeamMessage"></a>
+
+## LatestTeamMessage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `team_id` | string (uuid) | 是 | `format="uuid"` |
+| `message` | [AgentMessageResponse](schemas.md#schema-AgentMessageResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "message": {
+      "$ref": "#/components/schemas/AgentMessageResponse"
+    },
+    "team_id": {
+      "format": "uuid",
+      "title": "Team Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "team_id",
+    "message"
+  ],
+  "title": "LatestTeamMessage",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCatalogServerResponse"></a>
+
+## MCPCatalogServerResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `server_type` | string | 是 | — |
+| `visibility` | string | 是 | — |
+| `status` | string | 是 | — |
+| `health_status` | string | 是 | — |
+| `last_health_check_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `last_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovery_status` | string | 否 | `default="never"` |
+| `discovery_version` | integer | 否 | `default=0` |
+| `discovered_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `discovery_checksum` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovery_error` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 是 | — |
+| `executable` | boolean | 是 | — |
+| `blocked_reasons` | array&lt;string&gt; | 是 | — |
+| `credential_status` | string | 是 | — |
+| `credential_count` | integer | 是 | — |
+| `workspace_credential_count` | integer | 是 | — |
+| `connection_summary` | object | 是 | `additionalProperties=true` |
+| `usage` | [MCPCatalogUsageResponse](schemas.md#schema-MCPCatalogUsageResponse) | 是 | — |
+| `tools` | array&lt;[MCPCatalogToolResponse](schemas.md#schema-MCPCatalogToolResponse)&gt; | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "blocked_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blocked Reasons",
+      "type": "array"
+    },
+    "connection_summary": {
+      "additionalProperties": true,
+      "title": "Connection Summary",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "credential_count": {
+      "title": "Credential Count",
+      "type": "integer"
+    },
+    "credential_status": {
+      "title": "Credential Status",
+      "type": "string"
+    },
+    "discovered_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovered At"
+    },
+    "discovery_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Checksum"
+    },
+    "discovery_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Error"
+    },
+    "discovery_status": {
+      "default": "never",
+      "title": "Discovery Status",
+      "type": "string"
+    },
+    "discovery_version": {
+      "default": 0,
+      "title": "Discovery Version",
+      "type": "integer"
+    },
+    "executable": {
+      "title": "Executable",
+      "type": "boolean"
+    },
+    "execution_mode": {
+      "title": "Execution Mode",
+      "type": "string"
+    },
+    "health_status": {
+      "title": "Health Status",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "last_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Error"
+    },
+    "last_health_check_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Health Check At"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "server_type": {
+      "title": "Server Type",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "tools": {
+      "items": {
+        "$ref": "#/components/schemas/MCPCatalogToolResponse"
+      },
+      "title": "Tools",
+      "type": "array"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/components/schemas/MCPCatalogUsageResponse"
+    },
+    "visibility": {
+      "title": "Visibility",
+      "type": "string"
+    },
+    "workspace_credential_count": {
+      "title": "Workspace Credential Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "server_type",
+    "visibility",
+    "status",
+    "health_status",
+    "last_health_check_at",
+    "last_error",
+    "execution_mode",
+    "executable",
+    "blocked_reasons",
+    "credential_status",
+    "credential_count",
+    "workspace_credential_count",
+    "connection_summary",
+    "usage",
+    "tools",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "MCPCatalogServerResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCatalogToolPolicySummaryResponse"></a>
+
+## MCPCatalogToolPolicySummaryResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `timeout_seconds` | integer | 是 | — |
+| `max_input_bytes` | integer | 是 | — |
+| `max_output_bytes` | integer | 是 | — |
+| `max_calls_per_run` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `max_calls_per_hour` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `current_hour_call_count` | integer | 是 | — |
+| `hourly_limit_remaining` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `limit_window_seconds` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "current_hour_call_count": {
+      "title": "Current Hour Call Count",
+      "type": "integer"
+    },
+    "hourly_limit_remaining": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Hourly Limit Remaining"
+    },
+    "limit_window_seconds": {
+      "title": "Limit Window Seconds",
+      "type": "integer"
+    },
+    "max_calls_per_hour": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Max Calls Per Hour"
+    },
+    "max_calls_per_run": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Max Calls Per Run"
+    },
+    "max_input_bytes": {
+      "title": "Max Input Bytes",
+      "type": "integer"
+    },
+    "max_output_bytes": {
+      "title": "Max Output Bytes",
+      "type": "integer"
+    },
+    "timeout_seconds": {
+      "title": "Timeout Seconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "timeout_seconds",
+    "max_input_bytes",
+    "max_output_bytes",
+    "max_calls_per_run",
+    "max_calls_per_hour",
+    "current_hour_call_count",
+    "hourly_limit_remaining",
+    "limit_window_seconds"
+  ],
+  "title": "MCPCatalogToolPolicySummaryResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCatalogToolResponse"></a>
+
+## MCPCatalogToolResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `tool_name` | string | 是 | — |
+| `title` | string | 否 | `default=""` |
+| `description` | string | 是 | — |
+| `input_schema` | object | 是 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `requires_approval` | boolean | 是 | — |
+| `risk_level` | string | 是 | — |
+| `policy` | object | 是 | `additionalProperties=true` |
+| `policy_summary` | [MCPCatalogToolPolicySummaryResponse](schemas.md#schema-MCPCatalogToolPolicySummaryResponse) | 是 | — |
+| `status` | string | 是 | — |
+| `discovery_source` | string | 否 | `default="manual"` |
+| `discovery_status` | string | 否 | `default="manual"` |
+| `discovery_checksum` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovered_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `usage` | [MCPCatalogUsageResponse](schemas.md#schema-MCPCatalogUsageResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capability Key"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "discovered_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovered At"
+    },
+    "discovery_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Checksum"
+    },
+    "discovery_source": {
+      "default": "manual",
+      "title": "Discovery Source",
+      "type": "string"
+    },
+    "discovery_status": {
+      "default": "manual",
+      "title": "Discovery Status",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "policy": {
+      "additionalProperties": true,
+      "title": "Policy",
+      "type": "object"
+    },
+    "policy_summary": {
+      "$ref": "#/components/schemas/MCPCatalogToolPolicySummaryResponse"
+    },
+    "requires_approval": {
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "risk_level": {
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    },
+    "tool_name": {
+      "title": "Tool Name",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/components/schemas/MCPCatalogUsageResponse"
+    }
+  },
+  "required": [
+    "id",
+    "tool_name",
+    "description",
+    "input_schema",
+    "capability_key",
+    "requires_approval",
+    "risk_level",
+    "policy",
+    "policy_summary",
+    "status",
+    "usage"
+  ],
+  "title": "MCPCatalogToolResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCatalogUsageResponse"></a>
+
+## MCPCatalogUsageResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `call_count` | integer | 是 | — |
+| `failed_call_count` | integer | 是 | — |
+| `last_call_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `last_call_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `last_error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "call_count": {
+      "title": "Call Count",
+      "type": "integer"
+    },
+    "failed_call_count": {
+      "title": "Failed Call Count",
+      "type": "integer"
+    },
+    "last_call_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Call At"
+    },
+    "last_call_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Call Status"
+    },
+    "last_error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Error Code"
+    }
+  },
+  "required": [
+    "call_count",
+    "failed_call_count",
+    "last_call_at",
+    "last_call_status",
+    "last_error_code"
+  ],
+  "title": "MCPCatalogUsageResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCredentialReferenceCreateRequest"></a>
+
+## MCPCredentialReferenceCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `provider` | string | 是 | `maxLength=80`; `minLength=1` |
+| `external_ref` | string | 否 | `default=""`; `maxLength=512` |
+| `secret_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `scopes` | array&lt;string&gt; | 否 | — |
+
+```json
+{
+  "properties": {
+    "external_ref": {
+      "default": "",
+      "maxLength": 512,
+      "title": "External Ref",
+      "type": "string"
+    },
+    "mcp_server_id": {
       "anyOf": [
         {
           "format": "uuid",
@@ -19343,20 +16335,52 @@
           "type": "null"
         }
       ],
-      "title": "Task Id"
+      "title": "Mcp Server Id"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+    },
+    "secret_payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Secret Payload"
     }
   },
   "required": [
-    "path"
+    "name",
+    "provider"
   ],
-  "title": "LocalFileReferenceRequest",
+  "title": "MCPCredentialReferenceCreateRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-LocalFileReferenceResponse"></a>
+<a id="schema-MCPCredentialReferenceResponse"></a>
 
-## LocalFileReferenceResponse
+## MCPCredentialReferenceResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19364,38 +16388,1462 @@
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `path` | string | 是 | — |
-| `label` | string | 是 | — |
-| `file_metadata` | object | 是 | `additionalProperties=true` |
+| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `name` | string | 是 | — |
+| `provider` | string | 是 | — |
+| `secret_fingerprint` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `encryption_key_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `scopes` | array&lt;string&gt; | 是 | — |
 | `status` | string | 是 | — |
+| `configuration_version` | integer | 是 | — |
+| `external_ref_configured` | boolean | 是 | `readOnly=true` |
+| `external_ref_kind` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]`; `readOnly=true` |
+| `secret_metadata` | object | 是 | `additionalProperties=true`; `readOnly=true` |
 
 ```json
 {
   "properties": {
+    "configuration_version": {
+      "title": "Configuration Version",
+      "type": "integer"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
       "type": "string"
     },
-    "file_metadata": {
-      "additionalProperties": true,
-      "title": "File Metadata",
-      "type": "object"
+    "encryption_key_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Encryption Key Id"
+    },
+    "external_ref_configured": {
+      "readOnly": true,
+      "title": "External Ref Configured",
+      "type": "boolean"
+    },
+    "external_ref_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "readOnly": true,
+      "title": "External Ref Kind"
     },
     "id": {
       "format": "uuid",
       "title": "Id",
       "type": "string"
     },
-    "label": {
-      "title": "Label",
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "name": {
+      "title": "Name",
       "type": "string"
     },
-    "path": {
-      "title": "Path",
+    "provider": {
+      "title": "Provider",
       "type": "string"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+    },
+    "secret_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Secret Fingerprint"
+    },
+    "secret_metadata": {
+      "additionalProperties": true,
+      "readOnly": true,
+      "title": "Secret Metadata",
+      "type": "object"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "mcp_server_id",
+    "name",
+    "provider",
+    "secret_fingerprint",
+    "encryption_key_id",
+    "scopes",
+    "status",
+    "configuration_version",
+    "external_ref_configured",
+    "external_ref_kind",
+    "secret_metadata"
+  ],
+  "title": "MCPCredentialReferenceResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCredentialReferenceRotateRequest"></a>
+
+## MCPCredentialReferenceRotateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `provider` | string anyOf null | 否 | `anyOf=[{"maxLength": 80, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `external_ref` | string anyOf null | 否 | `anyOf=[{"maxLength": 512, "type": "string"}, {"type": "null"}]` |
+| `secret_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "external_ref": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "External Ref"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Provider"
+    },
+    "secret_payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Secret Payload"
+    }
+  },
+  "title": "MCPCredentialReferenceRotateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPCredentialReferenceUpdateRequest"></a>
+
+## MCPCredentialReferenceUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `scopes` | array&lt;string&gt; anyOf null | 否 | `anyOf=[{"items": {"type": "string"}, "type": "array"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Name"
+    },
+    "scopes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Scopes"
+    }
+  },
+  "title": "MCPCredentialReferenceUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPDiagnosticNotificationResponse"></a>
+
+## MCPDiagnosticNotificationResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
+| `scope` | string | 是 | — |
+| `mcp_tool_call_log_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `diagnostic` | [MCPErrorDiagnostic](schemas.md#schema-MCPErrorDiagnostic) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/MCPErrorDiagnostic"}, {"type": "null"}]` |
+| `diagnostic_expired` | boolean | 否 | `default=false` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "agent_run_id": {
+      "format": "uuid",
+      "title": "Agent Run Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "diagnostic": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/MCPErrorDiagnostic"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diagnostic_expired": {
+      "default": false,
+      "title": "Diagnostic Expired",
+      "type": "boolean"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "mcp_server_id": {
+      "format": "uuid",
+      "title": "Mcp Server Id",
+      "type": "string"
+    },
+    "mcp_tool_call_log_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Tool Call Log Id"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "agent_run_id",
+    "mcp_server_id",
+    "scope",
+    "created_at"
+  ],
+  "title": "MCPDiagnosticNotificationResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPErrorDiagnostic"></a>
+
+## MCPErrorDiagnostic
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `category` | string | 否 | `default="execution"`; `enum=["network", "authentication", "rate_limit", "http", "protocol", "execution", "cancelled"]` |
+| `phase` | string | 否 | `default="tool"`; `enum=["login", "business_request", "connect", "tool", "control", "discovery"]` |
+| `exception_type` | string anyOf null | 否 | `anyOf=[{"pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,119}$", "type": "string"}, {"type": "null"}]` |
+| `http_status` | integer anyOf null | 否 | `anyOf=[{"maximum": 599.0, "minimum": 100.0, "type": "integer"}, {"type": "null"}]` |
+| `duration_ms` | integer anyOf null | 否 | `anyOf=[{"maximum": 86400000.0, "minimum": 0.0, "type": "integer"}, {"type": "null"}]` |
+| `retryable` | boolean | 否 | `default=false` |
+| `operation_id` | string anyOf null | 否 | `anyOf=[{"pattern": "^[a-f0-9]{32}$", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "category": {
+      "default": "execution",
+      "enum": [
+        "network",
+        "authentication",
+        "rate_limit",
+        "http",
+        "protocol",
+        "execution",
+        "cancelled"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "maximum": 86400000.0,
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Duration Ms"
+    },
+    "exception_type": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,119}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Exception Type"
+    },
+    "http_status": {
+      "anyOf": [
+        {
+          "maximum": 599.0,
+          "minimum": 100.0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Http Status"
+    },
+    "operation_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Operation Id"
+    },
+    "phase": {
+      "default": "tool",
+      "enum": [
+        "login",
+        "business_request",
+        "connect",
+        "tool",
+        "control",
+        "discovery"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    }
+  },
+  "title": "MCPErrorDiagnostic",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerCreateRequest"></a>
+
+## MCPServerCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `server_type` | string | 否 | `default="stdio"`; `enum=["stdio", "streamable_http", "sse", "hosted"]` |
+| `connection` | object | 否 | `additionalProperties=true` |
+| `visibility` | string | 否 | `default="private"`; `pattern="^(private&#124;public)$"` |
+
+```json
+{
+  "properties": {
+    "connection": {
+      "additionalProperties": true,
+      "title": "Connection",
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "server_type": {
+      "default": "stdio",
+      "enum": [
+        "stdio",
+        "streamable_http",
+        "sse",
+        "hosted"
+      ],
+      "title": "Server Type",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "pattern": "^(private|public)$",
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "MCPServerCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerDiscoveryRequest"></a>
+
+## MCPServerDiscoveryRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `credential_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "credential_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Credential Id"
+    }
+  },
+  "title": "MCPServerDiscoveryRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerDiscoveryResponse"></a>
+
+## MCPServerDiscoveryResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `discovery_version` | integer | 是 | — |
+| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `tool_count` | integer | 是 | — |
+| `added_tools` | array&lt;string&gt; | 否 | — |
+| `changed_tools` | array&lt;string&gt; | 否 | — |
+| `removed_tools` | array&lt;string&gt; | 否 | — |
+| `error` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "added_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Added Tools",
+      "type": "array"
+    },
+    "changed_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Changed Tools",
+      "type": "array"
+    },
+    "discovered_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovered At"
+    },
+    "discovery_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Checksum"
+    },
+    "discovery_version": {
+      "title": "Discovery Version",
+      "type": "integer"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "mcp_server_id": {
+      "format": "uuid",
+      "title": "Mcp Server Id",
+      "type": "string"
+    },
+    "removed_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Removed Tools",
+      "type": "array"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "tool_count": {
+      "title": "Tool Count",
+      "type": "integer"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "mcp_server_id",
+    "status",
+    "discovery_version",
+    "discovered_at",
+    "discovery_checksum",
+    "tool_count"
+  ],
+  "title": "MCPServerDiscoveryResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerHealthCheckRequest"></a>
+
+## MCPServerHealthCheckRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `health_status` | string | 是 | `pattern="^(healthy&#124;unhealthy&#124;unknown)$"` |
+| `error_code` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "health_status": {
+      "pattern": "^(healthy|unhealthy|unknown)$",
+      "title": "Health Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "health_status"
+  ],
+  "title": "MCPServerHealthCheckRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerResponse"></a>
+
+## MCPServerResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `server_type` | string | 是 | — |
+| `connection` | object | 是 | `additionalProperties=true` |
+| `visibility` | string | 是 | — |
+| `status` | string | 是 | — |
+| `configuration_version` | integer | 是 | — |
+| `health_status` | string | 是 | — |
+| `last_health_check_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `last_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovery_status` | string | 是 | — |
+| `discovery_version` | integer | 是 | — |
+| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovery_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "configuration_version": {
+      "title": "Configuration Version",
+      "type": "integer"
+    },
+    "connection": {
+      "additionalProperties": true,
+      "title": "Connection",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "discovered_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovered At"
+    },
+    "discovery_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Checksum"
+    },
+    "discovery_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Error"
+    },
+    "discovery_status": {
+      "title": "Discovery Status",
+      "type": "string"
+    },
+    "discovery_version": {
+      "title": "Discovery Version",
+      "type": "integer"
+    },
+    "health_status": {
+      "title": "Health Status",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "last_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Error"
+    },
+    "last_health_check_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Health Check At"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "server_type": {
+      "title": "Server Type",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "visibility": {
+      "title": "Visibility",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "name",
+    "server_type",
+    "connection",
+    "visibility",
+    "status",
+    "configuration_version",
+    "health_status",
+    "last_health_check_at",
+    "last_error",
+    "discovery_status",
+    "discovery_version",
+    "discovered_at",
+    "discovery_checksum",
+    "discovery_error"
+  ],
+  "title": "MCPServerResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPServerUpdateRequest"></a>
+
+## MCPServerUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `connection` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `visibility` | string anyOf null | 否 | `anyOf=[{"pattern": "^(private&#124;public)$", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "connection": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Connection"
+    },
+    "visibility": {
+      "anyOf": [
+        {
+          "pattern": "^(private|public)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Visibility"
+    }
+  },
+  "title": "MCPServerUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolAllowRequest"></a>
+
+## MCPToolAllowRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `title` | string | 否 | `default=""`; `maxLength=240` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `input_schema` | object | 否 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+| `capability_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
+| `requires_approval` | boolean | 否 | `default=false` |
+| `risk_level` | string | 否 | `default="low"`; `maxLength=32` |
+| `policy` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capability Key"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "policy": {
+      "additionalProperties": true,
+      "title": "Policy",
+      "type": "object"
+    },
+    "requires_approval": {
+      "default": false,
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "risk_level": {
+      "default": "low",
+      "maxLength": 32,
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "title": {
+      "default": "",
+      "maxLength": 240,
+      "title": "Title",
+      "type": "string"
+    },
+    "tool_name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool_name"
+  ],
+  "title": "MCPToolAllowRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolAllowResponse"></a>
+
+## MCPToolAllowResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
+| `tool_name` | string | 是 | — |
+| `title` | string | 是 | — |
+| `description` | string | 是 | — |
+| `input_schema` | object | 是 | `additionalProperties=true` |
+| `output_schema` | object | 是 | `additionalProperties=true` |
+| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `requires_approval` | boolean | 是 | — |
+| `risk_level` | string | 是 | — |
+| `policy` | object | 是 | `additionalProperties=true` |
+| `status` | string | 是 | — |
+| `configuration_version` | integer | 是 | — |
+| `discovery_source` | string | 是 | — |
+| `discovery_status` | string | 是 | — |
+| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capability Key"
+    },
+    "configuration_version": {
+      "title": "Configuration Version",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "discovered_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovered At"
+    },
+    "discovery_checksum": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Discovery Checksum"
+    },
+    "discovery_source": {
+      "title": "Discovery Source",
+      "type": "string"
+    },
+    "discovery_status": {
+      "title": "Discovery Status",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "mcp_server_id": {
+      "format": "uuid",
+      "title": "Mcp Server Id",
+      "type": "string"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "policy": {
+      "additionalProperties": true,
+      "title": "Policy",
+      "type": "object"
+    },
+    "requires_approval": {
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "risk_level": {
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "tool_name": {
+      "title": "Tool Name",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "mcp_server_id",
+    "tool_name",
+    "title",
+    "description",
+    "input_schema",
+    "output_schema",
+    "capability_key",
+    "requires_approval",
+    "risk_level",
+    "policy",
+    "status",
+    "configuration_version",
+    "discovery_source",
+    "discovery_status",
+    "discovery_checksum",
+    "discovered_at"
+  ],
+  "title": "MCPToolAllowResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolAllowUpdateRequest"></a>
+
+## MCPToolAllowUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `tool_name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `title` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
+| `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
+| `input_schema` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `output_schema` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `capability_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
+| `requires_approval` | boolean anyOf null | 否 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
+| `risk_level` | string anyOf null | 否 | `anyOf=[{"maxLength": 32, "type": "string"}, {"type": "null"}]` |
+| `policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capability Key"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Description"
+    },
+    "input_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Input Schema"
+    },
+    "output_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Output Schema"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Policy"
+    },
+    "requires_approval": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Requires Approval"
+    },
+    "risk_level": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Risk Level"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "maxLength": 240,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Title"
+    },
+    "tool_name": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Name"
+    }
+  },
+  "title": "MCPToolAllowUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolCallDiagnosticResponse"></a>
+
+## MCPToolCallDiagnosticResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `approval_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | — |
+| `status` | string | 是 | — |
+| `latency_ms` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `argument_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `response_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request` | object | 是 | `additionalProperties=true` |
+| `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Profile Id"
+    },
+    "agent_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Run Id"
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approval Id"
+    },
+    "argument_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Argument Sha256"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latency Ms"
+    },
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Request Id"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response"
+    },
+    "response_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response Sha256"
+    },
+    "runtime_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Id"
+    },
+    "span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Span Id"
     },
     "status": {
       "title": "Status",
@@ -19413,35 +17861,634 @@
       ],
       "title": "Task Id"
     },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
+    "task_step_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Step Id"
+    },
+    "tool_call_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Call Id"
+    },
+    "tool_name": {
+      "title": "Tool Name",
       "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Trace Id"
+    },
+    "worker_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Worker Id"
     },
     "workspace_id": {
       "format": "uuid",
       "title": "Workspace Id",
       "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "mcp_server_id",
+    "agent_run_id",
+    "task_id",
+    "task_step_id",
+    "agent_profile_id",
+    "approval_id",
+    "tool_name",
+    "status",
+    "latency_ms",
+    "argument_sha256",
+    "response_sha256",
+    "error_code",
+    "request_id",
+    "worker_id",
+    "runtime_id",
+    "trace_id",
+    "span_id",
+    "request",
+    "response",
+    "error",
+    "tool_call_id",
+    "created_at"
+  ],
+  "title": "MCPToolCallDiagnosticResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolCallLogRequest"></a>
+
+## MCPToolCallLogRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `approval_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `status` | string | 是 | `maxLength=32`; `minLength=1` |
+| `request` | object | 否 | `additionalProperties=true` |
+| `response` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "agent_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Run Id"
     },
-    "workspace_runtime_id": {
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approval Id"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response"
+    },
+    "status": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    },
+    "tool_name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool_name",
+    "status"
+  ],
+  "title": "MCPToolCallLogRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolCallLogResponse"></a>
+
+## MCPToolCallLogResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `approval_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | — |
+| `status` | string | 是 | — |
+| `latency_ms` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `argument_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `response_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request` | object | 是 | `additionalProperties=true` |
+| `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Profile Id"
+    },
+    "agent_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Run Id"
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approval Id"
+    },
+    "argument_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Argument Sha256"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "id": {
       "format": "uuid",
-      "title": "Workspace Runtime Id",
+      "title": "Id",
+      "type": "string"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latency Ms"
+    },
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Request Id"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response"
+    },
+    "response_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response Sha256"
+    },
+    "runtime_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Id"
+    },
+    "span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Span Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Id"
+    },
+    "task_step_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Step Id"
+    },
+    "tool_call_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Call Id"
+    },
+    "tool_name": {
+      "title": "Tool Name",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Trace Id"
+    },
+    "worker_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Worker Id"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
       "type": "string"
     }
   },
   "required": [
     "id",
-    "created_at",
-    "updated_at",
     "workspace_id",
-    "workspace_runtime_id",
+    "mcp_server_id",
+    "agent_run_id",
     "task_id",
-    "path",
-    "label",
-    "file_metadata",
-    "status"
+    "task_step_id",
+    "agent_profile_id",
+    "approval_id",
+    "tool_name",
+    "status",
+    "latency_ms",
+    "argument_sha256",
+    "response_sha256",
+    "error_code",
+    "request_id",
+    "worker_id",
+    "runtime_id",
+    "trace_id",
+    "span_id",
+    "request",
+    "response",
+    "error",
+    "tool_call_id",
+    "created_at"
   ],
-  "title": "LocalFileReferenceResponse",
+  "title": "MCPToolCallLogResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolDescriptor"></a>
+
+## MCPToolDescriptor
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `server_id` | string (uuid) | 是 | `format="uuid"` |
+| `server_name` | string | 是 | — |
+| `tool_name` | string | 是 | — |
+| `title` | string | 否 | `default=""` |
+| `description` | string | 是 | — |
+| `input_schema` | object | 是 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `requires_approval` | boolean | 是 | — |
+| `risk_level` | string | 是 | — |
+| `policy` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capability Key"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "policy": {
+      "additionalProperties": true,
+      "title": "Policy",
+      "type": "object"
+    },
+    "requires_approval": {
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "risk_level": {
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "server_id": {
+      "format": "uuid",
+      "title": "Server Id",
+      "type": "string"
+    },
+    "server_name": {
+      "title": "Server Name",
+      "type": "string"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    },
+    "tool_name": {
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "server_id",
+    "server_name",
+    "tool_name",
+    "description",
+    "input_schema",
+    "capability_key",
+    "requires_approval",
+    "risk_level",
+    "policy"
+  ],
+  "title": "MCPToolDescriptor",
+  "type": "object"
+}
+```
+
+<a id="schema-MCPToolSelection"></a>
+
+## MCPToolSelection
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_tool_allowlist_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "mcp_server_id": {
+      "format": "uuid",
+      "title": "Mcp Server Id",
+      "type": "string"
+    },
+    "mcp_tool_allowlist_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Tool Allowlist Id"
+    },
+    "tool_name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mcp_server_id",
+    "tool_name"
+  ],
+  "title": "MCPToolSelection",
   "type": "object"
 }
 ```
@@ -19538,9 +18585,9 @@
 }
 ```
 
-<a id="schema-MailConfigurationUpdate"></a>
+<a id="schema-MailConfigurationUpdateRequest"></a>
 
-## MailConfigurationUpdate
+## MailConfigurationUpdateRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19639,14 +18686,14 @@
       "type": "string"
     }
   },
-  "title": "MailConfigurationUpdate",
+  "title": "MailConfigurationUpdateRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-ManagedMcpActionRequest"></a>
+<a id="schema-ManagedMCPActionRequest"></a>
 
-## ManagedMcpActionRequest
+## ManagedMCPActionRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19669,14 +18716,14 @@
   "required": [
     "action"
   ],
-  "title": "ManagedMcpActionRequest",
+  "title": "ManagedMCPActionRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-ManagedMcpCreateRequest"></a>
+<a id="schema-ManagedMCPCreateRequest"></a>
 
-## ManagedMcpCreateRequest
+## ManagedMCPCreateRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19706,14 +18753,14 @@
     "runtime_id",
     "mcpServers"
   ],
-  "title": "ManagedMcpCreateRequest",
+  "title": "ManagedMCPCreateRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-ManagedMcpHostRequest"></a>
+<a id="schema-ManagedMCPEnvironmentRequest"></a>
 
-## ManagedMcpHostRequest
+## ManagedMCPEnvironmentRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19732,14 +18779,14 @@
   "required": [
     "runtime_id"
   ],
-  "title": "ManagedMcpHostRequest",
+  "title": "ManagedMCPEnvironmentRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-ManagedMcpResponse"></a>
+<a id="schema-ManagedMCPResponse"></a>
 
-## ManagedMcpResponse
+## ManagedMCPResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -19837,7 +18884,7 @@
     "last_error",
     "checked_at"
   ],
-  "title": "ManagedMcpResponse",
+  "title": "ManagedMCPResponse",
   "type": "object"
 }
 ```
@@ -20127,2793 +19174,6 @@
     "execution_mode"
   ],
   "title": "MarketplaceListingResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCatalogServerResponse"></a>
-
-## McpCatalogServerResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `server_type` | string | 是 | — |
-| `visibility` | string | 是 | — |
-| `status` | string | 是 | — |
-| `health_status` | string | 是 | — |
-| `last_health_check_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `last_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovery_status` | string | 否 | `default="never"` |
-| `discovery_version` | integer | 否 | `default=0` |
-| `discovered_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `discovery_checksum` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovery_error` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `execution_mode` | string | 是 | — |
-| `executable` | boolean | 是 | — |
-| `blocked_reasons` | array&lt;string&gt; | 是 | — |
-| `credential_status` | string | 是 | — |
-| `credential_count` | integer | 是 | — |
-| `workspace_credential_count` | integer | 是 | — |
-| `connection_summary` | object | 是 | `additionalProperties=true` |
-| `usage` | [McpCatalogUsageResponse](schemas.md#schema-McpCatalogUsageResponse) | 是 | — |
-| `tools` | array&lt;[McpCatalogToolResponse](schemas.md#schema-McpCatalogToolResponse)&gt; | 是 | — |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "blocked_reasons": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Blocked Reasons",
-      "type": "array"
-    },
-    "connection_summary": {
-      "additionalProperties": true,
-      "title": "Connection Summary",
-      "type": "object"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "credential_count": {
-      "title": "Credential Count",
-      "type": "integer"
-    },
-    "credential_status": {
-      "title": "Credential Status",
-      "type": "string"
-    },
-    "discovered_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovered At"
-    },
-    "discovery_checksum": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Checksum"
-    },
-    "discovery_error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Error"
-    },
-    "discovery_status": {
-      "default": "never",
-      "title": "Discovery Status",
-      "type": "string"
-    },
-    "discovery_version": {
-      "default": 0,
-      "title": "Discovery Version",
-      "type": "integer"
-    },
-    "executable": {
-      "title": "Executable",
-      "type": "boolean"
-    },
-    "execution_mode": {
-      "title": "Execution Mode",
-      "type": "string"
-    },
-    "health_status": {
-      "title": "Health Status",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Error"
-    },
-    "last_health_check_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Health Check At"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "server_type": {
-      "title": "Server Type",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "tools": {
-      "items": {
-        "$ref": "#/components/schemas/McpCatalogToolResponse"
-      },
-      "title": "Tools",
-      "type": "array"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "usage": {
-      "$ref": "#/components/schemas/McpCatalogUsageResponse"
-    },
-    "visibility": {
-      "title": "Visibility",
-      "type": "string"
-    },
-    "workspace_credential_count": {
-      "title": "Workspace Credential Count",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "id",
-    "name",
-    "server_type",
-    "visibility",
-    "status",
-    "health_status",
-    "last_health_check_at",
-    "last_error",
-    "execution_mode",
-    "executable",
-    "blocked_reasons",
-    "credential_status",
-    "credential_count",
-    "workspace_credential_count",
-    "connection_summary",
-    "usage",
-    "tools",
-    "created_at",
-    "updated_at"
-  ],
-  "title": "McpCatalogServerResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCatalogToolPolicySummaryResponse"></a>
-
-## McpCatalogToolPolicySummaryResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `timeout_seconds` | integer | 是 | — |
-| `max_input_bytes` | integer | 是 | — |
-| `max_output_bytes` | integer | 是 | — |
-| `max_calls_per_run` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `max_calls_per_hour` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `current_hour_call_count` | integer | 是 | — |
-| `hourly_limit_remaining` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `limit_window_seconds` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "current_hour_call_count": {
-      "title": "Current Hour Call Count",
-      "type": "integer"
-    },
-    "hourly_limit_remaining": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Hourly Limit Remaining"
-    },
-    "limit_window_seconds": {
-      "title": "Limit Window Seconds",
-      "type": "integer"
-    },
-    "max_calls_per_hour": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Max Calls Per Hour"
-    },
-    "max_calls_per_run": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Max Calls Per Run"
-    },
-    "max_input_bytes": {
-      "title": "Max Input Bytes",
-      "type": "integer"
-    },
-    "max_output_bytes": {
-      "title": "Max Output Bytes",
-      "type": "integer"
-    },
-    "timeout_seconds": {
-      "title": "Timeout Seconds",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "timeout_seconds",
-    "max_input_bytes",
-    "max_output_bytes",
-    "max_calls_per_run",
-    "max_calls_per_hour",
-    "current_hour_call_count",
-    "hourly_limit_remaining",
-    "limit_window_seconds"
-  ],
-  "title": "McpCatalogToolPolicySummaryResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCatalogToolResponse"></a>
-
-## McpCatalogToolResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `tool_name` | string | 是 | — |
-| `title` | string | 否 | `default=""` |
-| `description` | string | 是 | — |
-| `input_schema` | object | 是 | `additionalProperties=true` |
-| `output_schema` | object | 否 | `additionalProperties=true` |
-| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `requires_approval` | boolean | 是 | — |
-| `risk_level` | string | 是 | — |
-| `policy` | object | 是 | `additionalProperties=true` |
-| `policy_summary` | [McpCatalogToolPolicySummaryResponse](schemas.md#schema-McpCatalogToolPolicySummaryResponse) | 是 | — |
-| `status` | string | 是 | — |
-| `discovery_source` | string | 否 | `default="manual"` |
-| `discovery_status` | string | 否 | `default="manual"` |
-| `discovery_checksum` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovered_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `usage` | [McpCatalogUsageResponse](schemas.md#schema-McpCatalogUsageResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "capability_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Key"
-    },
-    "description": {
-      "title": "Description",
-      "type": "string"
-    },
-    "discovered_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovered At"
-    },
-    "discovery_checksum": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Checksum"
-    },
-    "discovery_source": {
-      "default": "manual",
-      "title": "Discovery Source",
-      "type": "string"
-    },
-    "discovery_status": {
-      "default": "manual",
-      "title": "Discovery Status",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "input_schema": {
-      "additionalProperties": true,
-      "title": "Input Schema",
-      "type": "object"
-    },
-    "output_schema": {
-      "additionalProperties": true,
-      "title": "Output Schema",
-      "type": "object"
-    },
-    "policy": {
-      "additionalProperties": true,
-      "title": "Policy",
-      "type": "object"
-    },
-    "policy_summary": {
-      "$ref": "#/components/schemas/McpCatalogToolPolicySummaryResponse"
-    },
-    "requires_approval": {
-      "title": "Requires Approval",
-      "type": "boolean"
-    },
-    "risk_level": {
-      "title": "Risk Level",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "title": {
-      "default": "",
-      "title": "Title",
-      "type": "string"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    },
-    "usage": {
-      "$ref": "#/components/schemas/McpCatalogUsageResponse"
-    }
-  },
-  "required": [
-    "id",
-    "tool_name",
-    "description",
-    "input_schema",
-    "capability_key",
-    "requires_approval",
-    "risk_level",
-    "policy",
-    "policy_summary",
-    "status",
-    "usage"
-  ],
-  "title": "McpCatalogToolResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCatalogUsageResponse"></a>
-
-## McpCatalogUsageResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `call_count` | integer | 是 | — |
-| `failed_call_count` | integer | 是 | — |
-| `last_call_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `last_call_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `last_error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "call_count": {
-      "title": "Call Count",
-      "type": "integer"
-    },
-    "failed_call_count": {
-      "title": "Failed Call Count",
-      "type": "integer"
-    },
-    "last_call_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Call At"
-    },
-    "last_call_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Call Status"
-    },
-    "last_error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Error Code"
-    }
-  },
-  "required": [
-    "call_count",
-    "failed_call_count",
-    "last_call_at",
-    "last_call_status",
-    "last_error_code"
-  ],
-  "title": "McpCatalogUsageResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCredentialReferenceCreateRequest"></a>
-
-## McpCredentialReferenceCreateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `provider` | string | 是 | `maxLength=80`; `minLength=1` |
-| `external_ref` | string | 否 | `default=""`; `maxLength=512` |
-| `secret_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `scopes` | array&lt;string&gt; | 否 | — |
-
-```json
-{
-  "properties": {
-    "external_ref": {
-      "default": "",
-      "maxLength": 512,
-      "title": "External Ref",
-      "type": "string"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "provider": {
-      "maxLength": 80,
-      "minLength": 1,
-      "title": "Provider",
-      "type": "string"
-    },
-    "scopes": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Scopes",
-      "type": "array"
-    },
-    "secret_payload": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Secret Payload"
-    }
-  },
-  "required": [
-    "name",
-    "provider"
-  ],
-  "title": "McpCredentialReferenceCreateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCredentialReferenceResponse"></a>
-
-## McpCredentialReferenceResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `name` | string | 是 | — |
-| `provider` | string | 是 | — |
-| `secret_fingerprint` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `encryption_key_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `scopes` | array&lt;string&gt; | 是 | — |
-| `status` | string | 是 | — |
-| `configuration_version` | integer | 是 | — |
-| `external_ref_configured` | boolean | 是 | `readOnly=true` |
-| `external_ref_kind` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]`; `readOnly=true` |
-| `secret_metadata` | object | 是 | `additionalProperties=true`; `readOnly=true` |
-
-```json
-{
-  "properties": {
-    "configuration_version": {
-      "title": "Configuration Version",
-      "type": "integer"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "encryption_key_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Encryption Key Id"
-    },
-    "external_ref_configured": {
-      "readOnly": true,
-      "title": "External Ref Configured",
-      "type": "boolean"
-    },
-    "external_ref_kind": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "readOnly": true,
-      "title": "External Ref Kind"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "provider": {
-      "title": "Provider",
-      "type": "string"
-    },
-    "scopes": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Scopes",
-      "type": "array"
-    },
-    "secret_fingerprint": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Secret Fingerprint"
-    },
-    "secret_metadata": {
-      "additionalProperties": true,
-      "readOnly": true,
-      "title": "Secret Metadata",
-      "type": "object"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "mcp_server_id",
-    "name",
-    "provider",
-    "secret_fingerprint",
-    "encryption_key_id",
-    "scopes",
-    "status",
-    "configuration_version",
-    "external_ref_configured",
-    "external_ref_kind",
-    "secret_metadata"
-  ],
-  "title": "McpCredentialReferenceResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCredentialReferenceRotateRequest"></a>
-
-## McpCredentialReferenceRotateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `provider` | string anyOf null | 否 | `anyOf=[{"maxLength": 80, "minLength": 1, "type": "string"}, {"type": "null"}]` |
-| `external_ref` | string anyOf null | 否 | `anyOf=[{"maxLength": 512, "type": "string"}, {"type": "null"}]` |
-| `secret_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "external_ref": {
-      "anyOf": [
-        {
-          "maxLength": 512,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "External Ref"
-    },
-    "provider": {
-      "anyOf": [
-        {
-          "maxLength": 80,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Provider"
-    },
-    "secret_payload": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Secret Payload"
-    }
-  },
-  "title": "McpCredentialReferenceRotateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpCredentialReferenceUpdateRequest"></a>
-
-## McpCredentialReferenceUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
-| `scopes` | array&lt;string&gt; anyOf null | 否 | `anyOf=[{"items": {"type": "string"}, "type": "array"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "name": {
-      "anyOf": [
-        {
-          "maxLength": 160,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Name"
-    },
-    "scopes": {
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Scopes"
-    }
-  },
-  "title": "McpCredentialReferenceUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobCancellationResponse"></a>
-
-## McpJobCancellationResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `cancel_requested` | boolean | 是 | — |
-
-```json
-{
-  "properties": {
-    "cancel_requested": {
-      "title": "Cancel Requested",
-      "type": "boolean"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "cancel_requested"
-  ],
-  "title": "McpJobCancellationResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobClaimResponse"></a>
-
-## McpJobClaimResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `claimed_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "claimed_at": {
-      "format": "date-time",
-      "title": "Claimed At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "status",
-    "claimed_at"
-  ],
-  "title": "McpJobClaimResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobCompleteRequest"></a>
-
-## McpJobCompleteRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | `pattern="^(completed&#124;failed)$"` |
-| `response_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error_payload` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "error_payload": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Payload"
-    },
-    "response_payload": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response Payload"
-    },
-    "status": {
-      "pattern": "^(completed|failed)$",
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "status"
-  ],
-  "title": "McpJobCompleteRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobCompleteResponse"></a>
-
-## McpJobCompleteResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `completed_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "completed_at": {
-      "format": "date-time",
-      "title": "Completed At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "status",
-    "completed_at"
-  ],
-  "title": "McpJobCompleteResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobStatusBucketResponse"></a>
-
-## McpJobStatusBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | — |
-| `count` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "count": {
-      "title": "Count",
-      "type": "integer"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "status",
-    "count"
-  ],
-  "title": "McpJobStatusBucketResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpJobToolBucketResponse"></a>
-
-## McpJobToolBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `tool_name` | string | 是 | — |
-| `queued` | integer | 是 | — |
-| `claimed` | integer | 是 | — |
-| `completed` | integer | 是 | — |
-| `failed` | integer | 是 | — |
-| `total` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "claimed": {
-      "title": "Claimed",
-      "type": "integer"
-    },
-    "completed": {
-      "title": "Completed",
-      "type": "integer"
-    },
-    "failed": {
-      "title": "Failed",
-      "type": "integer"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "tool_name",
-    "queued",
-    "claimed",
-    "completed",
-    "failed",
-    "total"
-  ],
-  "title": "McpJobToolBucketResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpRestartPolicy"></a>
-
-## McpRestartPolicy
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `max_restarts` | integer | 否 | `default=5`; `maximum=10000.0`; `minimum=0.0` |
-| `stable_after_seconds` | number | 否 | `default=300`; `exclusiveMinimum=0.0` |
-| `initial_backoff_seconds` | number | 否 | `default=2`; `exclusiveMinimum=0.0` |
-| `max_backoff_seconds` | number | 否 | `default=60`; `exclusiveMinimum=0.0` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "initial_backoff_seconds": {
-      "default": 2,
-      "exclusiveMinimum": 0.0,
-      "title": "Initial Backoff Seconds",
-      "type": "number"
-    },
-    "max_backoff_seconds": {
-      "default": 60,
-      "exclusiveMinimum": 0.0,
-      "title": "Max Backoff Seconds",
-      "type": "number"
-    },
-    "max_restarts": {
-      "default": 5,
-      "maximum": 10000.0,
-      "minimum": 0.0,
-      "title": "Max Restarts",
-      "type": "integer"
-    },
-    "stable_after_seconds": {
-      "default": 300,
-      "exclusiveMinimum": 0.0,
-      "title": "Stable After Seconds",
-      "type": "number"
-    }
-  },
-  "title": "McpRestartPolicy",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerCreateRequest"></a>
-
-## McpServerCreateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `server_type` | string | 否 | `default="stdio"`; `enum=["stdio", "streamable_http", "sse", "hosted"]` |
-| `connection` | object | 否 | `additionalProperties=true` |
-| `visibility` | string | 否 | `default="private"`; `pattern="^(private&#124;public)$"` |
-
-```json
-{
-  "properties": {
-    "connection": {
-      "additionalProperties": true,
-      "title": "Connection",
-      "type": "object"
-    },
-    "name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "server_type": {
-      "default": "stdio",
-      "enum": [
-        "stdio",
-        "streamable_http",
-        "sse",
-        "hosted"
-      ],
-      "title": "Server Type",
-      "type": "string"
-    },
-    "visibility": {
-      "default": "private",
-      "pattern": "^(private|public)$",
-      "title": "Visibility",
-      "type": "string"
-    }
-  },
-  "required": [
-    "name"
-  ],
-  "title": "McpServerCreateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerDiscoveryRequest"></a>
-
-## McpServerDiscoveryRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `credential_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "credential_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Credential Id"
-    }
-  },
-  "title": "McpServerDiscoveryRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerDiscoveryResponse"></a>
-
-## McpServerDiscoveryResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `discovery_version` | integer | 是 | — |
-| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `tool_count` | integer | 是 | — |
-| `added_tools` | array&lt;string&gt; | 否 | — |
-| `changed_tools` | array&lt;string&gt; | 否 | — |
-| `removed_tools` | array&lt;string&gt; | 否 | — |
-| `error` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "added_tools": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Added Tools",
-      "type": "array"
-    },
-    "changed_tools": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Changed Tools",
-      "type": "array"
-    },
-    "discovered_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovered At"
-    },
-    "discovery_checksum": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Checksum"
-    },
-    "discovery_version": {
-      "title": "Discovery Version",
-      "type": "integer"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "mcp_server_id": {
-      "format": "uuid",
-      "title": "Mcp Server Id",
-      "type": "string"
-    },
-    "removed_tools": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Removed Tools",
-      "type": "array"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "tool_count": {
-      "title": "Tool Count",
-      "type": "integer"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "mcp_server_id",
-    "status",
-    "discovery_version",
-    "discovered_at",
-    "discovery_checksum",
-    "tool_count"
-  ],
-  "title": "McpServerDiscoveryResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerHealthCheckRequest"></a>
-
-## McpServerHealthCheckRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `health_status` | string | 是 | `pattern="^(healthy&#124;unhealthy&#124;unknown)$"` |
-| `error_code` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "error_code": {
-      "anyOf": [
-        {
-          "maxLength": 120,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "health_status": {
-      "pattern": "^(healthy|unhealthy|unknown)$",
-      "title": "Health Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "health_status"
-  ],
-  "title": "McpServerHealthCheckRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerResponse"></a>
-
-## McpServerResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `server_type` | string | 是 | — |
-| `connection` | object | 是 | `additionalProperties=true` |
-| `visibility` | string | 是 | — |
-| `status` | string | 是 | — |
-| `configuration_version` | integer | 是 | — |
-| `health_status` | string | 是 | — |
-| `last_health_check_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `last_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovery_status` | string | 是 | — |
-| `discovery_version` | integer | 是 | — |
-| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovery_error` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "configuration_version": {
-      "title": "Configuration Version",
-      "type": "integer"
-    },
-    "connection": {
-      "additionalProperties": true,
-      "title": "Connection",
-      "type": "object"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "discovered_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovered At"
-    },
-    "discovery_checksum": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Checksum"
-    },
-    "discovery_error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Error"
-    },
-    "discovery_status": {
-      "title": "Discovery Status",
-      "type": "string"
-    },
-    "discovery_version": {
-      "title": "Discovery Version",
-      "type": "integer"
-    },
-    "health_status": {
-      "title": "Health Status",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_error": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Error"
-    },
-    "last_health_check_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Health Check At"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "server_type": {
-      "title": "Server Type",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "visibility": {
-      "title": "Visibility",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "name",
-    "server_type",
-    "connection",
-    "visibility",
-    "status",
-    "configuration_version",
-    "health_status",
-    "last_health_check_at",
-    "last_error",
-    "discovery_status",
-    "discovery_version",
-    "discovered_at",
-    "discovery_checksum",
-    "discovery_error"
-  ],
-  "title": "McpServerResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpServerUpdateRequest"></a>
-
-## McpServerUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `connection` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `visibility` | string anyOf null | 否 | `anyOf=[{"pattern": "^(private&#124;public)$", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "connection": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Connection"
-    },
-    "visibility": {
-      "anyOf": [
-        {
-          "pattern": "^(private|public)$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Visibility"
-    }
-  },
-  "title": "McpServerUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolAllowRequest"></a>
-
-## McpToolAllowRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `title` | string | 否 | `default=""`; `maxLength=240` |
-| `description` | string | 否 | `default=""`; `maxLength=2000` |
-| `input_schema` | object | 否 | `additionalProperties=true` |
-| `output_schema` | object | 否 | `additionalProperties=true` |
-| `capability_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
-| `requires_approval` | boolean | 否 | `default=false` |
-| `risk_level` | string | 否 | `default="low"`; `maxLength=32` |
-| `policy` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "capability_key": {
-      "anyOf": [
-        {
-          "maxLength": 120,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Key"
-    },
-    "description": {
-      "default": "",
-      "maxLength": 2000,
-      "title": "Description",
-      "type": "string"
-    },
-    "input_schema": {
-      "additionalProperties": true,
-      "title": "Input Schema",
-      "type": "object"
-    },
-    "output_schema": {
-      "additionalProperties": true,
-      "title": "Output Schema",
-      "type": "object"
-    },
-    "policy": {
-      "additionalProperties": true,
-      "title": "Policy",
-      "type": "object"
-    },
-    "requires_approval": {
-      "default": false,
-      "title": "Requires Approval",
-      "type": "boolean"
-    },
-    "risk_level": {
-      "default": "low",
-      "maxLength": 32,
-      "title": "Risk Level",
-      "type": "string"
-    },
-    "title": {
-      "default": "",
-      "maxLength": 240,
-      "title": "Title",
-      "type": "string"
-    },
-    "tool_name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "tool_name"
-  ],
-  "title": "McpToolAllowRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolAllowResponse"></a>
-
-## McpToolAllowResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
-| `tool_name` | string | 是 | — |
-| `title` | string | 是 | — |
-| `description` | string | 是 | — |
-| `input_schema` | object | 是 | `additionalProperties=true` |
-| `output_schema` | object | 是 | `additionalProperties=true` |
-| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `requires_approval` | boolean | 是 | — |
-| `risk_level` | string | 是 | — |
-| `policy` | object | 是 | `additionalProperties=true` |
-| `status` | string | 是 | — |
-| `configuration_version` | integer | 是 | — |
-| `discovery_source` | string | 是 | — |
-| `discovery_status` | string | 是 | — |
-| `discovery_checksum` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `discovered_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "capability_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Key"
-    },
-    "configuration_version": {
-      "title": "Configuration Version",
-      "type": "integer"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "description": {
-      "title": "Description",
-      "type": "string"
-    },
-    "discovered_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovered At"
-    },
-    "discovery_checksum": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Discovery Checksum"
-    },
-    "discovery_source": {
-      "title": "Discovery Source",
-      "type": "string"
-    },
-    "discovery_status": {
-      "title": "Discovery Status",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "input_schema": {
-      "additionalProperties": true,
-      "title": "Input Schema",
-      "type": "object"
-    },
-    "mcp_server_id": {
-      "format": "uuid",
-      "title": "Mcp Server Id",
-      "type": "string"
-    },
-    "output_schema": {
-      "additionalProperties": true,
-      "title": "Output Schema",
-      "type": "object"
-    },
-    "policy": {
-      "additionalProperties": true,
-      "title": "Policy",
-      "type": "object"
-    },
-    "requires_approval": {
-      "title": "Requires Approval",
-      "type": "boolean"
-    },
-    "risk_level": {
-      "title": "Risk Level",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "title": {
-      "title": "Title",
-      "type": "string"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "mcp_server_id",
-    "tool_name",
-    "title",
-    "description",
-    "input_schema",
-    "output_schema",
-    "capability_key",
-    "requires_approval",
-    "risk_level",
-    "policy",
-    "status",
-    "configuration_version",
-    "discovery_source",
-    "discovery_status",
-    "discovery_checksum",
-    "discovered_at"
-  ],
-  "title": "McpToolAllowResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolAllowUpdateRequest"></a>
-
-## McpToolAllowUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `tool_name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
-| `title` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
-| `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
-| `input_schema` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `output_schema` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `capability_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
-| `requires_approval` | boolean anyOf null | 否 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
-| `risk_level` | string anyOf null | 否 | `anyOf=[{"maxLength": 32, "type": "string"}, {"type": "null"}]` |
-| `policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "capability_key": {
-      "anyOf": [
-        {
-          "maxLength": 120,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Key"
-    },
-    "description": {
-      "anyOf": [
-        {
-          "maxLength": 2000,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Description"
-    },
-    "input_schema": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Input Schema"
-    },
-    "output_schema": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Output Schema"
-    },
-    "policy": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Policy"
-    },
-    "requires_approval": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Requires Approval"
-    },
-    "risk_level": {
-      "anyOf": [
-        {
-          "maxLength": 32,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Risk Level"
-    },
-    "title": {
-      "anyOf": [
-        {
-          "maxLength": 240,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Title"
-    },
-    "tool_name": {
-      "anyOf": [
-        {
-          "maxLength": 160,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Tool Name"
-    }
-  },
-  "title": "McpToolAllowUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolCallDiagnosticResponse"></a>
-
-## McpToolCallDiagnosticResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `approval_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `tool_name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `latency_ms` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `argument_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `response_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `request` | object | 是 | `additionalProperties=true` |
-| `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "approval_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Approval Id"
-    },
-    "argument_sha256": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Argument Sha256"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "latency_ms": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Latency Ms"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "request": {
-      "additionalProperties": true,
-      "title": "Request",
-      "type": "object"
-    },
-    "request_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Request Id"
-    },
-    "response": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response"
-    },
-    "response_sha256": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response Sha256"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Span Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    },
-    "task_step_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Step Id"
-    },
-    "tool_call_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Tool Call Id"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    },
-    "trace_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Trace Id"
-    },
-    "worker_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "mcp_server_id",
-    "agent_run_id",
-    "task_id",
-    "task_step_id",
-    "agent_profile_id",
-    "approval_id",
-    "tool_name",
-    "status",
-    "latency_ms",
-    "argument_sha256",
-    "response_sha256",
-    "error_code",
-    "request_id",
-    "worker_id",
-    "runtime_id",
-    "trace_id",
-    "span_id",
-    "request",
-    "response",
-    "error",
-    "tool_call_id",
-    "created_at"
-  ],
-  "title": "McpToolCallDiagnosticResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolCallLogRequest"></a>
-
-## McpToolCallLogRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `approval_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `status` | string | 是 | `maxLength=32`; `minLength=1` |
-| `request` | object | 否 | `additionalProperties=true` |
-| `response` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "approval_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Approval Id"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "request": {
-      "additionalProperties": true,
-      "title": "Request",
-      "type": "object"
-    },
-    "response": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response"
-    },
-    "status": {
-      "maxLength": 32,
-      "minLength": 1,
-      "title": "Status",
-      "type": "string"
-    },
-    "tool_name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "tool_name",
-    "status"
-  ],
-  "title": "McpToolCallLogRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolCallLogResponse"></a>
-
-## McpToolCallLogResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `approval_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `tool_name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `latency_ms` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `argument_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `response_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `request` | object | 是 | `additionalProperties=true` |
-| `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "approval_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Approval Id"
-    },
-    "argument_sha256": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Argument Sha256"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "latency_ms": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Latency Ms"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "request": {
-      "additionalProperties": true,
-      "title": "Request",
-      "type": "object"
-    },
-    "request_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Request Id"
-    },
-    "response": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response"
-    },
-    "response_sha256": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response Sha256"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Span Id"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    },
-    "task_step_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Step Id"
-    },
-    "tool_call_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Tool Call Id"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    },
-    "trace_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Trace Id"
-    },
-    "worker_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "mcp_server_id",
-    "agent_run_id",
-    "task_id",
-    "task_step_id",
-    "agent_profile_id",
-    "approval_id",
-    "tool_name",
-    "status",
-    "latency_ms",
-    "argument_sha256",
-    "response_sha256",
-    "error_code",
-    "request_id",
-    "worker_id",
-    "runtime_id",
-    "trace_id",
-    "span_id",
-    "request",
-    "response",
-    "error",
-    "tool_call_id",
-    "created_at"
-  ],
-  "title": "McpToolCallLogResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolDescriptor"></a>
-
-## McpToolDescriptor
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `server_id` | string (uuid) | 是 | `format="uuid"` |
-| `server_name` | string | 是 | — |
-| `tool_name` | string | 是 | — |
-| `title` | string | 否 | `default=""` |
-| `description` | string | 是 | — |
-| `input_schema` | object | 是 | `additionalProperties=true` |
-| `output_schema` | object | 否 | `additionalProperties=true` |
-| `capability_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `requires_approval` | boolean | 是 | — |
-| `risk_level` | string | 是 | — |
-| `policy` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "capability_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Key"
-    },
-    "description": {
-      "title": "Description",
-      "type": "string"
-    },
-    "input_schema": {
-      "additionalProperties": true,
-      "title": "Input Schema",
-      "type": "object"
-    },
-    "output_schema": {
-      "additionalProperties": true,
-      "title": "Output Schema",
-      "type": "object"
-    },
-    "policy": {
-      "additionalProperties": true,
-      "title": "Policy",
-      "type": "object"
-    },
-    "requires_approval": {
-      "title": "Requires Approval",
-      "type": "boolean"
-    },
-    "risk_level": {
-      "title": "Risk Level",
-      "type": "string"
-    },
-    "server_id": {
-      "format": "uuid",
-      "title": "Server Id",
-      "type": "string"
-    },
-    "server_name": {
-      "title": "Server Name",
-      "type": "string"
-    },
-    "title": {
-      "default": "",
-      "title": "Title",
-      "type": "string"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "server_id",
-    "server_name",
-    "tool_name",
-    "description",
-    "input_schema",
-    "capability_key",
-    "requires_approval",
-    "risk_level",
-    "policy"
-  ],
-  "title": "McpToolDescriptor",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolSelection"></a>
-
-## McpToolSelection
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_tool_allowlist_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "mcp_server_id": {
-      "format": "uuid",
-      "title": "Mcp Server Id",
-      "type": "string"
-    },
-    "mcp_tool_allowlist_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Tool Allowlist Id"
-    },
-    "tool_name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "mcp_server_id",
-    "tool_name"
-  ],
-  "title": "McpToolSelection",
   "type": "object"
 }
 ```
@@ -23691,33 +19951,6 @@
     "checksum_sha256"
   ],
   "title": "MessageAttachment",
-  "type": "object"
-}
-```
-
-<a id="schema-MessageCreate"></a>
-
-## MessageCreate
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `body` | string | 是 | `maxLength=32000`; `minLength=1` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "body": {
-      "maxLength": 32000,
-      "minLength": 1,
-      "title": "Body",
-      "type": "string"
-    }
-  },
-  "required": [
-    "body"
-  ],
-  "title": "MessageCreate",
   "type": "object"
 }
 ```
@@ -25159,7 +21392,6 @@
 | `credentials` | array&lt;[ModelProviderOperationsCredentialResponse](schemas.md#schema-ModelProviderOperationsCredentialResponse)&gt; | 是 | — |
 | `agents` | array&lt;[ModelProviderOperationsAgentResponse](schemas.md#schema-ModelProviderOperationsAgentResponse)&gt; | 是 | — |
 | `runs` | array&lt;[ModelProviderOperationsRunResponse](schemas.md#schema-ModelProviderOperationsRunResponse)&gt; | 是 | — |
-| `fallback` | any | 否 | — |
 | `suggested_actions` | any | 否 | — |
 
 ```json
@@ -25178,9 +21410,6 @@
       },
       "title": "Credentials",
       "type": "array"
-    },
-    "fallback": {
-      "title": "Fallback"
     },
     "generated_at": {
       "format": "date-time",
@@ -25234,8 +21463,6 @@
 | `protocol` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `credential_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `provider_snapshot_source` | string | 是 | — |
-| `fallback_status` | string | 是 | — |
-| `fallback` | object | 否 | `additionalProperties=true` |
 | `failure` | object | 否 | `additionalProperties=true` |
 | `provenance` | object | 否 | `additionalProperties=true` |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
@@ -25277,15 +21504,6 @@
       "additionalProperties": true,
       "title": "Failure",
       "type": "object"
-    },
-    "fallback": {
-      "additionalProperties": true,
-      "title": "Fallback",
-      "type": "object"
-    },
-    "fallback_status": {
-      "title": "Fallback Status",
-      "type": "string"
     },
     "model": {
       "anyOf": [
@@ -25379,7 +21597,6 @@
     "protocol",
     "credential_id",
     "provider_snapshot_source",
-    "fallback_status",
     "created_at",
     "updated_at"
   ],
@@ -25404,7 +21621,6 @@
 | `model` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `model_api` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `credential_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `fallback_selected` | boolean anyOf null | 是 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
 | `reason` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
 | `failed_provider` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
@@ -25454,17 +21670,6 @@
         }
       ],
       "title": "Failed Provider"
-    },
-    "fallback_selected": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Fallback Selected"
     },
     "id": {
       "format": "uuid",
@@ -25561,7 +21766,6 @@
     "model",
     "model_api",
     "credential_id",
-    "fallback_selected",
     "created_at"
   ],
   "title": "ModelProviderUsageAuditResponse",
@@ -26447,40 +22651,6 @@
 }
 ```
 
-<a id="schema-OperationRequest"></a>
-
-## OperationRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `request_id` | string (uuid) | 是 | `format="uuid"` |
-| `reason` | string | 是 | `maxLength=240`; `minLength=1` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "reason": {
-      "maxLength": 240,
-      "minLength": 1,
-      "title": "Reason",
-      "type": "string"
-    },
-    "request_id": {
-      "format": "uuid",
-      "title": "Request Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "request_id",
-    "reason"
-  ],
-  "title": "OperationRequest",
-  "type": "object"
-}
-```
-
 <a id="schema-OperationalConfiguration"></a>
 
 ## OperationalConfiguration
@@ -26489,64 +22659,20 @@
 | --- | --- | --- | --- |
 | `provider_failure_threshold` | integer | 否 | `default=3`; `maximum=1000.0`; `minimum=1.0` |
 | `provider_health_schedule_limit` | integer | 否 | `default=10`; `maximum=10000.0`; `minimum=1.0` |
-| `worker_stale_after_seconds` | integer | 否 | `default=300`; `minimum=1.0` |
-| `queue_scan_limit` | integer | 否 | `default=1000`; `maximum=1000000.0`; `minimum=1.0` |
 | `smtp_timeout_seconds` | number | 否 | `default=5`; `exclusiveMinimum=0.0`; `maximum=300.0` |
-| `docker_control_timeout_seconds` | integer | 否 | `default=30`; `maximum=3600.0`; `minimum=1.0` |
-| `file_transfer_timeout_seconds` | integer | 否 | `default=60`; `maximum=3600.0`; `minimum=1.0` |
-| `url_fetch_timeout_seconds` | integer | 否 | `default=30`; `maximum=3600.0`; `minimum=1.0` |
 | `memory_chunk_size` | integer | 否 | `default=900`; `maximum=100000.0`; `minimum=1.0` |
 | `memory_chunk_overlap` | integer | 否 | `default=120`; `minimum=0.0` |
 | `memory_source_limit` | integer | 否 | `default=80`; `maximum=100000.0`; `minimum=1.0` |
 | `memory_snippet_length` | integer | 否 | `default=220`; `maximum=10000.0`; `minimum=1.0` |
 | `default_embedding_model` | string | 否 | `default="text-embedding-3-small"`; `minLength=1` |
 | `default_embedding_dimensions` | integer | 否 | `default=1536`; `maximum=16000.0`; `minimum=1.0` |
-| `default_context_window_tokens` | integer | 否 | `default=32768`; `minimum=4096.0` |
 | `manager_task_capacity` | integer | 否 | `default=1`; `maximum=10000.0`; `minimum=1.0` |
-| `agent_tool_depth` | integer | 否 | `default=3`; `maximum=100.0`; `minimum=1.0` |
-| `agent_tool_turns` | integer | 否 | `default=20`; `maximum=10000.0`; `minimum=1.0` |
-| `agent_tool_targets` | integer | 否 | `default=10`; `maximum=10000.0`; `minimum=1.0` |
-| `agent_tool_graph_nodes` | integer | 否 | `default=25`; `maximum=100000.0`; `minimum=1.0` |
-| `files` | [FileLimits](schemas.md#schema-FileLimits) | 否 | — |
+| `files` | [FileIOLimits](schemas.md#schema-FileIOLimits) | 否 | — |
 
 ```json
 {
   "additionalProperties": false,
   "properties": {
-    "agent_tool_depth": {
-      "default": 3,
-      "maximum": 100.0,
-      "minimum": 1.0,
-      "title": "Agent Tool Depth",
-      "type": "integer"
-    },
-    "agent_tool_graph_nodes": {
-      "default": 25,
-      "maximum": 100000.0,
-      "minimum": 1.0,
-      "title": "Agent Tool Graph Nodes",
-      "type": "integer"
-    },
-    "agent_tool_targets": {
-      "default": 10,
-      "maximum": 10000.0,
-      "minimum": 1.0,
-      "title": "Agent Tool Targets",
-      "type": "integer"
-    },
-    "agent_tool_turns": {
-      "default": 20,
-      "maximum": 10000.0,
-      "minimum": 1.0,
-      "title": "Agent Tool Turns",
-      "type": "integer"
-    },
-    "default_context_window_tokens": {
-      "default": 32768,
-      "minimum": 4096.0,
-      "title": "Default Context Window Tokens",
-      "type": "integer"
-    },
     "default_embedding_dimensions": {
       "default": 1536,
       "maximum": 16000.0,
@@ -26560,22 +22686,8 @@
       "title": "Default Embedding Model",
       "type": "string"
     },
-    "docker_control_timeout_seconds": {
-      "default": 30,
-      "maximum": 3600.0,
-      "minimum": 1.0,
-      "title": "Docker Control Timeout Seconds",
-      "type": "integer"
-    },
-    "file_transfer_timeout_seconds": {
-      "default": 60,
-      "maximum": 3600.0,
-      "minimum": 1.0,
-      "title": "File Transfer Timeout Seconds",
-      "type": "integer"
-    },
     "files": {
-      "$ref": "#/components/schemas/FileLimits"
+      "$ref": "#/components/schemas/FileIOLimits"
     },
     "manager_task_capacity": {
       "default": 1,
@@ -26625,577 +22737,15 @@
       "title": "Provider Health Schedule Limit",
       "type": "integer"
     },
-    "queue_scan_limit": {
-      "default": 1000,
-      "maximum": 1000000.0,
-      "minimum": 1.0,
-      "title": "Queue Scan Limit",
-      "type": "integer"
-    },
     "smtp_timeout_seconds": {
       "default": 5,
       "exclusiveMinimum": 0.0,
       "maximum": 300.0,
       "title": "Smtp Timeout Seconds",
       "type": "number"
-    },
-    "url_fetch_timeout_seconds": {
-      "default": 30,
-      "maximum": 3600.0,
-      "minimum": 1.0,
-      "title": "Url Fetch Timeout Seconds",
-      "type": "integer"
-    },
-    "worker_stale_after_seconds": {
-      "default": 300,
-      "minimum": 1.0,
-      "title": "Worker Stale After Seconds",
-      "type": "integer"
     }
   },
   "title": "OperationalConfiguration",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsCapacityResponse"></a>
-
-## OperationsCapacityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `queue` | [QueueLatencyResponse](schemas.md#schema-QueueLatencyResponse) | 是 | — |
-| `worker_capacity` | [WorkerCapacityAggregateResponse](schemas.md#schema-WorkerCapacityAggregateResponse) | 是 | — |
-| `runtime_spaces` | array&lt;[RuntimeSpaceSaturationResponse](schemas.md#schema-RuntimeSpaceSaturationResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "queue": {
-      "$ref": "#/components/schemas/QueueLatencyResponse"
-    },
-    "runtime_spaces": {
-      "items": {
-        "$ref": "#/components/schemas/RuntimeSpaceSaturationResponse"
-      },
-      "title": "Runtime Spaces",
-      "type": "array"
-    },
-    "worker_capacity": {
-      "$ref": "#/components/schemas/WorkerCapacityAggregateResponse"
-    }
-  },
-  "required": [
-    "generated_at",
-    "queue",
-    "worker_capacity",
-    "runtime_spaces"
-  ],
-  "title": "OperationsCapacityResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsControlPlaneIssueResponse"></a>
-
-## OperationsControlPlaneIssueResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `severity` | string | 是 | — |
-| `code` | string | 是 | — |
-| `message` | string | 是 | — |
-| `count` | integer | 否 | `default=1` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "code": {
-      "title": "Code",
-      "type": "string"
-    },
-    "count": {
-      "default": 1,
-      "title": "Count",
-      "type": "integer"
-    },
-    "message": {
-      "title": "Message",
-      "type": "string"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "severity": {
-      "title": "Severity",
-      "type": "string"
-    }
-  },
-  "required": [
-    "severity",
-    "code",
-    "message"
-  ],
-  "title": "OperationsControlPlaneIssueResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsControlPlaneResponse"></a>
-
-## OperationsControlPlaneResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `health` | string | 是 | — |
-| `queue` | [QueueLatencyResponse](schemas.md#schema-QueueLatencyResponse) | 是 | — |
-| `worker_capacity` | [WorkerCapacityAggregateResponse](schemas.md#schema-WorkerCapacityAggregateResponse) | 是 | — |
-| `runtime_capacity` | [OperationsRuntimeCapacityResponse](schemas.md#schema-OperationsRuntimeCapacityResponse) | 是 | — |
-| `scheduler` | [OperationsSchedulerResponse](schemas.md#schema-OperationsSchedulerResponse) | 是 | — |
-| `outcomes` | [OperationsOutcomesResponse](schemas.md#schema-OperationsOutcomesResponse) | 是 | — |
-| `mcp_jobs` | [OperationsMcpJobsResponse](schemas.md#schema-OperationsMcpJobsResponse) | 是 | — |
-| `self_hosted_machines` | [OperationsSelfHostedMachinesResponse](schemas.md#schema-OperationsSelfHostedMachinesResponse) | 是 | — |
-| `evidence` | [OperationsEvidencePlaneResponse](schemas.md#schema-OperationsEvidencePlaneResponse) | 是 | — |
-| `drilldowns` | [OperationsDrilldownsResponse](schemas.md#schema-OperationsDrilldownsResponse) | 是 | — |
-| `issues` | array&lt;[OperationsControlPlaneIssueResponse](schemas.md#schema-OperationsControlPlaneIssueResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "drilldowns": {
-      "$ref": "#/components/schemas/OperationsDrilldownsResponse"
-    },
-    "evidence": {
-      "$ref": "#/components/schemas/OperationsEvidencePlaneResponse"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "health": {
-      "title": "Health",
-      "type": "string"
-    },
-    "issues": {
-      "items": {
-        "$ref": "#/components/schemas/OperationsControlPlaneIssueResponse"
-      },
-      "title": "Issues",
-      "type": "array"
-    },
-    "mcp_jobs": {
-      "$ref": "#/components/schemas/OperationsMcpJobsResponse"
-    },
-    "outcomes": {
-      "$ref": "#/components/schemas/OperationsOutcomesResponse"
-    },
-    "queue": {
-      "$ref": "#/components/schemas/QueueLatencyResponse"
-    },
-    "runtime_capacity": {
-      "$ref": "#/components/schemas/OperationsRuntimeCapacityResponse"
-    },
-    "scheduler": {
-      "$ref": "#/components/schemas/OperationsSchedulerResponse"
-    },
-    "self_hosted_machines": {
-      "$ref": "#/components/schemas/OperationsSelfHostedMachinesResponse"
-    },
-    "worker_capacity": {
-      "$ref": "#/components/schemas/WorkerCapacityAggregateResponse"
-    }
-  },
-  "required": [
-    "generated_at",
-    "health",
-    "queue",
-    "worker_capacity",
-    "runtime_capacity",
-    "scheduler",
-    "outcomes",
-    "mcp_jobs",
-    "self_hosted_machines",
-    "evidence",
-    "drilldowns",
-    "issues"
-  ],
-  "title": "OperationsControlPlaneResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsCorrelationResponse"></a>
-
-## OperationsCorrelationResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `trace_ids` | array&lt;string&gt; | 是 | — |
-| `request_ids` | array&lt;string&gt; | 是 | — |
-| `task_ids` | array&lt;string (uuid)&gt; | 是 | — |
-| `run_ids` | array&lt;string (uuid)&gt; | 是 | — |
-| `worker_ids` | array&lt;string&gt; | 是 | — |
-| `runtime_ids` | array&lt;string&gt; | 是 | — |
-| `evidence_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
-| `drilldowns` | object | 是 | `additionalProperties={"type": "string"}` |
-
-```json
-{
-  "properties": {
-    "drilldowns": {
-      "additionalProperties": {
-        "type": "string"
-      },
-      "title": "Drilldowns",
-      "type": "object"
-    },
-    "evidence_counts": {
-      "additionalProperties": {
-        "type": "integer"
-      },
-      "title": "Evidence Counts",
-      "type": "object"
-    },
-    "request_ids": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Request Ids",
-      "type": "array"
-    },
-    "run_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Run Ids",
-      "type": "array"
-    },
-    "runtime_ids": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Runtime Ids",
-      "type": "array"
-    },
-    "task_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Task Ids",
-      "type": "array"
-    },
-    "trace_ids": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Trace Ids",
-      "type": "array"
-    },
-    "worker_ids": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Worker Ids",
-      "type": "array"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "trace_ids",
-    "request_ids",
-    "task_ids",
-    "run_ids",
-    "worker_ids",
-    "runtime_ids",
-    "evidence_counts",
-    "drilldowns"
-  ],
-  "title": "OperationsCorrelationResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsDrilldownsResponse"></a>
-
-## OperationsDrilldownsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `api_metrics` | string | 是 | — |
-| `queue` | string | 是 | — |
-| `workers` | string | 是 | — |
-| `runtimes` | string | 是 | — |
-| `mcp` | string | 是 | — |
-| `approvals` | string | 是 | — |
-| `audit` | string | 是 | — |
-| `costs` | string | 是 | — |
-| `data_lifecycle` | string | 是 | — |
-| `notifications` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "api_metrics": {
-      "title": "Api Metrics",
-      "type": "string"
-    },
-    "approvals": {
-      "title": "Approvals",
-      "type": "string"
-    },
-    "audit": {
-      "title": "Audit",
-      "type": "string"
-    },
-    "costs": {
-      "title": "Costs",
-      "type": "string"
-    },
-    "data_lifecycle": {
-      "title": "Data Lifecycle",
-      "type": "string"
-    },
-    "mcp": {
-      "title": "Mcp",
-      "type": "string"
-    },
-    "notifications": {
-      "title": "Notifications",
-      "type": "string"
-    },
-    "queue": {
-      "title": "Queue",
-      "type": "string"
-    },
-    "runtimes": {
-      "title": "Runtimes",
-      "type": "string"
-    },
-    "workers": {
-      "title": "Workers",
-      "type": "string"
-    }
-  },
-  "required": [
-    "api_metrics",
-    "queue",
-    "workers",
-    "runtimes",
-    "mcp",
-    "approvals",
-    "audit",
-    "costs",
-    "data_lifecycle",
-    "notifications"
-  ],
-  "title": "OperationsDrilldownsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsEvidencePlaneResponse"></a>
-
-## OperationsEvidencePlaneResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `audit_integrity` | [OperationsEvidenceSignalResponse](schemas.md#schema-OperationsEvidenceSignalResponse) | 是 | — |
-| `cost_accounting` | [OperationsEvidenceSignalResponse](schemas.md#schema-OperationsEvidenceSignalResponse) | 是 | — |
-| `notifications` | [OperationsEvidenceSignalResponse](schemas.md#schema-OperationsEvidenceSignalResponse) | 是 | — |
-| `data_lifecycle` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "audit_integrity": {
-      "$ref": "#/components/schemas/OperationsEvidenceSignalResponse"
-    },
-    "cost_accounting": {
-      "$ref": "#/components/schemas/OperationsEvidenceSignalResponse"
-    },
-    "data_lifecycle": {
-      "additionalProperties": true,
-      "title": "Data Lifecycle",
-      "type": "object"
-    },
-    "notifications": {
-      "$ref": "#/components/schemas/OperationsEvidenceSignalResponse"
-    }
-  },
-  "required": [
-    "audit_integrity",
-    "cost_accounting",
-    "notifications"
-  ],
-  "title": "OperationsEvidencePlaneResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsEvidenceSignalResponse"></a>
-
-## OperationsEvidenceSignalResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | — |
-| `count` | integer | 否 | `default=0` |
-| `last_observed_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-| `recommended_actions` | array&lt;string&gt; | 否 | — |
-| `drilldown` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "count": {
-      "default": 0,
-      "title": "Count",
-      "type": "integer"
-    },
-    "drilldown": {
-      "title": "Drilldown",
-      "type": "string"
-    },
-    "last_observed_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Observed At"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "recommended_actions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Recommended Actions",
-      "type": "array"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "status",
-    "drilldown"
-  ],
-  "title": "OperationsEvidenceSignalResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsMcpJobsResponse"></a>
-
-## OperationsMcpJobsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `total` | integer | 是 | — |
-| `queued` | integer | 是 | — |
-| `claimed` | integer | 是 | — |
-| `completed` | integer | 是 | — |
-| `failed` | integer | 是 | — |
-| `oldest_queued_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `statuses` | array&lt;[McpJobStatusBucketResponse](schemas.md#schema-McpJobStatusBucketResponse)&gt; | 是 | — |
-| `tools` | array&lt;[McpJobToolBucketResponse](schemas.md#schema-McpJobToolBucketResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "claimed": {
-      "title": "Claimed",
-      "type": "integer"
-    },
-    "completed": {
-      "title": "Completed",
-      "type": "integer"
-    },
-    "failed": {
-      "title": "Failed",
-      "type": "integer"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "oldest_queued_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Queued Age Seconds"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    },
-    "statuses": {
-      "items": {
-        "$ref": "#/components/schemas/McpJobStatusBucketResponse"
-      },
-      "title": "Statuses",
-      "type": "array"
-    },
-    "tools": {
-      "items": {
-        "$ref": "#/components/schemas/McpJobToolBucketResponse"
-      },
-      "title": "Tools",
-      "type": "array"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "generated_at",
-    "total",
-    "queued",
-    "claimed",
-    "completed",
-    "failed",
-    "oldest_queued_age_seconds",
-    "statuses",
-    "tools"
-  ],
-  "title": "OperationsMcpJobsResponse",
   "type": "object"
 }
 ```
@@ -27231,739 +22781,6 @@
     "approvals"
   ],
   "title": "OperationsOutcomesResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsOverviewResponse"></a>
-
-## OperationsOverviewResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `queue` | [QueueMetricsResponse](schemas.md#schema-QueueMetricsResponse) | 是 | — |
-| `failed_runs` | integer | 是 | — |
-| `offline_runtimes` | integer | 是 | — |
-| `workers_online` | integer | 是 | — |
-| `security_warnings` | integer | 是 | — |
-| `data_lifecycle` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "data_lifecycle": {
-      "additionalProperties": true,
-      "title": "Data Lifecycle",
-      "type": "object"
-    },
-    "failed_runs": {
-      "title": "Failed Runs",
-      "type": "integer"
-    },
-    "offline_runtimes": {
-      "title": "Offline Runtimes",
-      "type": "integer"
-    },
-    "queue": {
-      "$ref": "#/components/schemas/QueueMetricsResponse"
-    },
-    "security_warnings": {
-      "title": "Security Warnings",
-      "type": "integer"
-    },
-    "workers_online": {
-      "title": "Workers Online",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "queue",
-    "failed_runs",
-    "offline_runtimes",
-    "workers_online",
-    "security_warnings"
-  ],
-  "title": "OperationsOverviewResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsQueueInsightsResponse"></a>
-
-## OperationsQueueInsightsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `queue_name` | string | 是 | — |
-| `scan_limit` | integer | 是 | — |
-| `queued_total` | integer | 是 | — |
-| `dead_letter_total` | integer | 是 | — |
-| `queued_scanned` | integer | 是 | — |
-| `dead_letter_scanned` | integer | 是 | — |
-| `truncated` | boolean | 是 | — |
-| `oldest_queued_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `highest_priority` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `priority_buckets` | array&lt;[QueuePriorityBucketResponse](schemas.md#schema-QueuePriorityBucketResponse)&gt; | 是 | — |
-| `job_type_buckets` | array&lt;[QueueJobTypeBucketResponse](schemas.md#schema-QueueJobTypeBucketResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "dead_letter_scanned": {
-      "title": "Dead Letter Scanned",
-      "type": "integer"
-    },
-    "dead_letter_total": {
-      "title": "Dead Letter Total",
-      "type": "integer"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "highest_priority": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Highest Priority"
-    },
-    "job_type_buckets": {
-      "items": {
-        "$ref": "#/components/schemas/QueueJobTypeBucketResponse"
-      },
-      "title": "Job Type Buckets",
-      "type": "array"
-    },
-    "oldest_queued_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Queued Age Seconds"
-    },
-    "priority_buckets": {
-      "items": {
-        "$ref": "#/components/schemas/QueuePriorityBucketResponse"
-      },
-      "title": "Priority Buckets",
-      "type": "array"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "queued_scanned": {
-      "title": "Queued Scanned",
-      "type": "integer"
-    },
-    "queued_total": {
-      "title": "Queued Total",
-      "type": "integer"
-    },
-    "scan_limit": {
-      "title": "Scan Limit",
-      "type": "integer"
-    },
-    "truncated": {
-      "title": "Truncated",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "generated_at",
-    "queue_name",
-    "scan_limit",
-    "queued_total",
-    "dead_letter_total",
-    "queued_scanned",
-    "dead_letter_scanned",
-    "truncated",
-    "oldest_queued_age_seconds",
-    "highest_priority",
-    "priority_buckets",
-    "job_type_buckets"
-  ],
-  "title": "OperationsQueueInsightsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsRunActivityResponse"></a>
-
-## OperationsRunActivityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `team_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `total_active_runs` | integer | 是 | — |
-| `scanned_active_runs` | integer | 是 | — |
-| `truncated` | boolean | 是 | — |
-| `status_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
-| `phases` | array&lt;[RunActivityPhaseBucketResponse](schemas.md#schema-RunActivityPhaseBucketResponse)&gt; | 是 | — |
-| `oldest_active_run` | [RunActivityOldestRunResponse](schemas.md#schema-RunActivityOldestRunResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/RunActivityOldestRunResponse"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "oldest_active_run": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/RunActivityOldestRunResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "phases": {
-      "items": {
-        "$ref": "#/components/schemas/RunActivityPhaseBucketResponse"
-      },
-      "title": "Phases",
-      "type": "array"
-    },
-    "scanned_active_runs": {
-      "title": "Scanned Active Runs",
-      "type": "integer"
-    },
-    "status_counts": {
-      "additionalProperties": {
-        "type": "integer"
-      },
-      "title": "Status Counts",
-      "type": "object"
-    },
-    "team_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Team Id"
-    },
-    "total_active_runs": {
-      "title": "Total Active Runs",
-      "type": "integer"
-    },
-    "truncated": {
-      "title": "Truncated",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "generated_at",
-    "total_active_runs",
-    "scanned_active_runs",
-    "truncated",
-    "status_counts",
-    "phases"
-  ],
-  "title": "OperationsRunActivityResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsRuntimeCapacityResponse"></a>
-
-## OperationsRuntimeCapacityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `providers` | array&lt;[RuntimeProviderCapacityResponse](schemas.md#schema-RuntimeProviderCapacityResponse)&gt; | 是 | — |
-| `worker_types` | array&lt;[WorkerTypeCapacityResponse](schemas.md#schema-WorkerTypeCapacityResponse)&gt; | 是 | — |
-| `runtime_spaces` | array&lt;[RuntimeSpaceSaturationResponse](schemas.md#schema-RuntimeSpaceSaturationResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "providers": {
-      "items": {
-        "$ref": "#/components/schemas/RuntimeProviderCapacityResponse"
-      },
-      "title": "Providers",
-      "type": "array"
-    },
-    "runtime_spaces": {
-      "items": {
-        "$ref": "#/components/schemas/RuntimeSpaceSaturationResponse"
-      },
-      "title": "Runtime Spaces",
-      "type": "array"
-    },
-    "worker_types": {
-      "items": {
-        "$ref": "#/components/schemas/WorkerTypeCapacityResponse"
-      },
-      "title": "Worker Types",
-      "type": "array"
-    }
-  },
-  "required": [
-    "generated_at",
-    "providers",
-    "worker_types",
-    "runtime_spaces"
-  ],
-  "title": "OperationsRuntimeCapacityResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsSchedulerResponse"></a>
-
-## OperationsSchedulerResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `backlog` | [SchedulerBacklogResponse](schemas.md#schema-SchedulerBacklogResponse) | 是 | — |
-| `priority_buckets` | array&lt;[SchedulerPriorityBucketResponse](schemas.md#schema-SchedulerPriorityBucketResponse)&gt; | 是 | — |
-| `blocked_reasons` | array&lt;[SchedulerBlockedReasonResponse](schemas.md#schema-SchedulerBlockedReasonResponse)&gt; | 是 | — |
-| `policy` | [SchedulerPolicyResponse](schemas.md#schema-SchedulerPolicyResponse) | 是 | — |
-
-```json
-{
-  "properties": {
-    "backlog": {
-      "$ref": "#/components/schemas/SchedulerBacklogResponse"
-    },
-    "blocked_reasons": {
-      "items": {
-        "$ref": "#/components/schemas/SchedulerBlockedReasonResponse"
-      },
-      "title": "Blocked Reasons",
-      "type": "array"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "policy": {
-      "$ref": "#/components/schemas/SchedulerPolicyResponse"
-    },
-    "priority_buckets": {
-      "items": {
-        "$ref": "#/components/schemas/SchedulerPriorityBucketResponse"
-      },
-      "title": "Priority Buckets",
-      "type": "array"
-    }
-  },
-  "required": [
-    "generated_at",
-    "backlog",
-    "priority_buckets",
-    "blocked_reasons",
-    "policy"
-  ],
-  "title": "OperationsSchedulerResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsSelfHostedMachineResponse"></a>
-
-## OperationsSelfHostedMachineResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `name` | string | 是 | — |
-| `machine_id` | string | 是 | — |
-| `version` | string | 是 | — |
-| `trust_state` | string | 是 | — |
-| `capability_attestation_state` | string | 是 | — |
-| `capability_attestation_fingerprint` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `capability_attestation_metadata` | object | 是 | `additionalProperties=true` |
-| `capability_attested_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `host_isolation_verified` | boolean | 是 | — |
-| `worker_status` | string | 是 | — |
-| `runtime_status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `credential_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `heartbeat_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `stale` | boolean | 是 | — |
-| `active_job_claims` | integer | 是 | — |
-| `active_mcp_jobs` | integer | 是 | — |
-| `queued_mcp_jobs` | integer | 是 | — |
-| `policy_summary` | object | 是 | `additionalProperties=true` |
-| `capabilities` | object | 是 | `additionalProperties=true` |
-| `warning_code` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `warning_message` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `remediation_actions` | array&lt;object&gt; | 否 | — |
-
-```json
-{
-  "properties": {
-    "active_job_claims": {
-      "title": "Active Job Claims",
-      "type": "integer"
-    },
-    "active_mcp_jobs": {
-      "title": "Active Mcp Jobs",
-      "type": "integer"
-    },
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "capability_attestation_fingerprint": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Attestation Fingerprint"
-    },
-    "capability_attestation_metadata": {
-      "additionalProperties": true,
-      "title": "Capability Attestation Metadata",
-      "type": "object"
-    },
-    "capability_attestation_state": {
-      "title": "Capability Attestation State",
-      "type": "string"
-    },
-    "capability_attested_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Attested At"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
-    "credential_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Credential Status"
-    },
-    "heartbeat_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Heartbeat Age Seconds"
-    },
-    "host_isolation_verified": {
-      "title": "Host Isolation Verified",
-      "type": "boolean"
-    },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "machine_id": {
-      "title": "Machine Id",
-      "type": "string"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "policy_summary": {
-      "additionalProperties": true,
-      "title": "Policy Summary",
-      "type": "object"
-    },
-    "queued_mcp_jobs": {
-      "title": "Queued Mcp Jobs",
-      "type": "integer"
-    },
-    "remediation_actions": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Remediation Actions",
-      "type": "array"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "runtime_status": {
-      "title": "Runtime Status",
-      "type": "string"
-    },
-    "stale": {
-      "title": "Stale",
-      "type": "boolean"
-    },
-    "trust_state": {
-      "title": "Trust State",
-      "type": "string"
-    },
-    "version": {
-      "title": "Version",
-      "type": "string"
-    },
-    "warning_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Warning Code"
-    },
-    "warning_message": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Warning Message"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_status": {
-      "title": "Worker Status",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "worker_id",
-    "workspace_runtime_id",
-    "runtime_space_id",
-    "name",
-    "machine_id",
-    "version",
-    "trust_state",
-    "capability_attestation_state",
-    "capability_attestation_fingerprint",
-    "capability_attestation_metadata",
-    "capability_attested_at",
-    "host_isolation_verified",
-    "worker_status",
-    "runtime_status",
-    "connection_status",
-    "credential_status",
-    "last_heartbeat_at",
-    "heartbeat_age_seconds",
-    "stale",
-    "active_job_claims",
-    "active_mcp_jobs",
-    "queued_mcp_jobs",
-    "policy_summary",
-    "capabilities"
-  ],
-  "title": "OperationsSelfHostedMachineResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsSelfHostedMachinesResponse"></a>
-
-## OperationsSelfHostedMachinesResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `total` | integer | 是 | — |
-| `active` | integer | 是 | — |
-| `degraded` | integer | 是 | — |
-| `quarantined` | integer | 是 | — |
-| `revoked` | integer | 是 | — |
-| `offline` | integer | 是 | — |
-| `stale` | integer | 是 | — |
-| `active_job_claims` | integer | 是 | — |
-| `active_mcp_jobs` | integer | 是 | — |
-| `queued_mcp_jobs` | integer | 是 | — |
-| `items` | array&lt;[OperationsSelfHostedMachineResponse](schemas.md#schema-OperationsSelfHostedMachineResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "active": {
-      "title": "Active",
-      "type": "integer"
-    },
-    "active_job_claims": {
-      "title": "Active Job Claims",
-      "type": "integer"
-    },
-    "active_mcp_jobs": {
-      "title": "Active Mcp Jobs",
-      "type": "integer"
-    },
-    "degraded": {
-      "title": "Degraded",
-      "type": "integer"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/OperationsSelfHostedMachineResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "offline": {
-      "title": "Offline",
-      "type": "integer"
-    },
-    "quarantined": {
-      "title": "Quarantined",
-      "type": "integer"
-    },
-    "queued_mcp_jobs": {
-      "title": "Queued Mcp Jobs",
-      "type": "integer"
-    },
-    "revoked": {
-      "title": "Revoked",
-      "type": "integer"
-    },
-    "stale": {
-      "title": "Stale",
-      "type": "integer"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "generated_at",
-    "total",
-    "active",
-    "degraded",
-    "quarantined",
-    "revoked",
-    "offline",
-    "stale",
-    "active_job_claims",
-    "active_mcp_jobs",
-    "queued_mcp_jobs",
-    "items"
-  ],
-  "title": "OperationsSelfHostedMachinesResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OperationsWorkerLifecycleResponse"></a>
-
-## OperationsWorkerLifecycleResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `queue_name` | string | 是 | — |
-| `worker_types` | array&lt;[WorkerLifecycleBucketResponse](schemas.md#schema-WorkerLifecycleBucketResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "worker_types": {
-      "items": {
-        "$ref": "#/components/schemas/WorkerLifecycleBucketResponse"
-      },
-      "title": "Worker Types",
-      "type": "array"
-    }
-  },
-  "required": [
-    "generated_at",
-    "queue_name",
-    "worker_types"
-  ],
-  "title": "OperationsWorkerLifecycleResponse",
   "type": "object"
 }
 ```
@@ -28013,9 +22830,9 @@
 }
 ```
 
-<a id="schema-OrchestrationDefinitionCreate"></a>
+<a id="schema-OrchestrationDefinitionCreateCommand"></a>
 
-## OrchestrationDefinitionCreate
+## OrchestrationDefinitionCreateCommand
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -28066,7 +22883,7 @@
     "name",
     "nodes"
   ],
-  "title": "OrchestrationDefinitionCreate",
+  "title": "OrchestrationDefinitionCreateCommand",
   "type": "object"
 }
 ```
@@ -28182,9 +22999,9 @@
 }
 ```
 
-<a id="schema-OrchestrationDefinitionUpdate"></a>
+<a id="schema-OrchestrationDefinitionUpdateCommand"></a>
 
-## OrchestrationDefinitionUpdate
+## OrchestrationDefinitionUpdateCommand
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -28269,7 +23086,7 @@
   "required": [
     "expected_version"
   ],
-  "title": "OrchestrationDefinitionUpdate",
+  "title": "OrchestrationDefinitionUpdateCommand",
   "type": "object"
 }
 ```
@@ -28440,32 +23257,6 @@ Explicit region a privileged editor is allowed to change.
     "definition"
   ],
   "title": "OrchestrationValidationResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-OwnerRequest"></a>
-
-## OwnerRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `user_id` | string (uuid) | 是 | `format="uuid"` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "user_id": {
-      "format": "uuid",
-      "title": "User Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "user_id"
-  ],
-  "title": "OwnerRequest",
   "type": "object"
 }
 ```
@@ -28758,54 +23549,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PageResponse_AdminRuntimeLeaseResponse_"></a>
-
-## PageResponse_AdminRuntimeLeaseResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[AdminRuntimeLeaseResponse](schemas.md#schema-AdminRuntimeLeaseResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/AdminRuntimeLeaseResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[AdminRuntimeLeaseResponse]",
-  "type": "object"
-}
-```
-
 <a id="schema-PageResponse_AdminSecurityEventResponse_"></a>
 
 ## PageResponse_AdminSecurityEventResponse_
@@ -28854,13 +23597,13 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PageResponse_AdminSystemLogResponse_"></a>
+<a id="schema-PageResponse_AdminUserListItemResponse_"></a>
 
-## PageResponse_AdminSystemLogResponse_
+## PageResponse_AdminUserListItemResponse_
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `items` | array&lt;[AdminSystemLogResponse](schemas.md#schema-AdminSystemLogResponse)&gt; | 是 | — |
+| `items` | array&lt;[AdminUserListItemResponse](schemas.md#schema-AdminUserListItemResponse)&gt; | 是 | — |
 | `total` | integer | 是 | `minimum=0.0` |
 | `limit` | integer | 是 | `minimum=1.0` |
 | `offset` | integer | 是 | `minimum=0.0` |
@@ -28870,7 +23613,7 @@ Explicit region a privileged editor is allowed to change.
   "properties": {
     "items": {
       "items": {
-        "$ref": "#/components/schemas/AdminSystemLogResponse"
+        "$ref": "#/components/schemas/AdminUserListItemResponse"
       },
       "title": "Items",
       "type": "array"
@@ -28897,55 +23640,7 @@ Explicit region a privileged editor is allowed to change.
     "limit",
     "offset"
   ],
-  "title": "PageResponse[AdminSystemLogResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_AdminUserListResponse_"></a>
-
-## PageResponse_AdminUserListResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[AdminUserListResponse](schemas.md#schema-AdminUserListResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/AdminUserListResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[AdminUserListResponse]",
+  "title": "PageResponse[AdminUserListItemResponse]",
   "type": "object"
 }
 ```
@@ -29042,54 +23737,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[AdminWorkspaceResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_AdminWorkspaceRuntimeResponse_"></a>
-
-## PageResponse_AdminWorkspaceRuntimeResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[AdminWorkspaceRuntimeResponse](schemas.md#schema-AdminWorkspaceRuntimeResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/AdminWorkspaceRuntimeResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[AdminWorkspaceRuntimeResponse]",
   "type": "object"
 }
 ```
@@ -29670,54 +24317,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PageResponse_CandidateResponse_"></a>
-
-## PageResponse_CandidateResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[CandidateResponse](schemas.md#schema-CandidateResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/CandidateResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[CandidateResponse]",
-  "type": "object"
-}
-```
-
 <a id="schema-PageResponse_CapabilityResourceResponse_"></a>
 
 ## PageResponse_CapabilityResourceResponse_
@@ -29814,6 +24413,54 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_ConversationExecutionResponse_"></a>
+
+## PageResponse_ConversationExecutionResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[ConversationExecutionResponse](schemas.md#schema-ConversationExecutionResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/ConversationExecutionResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[ConversationExecutionResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_ConversationResponse_"></a>
 
 ## PageResponse_ConversationResponse_
@@ -29858,6 +24505,54 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[ConversationResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_ConversationTurnResponse_"></a>
+
+## PageResponse_ConversationTurnResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[ConversationTurnResponse](schemas.md#schema-ConversationTurnResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/ConversationTurnResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[ConversationTurnResponse]",
   "type": "object"
 }
 ```
@@ -29954,198 +24649,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[DomainProjectResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_DownloadResponse_"></a>
-
-## PageResponse_DownloadResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[DownloadResponse](schemas.md#schema-DownloadResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/DownloadResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[DownloadResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_ExecutionResponse_"></a>
-
-## PageResponse_ExecutionResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[ExecutionResponse](schemas.md#schema-ExecutionResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/ExecutionResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[ExecutionResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_HistoryResponse_"></a>
-
-## PageResponse_HistoryResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[HistoryResponse](schemas.md#schema-HistoryResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/HistoryResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[HistoryResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_IntegrityResponse_"></a>
-
-## PageResponse_IntegrityResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[IntegrityResponse](schemas.md#schema-IntegrityResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/IntegrityResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[IntegrityResponse]",
   "type": "object"
 }
 ```
@@ -30342,6 +24845,198 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_MCPCatalogServerResponse_"></a>
+
+## PageResponse_MCPCatalogServerResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[MCPCatalogServerResponse](schemas.md#schema-MCPCatalogServerResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MCPCatalogServerResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[MCPCatalogServerResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_MCPCredentialReferenceResponse_"></a>
+
+## PageResponse_MCPCredentialReferenceResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[MCPCredentialReferenceResponse](schemas.md#schema-MCPCredentialReferenceResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MCPCredentialReferenceResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[MCPCredentialReferenceResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_MCPServerResponse_"></a>
+
+## PageResponse_MCPServerResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[MCPServerResponse](schemas.md#schema-MCPServerResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MCPServerResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[MCPServerResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_MCPToolCallLogResponse_"></a>
+
+## PageResponse_MCPToolCallLogResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[MCPToolCallLogResponse](schemas.md#schema-MCPToolCallLogResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MCPToolCallLogResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[MCPToolCallLogResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_MarketplaceListingResponse_"></a>
 
 ## PageResponse_MarketplaceListingResponse_
@@ -30386,198 +25081,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[MarketplaceListingResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_McpCatalogServerResponse_"></a>
-
-## PageResponse_McpCatalogServerResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[McpCatalogServerResponse](schemas.md#schema-McpCatalogServerResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/McpCatalogServerResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[McpCatalogServerResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_McpCredentialReferenceResponse_"></a>
-
-## PageResponse_McpCredentialReferenceResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[McpCredentialReferenceResponse](schemas.md#schema-McpCredentialReferenceResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/McpCredentialReferenceResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[McpCredentialReferenceResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_McpServerResponse_"></a>
-
-## PageResponse_McpServerResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[McpServerResponse](schemas.md#schema-McpServerResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/McpServerResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[McpServerResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_McpToolCallLogResponse_"></a>
-
-## PageResponse_McpToolCallLogResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[McpToolCallLogResponse](schemas.md#schema-McpToolCallLogResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/McpToolCallLogResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[McpToolCallLogResponse]",
   "type": "object"
 }
 ```
@@ -30870,6 +25373,54 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_PlatformMetricResponse_"></a>
+
+## PageResponse_PlatformMetricResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[PlatformMetricResponse](schemas.md#schema-PlatformMetricResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PlatformMetricResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[PlatformMetricResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_PluginBindingResponse_"></a>
 
 ## PageResponse_PluginBindingResponse_
@@ -30914,6 +25465,102 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[PluginBindingResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_PluginCandidateResponse_"></a>
+
+## PageResponse_PluginCandidateResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[PluginCandidateResponse](schemas.md#schema-PluginCandidateResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PluginCandidateResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[PluginCandidateResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_PluginDownloadResponse_"></a>
+
+## PageResponse_PluginDownloadResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[PluginDownloadResponse](schemas.md#schema-PluginDownloadResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PluginDownloadResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[PluginDownloadResponse]",
   "type": "object"
 }
 ```
@@ -31014,6 +25661,102 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_PluginSourceResponse_"></a>
+
+## PageResponse_PluginSourceResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[PluginSourceResponse](schemas.md#schema-PluginSourceResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PluginSourceResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[PluginSourceResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_PluginTrustKeyResponse_"></a>
+
+## PageResponse_PluginTrustKeyResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[PluginTrustKeyResponse](schemas.md#schema-PluginTrustKeyResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PluginTrustKeyResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[PluginTrustKeyResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_RunEventResponse_"></a>
 
 ## PageResponse_RunEventResponse_
@@ -31058,54 +25801,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[RunEventResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_RuntimeAllocationResponse_"></a>
-
-## PageResponse_RuntimeAllocationResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[RuntimeAllocationResponse](schemas.md#schema-RuntimeAllocationResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/RuntimeAllocationResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[RuntimeAllocationResponse]",
   "type": "object"
 }
 ```
@@ -31158,13 +25853,13 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PageResponse_RuntimeLeaseResponse_"></a>
+<a id="schema-PageResponse_RuntimeEventEvidenceResponse_"></a>
 
-## PageResponse_RuntimeLeaseResponse_
+## PageResponse_RuntimeEventEvidenceResponse_
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `items` | array&lt;[RuntimeLeaseResponse](schemas.md#schema-RuntimeLeaseResponse)&gt; | 是 | — |
+| `items` | array&lt;[RuntimeEventEvidenceResponse](schemas.md#schema-RuntimeEventEvidenceResponse)&gt; | 是 | — |
 | `total` | integer | 是 | `minimum=0.0` |
 | `limit` | integer | 是 | `minimum=1.0` |
 | `offset` | integer | 是 | `minimum=0.0` |
@@ -31174,7 +25869,7 @@ Explicit region a privileged editor is allowed to change.
   "properties": {
     "items": {
       "items": {
-        "$ref": "#/components/schemas/RuntimeLeaseResponse"
+        "$ref": "#/components/schemas/RuntimeEventEvidenceResponse"
       },
       "title": "Items",
       "type": "array"
@@ -31201,7 +25896,55 @@ Explicit region a privileged editor is allowed to change.
     "limit",
     "offset"
   ],
-  "title": "PageResponse[RuntimeLeaseResponse]",
+  "title": "PageResponse[RuntimeEventEvidenceResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_RuntimeEventResponse_"></a>
+
+## PageResponse_RuntimeEventResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[RuntimeEventResponse](schemas.md#schema-RuntimeEventResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/RuntimeEventResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[RuntimeEventResponse]",
   "type": "object"
 }
 ```
@@ -31350,6 +26093,54 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_SecurityEventResponse_"></a>
+
+## PageResponse_SecurityEventResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[SecurityEventResponse](schemas.md#schema-SecurityEventResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/SecurityEventResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[SecurityEventResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_SkillResponse_"></a>
 
 ## PageResponse_SkillResponse_
@@ -31394,54 +26185,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[SkillResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_SourceResponse_"></a>
-
-## PageResponse_SourceResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[SourceResponse](schemas.md#schema-SourceResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/SourceResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[SourceResponse]",
   "type": "object"
 }
 ```
@@ -31686,6 +26429,54 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_TeamOrchestrationResponse_"></a>
+
+## PageResponse_TeamOrchestrationResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[TeamOrchestrationResponse](schemas.md#schema-TeamOrchestrationResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/TeamOrchestrationResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[TeamOrchestrationResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_ToolGroupResponse_"></a>
 
 ## PageResponse_ToolGroupResponse_
@@ -31730,102 +26521,6 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[ToolGroupResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_TrustKeyResponse_"></a>
-
-## PageResponse_TrustKeyResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[TrustKeyResponse](schemas.md#schema-TrustKeyResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/TrustKeyResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[TrustKeyResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_TurnResponse_"></a>
-
-## PageResponse_TurnResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[TurnResponse](schemas.md#schema-TurnResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/TurnResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[TurnResponse]",
   "type": "object"
 }
 ```
@@ -31926,102 +26621,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PageResponse_WorkerLeaseResponse_"></a>
-
-## PageResponse_WorkerLeaseResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[WorkerLeaseResponse](schemas.md#schema-WorkerLeaseResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/WorkerLeaseResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[WorkerLeaseResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-PageResponse_WorkerNodeResponse_"></a>
-
-## PageResponse_WorkerNodeResponse_
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[WorkerNodeResponse](schemas.md#schema-WorkerNodeResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/WorkerNodeResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[WorkerNodeResponse]",
-  "type": "object"
-}
-```
-
 <a id="schema-PageResponse_WorkspaceAgentInstallResponse_"></a>
 
 ## PageResponse_WorkspaceAgentInstallResponse_
@@ -32066,6 +26665,54 @@ Explicit region a privileged editor is allowed to change.
     "offset"
   ],
   "title": "PageResponse[WorkspaceAgentInstallResponse]",
+  "type": "object"
+}
+```
+
+<a id="schema-PageResponse_WorkspaceAuditStatus_"></a>
+
+## PageResponse_WorkspaceAuditStatus_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[WorkspaceAuditStatus](schemas.md#schema-WorkspaceAuditStatus)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/WorkspaceAuditStatus"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[WorkspaceAuditStatus]",
   "type": "object"
 }
 ```
@@ -32454,6 +27101,54 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PageResponse_WorkspaceRestoreDrillOperationResponse_"></a>
+
+## PageResponse_WorkspaceRestoreDrillOperationResponse_
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[WorkspaceRestoreDrillOperationResponse](schemas.md#schema-WorkspaceRestoreDrillOperationResponse)&gt; | 是 | — |
+| `total` | integer | 是 | `minimum=0.0` |
+| `limit` | integer | 是 | `minimum=1.0` |
+| `offset` | integer | 是 | `minimum=0.0` |
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/WorkspaceRestoreDrillOperationResponse"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0.0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "minimum": 0.0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "PageResponse[WorkspaceRestoreDrillOperationResponse]",
+  "type": "object"
+}
+```
+
 <a id="schema-PageResponse_WorkspaceRuntimeResponse_"></a>
 
 ## PageResponse_WorkspaceRuntimeResponse_
@@ -32670,45 +27365,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PermissionResponse"></a>
-
-## PermissionResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `kind` | [ResourceKind](schemas.md#schema-ResourceKind) | 是 | — |
-| `resource_id` | string (uuid) | 是 | `format="uuid"` |
-| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "actions": {
-      "items": {
-        "$ref": "#/components/schemas/ResourceAction"
-      },
-      "title": "Actions",
-      "type": "array"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/ResourceKind"
-    },
-    "resource_id": {
-      "format": "uuid",
-      "title": "Resource Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "kind",
-    "resource_id",
-    "actions"
-  ],
-  "title": "PermissionResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-PermissionResult"></a>
 
 ## PermissionResult
@@ -32737,9 +27393,307 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-PlanRequest"></a>
+<a id="schema-PlatformExecutionSummary"></a>
 
-## PlanRequest
+## PlatformExecutionSummary
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `window_seconds` | integer | 是 | — |
+| `pending_approvals` | integer | 是 | — |
+| `waiting_runs` | integer | 是 | — |
+| `blocked_tasks` | integer | 是 | — |
+| `top_failure_codes` | array&lt;[FailureCodeCount](schemas.md#schema-FailureCodeCount)&gt; | 是 | — |
+| `top_security_reasons` | array&lt;[SecurityReasonCount](schemas.md#schema-SecurityReasonCount)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "blocked_tasks": {
+      "title": "Blocked Tasks",
+      "type": "integer"
+    },
+    "pending_approvals": {
+      "title": "Pending Approvals",
+      "type": "integer"
+    },
+    "top_failure_codes": {
+      "items": {
+        "$ref": "#/components/schemas/FailureCodeCount"
+      },
+      "title": "Top Failure Codes",
+      "type": "array"
+    },
+    "top_security_reasons": {
+      "items": {
+        "$ref": "#/components/schemas/SecurityReasonCount"
+      },
+      "title": "Top Security Reasons",
+      "type": "array"
+    },
+    "waiting_runs": {
+      "title": "Waiting Runs",
+      "type": "integer"
+    },
+    "window_seconds": {
+      "title": "Window Seconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "window_seconds",
+    "pending_approvals",
+    "waiting_runs",
+    "blocked_tasks",
+    "top_failure_codes",
+    "top_security_reasons"
+  ],
+  "title": "PlatformExecutionSummary",
+  "type": "object"
+}
+```
+
+<a id="schema-PlatformMetricResponse"></a>
+
+## PlatformMetricResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `sample_slot` | integer | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `values` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "sample_slot": {
+      "title": "Sample Slot",
+      "type": "integer"
+    },
+    "values": {
+      "additionalProperties": true,
+      "title": "Values",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "sample_slot",
+    "created_at",
+    "values"
+  ],
+  "title": "PlatformMetricResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PlatformUpdateApplyRequest"></a>
+
+## PlatformUpdateApplyRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `plan_sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "plan_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Plan Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_sha256"
+  ],
+  "title": "PlatformUpdateApplyRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PlatformUpdateEventResponse"></a>
+
+## PlatformUpdateEventResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `phase` | string | 是 | — |
+| `actor` | string | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "actor": {
+      "title": "Actor",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "phase": {
+      "title": "Phase",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "phase",
+    "actor",
+    "created_at"
+  ],
+  "title": "PlatformUpdateEventResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PlatformUpdateJobResponse"></a>
+
+## PlatformUpdateJobResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `action` | string | 是 | — |
+| `tag` | string | 是 | — |
+| `status` | string | 是 | — |
+| `phase` | string | 是 | — |
+| `plan` | object | 是 | `additionalProperties=true` |
+| `plan_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `backup_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `approved_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "approved_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approved At"
+    },
+    "backup_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Backup Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "phase": {
+      "title": "Phase",
+      "type": "string"
+    },
+    "plan": {
+      "additionalProperties": true,
+      "title": "Plan",
+      "type": "object"
+    },
+    "plan_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Plan Sha256"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "tag": {
+      "title": "Tag",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "action",
+    "tag",
+    "status",
+    "phase",
+    "plan",
+    "plan_sha256",
+    "error_code",
+    "backup_id",
+    "approved_at",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "PlatformUpdateJobResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PlatformUpdatePlanRequest"></a>
+
+## PlatformUpdatePlanRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -32778,20 +27732,21 @@ Explicit region a privileged editor is allowed to change.
     "tag",
     "idempotency_key"
   ],
-  "title": "PlanRequest",
+  "title": "PlatformUpdatePlanRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-PluginAction"></a>
+<a id="schema-PluginActionRequest"></a>
 
-## PluginAction
+## PluginActionRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `action` | string | 是 | `enum=["enable", "disable", "switch_version", "retire_version", "uninstall"]` |
 | `expected_generation` | integer | 是 | `minimum=1.0` |
 | `version` | string anyOf null | 否 | `anyOf=[{"maxLength": 64, "type": "string"}, {"type": "null"}]` |
+| `approved_permissions` | array&lt;string&gt; anyOf null | 否 | `anyOf=[{"items": {"type": "string"}, "maxItems": 128, "type": "array"}, {"type": "null"}]` |
 
 ```json
 {
@@ -32807,6 +27762,21 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Action",
       "type": "string"
+    },
+    "approved_permissions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approved Permissions"
     },
     "expected_generation": {
       "minimum": 1.0,
@@ -32830,7 +27800,118 @@ Explicit region a privileged editor is allowed to change.
     "action",
     "expected_generation"
   ],
-  "title": "PluginAction",
+  "title": "PluginActionRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginBindingPreview"></a>
+
+## PluginBindingPreview
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `capability_key` | string | 是 | — |
+| `resource_id` | string (uuid) | 是 | `format="uuid"` |
+| `configuration` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "capability_key": {
+      "title": "Capability Key",
+      "type": "string"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "resource_id": {
+      "format": "uuid",
+      "title": "Resource Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability_key",
+    "resource_id",
+    "configuration"
+  ],
+  "title": "PluginBindingPreview",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginBindingReauthorizeRequest"></a>
+
+## PluginBindingReauthorizeRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `expected_generation` | integer | 是 | `minimum=1.0` |
+| `expected_configuration_revision` | integer | 是 | `minimum=1.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expected_configuration_revision": {
+      "minimum": 1.0,
+      "title": "Expected Configuration Revision",
+      "type": "integer"
+    },
+    "expected_generation": {
+      "minimum": 1.0,
+      "title": "Expected Generation",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "expected_generation",
+    "expected_configuration_revision"
+  ],
+  "title": "PluginBindingReauthorizeRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginBindingRequest"></a>
+
+## PluginBindingRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `capability_key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
+| `resource_id` | string (uuid) | 是 | `format="uuid"` |
+| `expected_generation` | integer | 是 | `minimum=1.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "capability_key": {
+      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
+      "title": "Capability Key",
+      "type": "string"
+    },
+    "expected_generation": {
+      "minimum": 1.0,
+      "title": "Expected Generation",
+      "type": "integer"
+    },
+    "resource_id": {
+      "format": "uuid",
+      "title": "Resource Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability_key",
+    "resource_id",
+    "expected_generation"
+  ],
+  "title": "PluginBindingRequest",
   "type": "object"
 }
 ```
@@ -32847,7 +27928,7 @@ Explicit region a privileged editor is allowed to change.
 | `capability_key` | string | 是 | — |
 | `kind` | string | 是 | — |
 | `resource_id` | string (uuid) | 是 | `format="uuid"` |
-| `release_id` | string (uuid) | 是 | `format="uuid"` |
+| `configuration_revision` | integer | 是 | — |
 | `configuration` | object | 是 | `additionalProperties=true` |
 
 ```json
@@ -32862,6 +27943,10 @@ Explicit region a privileged editor is allowed to change.
       "title": "Configuration",
       "type": "object"
     },
+    "configuration_revision": {
+      "title": "Configuration Revision",
+      "type": "integer"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -32874,11 +27959,6 @@ Explicit region a privileged editor is allowed to change.
     },
     "kind": {
       "title": "Kind",
-      "type": "string"
-    },
-    "release_id": {
-      "format": "uuid",
-      "title": "Release Id",
       "type": "string"
     },
     "resource_id": {
@@ -32899,10 +27979,376 @@ Explicit region a privileged editor is allowed to change.
     "capability_key",
     "kind",
     "resource_id",
-    "release_id",
+    "configuration_revision",
     "configuration"
   ],
   "title": "PluginBindingResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCandidateInstallRequest"></a>
+
+## PluginCandidateInstallRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `instance_name` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
+| `installation_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `bindings` | array&lt;[PluginCapabilityBinding](schemas.md#schema-PluginCapabilityBinding)&gt; | 否 | `maxItems=256` |
+| `approved_permissions` | array&lt;string&gt; | 否 | `maxItems=128` |
+| `expected_generation` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
+| `preview_digest` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "approved_permissions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Approved Permissions",
+      "type": "array"
+    },
+    "bindings": {
+      "items": {
+        "$ref": "#/components/schemas/PluginCapabilityBinding"
+      },
+      "maxItems": 256,
+      "title": "Bindings",
+      "type": "array"
+    },
+    "expected_generation": {
+      "anyOf": [
+        {
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Expected Generation"
+    },
+    "installation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Installation Id"
+    },
+    "instance_name": {
+      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
+      "title": "Instance Name",
+      "type": "string"
+    },
+    "preview_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Preview Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "instance_name",
+    "preview_digest"
+  ],
+  "title": "PluginCandidateInstallRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCandidatePreviewRequest"></a>
+
+## PluginCandidatePreviewRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `installation_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `bindings` | array&lt;[PluginCapabilityBinding](schemas.md#schema-PluginCapabilityBinding)&gt; | 否 | `maxItems=256` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "bindings": {
+      "items": {
+        "$ref": "#/components/schemas/PluginCapabilityBinding"
+      },
+      "maxItems": 256,
+      "title": "Bindings",
+      "type": "array"
+    },
+    "installation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Installation Id"
+    }
+  },
+  "title": "PluginCandidatePreviewRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCandidatePreviewResponse"></a>
+
+## PluginCandidatePreviewResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `candidate_id` | string (uuid) | 是 | `format="uuid"` |
+| `source_generation` | integer | 是 | — |
+| `sha256` | string | 是 | — |
+| `release` | [PluginReleaseDescriptor](schemas.md#schema-PluginReleaseDescriptor) | 是 | — |
+| `expected_generation` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `current_version` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `required_permissions` | array&lt;string&gt; | 是 | — |
+| `added_permissions` | array&lt;string&gt; | 是 | — |
+| `removed_permissions` | array&lt;string&gt; | 是 | — |
+| `configuration_schemas` | object | 是 | `additionalProperties={"additionalProperties": true, "type": "object"}` |
+| `current_bindings` | array&lt;[PluginBindingPreview](schemas.md#schema-PluginBindingPreview)&gt; | 是 | — |
+| `proposed_bindings` | array&lt;[PluginBindingPreview](schemas.md#schema-PluginBindingPreview)&gt; | 是 | — |
+| `preview_digest` | string | 是 | — |
+
+```json
+{
+  "properties": {
+    "added_permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Added Permissions",
+      "type": "array"
+    },
+    "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "configuration_schemas": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Configuration Schemas",
+      "type": "object"
+    },
+    "current_bindings": {
+      "items": {
+        "$ref": "#/components/schemas/PluginBindingPreview"
+      },
+      "title": "Current Bindings",
+      "type": "array"
+    },
+    "current_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Current Version"
+    },
+    "expected_generation": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Expected Generation"
+    },
+    "preview_digest": {
+      "title": "Preview Digest",
+      "type": "string"
+    },
+    "proposed_bindings": {
+      "items": {
+        "$ref": "#/components/schemas/PluginBindingPreview"
+      },
+      "title": "Proposed Bindings",
+      "type": "array"
+    },
+    "release": {
+      "$ref": "#/components/schemas/PluginReleaseDescriptor"
+    },
+    "removed_permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Removed Permissions",
+      "type": "array"
+    },
+    "required_permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Permissions",
+      "type": "array"
+    },
+    "sha256": {
+      "title": "Sha256",
+      "type": "string"
+    },
+    "source_generation": {
+      "title": "Source Generation",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "source_generation",
+    "sha256",
+    "release",
+    "expected_generation",
+    "current_version",
+    "required_permissions",
+    "added_permissions",
+    "removed_permissions",
+    "configuration_schemas",
+    "current_bindings",
+    "proposed_bindings",
+    "preview_digest"
+  ],
+  "title": "PluginCandidatePreviewResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCandidateResponse"></a>
+
+## PluginCandidateResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `source_id` | string (uuid) | 是 | `format="uuid"` |
+| `plugin_key` | string | 是 | — |
+| `version` | string | 是 | — |
+| `publisher_key_id` | string | 是 | — |
+| `sha256` | string | 是 | — |
+| `withdrawn` | boolean | 是 | — |
+| `verified_release` | [SignedPluginRelease](schemas.md#schema-SignedPluginRelease) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/SignedPluginRelease"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "plugin_key": {
+      "title": "Plugin Key",
+      "type": "string"
+    },
+    "publisher_key_id": {
+      "title": "Publisher Key Id",
+      "type": "string"
+    },
+    "sha256": {
+      "title": "Sha256",
+      "type": "string"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "verified_release": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/SignedPluginRelease"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    },
+    "withdrawn": {
+      "title": "Withdrawn",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "source_id",
+    "plugin_key",
+    "version",
+    "publisher_key_id",
+    "sha256",
+    "withdrawn",
+    "verified_release"
+  ],
+  "title": "PluginCandidateResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCapabilityBinding"></a>
+
+## PluginCapabilityBinding
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `capability_key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
+| `resource_id` | string (uuid) | 是 | `format="uuid"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "capability_key": {
+      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
+      "title": "Capability Key",
+      "type": "string"
+    },
+    "resource_id": {
+      "format": "uuid",
+      "title": "Resource Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability_key",
+    "resource_id"
+  ],
+  "title": "PluginCapabilityBinding",
   "type": "object"
 }
 ```
@@ -32949,6 +28395,209 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-PluginCredentialResponse"></a>
+
+## PluginCredentialResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `token` | string | 是 | — |
+| `expires_at` | string (date-time) | 是 | `format="date-time"` |
+| `permissions` | array&lt;string&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+    },
+    "token": {
+      "title": "Token",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "token",
+    "expires_at",
+    "permissions"
+  ],
+  "title": "PluginCredentialResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginCredentialRotateRequest"></a>
+
+## PluginCredentialRotateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `permissions` | array&lt;string&gt; | 是 | `maxItems=16`; `minItems=1` |
+| `lifetime_hours` | integer | 否 | `default=24`; `maximum=2160.0`; `minimum=1.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "lifetime_hours": {
+      "default": 24,
+      "maximum": 2160.0,
+      "minimum": 1.0,
+      "title": "Lifetime Hours",
+      "type": "integer"
+    },
+    "permissions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Permissions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "permissions"
+  ],
+  "title": "PluginCredentialRotateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginDownloadRequest"></a>
+
+## PluginDownloadRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `request_key` | string | 是 | `pattern="^[a-zA-Z0-9_.-]{1,120}$"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "request_key": {
+      "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_key"
+  ],
+  "title": "PluginDownloadRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginDownloadResponse"></a>
+
+## PluginDownloadResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `source_id` | string (uuid) | 是 | `format="uuid"` |
+| `candidate_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `execution_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `attempts` | integer | 是 | — |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "attempts": {
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "candidate_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Candidate Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "execution_id": {
+      "format": "uuid",
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "source_id",
+    "candidate_id",
+    "execution_id",
+    "status",
+    "attempts",
+    "error_code"
+  ],
+  "title": "PluginDownloadResponse",
+  "type": "object"
+}
+```
+
 <a id="schema-PluginInstallRequest"></a>
 
 ## PluginInstallRequest
@@ -32956,7 +28605,9 @@ Explicit region a privileged editor is allowed to change.
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `package` | [SignedPluginPackage](schemas.md#schema-SignedPluginPackage) | 是 | — |
-| `bindings` | object | 是 | `additionalProperties={"$ref": "#/components/schemas/CapabilityBinding"}`; `maxProperties=128`; `minProperties=1` |
+| `instance_name` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
+| `installation_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `bindings` | array&lt;[PluginCapabilityBinding](schemas.md#schema-PluginCapabilityBinding)&gt; | 否 | `maxItems=256` |
 | `approved_permissions` | array&lt;string&gt; | 否 | `maxItems=128` |
 | `expected_generation` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
 
@@ -32973,13 +28624,12 @@ Explicit region a privileged editor is allowed to change.
       "type": "array"
     },
     "bindings": {
-      "additionalProperties": {
-        "$ref": "#/components/schemas/CapabilityBinding"
+      "items": {
+        "$ref": "#/components/schemas/PluginCapabilityBinding"
       },
-      "maxProperties": 128,
-      "minProperties": 1,
+      "maxItems": 256,
       "title": "Bindings",
-      "type": "object"
+      "type": "array"
     },
     "expected_generation": {
       "anyOf": [
@@ -32993,13 +28643,30 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Expected Generation"
     },
+    "installation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Installation Id"
+    },
+    "instance_name": {
+      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
+      "title": "Instance Name",
+      "type": "string"
+    },
     "package": {
       "$ref": "#/components/schemas/SignedPluginPackage"
     }
   },
   "required": [
     "package",
-    "bindings"
+    "instance_name"
   ],
   "title": "PluginInstallRequest",
   "type": "object"
@@ -33017,17 +28684,32 @@ Explicit region a privileged editor is allowed to change.
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `plugin_key` | string | 是 | — |
+| `instance_name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `platform_blocked` | boolean | 是 | — |
 | `generation` | integer | 是 | — |
 | `current_version` | string | 是 | — |
+| `current_release_id` | string (uuid) | 是 | `format="uuid"` |
+| `approved_permissions` | array&lt;string&gt; | 是 | — |
 
 ```json
 {
   "properties": {
+    "approved_permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Approved Permissions",
+      "type": "array"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
+      "type": "string"
+    },
+    "current_release_id": {
+      "format": "uuid",
+      "title": "Current Release Id",
       "type": "string"
     },
     "current_version": {
@@ -33041,6 +28723,10 @@ Explicit region a privileged editor is allowed to change.
     "id": {
       "format": "uuid",
       "title": "Id",
+      "type": "string"
+    },
+    "instance_name": {
+      "title": "Instance Name",
       "type": "string"
     },
     "platform_blocked": {
@@ -33072,10 +28758,13 @@ Explicit region a privileged editor is allowed to change.
     "updated_at",
     "workspace_id",
     "plugin_key",
+    "instance_name",
     "status",
     "platform_blocked",
     "generation",
-    "current_version"
+    "current_version",
+    "current_release_id",
+    "approved_permissions"
   ],
   "title": "PluginInstallResponse",
   "type": "object"
@@ -33145,7 +28834,8 @@ Explicit region a privileged editor is allowed to change.
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `contract_version` | integer | 否 | `const=1`; `default=1` |
+| `manifest_version` | integer | 否 | `const=2`; `default=2` |
+| `plugin_api_version` | integer | 否 | `const=2`; `default=2` |
 | `key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
 | `version` | string | 是 | `pattern="^\\d+\\.\\d+\\.\\d+$"` |
 | `name` | string | 是 | `maxLength=160`; `minLength=1` |
@@ -33165,12 +28855,6 @@ Explicit region a privileged editor is allowed to change.
       "title": "Capabilities",
       "type": "array"
     },
-    "contract_version": {
-      "const": 1,
-      "default": 1,
-      "title": "Contract Version",
-      "type": "integer"
-    },
     "execution": {
       "const": "remote",
       "default": "remote",
@@ -33182,11 +28866,23 @@ Explicit region a privileged editor is allowed to change.
       "title": "Key",
       "type": "string"
     },
+    "manifest_version": {
+      "const": 2,
+      "default": 2,
+      "title": "Manifest Version",
+      "type": "integer"
+    },
     "name": {
       "maxLength": 160,
       "minLength": 1,
       "title": "Name",
       "type": "string"
+    },
+    "plugin_api_version": {
+      "const": 2,
+      "default": 2,
+      "title": "Plugin Api Version",
+      "type": "integer"
     },
     "version": {
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
@@ -33299,23 +28995,15 @@ Explicit region a privileged editor is allowed to change.
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `install_id` | string (uuid) | 是 | `format="uuid"` |
+| `plugin_key` | string | 是 | — |
 | `version` | string | 是 | — |
 | `status` | string | 是 | — |
 | `checksum` | string | 是 | — |
 | `package` | object | 是 | `additionalProperties=true` |
-| `approved_permissions` | array&lt;string&gt; | 是 | — |
 
 ```json
 {
   "properties": {
-    "approved_permissions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Approved Permissions",
-      "type": "array"
-    },
     "checksum": {
       "title": "Checksum",
       "type": "string"
@@ -33330,15 +29018,14 @@ Explicit region a privileged editor is allowed to change.
       "title": "Id",
       "type": "string"
     },
-    "install_id": {
-      "format": "uuid",
-      "title": "Install Id",
-      "type": "string"
-    },
     "package": {
       "additionalProperties": true,
       "title": "Package",
       "type": "object"
+    },
+    "plugin_key": {
+      "title": "Plugin Key",
+      "type": "string"
     },
     "status": {
       "title": "Status",
@@ -33364,59 +29051,338 @@ Explicit region a privileged editor is allowed to change.
     "created_at",
     "updated_at",
     "workspace_id",
-    "install_id",
+    "plugin_key",
     "version",
     "status",
     "checksum",
-    "package",
-    "approved_permissions"
+    "package"
   ],
   "title": "PluginReleaseResponse",
   "type": "object"
 }
 ```
 
-<a id="schema-ProgressEventRequest"></a>
+<a id="schema-PluginSourceResponse"></a>
 
-## ProgressEventRequest
+## PluginSourceResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
-| `event_type` | string | 是 | `maxLength=120`; `minLength=1` |
-| `message` | string | 否 | `default=""` |
-| `metadata` | object | 否 | `additionalProperties=true` |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `url` | string | 是 | — |
+| `sha256` | string | 是 | — |
+| `allowed_hosts` | array&lt;string&gt; | 是 | — |
+| `enabled` | boolean | 是 | — |
+| `generation` | integer | 是 | — |
+| `synced_generation` | integer | 是 | — |
 
 ```json
 {
   "properties": {
-    "agent_run_id": {
+    "allowed_hosts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Hosts",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "generation": {
+      "title": "Generation",
+      "type": "integer"
+    },
+    "id": {
       "format": "uuid",
-      "title": "Agent Run Id",
+      "title": "Id",
       "type": "string"
     },
-    "event_type": {
-      "maxLength": 120,
-      "minLength": 1,
-      "title": "Event Type",
+    "name": {
+      "title": "Name",
       "type": "string"
     },
-    "message": {
-      "default": "",
-      "title": "Message",
+    "sha256": {
+      "title": "Sha256",
       "type": "string"
     },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
+    "synced_generation": {
+      "title": "Synced Generation",
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "url": {
+      "title": "Url",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
     }
   },
   "required": [
-    "agent_run_id",
-    "event_type"
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "name",
+    "url",
+    "sha256",
+    "allowed_hosts",
+    "enabled",
+    "generation",
+    "synced_generation"
   ],
-  "title": "ProgressEventRequest",
+  "title": "PluginSourceResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginSourceSettings"></a>
+
+## PluginSourceSettings
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `url` | string | 是 | `maxLength=2048` |
+| `sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
+| `allowed_hosts` | array&lt;string&gt; | 是 | `maxItems=8`; `minItems=1` |
+| `enabled` | boolean | 否 | `default=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowed_hosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Allowed Hosts",
+      "type": "array"
+    },
+    "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "url": {
+      "maxLength": 2048,
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "url",
+    "sha256",
+    "allowed_hosts"
+  ],
+  "title": "PluginSourceSettings",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginSourceUpdateRequest"></a>
+
+## PluginSourceUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `url` | string | 是 | `maxLength=2048` |
+| `sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
+| `allowed_hosts` | array&lt;string&gt; | 是 | `maxItems=8`; `minItems=1` |
+| `enabled` | boolean | 否 | `default=true` |
+| `expected_generation` | integer | 是 | `minimum=1.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowed_hosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Allowed Hosts",
+      "type": "array"
+    },
+    "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "expected_generation": {
+      "minimum": 1.0,
+      "title": "Expected Generation",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "url": {
+      "maxLength": 2048,
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "url",
+    "sha256",
+    "allowed_hosts",
+    "expected_generation"
+  ],
+  "title": "PluginSourceUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginTrustKeyCreateRequest"></a>
+
+## PluginTrustKeyCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key_id` | string | 是 | `pattern="^[a-zA-Z0-9_.-]{1,120}$"` |
+| `plugin_key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
+| `public_key` | string | 是 | `maxLength=44`; `minLength=44` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "key_id": {
+      "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
+      "title": "Key Id",
+      "type": "string"
+    },
+    "plugin_key": {
+      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
+      "title": "Plugin Key",
+      "type": "string"
+    },
+    "public_key": {
+      "maxLength": 44,
+      "minLength": 44,
+      "title": "Public Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key_id",
+    "plugin_key",
+    "public_key"
+  ],
+  "title": "PluginTrustKeyCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PluginTrustKeyResponse"></a>
+
+## PluginTrustKeyResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `key_id` | string | 是 | — |
+| `plugin_key` | string | 是 | — |
+| `public_key` | string | 是 | — |
+| `status` | string | 是 | — |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "plugin_key": {
+      "title": "Plugin Key",
+      "type": "string"
+    },
+    "public_key": {
+      "title": "Public Key",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "updated_at",
+    "workspace_id",
+    "key_id",
+    "plugin_key",
+    "public_key",
+    "status"
+  ],
+  "title": "PluginTrustKeyResponse",
   "type": "object"
 }
 ```
@@ -33454,613 +29420,6 @@ Explicit region a privileged editor is allowed to change.
     "reason"
   ],
   "title": "PublicationDecisionRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueGovernanceDiagnosticsResponse"></a>
-
-## QueueGovernanceDiagnosticsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `queue_name` | string | 是 | — |
-| `scan_limit` | integer | 是 | — |
-| `stale_after_seconds` | integer | 是 | — |
-| `queued_total` | integer | 是 | — |
-| `queued_scanned` | integer | 是 | — |
-| `agent_run_jobs_scanned` | integer | 是 | — |
-| `dead_letter_total` | integer | 是 | — |
-| `orphaned_queue_jobs` | integer | 是 | — |
-| `non_runnable_queue_jobs` | integer | 是 | — |
-| `duplicate_queue_jobs` | integer | 是 | — |
-| `queued_runs_missing_queue_job` | integer | 是 | — |
-| `old_queued_jobs` | integer | 是 | — |
-| `truncated` | boolean | 是 | — |
-| `issues` | array&lt;[QueueGovernanceIssueResponse](schemas.md#schema-QueueGovernanceIssueResponse)&gt; | 是 | — |
-| `recommended_actions` | array&lt;string&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "agent_run_jobs_scanned": {
-      "title": "Agent Run Jobs Scanned",
-      "type": "integer"
-    },
-    "dead_letter_total": {
-      "title": "Dead Letter Total",
-      "type": "integer"
-    },
-    "duplicate_queue_jobs": {
-      "title": "Duplicate Queue Jobs",
-      "type": "integer"
-    },
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "issues": {
-      "items": {
-        "$ref": "#/components/schemas/QueueGovernanceIssueResponse"
-      },
-      "title": "Issues",
-      "type": "array"
-    },
-    "non_runnable_queue_jobs": {
-      "title": "Non Runnable Queue Jobs",
-      "type": "integer"
-    },
-    "old_queued_jobs": {
-      "title": "Old Queued Jobs",
-      "type": "integer"
-    },
-    "orphaned_queue_jobs": {
-      "title": "Orphaned Queue Jobs",
-      "type": "integer"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "queued_runs_missing_queue_job": {
-      "title": "Queued Runs Missing Queue Job",
-      "type": "integer"
-    },
-    "queued_scanned": {
-      "title": "Queued Scanned",
-      "type": "integer"
-    },
-    "queued_total": {
-      "title": "Queued Total",
-      "type": "integer"
-    },
-    "recommended_actions": {
-      "items": {
-        "enum": [
-          "requeue_missing_runs",
-          "remove_orphaned_jobs",
-          "remove_non_runnable_jobs"
-        ],
-        "type": "string"
-      },
-      "title": "Recommended Actions",
-      "type": "array"
-    },
-    "scan_limit": {
-      "title": "Scan Limit",
-      "type": "integer"
-    },
-    "stale_after_seconds": {
-      "title": "Stale After Seconds",
-      "type": "integer"
-    },
-    "truncated": {
-      "title": "Truncated",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "generated_at",
-    "queue_name",
-    "scan_limit",
-    "stale_after_seconds",
-    "queued_total",
-    "queued_scanned",
-    "agent_run_jobs_scanned",
-    "dead_letter_total",
-    "orphaned_queue_jobs",
-    "non_runnable_queue_jobs",
-    "duplicate_queue_jobs",
-    "queued_runs_missing_queue_job",
-    "old_queued_jobs",
-    "truncated",
-    "issues",
-    "recommended_actions"
-  ],
-  "title": "QueueGovernanceDiagnosticsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueGovernanceIssueResponse"></a>
-
-## QueueGovernanceIssueResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `code` | string | 是 | — |
-| `severity` | string | 是 | `enum=["info", "warning", "critical"]` |
-| `message` | string | 是 | — |
-| `count` | integer | 是 | — |
-| `resource_ids` | array&lt;string (uuid)&gt; | 否 | — |
-| `job_ids` | array&lt;string (uuid)&gt; | 否 | — |
-| `oldest_age_seconds` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `metadata` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "code": {
-      "title": "Code",
-      "type": "string"
-    },
-    "count": {
-      "title": "Count",
-      "type": "integer"
-    },
-    "job_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Job Ids",
-      "type": "array"
-    },
-    "message": {
-      "title": "Message",
-      "type": "string"
-    },
-    "metadata": {
-      "additionalProperties": true,
-      "title": "Metadata",
-      "type": "object"
-    },
-    "oldest_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Age Seconds"
-    },
-    "resource_ids": {
-      "items": {
-        "format": "uuid",
-        "type": "string"
-      },
-      "title": "Resource Ids",
-      "type": "array"
-    },
-    "severity": {
-      "enum": [
-        "info",
-        "warning",
-        "critical"
-      ],
-      "title": "Severity",
-      "type": "string"
-    }
-  },
-  "required": [
-    "code",
-    "severity",
-    "message",
-    "count"
-  ],
-  "title": "QueueGovernanceIssueResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueGovernanceReconcileRequest"></a>
-
-## QueueGovernanceReconcileRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `queue_name` | string | 否 | `default="agent_runs"`; `maxLength=120`; `minLength=1` |
-| `scan_limit` | integer | 否 | `default=500`; `maximum=5000.0`; `minimum=1.0` |
-| `stale_after_seconds` | integer | 否 | `default=900`; `maximum=86400.0`; `minimum=60.0` |
-| `actions` | array&lt;string&gt; | 是 | `maxItems=3`; `minItems=1` |
-| `max_items` | integer | 否 | `default=100`; `maximum=500.0`; `minimum=1.0` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "actions": {
-      "items": {
-        "enum": [
-          "requeue_missing_runs",
-          "remove_orphaned_jobs",
-          "remove_non_runnable_jobs"
-        ],
-        "type": "string"
-      },
-      "maxItems": 3,
-      "minItems": 1,
-      "title": "Actions",
-      "type": "array"
-    },
-    "max_items": {
-      "default": 100,
-      "maximum": 500.0,
-      "minimum": 1.0,
-      "title": "Max Items",
-      "type": "integer"
-    },
-    "queue_name": {
-      "default": "agent_runs",
-      "maxLength": 120,
-      "minLength": 1,
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "reason": {
-      "anyOf": [
-        {
-          "maxLength": 240,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    },
-    "scan_limit": {
-      "default": 500,
-      "maximum": 5000.0,
-      "minimum": 1.0,
-      "title": "Scan Limit",
-      "type": "integer"
-    },
-    "stale_after_seconds": {
-      "default": 900,
-      "maximum": 86400.0,
-      "minimum": 60.0,
-      "title": "Stale After Seconds",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "actions"
-  ],
-  "title": "QueueGovernanceReconcileRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueGovernanceReconcileResponse"></a>
-
-## QueueGovernanceReconcileResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `queue_name` | string | 是 | — |
-| `scanned_jobs` | integer | 是 | — |
-| `actions` | array&lt;string&gt; | 是 | — |
-| `requeued_missing_runs` | integer | 是 | — |
-| `removed_orphaned_jobs` | integer | 是 | — |
-| `removed_non_runnable_jobs` | integer | 是 | — |
-| `skipped_items` | integer | 是 | — |
-| `remaining_issues` | array&lt;[QueueGovernanceIssueResponse](schemas.md#schema-QueueGovernanceIssueResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "actions": {
-      "items": {
-        "enum": [
-          "requeue_missing_runs",
-          "remove_orphaned_jobs",
-          "remove_non_runnable_jobs"
-        ],
-        "type": "string"
-      },
-      "title": "Actions",
-      "type": "array"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "remaining_issues": {
-      "items": {
-        "$ref": "#/components/schemas/QueueGovernanceIssueResponse"
-      },
-      "title": "Remaining Issues",
-      "type": "array"
-    },
-    "removed_non_runnable_jobs": {
-      "title": "Removed Non Runnable Jobs",
-      "type": "integer"
-    },
-    "removed_orphaned_jobs": {
-      "title": "Removed Orphaned Jobs",
-      "type": "integer"
-    },
-    "requeued_missing_runs": {
-      "title": "Requeued Missing Runs",
-      "type": "integer"
-    },
-    "scanned_jobs": {
-      "title": "Scanned Jobs",
-      "type": "integer"
-    },
-    "skipped_items": {
-      "title": "Skipped Items",
-      "type": "integer"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "queue_name",
-    "scanned_jobs",
-    "actions",
-    "requeued_missing_runs",
-    "removed_orphaned_jobs",
-    "removed_non_runnable_jobs",
-    "skipped_items",
-    "remaining_issues"
-  ],
-  "title": "QueueGovernanceReconcileResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueJobTypeBucketResponse"></a>
-
-## QueueJobTypeBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `job_type` | string | 是 | — |
-| `queued` | integer | 是 | — |
-| `dead_letter` | integer | 是 | — |
-| `highest_priority` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `oldest_queued_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "dead_letter": {
-      "title": "Dead Letter",
-      "type": "integer"
-    },
-    "highest_priority": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Highest Priority"
-    },
-    "job_type": {
-      "title": "Job Type",
-      "type": "string"
-    },
-    "oldest_queued_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Queued Age Seconds"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "job_type",
-    "queued",
-    "dead_letter",
-    "highest_priority",
-    "oldest_queued_age_seconds"
-  ],
-  "title": "QueueJobTypeBucketResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueLatencyResponse"></a>
-
-## QueueLatencyResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `queue_name` | string | 是 | — |
-| `queued` | integer | 是 | — |
-| `oldest_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `newest_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `average_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `highest_priority` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "average_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Average Age Seconds"
-    },
-    "highest_priority": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Highest Priority"
-    },
-    "newest_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Newest Age Seconds"
-    },
-    "oldest_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Age Seconds"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "queue_name",
-    "queued",
-    "oldest_age_seconds",
-    "newest_age_seconds",
-    "average_age_seconds",
-    "highest_priority"
-  ],
-  "title": "QueueLatencyResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueueMetricsResponse"></a>
-
-## QueueMetricsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `queue_name` | string | 是 | — |
-| `queued` | integer | 是 | — |
-| `dead_letter` | integer | 是 | — |
-| `idempotency_keys` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "dead_letter": {
-      "title": "Dead Letter",
-      "type": "integer"
-    },
-    "idempotency_keys": {
-      "title": "Idempotency Keys",
-      "type": "integer"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "queue_name",
-    "queued",
-    "dead_letter",
-    "idempotency_keys"
-  ],
-  "title": "QueueMetricsResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-QueuePriorityBucketResponse"></a>
-
-## QueuePriorityBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `priority` | integer | 是 | — |
-| `queued` | integer | 是 | — |
-| `dead_letter` | integer | 是 | — |
-| `oldest_queued_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "dead_letter": {
-      "title": "Dead Letter",
-      "type": "integer"
-    },
-    "oldest_queued_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Queued Age Seconds"
-    },
-    "priority": {
-      "title": "Priority",
-      "type": "integer"
-    },
-    "queued": {
-      "title": "Queued",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "priority",
-    "queued",
-    "dead_letter",
-    "oldest_queued_age_seconds"
-  ],
-  "title": "QueuePriorityBucketResponse",
   "type": "object"
 }
 ```
@@ -34134,107 +29493,136 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-RecoveryRequest"></a>
+<a id="schema-ReplyReceipt"></a>
 
-## RecoveryRequest
+## ReplyReceipt
+
+Result of a platform-owned reply delivery attempt.
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `request_id` | string (uuid) | 是 | `format="uuid"` |
-| `reason` | string | 是 | `maxLength=240`; `minLength=1` |
-| `stale_after_seconds` | integer | 否 | `default=900`; `maximum=86400.0`; `minimum=60.0` |
-| `statuses` | array&lt;string&gt; | 否 | `default=["queued", "running", "waiting_runtime"]`; `maxItems=3`; `minItems=1` |
-| `limit` | integer | 否 | `default=100`; `maximum=100.0`; `minimum=1.0` |
+| `delivery_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | `enum=["pending", "sending", "delivered", "failed", "unknown"]` |
+| `provider_message_id` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
 
 ```json
 {
   "additionalProperties": false,
+  "description": "Result of a platform-owned reply delivery attempt.",
   "properties": {
-    "limit": {
-      "default": 100,
-      "maximum": 100.0,
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "reason": {
-      "maxLength": 240,
-      "minLength": 1,
-      "title": "Reason",
-      "type": "string"
-    },
-    "request_id": {
+    "delivery_id": {
       "format": "uuid",
-      "title": "Request Id",
+      "title": "Delivery Id",
       "type": "string"
     },
-    "stale_after_seconds": {
-      "default": 900,
-      "maximum": 86400.0,
-      "minimum": 60.0,
-      "title": "Stale After Seconds",
-      "type": "integer"
-    },
-    "statuses": {
-      "default": [
-        "queued",
-        "running",
-        "waiting_runtime"
-      ],
-      "items": {
-        "enum": [
-          "queued",
-          "running",
-          "waiting_runtime"
-        ],
-        "type": "string"
-      },
-      "maxItems": 3,
-      "minItems": 1,
-      "title": "Statuses",
-      "type": "array"
-    }
-  },
-  "required": [
-    "request_id",
-    "reason"
-  ],
-  "title": "RecoveryRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-RequeueDeadLetterResponse"></a>
-
-## RequeueDeadLetterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `requeued` | boolean | 是 | — |
-| `job` | [JobPayload](schemas.md#schema-JobPayload) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/JobPayload"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "job": {
+    "error_code": {
       "anyOf": [
         {
-          "$ref": "#/components/schemas/JobPayload"
+          "maxLength": 120,
+          "type": "string"
         },
         {
           "type": "null"
         }
-      ]
+      ],
+      "title": "Error Code"
     },
-    "requeued": {
-      "title": "Requeued",
-      "type": "boolean"
+    "provider_message_id": {
+      "anyOf": [
+        {
+          "maxLength": 240,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Provider Message Id"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "sending",
+        "delivered",
+        "failed",
+        "unknown"
+      ],
+      "title": "Status",
+      "type": "string"
     }
   },
   "required": [
-    "requeued"
+    "delivery_id",
+    "status"
   ],
-  "title": "RequeueDeadLetterResponse",
+  "title": "ReplyReceipt",
+  "type": "object"
+}
+```
+
+<a id="schema-ReplyReceiptRequest"></a>
+
+## ReplyReceiptRequest
+
+Connector acknowledgement for an externally observed send result.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `delivery_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | `enum=["delivered", "failed", "unknown"]` |
+| `provider_message_id` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Connector acknowledgement for an externally observed send result.",
+  "properties": {
+    "delivery_id": {
+      "format": "uuid",
+      "title": "Delivery Id",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "provider_message_id": {
+      "anyOf": [
+        {
+          "maxLength": 240,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Provider Message Id"
+    },
+    "status": {
+      "enum": [
+        "delivered",
+        "failed",
+        "unknown"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "delivery_id",
+    "status"
+  ],
+  "title": "ReplyReceiptRequest",
   "type": "object"
 }
 ```
@@ -34256,6 +29644,70 @@ Explicit region a privileged editor is allowed to change.
   ],
   "title": "ResourceAction",
   "type": "string"
+}
+```
+
+<a id="schema-ResourceGrantResponse"></a>
+
+## ResourceGrantResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `user_id` | string (uuid) | 是 | `format="uuid"` |
+| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/components/schemas/ResourceAction"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "actions"
+  ],
+  "title": "ResourceGrantResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-ResourceGrantUpdateRequest"></a>
+
+## ResourceGrantUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | `maxItems=7`; `uniqueItems=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/components/schemas/ResourceAction"
+      },
+      "maxItems": 7,
+      "title": "Actions",
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "actions"
+  ],
+  "title": "ResourceGrantUpdateRequest",
+  "type": "object"
 }
 ```
 
@@ -34294,6 +29746,32 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-ResourceOwnerUpdateRequest"></a>
+
+## ResourceOwnerUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `user_id` | string (uuid) | 是 | `format="uuid"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id"
+  ],
+  "title": "ResourceOwnerUpdateRequest",
+  "type": "object"
+}
+```
+
 <a id="schema-ResourcePage"></a>
 
 ## ResourcePage
@@ -34323,6 +29801,45 @@ Explicit region a privileged editor is allowed to change.
     "has_more"
   ],
   "title": "ResourcePage",
+  "type": "object"
+}
+```
+
+<a id="schema-ResourcePermissionsResponse"></a>
+
+## ResourcePermissionsResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `kind` | [ResourceKind](schemas.md#schema-ResourceKind) | 是 | — |
+| `resource_id` | string (uuid) | 是 | `format="uuid"` |
+| `actions` | array&lt;[ResourceAction](schemas.md#schema-ResourceAction)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/components/schemas/ResourceAction"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/ResourceKind"
+    },
+    "resource_id": {
+      "format": "uuid",
+      "title": "Resource Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "resource_id",
+    "actions"
+  ],
+  "title": "ResourcePermissionsResponse",
   "type": "object"
 }
 ```
@@ -34863,264 +30380,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-RunActivityOldestRunResponse"></a>
-
-## RunActivityOldestRunResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `run_id` | string (uuid) | 是 | `format="uuid"` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `status` | string | 是 | — |
-| `latest_event_type` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `age_seconds` | integer | 是 | — |
-| `started_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `last_activity_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "age_seconds": {
-      "title": "Age Seconds",
-      "type": "integer"
-    },
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "last_activity_at": {
-      "format": "date-time",
-      "title": "Last Activity At",
-      "type": "string"
-    },
-    "latest_event_type": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Latest Event Type"
-    },
-    "run_id": {
-      "format": "uuid",
-      "title": "Run Id",
-      "type": "string"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "started_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Started At"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    },
-    "task_step_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Step Id"
-    }
-  },
-  "required": [
-    "run_id",
-    "task_id",
-    "task_step_id",
-    "agent_profile_id",
-    "runtime_id",
-    "runtime_space_id",
-    "status",
-    "latest_event_type",
-    "age_seconds",
-    "started_at",
-    "last_activity_at"
-  ],
-  "title": "RunActivityOldestRunResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RunActivityPhaseBucketResponse"></a>
-
-## RunActivityPhaseBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `phase` | string | 是 | — |
-| `label` | string | 是 | — |
-| `count` | integer | 是 | — |
-| `oldest_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `oldest_run` | [RunActivityOldestRunResponse](schemas.md#schema-RunActivityOldestRunResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/RunActivityOldestRunResponse"}, {"type": "null"}]` |
-| `recommended_action` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "count": {
-      "title": "Count",
-      "type": "integer"
-    },
-    "label": {
-      "title": "Label",
-      "type": "string"
-    },
-    "oldest_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Age Seconds"
-    },
-    "oldest_run": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/RunActivityOldestRunResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "phase": {
-      "title": "Phase",
-      "type": "string"
-    },
-    "recommended_action": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Recommended Action"
-    }
-  },
-  "required": [
-    "phase",
-    "label",
-    "count",
-    "oldest_age_seconds"
-  ],
-  "title": "RunActivityPhaseBucketResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RunEventFilterResponse"></a>
-
-## RunEventFilterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[RunEventResponse](schemas.md#schema-RunEventResponse)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-| `limit` | integer | 是 | — |
-| `offset` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/RunEventResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "RunEventFilterResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-RunEventResponse"></a>
 
 ## RunEventResponse
@@ -35350,120 +30609,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-RuntimeAllocationResponse"></a>
-
-## RuntimeAllocationResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `owner_kind` | string | 是 | `enum=["run", "mcp", "command"]` |
-| `owner_id` | string (uuid) | 是 | `format="uuid"` |
-| `host_id` | string (uuid) | 是 | `format="uuid"` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "host_id": {
-      "format": "uuid",
-      "title": "Host Id",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "owner_id": {
-      "format": "uuid",
-      "title": "Owner Id",
-      "type": "string"
-    },
-    "owner_kind": {
-      "enum": [
-        "run",
-        "mcp",
-        "command"
-      ],
-      "title": "Owner Kind",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "workspace_runtime_id",
-    "owner_kind",
-    "owner_id",
-    "host_id"
-  ],
-  "title": "RuntimeAllocationResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeCleanupResponse"></a>
-
-## RuntimeCleanupResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `stale_marked_offline` | integer | 是 | — |
-| `deleted_records` | integer | 是 | — |
-| `expired_worker_leases` | integer | 否 | `default=0` |
-
-```json
-{
-  "properties": {
-    "deleted_records": {
-      "title": "Deleted Records",
-      "type": "integer"
-    },
-    "expired_worker_leases": {
-      "default": 0,
-      "title": "Expired Worker Leases",
-      "type": "integer"
-    },
-    "stale_marked_offline": {
-      "title": "Stale Marked Offline",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "stale_marked_offline",
-    "deleted_records"
-  ],
-  "title": "RuntimeCleanupResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-RuntimeCommandRequest"></a>
 
 ## RuntimeCommandRequest
@@ -35474,6 +30619,7 @@ Explicit region a privileged editor is allowed to change.
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
     "command": {
       "items": {
@@ -35627,51 +30773,25 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-RuntimeCreateRequest"></a>
+<a id="schema-RuntimeEnvironmentCreateRequest"></a>
 
-## RuntimeCreateRequest
+## RuntimeEnvironmentCreateRequest
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `template_id` | string (uuid) | 是 | `format="uuid"` |
 | `name` | string | 是 | `maxLength=160`; `minLength=1` |
 | `runtime_space_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `limits` | [RuntimeLimitsRequest](schemas.md#schema-RuntimeLimitsRequest) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/RuntimeLimitsRequest"}, {"type": "null"}]` |
-| `network_disabled` | boolean | 否 | `default=true` |
-| `execution_mode` | string | 否 | `default="shared"`; `enum=["isolated", "shared"]` |
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
-    "execution_mode": {
-      "default": "shared",
-      "enum": [
-        "isolated",
-        "shared"
-      ],
-      "title": "Execution Mode",
-      "type": "string"
-    },
-    "limits": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/RuntimeLimitsRequest"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "name": {
       "maxLength": 160,
       "minLength": 1,
       "title": "Name",
       "type": "string"
-    },
-    "network_disabled": {
-      "default": true,
-      "title": "Network Disabled",
-      "type": "boolean"
     },
     "runtime_space_id": {
       "anyOf": [
@@ -35695,91 +30815,128 @@ Explicit region a privileged editor is allowed to change.
     "template_id",
     "name"
   ],
-  "title": "RuntimeCreateRequest",
+  "title": "RuntimeEnvironmentCreateRequest",
   "type": "object"
 }
 ```
 
-<a id="schema-RuntimeCredentialRevokeRequest"></a>
+<a id="schema-RuntimeEnvironmentDiagnosticResponse"></a>
 
-## RuntimeCredentialRevokeRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `reason` | string | 否 | `default=""`; `maxLength=500` |
-
-```json
-{
-  "properties": {
-    "reason": {
-      "default": "",
-      "maxLength": 500,
-      "title": "Reason",
-      "type": "string"
-    }
-  },
-  "title": "RuntimeCredentialRevokeRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeLeaseResponse"></a>
-
-## RuntimeLeaseResponse
+## RuntimeEnvironmentDiagnosticResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `name` | string | 是 | — |
+| `sandbox_backend_id` | string | 是 | — |
 | `status` | string | 是 | — |
-| `lease_metadata` | object | 是 | `additionalProperties=true` |
-| `acquired_at` | string (date-time) | 是 | `format="date-time"` |
-| `released_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `has_docker_container` | boolean | 是 | `readOnly=true` |
+| `sandbox_options` | object | 是 | `additionalProperties=true` |
 
 ```json
 {
   "properties": {
-    "acquired_at": {
-      "format": "date-time",
-      "title": "Acquired At",
+    "id": {
+      "format": "uuid",
+      "title": "Id",
       "type": "string"
     },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "sandbox_backend_id": {
+      "title": "Sandbox Backend Id",
+      "type": "string"
+    },
+    "sandbox_options": {
+      "additionalProperties": true,
+      "title": "Sandbox Options",
+      "type": "object"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "sandbox_backend_id",
+    "status",
+    "sandbox_options"
+  ],
+  "title": "RuntimeEnvironmentDiagnosticResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-RuntimeEventEvidenceResponse"></a>
+
+## RuntimeEventEvidenceResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
+| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `event_type` | string | 是 | — |
+| `message` | string | 是 | — |
+| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `event_metadata` | object | 是 | `additionalProperties=true` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
     "created_at": {
       "format": "date-time",
       "title": "Created At",
       "type": "string"
     },
-    "has_docker_container": {
-      "readOnly": true,
-      "title": "Has Docker Container",
-      "type": "boolean"
+    "event_metadata": {
+      "additionalProperties": true,
+      "title": "Event Metadata",
+      "type": "object"
+    },
+    "event_type": {
+      "title": "Event Type",
+      "type": "string"
     },
     "id": {
       "format": "uuid",
       "title": "Id",
       "type": "string"
     },
-    "lease_metadata": {
-      "additionalProperties": true,
-      "title": "Lease Metadata",
-      "type": "object"
+    "message": {
+      "title": "Message",
+      "type": "string"
     },
-    "released_at": {
+    "request_id": {
       "anyOf": [
         {
-          "format": "date-time",
           "type": "string"
         },
         {
           "type": "null"
         }
       ],
-      "title": "Released At"
+      "title": "Request Id"
+    },
+    "runtime_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Id"
     },
     "runtime_space_id": {
       "anyOf": [
@@ -35793,14 +30950,38 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Runtime Space Id"
     },
-    "status": {
-      "title": "Status",
-      "type": "string"
+    "span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Span Id"
     },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Trace Id"
+    },
+    "worker_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Worker Id"
     },
     "workspace_id": {
       "format": "uuid",
@@ -35815,273 +30996,76 @@ Explicit region a privileged editor is allowed to change.
   },
   "required": [
     "id",
-    "created_at",
-    "updated_at",
     "workspace_id",
     "workspace_runtime_id",
     "runtime_space_id",
-    "status",
-    "lease_metadata",
-    "acquired_at",
-    "released_at",
-    "has_docker_container"
+    "event_type",
+    "message",
+    "request_id",
+    "trace_id",
+    "span_id",
+    "worker_id",
+    "runtime_id",
+    "event_metadata",
+    "created_at"
   ],
-  "title": "RuntimeLeaseResponse",
+  "title": "RuntimeEventEvidenceResponse",
   "type": "object"
 }
 ```
 
-<a id="schema-RuntimeLimitsRequest"></a>
+<a id="schema-RuntimeEventResponse"></a>
 
-## RuntimeLimitsRequest
+## RuntimeEventResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `cpu_count` | number | 是 | `exclusiveMinimum=0.0`; `maximum=8.0` |
-| `memory_mb` | integer | 是 | `maximum=32768.0`; `minimum=128.0` |
-| `disk_mb` | integer | 是 | `maximum=102400.0`; `minimum=256.0` |
-| `timeout_seconds` | integer | 是 | `maximum=3600.0`; `minimum=1.0` |
-| `max_output_bytes` | integer | 否 | `default=256000`; `maximum=2000000.0`; `minimum=1.0` |
-| `max_processes` | integer | 否 | `default=256`; `maximum=512.0`; `minimum=1.0` |
-| `max_concurrent_executions` | integer | 否 | `default=16`; `maximum=128.0`; `minimum=1.0` |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
+| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `event_type` | string | 是 | — |
+| `message` | string | 是 | — |
+| `event_metadata` | object | 是 | `additionalProperties=true` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
 
 ```json
 {
   "properties": {
-    "cpu_count": {
-      "exclusiveMinimum": 0.0,
-      "maximum": 8.0,
-      "title": "Cpu Count",
-      "type": "number"
-    },
-    "disk_mb": {
-      "maximum": 102400.0,
-      "minimum": 256.0,
-      "title": "Disk Mb",
-      "type": "integer"
-    },
-    "max_concurrent_executions": {
-      "default": 16,
-      "maximum": 128.0,
-      "minimum": 1.0,
-      "title": "Max Concurrent Executions",
-      "type": "integer"
-    },
-    "max_output_bytes": {
-      "default": 256000,
-      "maximum": 2000000.0,
-      "minimum": 1.0,
-      "title": "Max Output Bytes",
-      "type": "integer"
-    },
-    "max_processes": {
-      "default": 256,
-      "maximum": 512.0,
-      "minimum": 1.0,
-      "title": "Max Processes",
-      "type": "integer"
-    },
-    "memory_mb": {
-      "maximum": 32768.0,
-      "minimum": 128.0,
-      "title": "Memory Mb",
-      "type": "integer"
-    },
-    "timeout_seconds": {
-      "maximum": 3600.0,
-      "minimum": 1.0,
-      "title": "Timeout Seconds",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "cpu_count",
-    "memory_mb",
-    "disk_mb",
-    "timeout_seconds"
-  ],
-  "title": "RuntimeLimitsRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeProviderCapacityResponse"></a>
-
-## RuntimeProviderCapacityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `provider` | string | 是 | — |
-| `runtime_type` | string | 是 | — |
-| `total` | integer | 是 | — |
-| `online` | integer | 是 | — |
-| `offline` | integer | 是 | — |
-| `degraded` | integer | 是 | — |
-| `running` | integer | 是 | — |
-| `capacity_slots` | integer | 是 | — |
-| `active_runs` | integer | 是 | — |
-| `utilization` | number | 是 | — |
-
-```json
-{
-  "properties": {
-    "active_runs": {
-      "title": "Active Runs",
-      "type": "integer"
-    },
-    "capacity_slots": {
-      "title": "Capacity Slots",
-      "type": "integer"
-    },
-    "degraded": {
-      "title": "Degraded",
-      "type": "integer"
-    },
-    "offline": {
-      "title": "Offline",
-      "type": "integer"
-    },
-    "online": {
-      "title": "Online",
-      "type": "integer"
-    },
-    "provider": {
-      "title": "Provider",
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
       "type": "string"
     },
-    "running": {
-      "title": "Running",
-      "type": "integer"
+    "event_metadata": {
+      "additionalProperties": true,
+      "title": "Event Metadata",
+      "type": "object"
     },
-    "runtime_type": {
-      "title": "Runtime Type",
+    "event_type": {
+      "title": "Event Type",
       "type": "string"
     },
-    "total": {
-      "title": "Total",
-      "type": "integer"
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
     },
-    "utilization": {
-      "title": "Utilization",
-      "type": "number"
-    }
-  },
-  "required": [
-    "provider",
-    "runtime_type",
-    "total",
-    "online",
-    "offline",
-    "degraded",
-    "running",
-    "capacity_slots",
-    "active_runs",
-    "utilization"
-  ],
-  "title": "RuntimeProviderCapacityResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeRegistrationRequest"></a>
-
-## RuntimeRegistrationRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `enrollment_token` | string | 是 | `minLength=24` |
-| `name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `machine_id` | string | 是 | `maxLength=160`; `minLength=1` |
-| `version` | string | 否 | `default=""`; `maxLength=80` |
-| `capabilities` | object | 否 | `additionalProperties=true` |
-| `attestation` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "attestation": {
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "runtime_space_id": {
       "anyOf": [
         {
-          "additionalProperties": true,
-          "type": "object"
+          "format": "uuid",
+          "type": "string"
         },
         {
           "type": "null"
         }
       ],
-      "title": "Attestation"
-    },
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "enrollment_token": {
-      "minLength": 24,
-      "title": "Enrollment Token",
-      "type": "string"
-    },
-    "machine_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Machine Id",
-      "type": "string"
-    },
-    "name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "version": {
-      "default": "",
-      "maxLength": 80,
-      "title": "Version",
-      "type": "string"
-    }
-  },
-  "required": [
-    "enrollment_token",
-    "name",
-    "machine_id"
-  ],
-  "title": "RuntimeRegistrationRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeRegistrationResponse"></a>
-
-## RuntimeRegistrationResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `credential_token` | string | 是 | — |
-| `capability_attestation_state` | string | 是 | — |
-| `host_isolation_verified` | boolean | 是 | — |
-
-```json
-{
-  "properties": {
-    "capability_attestation_state": {
-      "title": "Capability Attestation State",
-      "type": "string"
-    },
-    "credential_token": {
-      "title": "Credential Token",
-      "type": "string"
-    },
-    "host_isolation_verified": {
-      "title": "Host Isolation Verified",
-      "type": "boolean"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
+      "title": "Runtime Space Id"
     },
     "workspace_id": {
       "format": "uuid",
@@ -36095,14 +31079,16 @@ Explicit region a privileged editor is allowed to change.
     }
   },
   "required": [
+    "id",
     "workspace_id",
     "workspace_runtime_id",
-    "worker_id",
-    "credential_token",
-    "capability_attestation_state",
-    "host_isolation_verified"
+    "runtime_space_id",
+    "event_type",
+    "message",
+    "event_metadata",
+    "created_at"
   ],
-  "title": "RuntimeRegistrationResponse",
+  "title": "RuntimeEventResponse",
   "type": "object"
 }
 ```
@@ -36248,17 +31234,18 @@ Explicit region a privileged editor is allowed to change.
 | `target_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `default_runtime_template_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `policy` | object | 否 | `additionalProperties=true` |
-| `network_policy` | object | 否 | `additionalProperties=true` |
-| `storage_policy` | object | 否 | `additionalProperties=true` |
-| `cleanup_policy` | object | 否 | `additionalProperties=true` |
+| `storage_metadata` | object | 否 | Descriptive storage metadata; does not configure storage execution.; `additionalProperties=true` |
+| `cleanup_metadata` | object | 否 | Descriptive cleanup metadata; does not schedule deletion or archival.; `additionalProperties=true` |
 | `quota_limits` | object | 否 | `additionalProperties={"type": "integer"}` |
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
-    "cleanup_policy": {
+    "cleanup_metadata": {
       "additionalProperties": true,
-      "title": "Cleanup Policy",
+      "description": "Descriptive cleanup metadata; does not schedule deletion or archival.",
+      "title": "Cleanup Metadata",
       "type": "object"
     },
     "default_runtime_template_id": {
@@ -36278,11 +31265,6 @@ Explicit region a privileged editor is allowed to change.
       "minLength": 1,
       "title": "Name",
       "type": "string"
-    },
-    "network_policy": {
-      "additionalProperties": true,
-      "title": "Network Policy",
-      "type": "object"
     },
     "policy": {
       "additionalProperties": true,
@@ -36306,9 +31288,10 @@ Explicit region a privileged editor is allowed to change.
       "title": "Scope",
       "type": "string"
     },
-    "storage_policy": {
+    "storage_metadata": {
       "additionalProperties": true,
-      "title": "Storage Policy",
+      "description": "Descriptive storage metadata; does not configure storage execution.",
+      "title": "Storage Metadata",
       "type": "object"
     },
     "target_id": {
@@ -36341,7 +31324,7 @@ Explicit region a privileged editor is allowed to change.
 | `runtime_space` | [RuntimeSpaceResponse](schemas.md#schema-RuntimeSpaceResponse) | 是 | — |
 | `quotas` | array&lt;[RuntimeSpaceQuotaDiagnosticResponse](schemas.md#schema-RuntimeSpaceQuotaDiagnosticResponse)&gt; | 是 | — |
 | `active_reservations` | array&lt;[RuntimeSpaceReservationDiagnosticResponse](schemas.md#schema-RuntimeSpaceReservationDiagnosticResponse)&gt; | 是 | — |
-| `runtimes` | array&lt;[RuntimeSpaceRuntimeDiagnosticResponse](schemas.md#schema-RuntimeSpaceRuntimeDiagnosticResponse)&gt; | 是 | — |
+| `runtimes` | array&lt;[RuntimeEnvironmentDiagnosticResponse](schemas.md#schema-RuntimeEnvironmentDiagnosticResponse)&gt; | 是 | — |
 | `blocked_steps` | array&lt;[RuntimeSpaceBlockedStepDiagnosticResponse](schemas.md#schema-RuntimeSpaceBlockedStepDiagnosticResponse)&gt; | 是 | — |
 
 ```json
@@ -36373,7 +31356,7 @@ Explicit region a privileged editor is allowed to change.
     },
     "runtimes": {
       "items": {
-        "$ref": "#/components/schemas/RuntimeSpaceRuntimeDiagnosticResponse"
+        "$ref": "#/components/schemas/RuntimeEnvironmentDiagnosticResponse"
       },
       "title": "Runtimes",
       "type": "array"
@@ -36617,60 +31600,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-RuntimeSpaceQuotaUsageResponse"></a>
-
-## RuntimeSpaceQuotaUsageResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `quota_key` | string | 是 | — |
-| `limit_value` | integer | 是 | — |
-| `reserved_value` | integer | 是 | — |
-| `unit` | string | 是 | — |
-| `utilization` | number | 是 | — |
-| `saturated` | boolean | 是 | — |
-
-```json
-{
-  "properties": {
-    "limit_value": {
-      "title": "Limit Value",
-      "type": "integer"
-    },
-    "quota_key": {
-      "title": "Quota Key",
-      "type": "string"
-    },
-    "reserved_value": {
-      "title": "Reserved Value",
-      "type": "integer"
-    },
-    "saturated": {
-      "title": "Saturated",
-      "type": "boolean"
-    },
-    "unit": {
-      "title": "Unit",
-      "type": "string"
-    },
-    "utilization": {
-      "title": "Utilization",
-      "type": "number"
-    }
-  },
-  "required": [
-    "quota_key",
-    "limit_value",
-    "reserved_value",
-    "unit",
-    "utilization",
-    "saturated"
-  ],
-  "title": "RuntimeSpaceQuotaUsageResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-RuntimeSpaceReservationDiagnosticResponse"></a>
 
 ## RuntimeSpaceReservationDiagnosticResponse
@@ -36829,16 +31758,16 @@ Explicit region a privileged editor is allowed to change.
 | `scope` | string | 是 | — |
 | `status` | string | 是 | — |
 | `policy` | object | 是 | `additionalProperties=true` |
-| `network_policy` | object | 是 | `additionalProperties=true` |
-| `storage_policy` | object | 是 | `additionalProperties=true` |
-| `cleanup_policy` | object | 是 | `additionalProperties=true` |
+| `storage_metadata` | object | 是 | Descriptive storage metadata; does not configure storage execution.; `additionalProperties=true` |
+| `cleanup_metadata` | object | 是 | Descriptive cleanup metadata; does not schedule deletion or archival.; `additionalProperties=true` |
 
 ```json
 {
   "properties": {
-    "cleanup_policy": {
+    "cleanup_metadata": {
       "additionalProperties": true,
-      "title": "Cleanup Policy",
+      "description": "Descriptive cleanup metadata; does not schedule deletion or archival.",
+      "title": "Cleanup Metadata",
       "type": "object"
     },
     "created_at": {
@@ -36879,11 +31808,6 @@ Explicit region a privileged editor is allowed to change.
       "title": "Name",
       "type": "string"
     },
-    "network_policy": {
-      "additionalProperties": true,
-      "title": "Network Policy",
-      "type": "object"
-    },
     "policy": {
       "additionalProperties": true,
       "title": "Policy",
@@ -36897,9 +31821,10 @@ Explicit region a privileged editor is allowed to change.
       "title": "Status",
       "type": "string"
     },
-    "storage_policy": {
+    "storage_metadata": {
       "additionalProperties": true,
-      "title": "Storage Policy",
+      "description": "Descriptive storage metadata; does not configure storage execution.",
+      "title": "Storage Metadata",
       "type": "object"
     },
     "updated_at": {
@@ -36924,172 +31849,10 @@ Explicit region a privileged editor is allowed to change.
     "scope",
     "status",
     "policy",
-    "network_policy",
-    "storage_policy",
-    "cleanup_policy"
+    "storage_metadata",
+    "cleanup_metadata"
   ],
   "title": "RuntimeSpaceResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeSpaceRuntimeDiagnosticResponse"></a>
-
-## RuntimeSpaceRuntimeDiagnosticResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `runtime_provider` | string | 是 | — |
-| `runtime_type` | string | 是 | — |
-| `status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `has_docker_container` | boolean | 是 | — |
-| `limits` | object | 是 | `additionalProperties=true` |
-| `network_policy` | object | 是 | `additionalProperties=true` |
-| `capabilities` | object | 是 | `additionalProperties=true` |
-| `policy_resolution` | object | 是 | `additionalProperties=true` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
-    "has_docker_container": {
-      "title": "Has Docker Container",
-      "type": "boolean"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "limits": {
-      "additionalProperties": true,
-      "title": "Limits",
-      "type": "object"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "network_policy": {
-      "additionalProperties": true,
-      "title": "Network Policy",
-      "type": "object"
-    },
-    "policy_resolution": {
-      "additionalProperties": true,
-      "title": "Policy Resolution",
-      "type": "object"
-    },
-    "runtime_provider": {
-      "title": "Runtime Provider",
-      "type": "string"
-    },
-    "runtime_type": {
-      "title": "Runtime Type",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "name",
-    "runtime_provider",
-    "runtime_type",
-    "status",
-    "connection_status",
-    "has_docker_container",
-    "limits",
-    "network_policy",
-    "capabilities",
-    "policy_resolution",
-    "last_heartbeat_at"
-  ],
-  "title": "RuntimeSpaceRuntimeDiagnosticResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-RuntimeSpaceSaturationResponse"></a>
-
-## RuntimeSpaceSaturationResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `runtime_space_id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `active_runtimes` | integer | 是 | — |
-| `quotas` | array&lt;[RuntimeSpaceQuotaUsageResponse](schemas.md#schema-RuntimeSpaceQuotaUsageResponse)&gt; | 是 | — |
-| `saturated` | boolean | 是 | — |
-
-```json
-{
-  "properties": {
-    "active_runtimes": {
-      "title": "Active Runtimes",
-      "type": "integer"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "quotas": {
-      "items": {
-        "$ref": "#/components/schemas/RuntimeSpaceQuotaUsageResponse"
-      },
-      "title": "Quotas",
-      "type": "array"
-    },
-    "runtime_space_id": {
-      "format": "uuid",
-      "title": "Runtime Space Id",
-      "type": "string"
-    },
-    "saturated": {
-      "title": "Saturated",
-      "type": "boolean"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "runtime_space_id",
-    "name",
-    "status",
-    "active_runtimes",
-    "quotas",
-    "saturated"
-  ],
-  "title": "RuntimeSpaceSaturationResponse",
   "type": "object"
 }
 ```
@@ -37103,15 +31866,15 @@ Explicit region a privileged editor is allowed to change.
 | `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `status` | string anyOf null | 否 | `anyOf=[{"enum": ["active", "paused", "disabled", "quarantined", "archived"], "type": "string"}, {"type": "null"}]` |
 | `policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `network_policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `storage_policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `cleanup_policy` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `storage_metadata` | object anyOf null | 否 | Descriptive storage metadata; does not configure storage execution.; `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `cleanup_metadata` | object anyOf null | 否 | Descriptive cleanup metadata; does not schedule deletion or archival.; `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
 | `quota_limits` | object anyOf null | 否 | `anyOf=[{"additionalProperties": {"type": "integer"}, "type": "object"}, {"type": "null"}]` |
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
-    "cleanup_policy": {
+    "cleanup_metadata": {
       "anyOf": [
         {
           "additionalProperties": true,
@@ -37121,7 +31884,8 @@ Explicit region a privileged editor is allowed to change.
           "type": "null"
         }
       ],
-      "title": "Cleanup Policy"
+      "description": "Descriptive cleanup metadata; does not schedule deletion or archival.",
+      "title": "Cleanup Metadata"
     },
     "name": {
       "anyOf": [
@@ -37135,18 +31899,6 @@ Explicit region a privileged editor is allowed to change.
         }
       ],
       "title": "Name"
-    },
-    "network_policy": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Network Policy"
     },
     "policy": {
       "anyOf": [
@@ -37192,7 +31944,7 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Status"
     },
-    "storage_policy": {
+    "storage_metadata": {
       "anyOf": [
         {
           "additionalProperties": true,
@@ -37202,7 +31954,8 @@ Explicit region a privileged editor is allowed to change.
           "type": "null"
         }
       ],
-      "title": "Storage Policy"
+      "description": "Descriptive storage metadata; does not configure storage execution.",
+      "title": "Storage Metadata"
     }
   },
   "title": "RuntimeSpaceUpdateRequest",
@@ -37219,8 +31972,8 @@ Explicit region a privileged editor is allowed to change.
 | `id` | string (uuid) | 是 | `format="uuid"` |
 | `name` | string | 是 | — |
 | `image` | string | 是 | — |
-| `default_limits` | object | 是 | `additionalProperties=true` |
-| `default_network_policy` | object | 是 | `additionalProperties=true` |
+| `sandbox_backend_id` | string | 是 | — |
+| `sandbox_options` | object | 是 | `additionalProperties=true` |
 | `status` | string | 是 | — |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 
@@ -37231,16 +31984,6 @@ Explicit region a privileged editor is allowed to change.
       "format": "date-time",
       "title": "Created At",
       "type": "string"
-    },
-    "default_limits": {
-      "additionalProperties": true,
-      "title": "Default Limits",
-      "type": "object"
-    },
-    "default_network_policy": {
-      "additionalProperties": true,
-      "title": "Default Network Policy",
-      "type": "object"
     },
     "id": {
       "format": "uuid",
@@ -37255,6 +31998,15 @@ Explicit region a privileged editor is allowed to change.
       "title": "Name",
       "type": "string"
     },
+    "sandbox_backend_id": {
+      "title": "Sandbox Backend Id",
+      "type": "string"
+    },
+    "sandbox_options": {
+      "additionalProperties": true,
+      "title": "Sandbox Options",
+      "type": "object"
+    },
     "status": {
       "title": "Status",
       "type": "string"
@@ -37264,8 +32016,8 @@ Explicit region a privileged editor is allowed to change.
     "id",
     "name",
     "image",
-    "default_limits",
-    "default_network_policy",
+    "sandbox_backend_id",
+    "sandbox_options",
     "status",
     "created_at"
   ],
@@ -37282,41 +32034,31 @@ Explicit region a privileged editor is allowed to change.
 | --- | --- | --- | --- |
 | `name` | string | 是 | `maxLength=160`; `minLength=1` |
 | `schedule` | [ScheduledJobScheduleRequest](schemas.md#schema-ScheduledJobScheduleRequest) | 是 | — |
-| `action_type` | string | 否 | `default="record_due_action"`; `pattern="^(queue_job&#124;record_due_action)$"` |
-| `job_type` | string anyOf null | 否 | `anyOf=[{"pattern": "^(agent\\.run&#124;mcp\\.tool_execution&#124;task\\.plan&#124;team\\.execution_loop&#124;runtime\\.cleanup&#124;workspace\\.archive_export&#124;memory\\.index&#124;webhook\\.delivery&#124;secret\\.reencrypt&#124;model_provider\\.health_check)$", "type": "string"}, {"type": "null"}]` |
+| `action_type` | string | 否 | `default="record_due_action"`; `pattern="^(execute&#124;record_due_action)$"` |
+| `execution_kind` | [ExecutionKind](schemas.md#schema-ExecutionKind) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/ExecutionKind"}, {"type": "null"}]` |
 | `resource_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `routing` | object | 否 | `additionalProperties=true` |
-| `priority` | integer | 否 | `default=0`; `maximum=100.0`; `minimum=-100.0` |
-| `max_attempts` | integer | 否 | `default=3`; `maximum=10.0`; `minimum=1.0` |
+| `parameters` | object | 否 | `additionalProperties={"$ref": "#/components/schemas/JsonValue"}` |
 | `metadata` | object | 否 | `additionalProperties=true` |
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
     "action_type": {
       "default": "record_due_action",
-      "pattern": "^(queue_job|record_due_action)$",
+      "pattern": "^(execute|record_due_action)$",
       "title": "Action Type",
       "type": "string"
     },
-    "job_type": {
+    "execution_kind": {
       "anyOf": [
         {
-          "pattern": "^(agent\\.run|mcp\\.tool_execution|task\\.plan|team\\.execution_loop|runtime\\.cleanup|workspace\\.archive_export|memory\\.index|webhook\\.delivery|secret\\.reencrypt|model_provider\\.health_check)$",
-          "type": "string"
+          "$ref": "#/components/schemas/ExecutionKind"
         },
         {
           "type": "null"
         }
-      ],
-      "title": "Job Type"
-    },
-    "max_attempts": {
-      "default": 3,
-      "maximum": 10.0,
-      "minimum": 1.0,
-      "title": "Max Attempts",
-      "type": "integer"
+      ]
     },
     "metadata": {
       "additionalProperties": true,
@@ -37329,12 +32071,12 @@ Explicit region a privileged editor is allowed to change.
       "title": "Name",
       "type": "string"
     },
-    "priority": {
-      "default": 0,
-      "maximum": 100.0,
-      "minimum": -100.0,
-      "title": "Priority",
-      "type": "integer"
+    "parameters": {
+      "additionalProperties": {
+        "$ref": "#/components/schemas/JsonValue"
+      },
+      "title": "Parameters",
+      "type": "object"
     },
     "resource_id": {
       "anyOf": [
@@ -37347,11 +32089,6 @@ Explicit region a privileged editor is allowed to change.
         }
       ],
       "title": "Resource Id"
-    },
-    "routing": {
-      "additionalProperties": true,
-      "title": "Routing",
-      "type": "object"
     },
     "schedule": {
       "$ref": "#/components/schemas/ScheduledJobScheduleRequest"
@@ -37380,11 +32117,10 @@ Explicit region a privileged editor is allowed to change.
 | `schedule_config` | object | 是 | `additionalProperties=true` |
 | `status` | string | 是 | — |
 | `action_type` | string | 是 | — |
-| `job_type` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_kind` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `resource_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `routing` | object | 是 | `additionalProperties=true` |
-| `priority` | integer | 是 | — |
-| `max_attempts` | integer | 是 | — |
+| `parameters` | object | 是 | `additionalProperties=true` |
+| `revision` | integer | 是 | — |
 | `metadata` | object | 是 | `additionalProperties=true` |
 | `last_run_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
 | `next_run_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
@@ -37429,12 +32165,7 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Created By User Id"
     },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "job_type": {
+    "execution_kind": {
       "anyOf": [
         {
           "type": "string"
@@ -37443,7 +32174,12 @@ Explicit region a privileged editor is allowed to change.
           "type": "null"
         }
       ],
-      "title": "Job Type"
+      "title": "Execution Kind"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
     },
     "last_run_at": {
       "anyOf": [
@@ -37456,10 +32192,6 @@ Explicit region a privileged editor is allowed to change.
         }
       ],
       "title": "Last Run At"
-    },
-    "max_attempts": {
-      "title": "Max Attempts",
-      "type": "integer"
     },
     "metadata": {
       "additionalProperties": true,
@@ -37482,6 +32214,11 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Next Run At"
     },
+    "parameters": {
+      "additionalProperties": true,
+      "title": "Parameters",
+      "type": "object"
+    },
     "paused_at": {
       "anyOf": [
         {
@@ -37493,10 +32230,6 @@ Explicit region a privileged editor is allowed to change.
         }
       ],
       "title": "Paused At"
-    },
-    "priority": {
-      "title": "Priority",
-      "type": "integer"
     },
     "resource_id": {
       "anyOf": [
@@ -37510,10 +32243,9 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Resource Id"
     },
-    "routing": {
-      "additionalProperties": true,
-      "title": "Routing",
-      "type": "object"
+    "revision": {
+      "title": "Revision",
+      "type": "integer"
     },
     "schedule_config": {
       "additionalProperties": true,
@@ -37548,11 +32280,10 @@ Explicit region a privileged editor is allowed to change.
     "schedule_config",
     "status",
     "action_type",
-    "job_type",
+    "execution_kind",
     "resource_id",
-    "routing",
-    "priority",
-    "max_attempts",
+    "parameters",
+    "revision",
     "metadata",
     "last_run_at",
     "next_run_at",
@@ -37813,6 +32544,59 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
+<a id="schema-SchedulerOverviewResponse"></a>
+
+## SchedulerOverviewResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `generated_at` | string (date-time) | 是 | `format="date-time"` |
+| `backlog` | [SchedulerBacklogResponse](schemas.md#schema-SchedulerBacklogResponse) | 是 | — |
+| `priority_buckets` | array&lt;[SchedulerPriorityBucketResponse](schemas.md#schema-SchedulerPriorityBucketResponse)&gt; | 是 | — |
+| `blocked_reasons` | array&lt;[SchedulerBlockedReasonResponse](schemas.md#schema-SchedulerBlockedReasonResponse)&gt; | 是 | — |
+| `policy` | [SchedulerPolicyResponse](schemas.md#schema-SchedulerPolicyResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "backlog": {
+      "$ref": "#/components/schemas/SchedulerBacklogResponse"
+    },
+    "blocked_reasons": {
+      "items": {
+        "$ref": "#/components/schemas/SchedulerBlockedReasonResponse"
+      },
+      "title": "Blocked Reasons",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "policy": {
+      "$ref": "#/components/schemas/SchedulerPolicyResponse"
+    },
+    "priority_buckets": {
+      "items": {
+        "$ref": "#/components/schemas/SchedulerPriorityBucketResponse"
+      },
+      "title": "Priority Buckets",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_at",
+    "backlog",
+    "priority_buckets",
+    "blocked_reasons",
+    "policy"
+  ],
+  "title": "SchedulerOverviewResponse",
+  "type": "object"
+}
+```
+
 <a id="schema-SchedulerPauseRequest"></a>
 
 ## SchedulerPauseRequest
@@ -37994,51 +32778,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-SecurityEventFilterResponse"></a>
-
-## SecurityEventFilterResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[SecurityEventResponse](schemas.md#schema-SecurityEventResponse)&gt; | 是 | — |
-| `total` | integer | 是 | — |
-| `limit` | integer | 是 | — |
-| `offset` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/SecurityEventResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "SecurityEventFilterResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-SecurityEventResponse"></a>
 
 ## SecurityEventResponse
@@ -38181,601 +32920,32 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-SelfHostedConnectorManifestResponse"></a>
+<a id="schema-SecurityReasonCount"></a>
 
-## SelfHostedConnectorManifestResponse
+## SecurityReasonCount
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `api_prefix` | string | 是 | — |
-| `connector` | object | 是 | `additionalProperties=true` |
-| `endpoints` | object | 是 | `additionalProperties=true` |
-| `capability_contract` | object | 是 | `additionalProperties=true` |
-| `security` | object | 是 | `additionalProperties=true` |
-| `version_policy` | object | 是 | `additionalProperties=true` |
+| `reason` | string | 是 | — |
+| `count` | integer | 是 | — |
 
 ```json
 {
   "properties": {
-    "api_prefix": {
-      "title": "Api Prefix",
-      "type": "string"
-    },
-    "capability_contract": {
-      "additionalProperties": true,
-      "title": "Capability Contract",
-      "type": "object"
-    },
-    "connector": {
-      "additionalProperties": true,
-      "title": "Connector",
-      "type": "object"
-    },
-    "endpoints": {
-      "additionalProperties": true,
-      "title": "Endpoints",
-      "type": "object"
-    },
-    "security": {
-      "additionalProperties": true,
-      "title": "Security",
-      "type": "object"
-    },
-    "version_policy": {
-      "additionalProperties": true,
-      "title": "Version Policy",
-      "type": "object"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "api_prefix",
-    "connector",
-    "endpoints",
-    "capability_contract",
-    "security",
-    "version_policy"
-  ],
-  "title": "SelfHostedConnectorManifestResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedJobResponse"></a>
-
-## SelfHostedJobResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `input` | object | 是 | `additionalProperties=true` |
-| `model` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "format": "uuid",
-      "title": "Agent Run Id",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "input": {
-      "additionalProperties": true,
-      "title": "Input",
-      "type": "object"
-    },
-    "model": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Model"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    }
-  },
-  "required": [
-    "agent_run_id",
-    "task_id",
-    "input",
-    "model",
-    "created_at"
-  ],
-  "title": "SelfHostedJobResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedMcpJobResponse"></a>
-
-## SelfHostedMcpJobResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `agent_run_id` | string (uuid) | 是 | `format="uuid"` |
-| `mcp_server_id` | string (uuid) | 是 | `format="uuid"` |
-| `tool_name` | string | 是 | — |
-| `request_payload` | object | 是 | `additionalProperties=true` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "format": "uuid",
-      "title": "Agent Run Id",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "mcp_server_id": {
-      "format": "uuid",
-      "title": "Mcp Server Id",
-      "type": "string"
-    },
-    "request_payload": {
-      "additionalProperties": true,
-      "title": "Request Payload",
-      "type": "object"
-    },
-    "tool_name": {
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "agent_run_id",
-    "mcp_server_id",
-    "tool_name",
-    "request_payload",
-    "created_at"
-  ],
-  "title": "SelfHostedMcpJobResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedProjectContractResponse"></a>
-
-## SelfHostedProjectContractResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `root_path` | string | 是 | — |
-| `snapshot_id` | string (uuid) | 是 | `format="uuid"` |
-| `fingerprint_sha256` | string | 是 | — |
-| `manifest` | object | 是 | `additionalProperties=true` |
-| `archive_path` | string | 是 | — |
-| `output_upload_path_template` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "archive_path": {
-      "title": "Archive Path",
-      "type": "string"
-    },
-    "fingerprint_sha256": {
-      "title": "Fingerprint Sha256",
-      "type": "string"
-    },
-    "manifest": {
-      "additionalProperties": true,
-      "title": "Manifest",
-      "type": "object"
-    },
-    "output_upload_path_template": {
-      "title": "Output Upload Path Template",
-      "type": "string"
-    },
-    "root_path": {
-      "title": "Root Path",
-      "type": "string"
-    },
-    "snapshot_id": {
-      "format": "uuid",
-      "title": "Snapshot Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "root_path",
-    "snapshot_id",
-    "fingerprint_sha256",
-    "manifest",
-    "archive_path",
-    "output_upload_path_template"
-  ],
-  "title": "SelfHostedProjectContractResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedWorkerCleanupResponse"></a>
-
-## SelfHostedWorkerCleanupResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `degraded` | integer | 是 | — |
-| `quarantined` | integer | 是 | — |
-| `marked_offline` | integer | 否 | `default=0` |
-| `expired_job_claims` | integer | 否 | `default=0` |
-| `expired_mcp_jobs` | integer | 否 | `default=0` |
-
-```json
-{
-  "properties": {
-    "degraded": {
-      "title": "Degraded",
+    "count": {
+      "title": "Count",
       "type": "integer"
     },
-    "expired_job_claims": {
-      "default": 0,
-      "title": "Expired Job Claims",
-      "type": "integer"
-    },
-    "expired_mcp_jobs": {
-      "default": 0,
-      "title": "Expired Mcp Jobs",
-      "type": "integer"
-    },
-    "marked_offline": {
-      "default": 0,
-      "title": "Marked Offline",
-      "type": "integer"
-    },
-    "quarantined": {
-      "title": "Quarantined",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "degraded",
-    "quarantined"
-  ],
-  "title": "SelfHostedWorkerCleanupResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedWorkerControlRequest"></a>
-
-## SelfHostedWorkerControlRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `reason` | string | 否 | `default=""`; `maxLength=500` |
-
-```json
-{
-  "properties": {
     "reason": {
-      "default": "",
-      "maxLength": 500,
       "title": "Reason",
       "type": "string"
     }
   },
-  "title": "SelfHostedWorkerControlRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedWorkerControlResponse"></a>
-
-## SelfHostedWorkerControlResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `action` | string | 是 | — |
-| `worker_status` | string | 是 | — |
-| `runtime_status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `affected_claims` | integer | 是 | — |
-| `affected_runs` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "action": {
-      "title": "Action",
-      "type": "string"
-    },
-    "affected_claims": {
-      "title": "Affected Claims",
-      "type": "integer"
-    },
-    "affected_runs": {
-      "title": "Affected Runs",
-      "type": "integer"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
-    "runtime_status": {
-      "title": "Runtime Status",
-      "type": "string"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_status": {
-      "title": "Worker Status",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
   "required": [
-    "worker_id",
-    "workspace_runtime_id",
-    "action",
-    "worker_status",
-    "runtime_status",
-    "connection_status",
-    "affected_claims",
-    "affected_runs"
+    "reason",
+    "count"
   ],
-  "title": "SelfHostedWorkerControlResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SelfHostedWorkerTrustResponse"></a>
-
-## SelfHostedWorkerTrustResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `name` | string | 是 | — |
-| `machine_id` | string | 是 | — |
-| `version` | string | 是 | — |
-| `trust_state` | string | 是 | — |
-| `capability_attestation_state` | string | 是 | — |
-| `capability_attestation_fingerprint` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `capability_attestation_metadata` | object | 是 | `additionalProperties=true` |
-| `capability_attested_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `host_isolation_verified` | boolean | 是 | — |
-| `worker_status` | string | 是 | — |
-| `runtime_status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `credential_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `credential_last_used_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `credential_revoked_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `policy_summary` | object | 是 | `additionalProperties=true` |
-| `policy_diagnostics` | array&lt;object&gt; | 是 | — |
-| `capabilities` | object | 是 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "capability_attestation_fingerprint": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Attestation Fingerprint"
-    },
-    "capability_attestation_metadata": {
-      "additionalProperties": true,
-      "title": "Capability Attestation Metadata",
-      "type": "object"
-    },
-    "capability_attestation_state": {
-      "title": "Capability Attestation State",
-      "type": "string"
-    },
-    "capability_attested_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Capability Attested At"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
-    "credential_last_used_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Credential Last Used At"
-    },
-    "credential_revoked_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Credential Revoked At"
-    },
-    "credential_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Credential Status"
-    },
-    "host_isolation_verified": {
-      "title": "Host Isolation Verified",
-      "type": "boolean"
-    },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "machine_id": {
-      "title": "Machine Id",
-      "type": "string"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "policy_diagnostics": {
-      "items": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "title": "Policy Diagnostics",
-      "type": "array"
-    },
-    "policy_summary": {
-      "additionalProperties": true,
-      "title": "Policy Summary",
-      "type": "object"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "runtime_status": {
-      "title": "Runtime Status",
-      "type": "string"
-    },
-    "trust_state": {
-      "title": "Trust State",
-      "type": "string"
-    },
-    "version": {
-      "title": "Version",
-      "type": "string"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_status": {
-      "title": "Worker Status",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "worker_id",
-    "workspace_runtime_id",
-    "runtime_space_id",
-    "name",
-    "machine_id",
-    "version",
-    "trust_state",
-    "capability_attestation_state",
-    "capability_attestation_fingerprint",
-    "capability_attestation_metadata",
-    "capability_attested_at",
-    "host_isolation_verified",
-    "worker_status",
-    "runtime_status",
-    "connection_status",
-    "credential_status",
-    "last_heartbeat_at",
-    "credential_last_used_at",
-    "credential_revoked_at",
-    "policy_summary",
-    "policy_diagnostics",
-    "capabilities"
-  ],
-  "title": "SelfHostedWorkerTrustResponse",
+  "title": "SecurityReasonCount",
   "type": "object"
 }
 ```
@@ -39599,663 +33769,12 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-SourceResponse"></a>
-
-## SourceResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `name` | string | 是 | — |
-| `url` | string | 是 | — |
-| `sha256` | string | 是 | — |
-| `allowed_hosts` | array&lt;string&gt; | 是 | — |
-| `enabled` | boolean | 是 | — |
-| `generation` | integer | 是 | — |
-| `synced_generation` | integer | 是 | — |
-
-```json
-{
-  "properties": {
-    "allowed_hosts": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Allowed Hosts",
-      "type": "array"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "enabled": {
-      "title": "Enabled",
-      "type": "boolean"
-    },
-    "generation": {
-      "title": "Generation",
-      "type": "integer"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "name": {
-      "title": "Name",
-      "type": "string"
-    },
-    "sha256": {
-      "title": "Sha256",
-      "type": "string"
-    },
-    "synced_generation": {
-      "title": "Synced Generation",
-      "type": "integer"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "url": {
-      "title": "Url",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "name",
-    "url",
-    "sha256",
-    "allowed_hosts",
-    "enabled",
-    "generation",
-    "synced_generation"
-  ],
-  "title": "SourceResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-SourceSettings"></a>
-
-## SourceSettings
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | `maxLength=120`; `minLength=1` |
-| `url` | string | 是 | `maxLength=2048` |
-| `sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
-| `allowed_hosts` | array&lt;string&gt; | 是 | `maxItems=8`; `minItems=1` |
-| `enabled` | boolean | 否 | `default=true` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "allowed_hosts": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 8,
-      "minItems": 1,
-      "title": "Allowed Hosts",
-      "type": "array"
-    },
-    "enabled": {
-      "default": true,
-      "title": "Enabled",
-      "type": "boolean"
-    },
-    "name": {
-      "maxLength": 120,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Sha256",
-      "type": "string"
-    },
-    "url": {
-      "maxLength": 2048,
-      "title": "Url",
-      "type": "string"
-    }
-  },
-  "required": [
-    "name",
-    "url",
-    "sha256",
-    "allowed_hosts"
-  ],
-  "title": "SourceSettings",
-  "type": "object"
-}
-```
-
-<a id="schema-SourceUpdate"></a>
-
-## SourceUpdate
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | `maxLength=120`; `minLength=1` |
-| `url` | string | 是 | `maxLength=2048` |
-| `sha256` | string | 是 | `pattern="^[a-f0-9]{64}$"` |
-| `allowed_hosts` | array&lt;string&gt; | 是 | `maxItems=8`; `minItems=1` |
-| `enabled` | boolean | 否 | `default=true` |
-| `expected_generation` | integer | 是 | `minimum=1.0` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "allowed_hosts": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 8,
-      "minItems": 1,
-      "title": "Allowed Hosts",
-      "type": "array"
-    },
-    "enabled": {
-      "default": true,
-      "title": "Enabled",
-      "type": "boolean"
-    },
-    "expected_generation": {
-      "minimum": 1.0,
-      "title": "Expected Generation",
-      "type": "integer"
-    },
-    "name": {
-      "maxLength": 120,
-      "minLength": 1,
-      "title": "Name",
-      "type": "string"
-    },
-    "sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Sha256",
-      "type": "string"
-    },
-    "url": {
-      "maxLength": 2048,
-      "title": "Url",
-      "type": "string"
-    }
-  },
-  "required": [
-    "name",
-    "url",
-    "sha256",
-    "allowed_hosts",
-    "expected_generation"
-  ],
-  "title": "SourceUpdate",
-  "type": "object"
-}
-```
-
-<a id="schema-StaleRunDiagnosticResponse"></a>
-
-## StaleRunDiagnosticResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `run_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | `enum=["queued", "running", "waiting_runtime"]` |
-| `stale_reason_code` | string | 是 | — |
-| `stale_reason_message` | string | 是 | — |
-| `age_seconds` | integer | 是 | — |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `started_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `worker_id` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_lease_status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_lease_started_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `worker_lease_age_seconds` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "age_seconds": {
-      "title": "Age Seconds",
-      "type": "integer"
-    },
-    "agent_profile_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Profile Id"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "run_id": {
-      "format": "uuid",
-      "title": "Run Id",
-      "type": "string"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "stale_reason_code": {
-      "title": "Stale Reason Code",
-      "type": "string"
-    },
-    "stale_reason_message": {
-      "title": "Stale Reason Message",
-      "type": "string"
-    },
-    "started_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Started At"
-    },
-    "status": {
-      "enum": [
-        "queued",
-        "running",
-        "waiting_runtime"
-      ],
-      "title": "Status",
-      "type": "string"
-    },
-    "task_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Id"
-    },
-    "task_step_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Task Step Id"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "worker_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Id"
-    },
-    "worker_lease_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Lease Age Seconds"
-    },
-    "worker_lease_started_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Lease Started At"
-    },
-    "worker_lease_status": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Lease Status"
-    }
-  },
-  "required": [
-    "run_id",
-    "status",
-    "stale_reason_code",
-    "stale_reason_message",
-    "age_seconds",
-    "created_at",
-    "updated_at",
-    "started_at",
-    "task_id",
-    "task_step_id",
-    "agent_profile_id",
-    "runtime_id",
-    "runtime_space_id"
-  ],
-  "title": "StaleRunDiagnosticResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-StaleRunRecoveryItemResponse"></a>
-
-## StaleRunRecoveryItemResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `run_id` | string (uuid) | 是 | `format="uuid"` |
-| `previous_status` | string | 是 | `enum=["queued", "running", "waiting_runtime"]` |
-| `action` | string | 是 | `enum=["requeued", "failed_closed"]` |
-| `enqueued` | boolean | 否 | `default=false` |
-
-```json
-{
-  "properties": {
-    "action": {
-      "enum": [
-        "requeued",
-        "failed_closed"
-      ],
-      "title": "Action",
-      "type": "string"
-    },
-    "enqueued": {
-      "default": false,
-      "title": "Enqueued",
-      "type": "boolean"
-    },
-    "previous_status": {
-      "enum": [
-        "queued",
-        "running",
-        "waiting_runtime"
-      ],
-      "title": "Previous Status",
-      "type": "string"
-    },
-    "run_id": {
-      "format": "uuid",
-      "title": "Run Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "run_id",
-    "previous_status",
-    "action"
-  ],
-  "title": "StaleRunRecoveryItemResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-StaleRunRecoveryRequest"></a>
-
-## StaleRunRecoveryRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `stale_after_seconds` | integer | 否 | `default=900`; `maximum=86400.0`; `minimum=60.0` |
-| `statuses` | array&lt;string&gt; | 否 | `default=["queued", "running", "waiting_runtime"]`; `maxItems=3`; `minItems=1` |
-| `limit` | integer | 否 | `default=100`; `maximum=500.0`; `minimum=1.0` |
-| `queue_name` | string | 否 | `default="agent_runs"`; `maxLength=120`; `minLength=1` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "limit": {
-      "default": 100,
-      "maximum": 500.0,
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "queue_name": {
-      "default": "agent_runs",
-      "maxLength": 120,
-      "minLength": 1,
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "reason": {
-      "anyOf": [
-        {
-          "maxLength": 240,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    },
-    "stale_after_seconds": {
-      "default": 900,
-      "maximum": 86400.0,
-      "minimum": 60.0,
-      "title": "Stale After Seconds",
-      "type": "integer"
-    },
-    "statuses": {
-      "default": [
-        "queued",
-        "running",
-        "waiting_runtime"
-      ],
-      "items": {
-        "enum": [
-          "queued",
-          "running",
-          "waiting_runtime"
-        ],
-        "type": "string"
-      },
-      "maxItems": 3,
-      "minItems": 1,
-      "title": "Statuses",
-      "type": "array"
-    }
-  },
-  "title": "StaleRunRecoveryRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-StaleRunRecoveryResponse"></a>
-
-## StaleRunRecoveryResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `stale_after_seconds` | integer | 是 | — |
-| `scanned_runs` | integer | 是 | — |
-| `requeued_runs` | integer | 是 | — |
-| `failed_closed_runs` | integer | 是 | — |
-| `expired_worker_leases` | integer | 是 | — |
-| `items` | array&lt;[StaleRunRecoveryItemResponse](schemas.md#schema-StaleRunRecoveryItemResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "expired_worker_leases": {
-      "title": "Expired Worker Leases",
-      "type": "integer"
-    },
-    "failed_closed_runs": {
-      "title": "Failed Closed Runs",
-      "type": "integer"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/StaleRunRecoveryItemResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "requeued_runs": {
-      "title": "Requeued Runs",
-      "type": "integer"
-    },
-    "scanned_runs": {
-      "title": "Scanned Runs",
-      "type": "integer"
-    },
-    "stale_after_seconds": {
-      "title": "Stale After Seconds",
-      "type": "integer"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "workspace_id",
-    "stale_after_seconds",
-    "scanned_runs",
-    "requeued_runs",
-    "failed_closed_runs",
-    "expired_worker_leases",
-    "items"
-  ],
-  "title": "StaleRunRecoveryResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-StaleRunsDiagnosticsResponse"></a>
-
-## StaleRunsDiagnosticsResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `generated_at` | string (date-time) | 是 | `format="date-time"` |
-| `stale_after_seconds` | integer | 是 | — |
-| `total` | integer | 是 | — |
-| `items` | array&lt;[StaleRunDiagnosticResponse](schemas.md#schema-StaleRunDiagnosticResponse)&gt; | 是 | — |
-
-```json
-{
-  "properties": {
-    "generated_at": {
-      "format": "date-time",
-      "title": "Generated At",
-      "type": "string"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/StaleRunDiagnosticResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "stale_after_seconds": {
-      "title": "Stale After Seconds",
-      "type": "integer"
-    },
-    "total": {
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "generated_at",
-    "stale_after_seconds",
-    "total",
-    "items"
-  ],
-  "title": "StaleRunsDiagnosticsResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-StdioProjectConfig"></a>
 
 ## StdioProjectConfig
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `restart_policy` | [McpRestartPolicy](schemas.md#schema-McpRestartPolicy) | 否 | — |
 | `command` | string | 是 | `maxLength=512`; `minLength=1` |
 | `type` | string | 否 | `const="stdio"`; `default="stdio"` |
 | `args` | array&lt;string&gt; | 否 | `maxItems=128` |
@@ -40298,9 +33817,6 @@ Explicit region a privileged editor is allowed to change.
       },
       "title": "Env",
       "type": "object"
-    },
-    "restart_policy": {
-      "$ref": "#/components/schemas/McpRestartPolicy"
     },
     "type": {
       "const": "stdio",
@@ -41613,7 +35129,7 @@ Explicit region a privileged editor is allowed to change.
 | `cancelled_runs` | array&lt;object&gt; | 是 | — |
 | `scheduled_runs` | array&lt;object&gt; | 是 | — |
 | `active_runs` | array&lt;object&gt; | 是 | — |
-| `worker_cancel_requests` | array&lt;object&gt; | 是 | — |
+| `temporal_dispatches` | array&lt;object&gt; | 是 | — |
 | `recent_control_messages` | array&lt;object&gt; | 是 | — |
 | `recommended_actions` | array&lt;object&gt; | 是 | — |
 
@@ -41692,12 +35208,12 @@ Explicit region a privileged editor is allowed to change.
       "title": "Task Id",
       "type": "string"
     },
-    "worker_cancel_requests": {
+    "temporal_dispatches": {
       "items": {
         "additionalProperties": true,
         "type": "object"
       },
-      "title": "Worker Cancel Requests",
+      "title": "Temporal Dispatches",
       "type": "array"
     },
     "workspace_id": {
@@ -41717,7 +35233,7 @@ Explicit region a privileged editor is allowed to change.
     "cancelled_runs",
     "scheduled_runs",
     "active_runs",
-    "worker_cancel_requests",
+    "temporal_dispatches",
     "recent_control_messages",
     "recommended_actions"
   ],
@@ -46323,9 +39839,1718 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-TeamRuntimeTimelineEventResponse"></a>
+<a id="schema-TeamCommandCenterOperationStateResponse"></a>
 
-## TeamRuntimeTimelineEventResponse
+## TeamCommandCenterOperationStateResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `workspace_runtime_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `runtime_status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_space_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `thread_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `team_session_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `member_session_count` | integer | 否 | `default=0` |
+| `ready` | boolean | 否 | `default=false` |
+| `operating_policy` | object | 否 | `additionalProperties=true` |
+| `memory_summary` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "member_session_count": {
+      "default": 0,
+      "title": "Member Session Count",
+      "type": "integer"
+    },
+    "memory_summary": {
+      "additionalProperties": true,
+      "title": "Memory Summary",
+      "type": "object"
+    },
+    "operating_policy": {
+      "additionalProperties": true,
+      "title": "Operating Policy",
+      "type": "object"
+    },
+    "ready": {
+      "default": false,
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "runtime_space_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Space Id"
+    },
+    "runtime_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Status"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Status"
+    },
+    "team_session_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Team Session Id"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Thread Id"
+    },
+    "workspace_runtime_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Workspace Runtime Id"
+    }
+  },
+  "title": "TeamCommandCenterOperationStateResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleActionPlanItem"></a>
+
+## TeamConsoleActionPlanItem
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `source` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `source_index` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `automation` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `action` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `priority` | integer anyOf null | 否 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `reason` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `task_ids` | array&lt;string (uuid)&gt; | 否 | — |
+| `task_step_ids` | array&lt;string (uuid)&gt; | 否 | — |
+| `agent_profile_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": true,
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Action"
+    },
+    "agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Profile Id"
+    },
+    "automation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Automation"
+    },
+    "priority": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Priority"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source"
+    },
+    "source_index": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Index"
+    },
+    "task_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Task Ids",
+      "type": "array"
+    },
+    "task_step_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Task Step Ids",
+      "type": "array"
+    }
+  },
+  "title": "TeamConsoleActionPlanItem",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleAgentSummary"></a>
+
+## TeamConsoleAgentSummary
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `role` | string | 是 | — |
+| `status` | string | 是 | — |
+| `model` | string | 是 | — |
+| `model_provider_credential_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `model_provider` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "model_provider": {
+      "additionalProperties": true,
+      "title": "Model Provider",
+      "type": "object"
+    },
+    "model_provider_credential_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Model Provider Credential Id"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "role",
+    "status",
+    "model",
+    "model_provider_credential_id",
+    "model_provider"
+  ],
+  "title": "TeamConsoleAgentSummary",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleCommandCenterResponse"></a>
+
+## TeamConsoleCommandCenterResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `team_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `generated_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `summary` | object | 否 | `additionalProperties=true` |
+| `runtime` | [TeamCommandCenterOperationStateResponse](schemas.md#schema-TeamCommandCenterOperationStateResponse) | 否 | — |
+| `provider_readiness` | object | 否 | `additionalProperties=true` |
+| `operating_policy` | object | 否 | `additionalProperties=true` |
+| `memory_summary` | object | 否 | `additionalProperties=true` |
+| `overview` | [AgentTeamExecutionOverviewResponse](schemas.md#schema-AgentTeamExecutionOverviewResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/AgentTeamExecutionOverviewResponse"}, {"type": "null"}]` |
+| `queues` | [TeamConsoleQueuesResponse](schemas.md#schema-TeamConsoleQueuesResponse) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/TeamConsoleQueuesResponse"}, {"type": "null"}]` |
+| `action_plan` | array&lt;object&gt; | 否 | — |
+
+```json
+{
+  "properties": {
+    "action_plan": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Action Plan",
+      "type": "array"
+    },
+    "generated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Generated At"
+    },
+    "memory_summary": {
+      "additionalProperties": true,
+      "title": "Memory Summary",
+      "type": "object"
+    },
+    "operating_policy": {
+      "additionalProperties": true,
+      "title": "Operating Policy",
+      "type": "object"
+    },
+    "overview": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AgentTeamExecutionOverviewResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider_readiness": {
+      "additionalProperties": true,
+      "title": "Provider Readiness",
+      "type": "object"
+    },
+    "queues": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/TeamConsoleQueuesResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runtime": {
+      "$ref": "#/components/schemas/TeamCommandCenterOperationStateResponse"
+    },
+    "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+    },
+    "team_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Team Id"
+    },
+    "workspace_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Workspace Id"
+    }
+  },
+  "title": "TeamConsoleCommandCenterResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleControlsResponse"></a>
+
+## TeamConsoleControlsResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `can_start` | boolean | 是 | — |
+| `can_pause` | boolean | 是 | — |
+| `can_resume` | boolean | 是 | — |
+| `can_stop` | boolean | 是 | — |
+| `can_ensure_workspace_runtime` | boolean | 是 | — |
+| `suggested_actions` | array&lt;object&gt; | 否 | — |
+
+```json
+{
+  "properties": {
+    "can_ensure_workspace_runtime": {
+      "title": "Can Ensure Workspace Runtime",
+      "type": "boolean"
+    },
+    "can_pause": {
+      "title": "Can Pause",
+      "type": "boolean"
+    },
+    "can_resume": {
+      "title": "Can Resume",
+      "type": "boolean"
+    },
+    "can_start": {
+      "title": "Can Start",
+      "type": "boolean"
+    },
+    "can_stop": {
+      "title": "Can Stop",
+      "type": "boolean"
+    },
+    "suggested_actions": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Suggested Actions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "can_start",
+    "can_pause",
+    "can_resume",
+    "can_stop",
+    "can_ensure_workspace_runtime"
+  ],
+  "title": "TeamConsoleControlsResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleMailboxResponse"></a>
+
+## TeamConsoleMailboxResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `thread_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `unread_count` | integer | 是 | — |
+| `latest_messages` | array&lt;[TeamConsoleMessageResponse](schemas.md#schema-TeamConsoleMessageResponse)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "latest_messages": {
+      "items": {
+        "$ref": "#/components/schemas/TeamConsoleMessageResponse"
+      },
+      "title": "Latest Messages",
+      "type": "array"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Thread Id"
+    },
+    "unread_count": {
+      "title": "Unread Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "thread_id",
+    "unread_count",
+    "latest_messages"
+  ],
+  "title": "TeamConsoleMailboxResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleMemberMailboxResponse"></a>
+
+## TeamConsoleMemberMailboxResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `unread_count` | integer | 是 | — |
+| `latest_message_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "latest_message_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latest Message At"
+    },
+    "unread_count": {
+      "title": "Unread Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "unread_count",
+    "latest_message_at"
+  ],
+  "title": "TeamConsoleMemberMailboxResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleMemberResponse"></a>
+
+## TeamConsoleMemberResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `team_member_id` | string (uuid) | 是 | `format="uuid"` |
+| `agent_profile_id` | string (uuid) | 是 | `format="uuid"` |
+| `agent` | [TeamConsoleAgentSummary](schemas.md#schema-TeamConsoleAgentSummary) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/TeamConsoleAgentSummary"}, {"type": "null"}]` |
+| `reports_to_member_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `team_role` | string | 是 | — |
+| `department` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `position_title` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `responsibilities` | array&lt;string&gt; | 是 | — |
+| `accepts_tasks` | boolean | 是 | — |
+| `max_concurrent_tasks` | integer | 是 | — |
+| `status` | string | 是 | — |
+| `session` | [TeamConsoleSessionResponse](schemas.md#schema-TeamConsoleSessionResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/TeamConsoleSessionResponse"}, {"type": "null"}]` |
+| `mailbox` | [TeamConsoleMemberMailboxResponse](schemas.md#schema-TeamConsoleMemberMailboxResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "accepts_tasks": {
+      "title": "Accepts Tasks",
+      "type": "boolean"
+    },
+    "agent": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/TeamConsoleAgentSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent_profile_id": {
+      "format": "uuid",
+      "title": "Agent Profile Id",
+      "type": "string"
+    },
+    "department": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Department"
+    },
+    "mailbox": {
+      "$ref": "#/components/schemas/TeamConsoleMemberMailboxResponse"
+    },
+    "max_concurrent_tasks": {
+      "title": "Max Concurrent Tasks",
+      "type": "integer"
+    },
+    "position_title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Position Title"
+    },
+    "reports_to_member_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reports To Member Id"
+    },
+    "responsibilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Responsibilities",
+      "type": "array"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/TeamConsoleSessionResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "team_member_id": {
+      "format": "uuid",
+      "title": "Team Member Id",
+      "type": "string"
+    },
+    "team_role": {
+      "title": "Team Role",
+      "type": "string"
+    }
+  },
+  "required": [
+    "team_member_id",
+    "agent_profile_id",
+    "agent",
+    "reports_to_member_id",
+    "team_role",
+    "department",
+    "position_title",
+    "responsibilities",
+    "accepts_tasks",
+    "max_concurrent_tasks",
+    "status",
+    "session",
+    "mailbox"
+  ],
+  "title": "TeamConsoleMemberResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleMessageResponse"></a>
+
+## TeamConsoleMessageResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `thread_id` | string (uuid) | 是 | `format="uuid"` |
+| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_team_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `sender_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `recipient_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `message_type` | string | 是 | — |
+| `status` | string | 是 | — |
+| `read_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `body_preview` | string | 是 | — |
+| `payload` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "agent_team_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Team Id"
+    },
+    "body_preview": {
+      "title": "Body Preview",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "message_type": {
+      "title": "Message Type",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "read_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Read At"
+    },
+    "recipient_agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Recipient Agent Profile Id"
+    },
+    "sender_agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Sender Agent Profile Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Id"
+    },
+    "thread_id": {
+      "format": "uuid",
+      "title": "Thread Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "thread_id",
+    "task_id",
+    "agent_team_id",
+    "sender_agent_profile_id",
+    "recipient_agent_profile_id",
+    "message_type",
+    "status",
+    "read_at",
+    "created_at",
+    "body_preview",
+    "payload"
+  ],
+  "title": "TeamConsoleMessageResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleOperationStateResponse"></a>
+
+## TeamConsoleOperationStateResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string | 是 | — |
+| `workspace_runtime_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `runtime_status` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `runtime_health` | string | 是 | — |
+| `thread_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `team_session_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `team_session_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `member_session_count` | integer | 是 | — |
+| `member_agent_ids` | array&lt;string (uuid)&gt; | 是 | — |
+| `last_advancement` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `last_message_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `operating_policy` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `memory_summary` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `scheduling` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `blocked_steps` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `queue` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `ready` | boolean | 是 | — |
+| `metadata` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "blocked_steps": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Blocked Steps"
+    },
+    "last_advancement": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Advancement"
+    },
+    "last_message_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Message At"
+    },
+    "member_agent_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Member Agent Ids",
+      "type": "array"
+    },
+    "member_session_count": {
+      "title": "Member Session Count",
+      "type": "integer"
+    },
+    "memory_summary": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Memory Summary"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Metadata"
+    },
+    "operating_policy": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Operating Policy"
+    },
+    "queue": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Queue"
+    },
+    "ready": {
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "runtime_health": {
+      "title": "Runtime Health",
+      "type": "string"
+    },
+    "runtime_space_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Space Id"
+    },
+    "runtime_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Status"
+    },
+    "scheduling": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Scheduling"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "team_session_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Team Session Id"
+    },
+    "team_session_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Team Session Key"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Thread Id"
+    },
+    "workspace_runtime_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Workspace Runtime Id"
+    }
+  },
+  "required": [
+    "status",
+    "workspace_runtime_id",
+    "runtime_status",
+    "runtime_space_id",
+    "runtime_health",
+    "thread_id",
+    "team_session_id",
+    "team_session_key",
+    "member_session_count",
+    "member_agent_ids",
+    "last_advancement",
+    "last_message_at",
+    "operating_policy",
+    "memory_summary",
+    "ready",
+    "metadata"
+  ],
+  "title": "TeamConsoleOperationStateResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleProviderManagementResponse"></a>
+
+## TeamConsoleProviderManagementResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `credential_count` | integer | 否 | `default=0` |
+| `active_credential_count` | integer | 否 | `default=0` |
+| `default_credential_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `credentials` | array&lt;object&gt; | 否 | — |
+| `agent_bindings` | array&lt;object&gt; | 否 | — |
+| `run_diagnostics` | object | 否 | `additionalProperties=true` |
+| `suggested_actions` | array&lt;object&gt; | 否 | — |
+
+```json
+{
+  "properties": {
+    "active_credential_count": {
+      "default": 0,
+      "title": "Active Credential Count",
+      "type": "integer"
+    },
+    "agent_bindings": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Agent Bindings",
+      "type": "array"
+    },
+    "credential_count": {
+      "default": 0,
+      "title": "Credential Count",
+      "type": "integer"
+    },
+    "credentials": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Credentials",
+      "type": "array"
+    },
+    "default_credential_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Default Credential Id"
+    },
+    "run_diagnostics": {
+      "additionalProperties": true,
+      "title": "Run Diagnostics",
+      "type": "object"
+    },
+    "suggested_actions": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Suggested Actions",
+      "type": "array"
+    }
+  },
+  "title": "TeamConsoleProviderManagementResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleQueuesResponse"></a>
+
+## TeamConsoleQueuesResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `handoff` | [TaskHandoffQueueResponse](schemas.md#schema-TaskHandoffQueueResponse) | 是 | — |
+| `manager` | [TaskManagerQueueResponse](schemas.md#schema-TaskManagerQueueResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "handoff": {
+      "$ref": "#/components/schemas/TaskHandoffQueueResponse"
+    },
+    "manager": {
+      "$ref": "#/components/schemas/TaskManagerQueueResponse"
+    }
+  },
+  "required": [
+    "handoff",
+    "manager"
+  ],
+  "title": "TeamConsoleQueuesResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleReadinessResponse"></a>
+
+## TeamConsoleReadinessResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string | 是 | — |
+| `ready` | boolean | 是 | — |
+| `runtime_health` | string | 是 | — |
+| `runtime_status` | string | 是 | — |
+| `workspace_runtime_status` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `mailbox_unread_count` | integer | 否 | `default=0` |
+| `queue_backlog` | integer | 否 | `default=0` |
+| `blocked_step_count` | integer | 否 | `default=0` |
+| `provider_blocked` | boolean | 否 | `default=false` |
+| `action_plan_count` | integer | 否 | `default=0` |
+| `next_operator_action` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "action_plan_count": {
+      "default": 0,
+      "title": "Action Plan Count",
+      "type": "integer"
+    },
+    "blocked_step_count": {
+      "default": 0,
+      "title": "Blocked Step Count",
+      "type": "integer"
+    },
+    "mailbox_unread_count": {
+      "default": 0,
+      "title": "Mailbox Unread Count",
+      "type": "integer"
+    },
+    "next_operator_action": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Next Operator Action"
+    },
+    "provider_blocked": {
+      "default": false,
+      "title": "Provider Blocked",
+      "type": "boolean"
+    },
+    "queue_backlog": {
+      "default": 0,
+      "title": "Queue Backlog",
+      "type": "integer"
+    },
+    "ready": {
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "runtime_health": {
+      "title": "Runtime Health",
+      "type": "string"
+    },
+    "runtime_status": {
+      "title": "Runtime Status",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_runtime_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Workspace Runtime Status"
+    }
+  },
+  "required": [
+    "status",
+    "ready",
+    "runtime_health",
+    "runtime_status"
+  ],
+  "title": "TeamConsoleReadinessResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleSessionResponse"></a>
+
+## TeamConsoleSessionResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `session_key` | string | 是 | — |
+| `scope_type` | string | 是 | — |
+| `scope_id` | string | 是 | — |
+| `status` | string | 是 | — |
+| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_team_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `item_count` | integer | 是 | — |
+| `latest_item_metadata` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Profile Id"
+    },
+    "agent_team_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Team Id"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "item_count": {
+      "title": "Item Count",
+      "type": "integer"
+    },
+    "latest_item_metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latest Item Metadata"
+    },
+    "scope_id": {
+      "title": "Scope Id",
+      "type": "string"
+    },
+    "scope_type": {
+      "title": "Scope Type",
+      "type": "string"
+    },
+    "session_key": {
+      "title": "Session Key",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "session_key",
+    "scope_type",
+    "scope_id",
+    "status",
+    "agent_profile_id",
+    "agent_team_id",
+    "item_count",
+    "latest_item_metadata",
+    "updated_at"
+  ],
+  "title": "TeamConsoleSessionResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleSessionsResponse"></a>
+
+## TeamConsoleSessionsResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `team_session` | [TeamConsoleSessionResponse](schemas.md#schema-TeamConsoleSessionResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/TeamConsoleSessionResponse"}, {"type": "null"}]` |
+| `member_sessions` | array&lt;[TeamConsoleSessionResponse](schemas.md#schema-TeamConsoleSessionResponse)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "member_sessions": {
+      "items": {
+        "$ref": "#/components/schemas/TeamConsoleSessionResponse"
+      },
+      "title": "Member Sessions",
+      "type": "array"
+    },
+    "team_session": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/TeamConsoleSessionResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "team_session",
+    "member_sessions",
+    "total"
+  ],
+  "title": "TeamConsoleSessionsResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamConsoleTeamResponse"></a>
+
+## TeamConsoleTeamResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `team_type` | string | 是 | — |
+| `description` | string | 是 | — |
+| `status` | string | 是 | — |
+| `manager_agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `coordination_rules` | object | 是 | `additionalProperties=true` |
+| `default_task_policy` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "coordination_rules": {
+      "additionalProperties": true,
+      "title": "Coordination Rules",
+      "type": "object"
+    },
+    "default_task_policy": {
+      "additionalProperties": true,
+      "title": "Default Task Policy",
+      "type": "object"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "manager_agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Manager Agent Profile Id"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "runtime_space_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Space Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "team_type": {
+      "title": "Team Type",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "name",
+    "team_type",
+    "description",
+    "status",
+    "manager_agent_profile_id",
+    "runtime_space_id",
+    "coordination_rules",
+    "default_task_policy"
+  ],
+  "title": "TeamConsoleTeamResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamOperationsConsoleResponse"></a>
+
+## TeamOperationsConsoleResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `team_id` | string (uuid) | 是 | `format="uuid"` |
+| `generated_at` | string (date-time) | 是 | `format="date-time"` |
+| `team` | [TeamConsoleTeamResponse](schemas.md#schema-TeamConsoleTeamResponse) | 是 | — |
+| `runtime` | [TeamConsoleOperationStateResponse](schemas.md#schema-TeamConsoleOperationStateResponse) | 是 | — |
+| `command_center` | [TeamConsoleCommandCenterResponse](schemas.md#schema-TeamConsoleCommandCenterResponse) | 是 | — |
+| `members` | array&lt;[TeamConsoleMemberResponse](schemas.md#schema-TeamConsoleMemberResponse)&gt; | 是 | — |
+| `provider_management` | [TeamConsoleProviderManagementResponse](schemas.md#schema-TeamConsoleProviderManagementResponse) | 是 | — |
+| `sessions` | [TeamConsoleSessionsResponse](schemas.md#schema-TeamConsoleSessionsResponse) | 是 | — |
+| `mailbox` | [TeamConsoleMailboxResponse](schemas.md#schema-TeamConsoleMailboxResponse) | 是 | — |
+| `controls` | [TeamConsoleControlsResponse](schemas.md#schema-TeamConsoleControlsResponse) | 是 | — |
+| `readiness` | [TeamConsoleReadinessResponse](schemas.md#schema-TeamConsoleReadinessResponse) | 是 | — |
+
+```json
+{
+  "properties": {
+    "command_center": {
+      "$ref": "#/components/schemas/TeamConsoleCommandCenterResponse"
+    },
+    "controls": {
+      "$ref": "#/components/schemas/TeamConsoleControlsResponse"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "mailbox": {
+      "$ref": "#/components/schemas/TeamConsoleMailboxResponse"
+    },
+    "members": {
+      "items": {
+        "$ref": "#/components/schemas/TeamConsoleMemberResponse"
+      },
+      "title": "Members",
+      "type": "array"
+    },
+    "provider_management": {
+      "$ref": "#/components/schemas/TeamConsoleProviderManagementResponse"
+    },
+    "readiness": {
+      "$ref": "#/components/schemas/TeamConsoleReadinessResponse"
+    },
+    "runtime": {
+      "$ref": "#/components/schemas/TeamConsoleOperationStateResponse"
+    },
+    "sessions": {
+      "$ref": "#/components/schemas/TeamConsoleSessionsResponse"
+    },
+    "team": {
+      "$ref": "#/components/schemas/TeamConsoleTeamResponse"
+    },
+    "team_id": {
+      "format": "uuid",
+      "title": "Team Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "team_id",
+    "generated_at",
+    "team",
+    "runtime",
+    "command_center",
+    "members",
+    "provider_management",
+    "sessions",
+    "mailbox",
+    "controls",
+    "readiness"
+  ],
+  "title": "TeamOperationsConsoleResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamOrchestrationResponse"></a>
+
+## TeamOrchestrationResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `team_id` | string (uuid) | 是 | `format="uuid"` |
+| `request_id` | string (uuid) | 是 | `format="uuid"` |
+| `workflow_id` | string | 是 | — |
+| `status` | string | 是 | — |
+| `result` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `last_error_code` | string anyOf null | 否 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `started_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `completed_at` | string (date-time) anyOf null | 否 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Completed At"
+    },
+    "last_error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Error Code"
+    },
+    "request_id": {
+      "format": "uuid",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Result"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Started At"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "team_id": {
+      "format": "uuid",
+      "title": "Team Id",
+      "type": "string"
+    },
+    "workflow_id": {
+      "title": "Workflow Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "team_id",
+    "request_id",
+    "workflow_id",
+    "status"
+  ],
+  "title": "TeamOrchestrationResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamTimelineEvent"></a>
+
+## TeamTimelineEvent
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -46335,7 +41560,7 @@ Explicit region a privileged editor is allowed to change.
 | `occurred_at` | string (date-time) | 是 | `format="date-time"` |
 | `resource_id` | string | 是 | — |
 | `message` | string | 是 | — |
-| `metadata` | object | 否 | `additionalProperties=true` |
+| `metadata` | object | 是 | `additionalProperties=true` |
 
 ```json
 {
@@ -46377,16 +41602,17 @@ Explicit region a privileged editor is allowed to change.
     "event_type",
     "occurred_at",
     "resource_id",
-    "message"
+    "message",
+    "metadata"
   ],
-  "title": "TeamRuntimeTimelineEventResponse",
+  "title": "TeamTimelineEvent",
   "type": "object"
 }
 ```
 
-<a id="schema-TeamRuntimeTimelineResponse"></a>
+<a id="schema-TeamTimelineResponse"></a>
 
-## TeamRuntimeTimelineResponse
+## TeamTimelineResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -46395,8 +41621,8 @@ Explicit region a privileged editor is allowed to change.
 | `generated_at` | string (date-time) | 是 | `format="date-time"` |
 | `limit` | integer | 是 | — |
 | `offset` | integer | 是 | — |
-| `summary` | [TeamRuntimeTimelineSummaryResponse](schemas.md#schema-TeamRuntimeTimelineSummaryResponse) | 是 | — |
-| `items` | array&lt;[TeamRuntimeTimelineEventResponse](schemas.md#schema-TeamRuntimeTimelineEventResponse)&gt; | 是 | — |
+| `summary` | [TeamTimelineSummary](schemas.md#schema-TeamTimelineSummary) | 是 | — |
+| `items` | array&lt;[TeamTimelineEvent](schemas.md#schema-TeamTimelineEvent)&gt; | 是 | — |
 
 ```json
 {
@@ -46408,7 +41634,7 @@ Explicit region a privileged editor is allowed to change.
     },
     "items": {
       "items": {
-        "$ref": "#/components/schemas/TeamRuntimeTimelineEventResponse"
+        "$ref": "#/components/schemas/TeamTimelineEvent"
       },
       "title": "Items",
       "type": "array"
@@ -46422,7 +41648,7 @@ Explicit region a privileged editor is allowed to change.
       "type": "integer"
     },
     "summary": {
-      "$ref": "#/components/schemas/TeamRuntimeTimelineSummaryResponse"
+      "$ref": "#/components/schemas/TeamTimelineSummary"
     },
     "team_id": {
       "format": "uuid",
@@ -46444,14 +41670,14 @@ Explicit region a privileged editor is allowed to change.
     "summary",
     "items"
   ],
-  "title": "TeamRuntimeTimelineResponse",
+  "title": "TeamTimelineResponse",
   "type": "object"
 }
 ```
 
-<a id="schema-TeamRuntimeTimelineSummaryResponse"></a>
+<a id="schema-TeamTimelineSummary"></a>
 
-## TeamRuntimeTimelineSummaryResponse
+## TeamTimelineSummary
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -46460,7 +41686,6 @@ Explicit region a privileged editor is allowed to change.
 | `source_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
 | `event_type_counts` | object | 是 | `additionalProperties={"type": "integer"}` |
 | `include_runs` | boolean | 是 | — |
-| `include_queue` | boolean | 是 | — |
 
 ```json
 {
@@ -46471,10 +41696,6 @@ Explicit region a privileged editor is allowed to change.
       },
       "title": "Event Type Counts",
       "type": "object"
-    },
-    "include_queue": {
-      "title": "Include Queue",
-      "type": "boolean"
     },
     "include_runs": {
       "title": "Include Runs",
@@ -46501,10 +41722,9 @@ Explicit region a privileged editor is allowed to change.
     "returned_events",
     "source_counts",
     "event_type_counts",
-    "include_runs",
-    "include_queue"
+    "include_runs"
   ],
-  "title": "TeamRuntimeTimelineSummaryResponse",
+  "title": "TeamTimelineSummary",
   "type": "object"
 }
 ```
@@ -46695,239 +41915,6 @@ Explicit region a privileged editor is allowed to change.
     }
   },
   "title": "ToolGroupUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-TrustKeyCreate"></a>
-
-## TrustKeyCreate
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `key_id` | string | 是 | `pattern="^[a-zA-Z0-9_.-]{1,120}$"` |
-| `plugin_key` | string | 是 | `pattern="^[a-z][a-z0-9_.-]{0,119}$"` |
-| `public_key` | string | 是 | `maxLength=44`; `minLength=44` |
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "key_id": {
-      "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
-      "title": "Key Id",
-      "type": "string"
-    },
-    "plugin_key": {
-      "pattern": "^[a-z][a-z0-9_.-]{0,119}$",
-      "title": "Plugin Key",
-      "type": "string"
-    },
-    "public_key": {
-      "maxLength": 44,
-      "minLength": 44,
-      "title": "Public Key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "key_id",
-    "plugin_key",
-    "public_key"
-  ],
-  "title": "TrustKeyCreate",
-  "type": "object"
-}
-```
-
-<a id="schema-TrustKeyResponse"></a>
-
-## TrustKeyResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `key_id` | string | 是 | — |
-| `plugin_key` | string | 是 | — |
-| `public_key` | string | 是 | — |
-| `status` | string | 是 | — |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "key_id": {
-      "title": "Key Id",
-      "type": "string"
-    },
-    "plugin_key": {
-      "title": "Plugin Key",
-      "type": "string"
-    },
-    "public_key": {
-      "title": "Public Key",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "key_id",
-    "plugin_key",
-    "public_key",
-    "status"
-  ],
-  "title": "TrustKeyResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-TurnResponse"></a>
-
-## TurnResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `conversation_id` | string (uuid) | 是 | `format="uuid"` |
-| `sequence` | integer | 是 | — |
-| `body` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `reply` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `status` | string | 是 | — |
-| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `final_agent` | [FinalAgentResponse](schemas.md#schema-FinalAgentResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/FinalAgentResponse"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "body": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Body"
-    },
-    "conversation_id": {
-      "format": "uuid",
-      "title": "Conversation Id",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "error_code": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error Code"
-    },
-    "final_agent": {
-      "anyOf": [
-        {
-          "$ref": "#/components/schemas/FinalAgentResponse"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "reply": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reply"
-    },
-    "sequence": {
-      "title": "Sequence",
-      "type": "integer"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "conversation_id",
-    "sequence",
-    "body",
-    "reply",
-    "status",
-    "error_code",
-    "final_agent"
-  ],
-  "title": "TurnResponse",
   "type": "object"
 }
 ```
@@ -48116,544 +43103,6 @@ Explicit region a privileged editor is allowed to change.
 }
 ```
 
-<a id="schema-WorkerCapacityAggregateResponse"></a>
-
-## WorkerCapacityAggregateResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workers_total` | integer | 是 | — |
-| `workers_online` | integer | 是 | — |
-| `workers_draining` | integer | 是 | — |
-| `workers_offline` | integer | 是 | — |
-| `max_jobs` | integer | 是 | — |
-| `running_jobs` | integer | 是 | — |
-| `available_slots` | integer | 是 | — |
-| `utilization` | number | 是 | — |
-
-```json
-{
-  "properties": {
-    "available_slots": {
-      "title": "Available Slots",
-      "type": "integer"
-    },
-    "max_jobs": {
-      "title": "Max Jobs",
-      "type": "integer"
-    },
-    "running_jobs": {
-      "title": "Running Jobs",
-      "type": "integer"
-    },
-    "utilization": {
-      "title": "Utilization",
-      "type": "number"
-    },
-    "workers_draining": {
-      "title": "Workers Draining",
-      "type": "integer"
-    },
-    "workers_offline": {
-      "title": "Workers Offline",
-      "type": "integer"
-    },
-    "workers_online": {
-      "title": "Workers Online",
-      "type": "integer"
-    },
-    "workers_total": {
-      "title": "Workers Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "workers_total",
-    "workers_online",
-    "workers_draining",
-    "workers_offline",
-    "max_jobs",
-    "running_jobs",
-    "available_slots",
-    "utilization"
-  ],
-  "title": "WorkerCapacityAggregateResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-WorkerLeaseResponse"></a>
-
-## WorkerLeaseResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `worker_id` | string | 是 | — |
-| `queue_name` | string | 是 | — |
-| `job_id` | string (uuid) | 是 | `format="uuid"` |
-| `job_type` | string | 是 | — |
-| `resource_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `attempt` | integer | 是 | — |
-| `lease_metadata` | object | 是 | `additionalProperties=true` |
-| `started_at` | string (date-time) | 是 | `format="date-time"` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `finished_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "attempt": {
-      "title": "Attempt",
-      "type": "integer"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "finished_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Finished At"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "job_id": {
-      "format": "uuid",
-      "title": "Job Id",
-      "type": "string"
-    },
-    "job_type": {
-      "title": "Job Type",
-      "type": "string"
-    },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "lease_metadata": {
-      "additionalProperties": true,
-      "title": "Lease Metadata",
-      "type": "object"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "resource_id": {
-      "format": "uuid",
-      "title": "Resource Id",
-      "type": "string"
-    },
-    "started_at": {
-      "format": "date-time",
-      "title": "Started At",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "worker_id": {
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "worker_id",
-    "queue_name",
-    "job_id",
-    "job_type",
-    "resource_id",
-    "status",
-    "attempt",
-    "lease_metadata",
-    "started_at",
-    "last_heartbeat_at",
-    "finished_at"
-  ],
-  "title": "WorkerLeaseResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-WorkerLifecycleBucketResponse"></a>
-
-## WorkerLifecycleBucketResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_type` | string | 是 | — |
-| `queued_jobs` | integer | 是 | — |
-| `running_jobs` | integer | 是 | — |
-| `completed_jobs` | integer | 是 | — |
-| `failed_jobs` | integer | 是 | — |
-| `retried_jobs` | integer | 是 | — |
-| `expired_jobs` | integer | 是 | — |
-| `failure_rate` | number | 是 | — |
-| `average_duration_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `oldest_queued_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-| `oldest_running_age_seconds` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "average_duration_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Average Duration Seconds"
-    },
-    "completed_jobs": {
-      "title": "Completed Jobs",
-      "type": "integer"
-    },
-    "expired_jobs": {
-      "title": "Expired Jobs",
-      "type": "integer"
-    },
-    "failed_jobs": {
-      "title": "Failed Jobs",
-      "type": "integer"
-    },
-    "failure_rate": {
-      "title": "Failure Rate",
-      "type": "number"
-    },
-    "oldest_queued_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Queued Age Seconds"
-    },
-    "oldest_running_age_seconds": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Oldest Running Age Seconds"
-    },
-    "queued_jobs": {
-      "title": "Queued Jobs",
-      "type": "integer"
-    },
-    "retried_jobs": {
-      "title": "Retried Jobs",
-      "type": "integer"
-    },
-    "running_jobs": {
-      "title": "Running Jobs",
-      "type": "integer"
-    },
-    "worker_type": {
-      "title": "Worker Type",
-      "type": "string"
-    }
-  },
-  "required": [
-    "worker_type",
-    "queued_jobs",
-    "running_jobs",
-    "completed_jobs",
-    "failed_jobs",
-    "retried_jobs",
-    "expired_jobs",
-    "failure_rate",
-    "average_duration_seconds",
-    "oldest_queued_age_seconds",
-    "oldest_running_age_seconds"
-  ],
-  "title": "WorkerLifecycleBucketResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-WorkerNodeResponse"></a>
-
-## WorkerNodeResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `worker_id` | string | 是 | — |
-| `worker_type` | string | 是 | — |
-| `status` | string | 是 | — |
-| `queue_name` | string | 是 | — |
-| `worker_version` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `hostname` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `capacity` | object | 是 | `additionalProperties=true` |
-| `details` | object | 是 | `additionalProperties=true` |
-| `drain_requested_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `last_seen_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "capacity": {
-      "additionalProperties": true,
-      "title": "Capacity",
-      "type": "object"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "details": {
-      "additionalProperties": true,
-      "title": "Details",
-      "type": "object"
-    },
-    "drain_requested_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Drain Requested At"
-    },
-    "hostname": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Hostname"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_seen_at": {
-      "format": "date-time",
-      "title": "Last Seen At",
-      "type": "string"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "worker_id": {
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_type": {
-      "title": "Worker Type",
-      "type": "string"
-    },
-    "worker_version": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Version"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "worker_id",
-    "worker_type",
-    "status",
-    "queue_name",
-    "worker_version",
-    "hostname",
-    "capacity",
-    "details",
-    "drain_requested_at",
-    "last_seen_at"
-  ],
-  "title": "WorkerNodeResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-WorkerStatusUpdateRequest"></a>
-
-## WorkerStatusUpdateRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 是 | `enum=["online", "offline", "maintenance", "disabled", "quarantined", "draining"]` |
-| `reason` | string anyOf null | 否 | `anyOf=[{"maxLength": 240, "type": "string"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "reason": {
-      "anyOf": [
-        {
-          "maxLength": 240,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Reason"
-    },
-    "status": {
-      "enum": [
-        "online",
-        "offline",
-        "maintenance",
-        "disabled",
-        "quarantined",
-        "draining"
-      ],
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "required": [
-    "status"
-  ],
-  "title": "WorkerStatusUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-WorkerTypeCapacityResponse"></a>
-
-## WorkerTypeCapacityResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_type` | string | 是 | — |
-| `workers_total` | integer | 是 | — |
-| `workers_online` | integer | 是 | — |
-| `workers_draining` | integer | 是 | — |
-| `max_jobs` | integer | 是 | — |
-| `running_jobs` | integer | 是 | — |
-| `available_slots` | integer | 是 | — |
-| `utilization` | number | 是 | — |
-
-```json
-{
-  "properties": {
-    "available_slots": {
-      "title": "Available Slots",
-      "type": "integer"
-    },
-    "max_jobs": {
-      "title": "Max Jobs",
-      "type": "integer"
-    },
-    "running_jobs": {
-      "title": "Running Jobs",
-      "type": "integer"
-    },
-    "utilization": {
-      "title": "Utilization",
-      "type": "number"
-    },
-    "worker_type": {
-      "title": "Worker Type",
-      "type": "string"
-    },
-    "workers_draining": {
-      "title": "Workers Draining",
-      "type": "integer"
-    },
-    "workers_online": {
-      "title": "Workers Online",
-      "type": "integer"
-    },
-    "workers_total": {
-      "title": "Workers Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "worker_type",
-    "workers_total",
-    "workers_online",
-    "workers_draining",
-    "max_jobs",
-    "running_jobs",
-    "available_slots",
-    "utilization"
-  ],
-  "title": "WorkerTypeCapacityResponse",
-  "type": "object"
-}
-```
-
 <a id="schema-WorkflowAuthoringContract"></a>
 
 ## WorkflowAuthoringContract
@@ -48929,7 +43378,7 @@ A bounded reference to task or completed-step data.
 | `assigned_agent_profile_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `depends_on` | array&lt;string&gt; | 否 | `maxItems=128` |
 | `required_tools` | array&lt;string&gt; | 否 | `maxItems=32` |
-| `required_mcp_tools` | array&lt;[McpToolSelection](schemas.md#schema-McpToolSelection)&gt; | 否 | `maxItems=32` |
+| `required_mcp_tools` | array&lt;[MCPToolSelection](schemas.md#schema-MCPToolSelection)&gt; | 否 | `maxItems=32` |
 | `required_resource_ids` | array&lt;string (uuid)&gt; | 否 | `maxItems=32` |
 | `resource_requirements` | object | 否 | `additionalProperties={"type": "integer"}`; `maxProperties=32` |
 | `expected_artifacts` | array&lt;string&gt; | 否 | `maxItems=32` |
@@ -49074,7 +43523,7 @@ A bounded reference to task or completed-step data.
     },
     "required_mcp_tools": {
       "items": {
-        "$ref": "#/components/schemas/McpToolSelection"
+        "$ref": "#/components/schemas/MCPToolSelection"
       },
       "maxItems": 32,
       "title": "Required Mcp Tools",
@@ -49390,6 +43839,33 @@ A bounded reference to task or completed-step data.
 }
 ```
 
+<a id="schema-WorkspaceArchiveExportReconciliation"></a>
+
+## WorkspaceArchiveExportReconciliation
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `reason` | string | 是 | `maxLength=1000`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason"
+  ],
+  "title": "WorkspaceArchiveExportReconciliation",
+  "type": "object"
+}
+```
+
 <a id="schema-WorkspaceArchiveExportRequest"></a>
 
 ## WorkspaceArchiveExportRequest
@@ -49667,6 +44143,139 @@ A bounded reference to task or completed-step data.
     }
   },
   "title": "WorkspaceArchiveRestoreDrillRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceArchiveVerificationResponse"></a>
+
+## WorkspaceArchiveVerificationResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `export_job_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `result` | [WorkspaceArchiveIntegrityResponse](schemas.md#schema-WorkspaceArchiveIntegrityResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/WorkspaceArchiveIntegrityResponse"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "export_job_id": {
+      "format": "uuid",
+      "title": "Export Job Id",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/WorkspaceArchiveIntegrityResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "export_job_id",
+    "status",
+    "error_code",
+    "result",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "WorkspaceArchiveVerificationResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceAuditStatus"></a>
+
+## WorkspaceAuditStatus
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string | 是 | — |
+| `stale` | boolean | 是 | — |
+| `latest` | [AuditIntegrityCheckResponse](schemas.md#schema-AuditIntegrityCheckResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/AuditIntegrityCheckResponse"}, {"type": "null"}]` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+
+```json
+{
+  "properties": {
+    "latest": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/AuditIntegrityCheckResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stale": {
+      "title": "Stale",
+      "type": "boolean"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "stale",
+    "latest",
+    "workspace_id"
+  ],
+  "title": "WorkspaceAuditStatus",
   "type": "object"
 }
 ```
@@ -49989,9 +44598,9 @@ A bounded reference to task or completed-step data.
 }
 ```
 
-<a id="schema-WorkspaceCapabilityGovernanceMcpServerResponse"></a>
+<a id="schema-WorkspaceCapabilityGovernanceMCPServerResponse"></a>
 
-## WorkspaceCapabilityGovernanceMcpServerResponse
+## WorkspaceCapabilityGovernanceMCPServerResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -50091,7 +44700,7 @@ A bounded reference to task or completed-step data.
     "approval_required_tool_count",
     "failed_call_count"
   ],
-  "title": "WorkspaceCapabilityGovernanceMcpServerResponse",
+  "title": "WorkspaceCapabilityGovernanceMCPServerResponse",
   "type": "object"
 }
 ```
@@ -50107,7 +44716,7 @@ A bounded reference to task or completed-step data.
 | `summary` | object | 是 | `additionalProperties=true` |
 | `skills` | array&lt;[WorkspaceCapabilityGovernanceSkillResponse](schemas.md#schema-WorkspaceCapabilityGovernanceSkillResponse)&gt; | 是 | — |
 | `agents` | array&lt;[WorkspaceCapabilityGovernanceAgentResponse](schemas.md#schema-WorkspaceCapabilityGovernanceAgentResponse)&gt; | 是 | — |
-| `mcp_servers` | array&lt;[WorkspaceCapabilityGovernanceMcpServerResponse](schemas.md#schema-WorkspaceCapabilityGovernanceMcpServerResponse)&gt; | 是 | — |
+| `mcp_servers` | array&lt;[WorkspaceCapabilityGovernanceMCPServerResponse](schemas.md#schema-WorkspaceCapabilityGovernanceMCPServerResponse)&gt; | 是 | — |
 
 ```json
 {
@@ -50126,7 +44735,7 @@ A bounded reference to task or completed-step data.
     },
     "mcp_servers": {
       "items": {
-        "$ref": "#/components/schemas/WorkspaceCapabilityGovernanceMcpServerResponse"
+        "$ref": "#/components/schemas/WorkspaceCapabilityGovernanceMCPServerResponse"
       },
       "title": "Mcp Servers",
       "type": "array"
@@ -50994,7 +45603,7 @@ A bounded reference to task or completed-step data.
 | --- | --- | --- | --- |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `exported_at` | string (date-time) | 是 | `format="date-time"` |
-| `format_version` | string | 是 | — |
+| `format_version` | string | 是 | Current export format is workspace-export.v3; imports reject other versions. |
 | `included_collections` | array&lt;string&gt; | 是 | — |
 | `counts` | object | 是 | `additionalProperties={"type": "integer"}` |
 | `payload_checksum_sha256` | string | 是 | — |
@@ -51027,6 +45636,7 @@ A bounded reference to task or completed-step data.
       "type": "string"
     },
     "format_version": {
+      "description": "Current export format is workspace-export.v3; imports reject other versions.",
       "title": "Format Version",
       "type": "string"
     },
@@ -53268,6 +47878,61 @@ A bounded reference to task or completed-step data.
 }
 ```
 
+<a id="schema-WorkspaceOperationsOverviewResponse"></a>
+
+## WorkspaceOperationsOverviewResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `runs_by_status` | object | 是 | `additionalProperties={"type": "integer"}` |
+| `runtimes_by_status` | object | 是 | `additionalProperties={"type": "integer"}` |
+| `pending_temporal_dispatches` | integer | 是 | — |
+| `security_warnings` | integer | 是 | — |
+| `data_lifecycle` | object | 是 | `additionalProperties=true` |
+
+```json
+{
+  "properties": {
+    "data_lifecycle": {
+      "additionalProperties": true,
+      "title": "Data Lifecycle",
+      "type": "object"
+    },
+    "pending_temporal_dispatches": {
+      "title": "Pending Temporal Dispatches",
+      "type": "integer"
+    },
+    "runs_by_status": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Runs By Status",
+      "type": "object"
+    },
+    "runtimes_by_status": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Runtimes By Status",
+      "type": "object"
+    },
+    "security_warnings": {
+      "title": "Security Warnings",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "runs_by_status",
+    "runtimes_by_status",
+    "pending_temporal_dispatches",
+    "security_warnings",
+    "data_lifecycle"
+  ],
+  "title": "WorkspaceOperationsOverviewResponse",
+  "type": "object"
+}
+```
+
 <a id="schema-WorkspaceProjectConfigurationVersionResponse"></a>
 
 ## WorkspaceProjectConfigurationVersionResponse
@@ -54744,12 +49409,124 @@ A bounded reference to task or completed-step data.
 }
 ```
 
+<a id="schema-WorkspaceRestoreDrillOperationResponse"></a>
+
+## WorkspaceRestoreDrillOperationResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `export_job_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `result` | [WorkspaceRestoreDrillResponse](schemas.md#schema-WorkspaceRestoreDrillResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/WorkspaceRestoreDrillResponse"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "export_job_id": {
+      "format": "uuid",
+      "title": "Export Job Id",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/WorkspaceRestoreDrillResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "export_job_id",
+    "status",
+    "error_code",
+    "result",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "WorkspaceRestoreDrillOperationResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceRestoreDrillReconciliation"></a>
+
+## WorkspaceRestoreDrillReconciliation
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `reason` | string | 是 | `maxLength=1000`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason"
+  ],
+  "title": "WorkspaceRestoreDrillReconciliation",
+  "type": "object"
+}
+```
+
 <a id="schema-WorkspaceRestoreDrillResponse"></a>
 
 ## WorkspaceRestoreDrillResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
+| `operation_id` | string (uuid) | 是 | `format="uuid"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `job_id` | string (uuid) | 是 | `format="uuid"` |
 | `drilled_at` | string (date-time) | 是 | `format="date-time"` |
@@ -54788,6 +49565,11 @@ A bounded reference to task or completed-step data.
       "title": "Metadata",
       "type": "object"
     },
+    "operation_id": {
+      "format": "uuid",
+      "title": "Operation Id",
+      "type": "string"
+    },
     "passed": {
       "title": "Passed",
       "type": "boolean"
@@ -54809,6 +49591,7 @@ A bounded reference to task or completed-step data.
     }
   },
   "required": [
+    "operation_id",
     "workspace_id",
     "job_id",
     "drilled_at",
@@ -55094,96 +49877,28 @@ A bounded reference to task or completed-step data.
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `runtime_provider` | string | 是 | — |
-| `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
+| `sandbox_backend_id` | string | 是 | — |
+| `sandbox_options` | object | 是 | `additionalProperties=true` |
 | `name` | string | 是 | — |
-| `status` | string | 是 | — |
-| `connection_status` | string | 是 | — |
-| `limits` | object | 是 | `additionalProperties=true` |
-| `network_policy` | object | 是 | `additionalProperties=true` |
-| `capabilities` | object | 是 | `additionalProperties=true` |
-| `last_heartbeat_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
-| `has_docker_container` | boolean | 是 | `readOnly=true` |
+| `status` | string | 是 | `enum=["active", "disabled", "deleted"]` |
 
 ```json
 {
   "properties": {
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "connection_status": {
-      "title": "Connection Status",
-      "type": "string"
-    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
       "type": "string"
-    },
-    "execution_mode": {
-      "enum": [
-        "isolated",
-        "shared"
-      ],
-      "title": "Execution Mode",
-      "type": "string"
-    },
-    "has_docker_container": {
-      "readOnly": true,
-      "title": "Has Docker Container",
-      "type": "boolean"
-    },
-    "host_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Host Id"
     },
     "id": {
       "format": "uuid",
       "title": "Id",
       "type": "string"
     },
-    "last_heartbeat_at": {
-      "anyOf": [
-        {
-          "format": "date-time",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Last Heartbeat At"
-    },
-    "limits": {
-      "additionalProperties": true,
-      "title": "Limits",
-      "type": "object"
-    },
     "name": {
       "title": "Name",
-      "type": "string"
-    },
-    "network_policy": {
-      "additionalProperties": true,
-      "title": "Network Policy",
-      "type": "object"
-    },
-    "runtime_provider": {
-      "title": "Runtime Provider",
       "type": "string"
     },
     "runtime_space_id": {
@@ -55210,11 +49925,21 @@ A bounded reference to task or completed-step data.
       ],
       "title": "Runtime Template Id"
     },
-    "runtime_type": {
-      "title": "Runtime Type",
+    "sandbox_backend_id": {
+      "title": "Sandbox Backend Id",
       "type": "string"
     },
+    "sandbox_options": {
+      "additionalProperties": true,
+      "title": "Sandbox Options",
+      "type": "object"
+    },
     "status": {
+      "enum": [
+        "active",
+        "disabled",
+        "deleted"
+      ],
       "title": "Status",
       "type": "string"
     },
@@ -55234,20 +49959,12 @@ A bounded reference to task or completed-step data.
     "created_at",
     "updated_at",
     "workspace_id",
-    "host_id",
     "runtime_template_id",
     "runtime_space_id",
-    "runtime_provider",
-    "runtime_type",
-    "execution_mode",
+    "sandbox_backend_id",
+    "sandbox_options",
     "name",
-    "status",
-    "connection_status",
-    "limits",
-    "network_policy",
-    "capabilities",
-    "last_heartbeat_at",
-    "has_docker_container"
+    "status"
   ],
   "title": "WorkspaceRuntimeResponse",
   "type": "object"
@@ -56081,687 +50798,6 @@ A bounded reference to task or completed-step data.
     }
   },
   "title": "WorkspaceUpdateRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__orchestration__conversations__schemas__EventResponse"></a>
-
-## opsmesh__orchestration__conversations__schemas__EventResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | integer | 是 | — |
-| `turn_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "title": "Id",
-      "type": "integer"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "turn_id": {
-      "format": "uuid",
-      "title": "Turn Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "turn_id",
-    "status",
-    "created_at"
-  ],
-  "title": "EventResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__platform__updates__routes__EventResponse"></a>
-
-## opsmesh__platform__updates__routes__EventResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `phase` | string | 是 | — |
-| `actor` | string | 是 | — |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "actor": {
-      "title": "Actor",
-      "type": "string"
-    },
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "phase": {
-      "title": "Phase",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "phase",
-    "actor",
-    "created_at"
-  ],
-  "title": "EventResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__instances__schemas__RuntimeEventResponse"></a>
-
-## opsmesh__runtime__instances__schemas__RuntimeEventResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `event_type` | string | 是 | — |
-| `message` | string | 是 | — |
-| `event_metadata` | object | 是 | `additionalProperties=true` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "event_metadata": {
-      "additionalProperties": true,
-      "title": "Event Metadata",
-      "type": "object"
-    },
-    "event_type": {
-      "title": "Event Type",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "message": {
-      "title": "Message",
-      "type": "string"
-    },
-    "runtime_space_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Space Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "workspace_runtime_id",
-    "runtime_space_id",
-    "event_type",
-    "message",
-    "event_metadata",
-    "created_at"
-  ],
-  "title": "RuntimeEventResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__operations__contracts__events__RuntimeEventResponse"></a>
-
-## opsmesh__runtime__operations__contracts__events__RuntimeEventResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `event_type` | string | 是 | — |
-| `message` | string | 是 | — |
-| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `event_metadata` | object | 是 | `additionalProperties=true` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "event_metadata": {
-      "additionalProperties": true,
-      "title": "Event Metadata",
-      "type": "object"
-    },
-    "event_type": {
-      "title": "Event Type",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "message": {
-      "title": "Message",
-      "type": "string"
-    },
-    "request_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Request Id"
-    },
-    "runtime_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Runtime Id"
-    },
-    "span_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Span Id"
-    },
-    "trace_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Trace Id"
-    },
-    "worker_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Id"
-    },
-    "workspace_id": {
-      "format": "uuid",
-      "title": "Workspace Id",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "workspace_id",
-    "workspace_runtime_id",
-    "event_type",
-    "message",
-    "request_id",
-    "trace_id",
-    "span_id",
-    "worker_id",
-    "runtime_id",
-    "event_metadata",
-    "created_at"
-  ],
-  "title": "RuntimeEventResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__self_hosted__schemas__WorkerHeartbeatRequest"></a>
-
-## opsmesh__runtime__self_hosted__schemas__WorkerHeartbeatRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `status` | string | 否 | `default="online"`; `maxLength=32` |
-| `capabilities` | object | 否 | `additionalProperties=true` |
-| `attestation` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "attestation": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Attestation"
-    },
-    "capabilities": {
-      "additionalProperties": true,
-      "title": "Capabilities",
-      "type": "object"
-    },
-    "status": {
-      "default": "online",
-      "maxLength": 32,
-      "title": "Status",
-      "type": "string"
-    }
-  },
-  "title": "WorkerHeartbeatRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__self_hosted__schemas__WorkerHeartbeatResponse"></a>
-
-## opsmesh__runtime__self_hosted__schemas__WorkerHeartbeatResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `worker_id` | string (uuid) | 是 | `format="uuid"` |
-| `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `status` | string | 是 | — |
-| `last_heartbeat_at` | string (date-time) | 是 | `format="date-time"` |
-| `capability_attestation_state` | string | 是 | — |
-| `host_isolation_verified` | boolean | 是 | — |
-
-```json
-{
-  "properties": {
-    "capability_attestation_state": {
-      "title": "Capability Attestation State",
-      "type": "string"
-    },
-    "host_isolation_verified": {
-      "title": "Host Isolation Verified",
-      "type": "boolean"
-    },
-    "last_heartbeat_at": {
-      "format": "date-time",
-      "title": "Last Heartbeat At",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "worker_id": {
-      "format": "uuid",
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "workspace_runtime_id": {
-      "format": "uuid",
-      "title": "Workspace Runtime Id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "worker_id",
-    "workspace_runtime_id",
-    "status",
-    "last_heartbeat_at",
-    "capability_attestation_state",
-    "host_isolation_verified"
-  ],
-  "title": "WorkerHeartbeatResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__workers__schemas__WorkerHeartbeatRequest"></a>
-
-## opsmesh__runtime__workers__schemas__WorkerHeartbeatRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `workspace_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `worker_id` | string | 是 | `maxLength=160`; `minLength=1` |
-| `worker_type` | string | 否 | `default="cloud"`; `maxLength=80` |
-| `status` | string | 否 | `default="online"`; `maxLength=32` |
-| `queue_name` | string | 否 | `default="agent_runs"`; `maxLength=120` |
-| `worker_version` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "type": "string"}, {"type": "null"}]` |
-| `hostname` | string anyOf null | 否 | `anyOf=[{"maxLength": 255, "type": "string"}, {"type": "null"}]` |
-| `capacity` | object | 否 | `additionalProperties=true` |
-| `details` | object | 否 | `additionalProperties=true` |
-
-```json
-{
-  "properties": {
-    "capacity": {
-      "additionalProperties": true,
-      "title": "Capacity",
-      "type": "object"
-    },
-    "details": {
-      "additionalProperties": true,
-      "title": "Details",
-      "type": "object"
-    },
-    "hostname": {
-      "anyOf": [
-        {
-          "maxLength": 255,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Hostname"
-    },
-    "queue_name": {
-      "default": "agent_runs",
-      "maxLength": 120,
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "status": {
-      "default": "online",
-      "maxLength": 32,
-      "title": "Status",
-      "type": "string"
-    },
-    "worker_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_type": {
-      "default": "cloud",
-      "maxLength": 80,
-      "title": "Worker Type",
-      "type": "string"
-    },
-    "worker_version": {
-      "anyOf": [
-        {
-          "maxLength": 120,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Worker Version"
-    },
-    "workspace_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Id"
-    }
-  },
-  "required": [
-    "worker_id"
-  ],
-  "title": "WorkerHeartbeatRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__runtime__workers__schemas__WorkerHeartbeatResponse"></a>
-
-## opsmesh__runtime__workers__schemas__WorkerHeartbeatResponse
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `id` | string (uuid) | 是 | `format="uuid"` |
-| `created_at` | string (date-time) | 是 | `format="date-time"` |
-| `updated_at` | string (date-time) | 是 | `format="date-time"` |
-| `workspace_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `worker_id` | string | 是 | — |
-| `worker_type` | string | 是 | — |
-| `status` | string | 是 | — |
-| `queue_name` | string | 是 | — |
-| `details` | object | 是 | `additionalProperties=true` |
-| `last_seen_at` | string (date-time) | 是 | `format="date-time"` |
-
-```json
-{
-  "properties": {
-    "created_at": {
-      "format": "date-time",
-      "title": "Created At",
-      "type": "string"
-    },
-    "details": {
-      "additionalProperties": true,
-      "title": "Details",
-      "type": "object"
-    },
-    "id": {
-      "format": "uuid",
-      "title": "Id",
-      "type": "string"
-    },
-    "last_seen_at": {
-      "format": "date-time",
-      "title": "Last Seen At",
-      "type": "string"
-    },
-    "queue_name": {
-      "title": "Queue Name",
-      "type": "string"
-    },
-    "status": {
-      "title": "Status",
-      "type": "string"
-    },
-    "updated_at": {
-      "format": "date-time",
-      "title": "Updated At",
-      "type": "string"
-    },
-    "worker_id": {
-      "title": "Worker Id",
-      "type": "string"
-    },
-    "worker_type": {
-      "title": "Worker Type",
-      "type": "string"
-    },
-    "workspace_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Workspace Id"
-    }
-  },
-  "required": [
-    "id",
-    "created_at",
-    "updated_at",
-    "workspace_id",
-    "worker_id",
-    "worker_type",
-    "status",
-    "queue_name",
-    "details",
-    "last_seen_at"
-  ],
-  "title": "WorkerHeartbeatResponse",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__shared__http__pagination__PageResponse_RuntimeEventResponse___1"></a>
-
-## opsmesh__shared__http__pagination__PageResponse_RuntimeEventResponse___1
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[opsmesh__runtime__instances__schemas__RuntimeEventResponse](schemas.md#schema-opsmesh__runtime__instances__schemas__RuntimeEventResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/opsmesh__runtime__instances__schemas__RuntimeEventResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[RuntimeEventResponse]",
-  "type": "object"
-}
-```
-
-<a id="schema-opsmesh__shared__http__pagination__PageResponse_RuntimeEventResponse___2"></a>
-
-## opsmesh__shared__http__pagination__PageResponse_RuntimeEventResponse___2
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `items` | array&lt;[opsmesh__runtime__operations__contracts__events__RuntimeEventResponse](schemas.md#schema-opsmesh__runtime__operations__contracts__events__RuntimeEventResponse)&gt; | 是 | — |
-| `total` | integer | 是 | `minimum=0.0` |
-| `limit` | integer | 是 | `minimum=1.0` |
-| `offset` | integer | 是 | `minimum=0.0` |
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/opsmesh__runtime__operations__contracts__events__RuntimeEventResponse"
-      },
-      "title": "Items",
-      "type": "array"
-    },
-    "limit": {
-      "minimum": 1.0,
-      "title": "Limit",
-      "type": "integer"
-    },
-    "offset": {
-      "minimum": 0.0,
-      "title": "Offset",
-      "type": "integer"
-    },
-    "total": {
-      "minimum": 0.0,
-      "title": "Total",
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total",
-    "limit",
-    "offset"
-  ],
-  "title": "PageResponse[RuntimeEventResponse]",
   "type": "object"
 }
 ```

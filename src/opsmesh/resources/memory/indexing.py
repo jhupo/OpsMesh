@@ -10,14 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.files.runtime_policy import runtime_file_denial_code
 from opsmesh.resources.memory.configuration import initial_embedding_status
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.utils import stringify_or_none
 
 _SUPPORTED_MEMORY_INDEX_SOURCES = frozenset({"task", "workspace_file", "artifact"})
@@ -217,6 +217,18 @@ class WorkspaceMemoryIndexingService:
             )
             self._session.add(entry)
         self._session.flush()
+        from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+        for candidate in self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.source_type == source_type,
+                WorkspaceMemoryEntry.source_id == source_id_text,
+                WorkspaceMemoryEntry.status == "active",
+                WorkspaceMemoryEntry.embedding_status == "pending",
+            )
+        ):
+            stage_memory_embedding(self._session, candidate)
         return WorkspaceMemoryIndexResult(source_type, source_id_text, archived, len(chunks))
 
     def _archive_existing_chunks(
@@ -291,28 +303,25 @@ def _importance(source_type: str) -> int:
     }.get(source_type, 25)
 
 
-def enqueue_workspace_memory_index_job(
+def stage_memory_index(
     *,
-    queue: RedisQueue,
+    session: Session,
     workspace_id: UUID,
     source_type: str,
     source_id: UUID,
     requested_by_user_id: UUID | None = None,
     requested_by_agent_run_id: UUID | None = None,
-    priority: int = -10,
-    routing: dict[str, object] | None = None,
-) -> bool:
+) -> str:
     if source_type not in _SUPPORTED_MEMORY_INDEX_SOURCES:
         raise ValueError(f"Unsupported memory index source_type: {source_type}")
-    return queue.enqueue(
-        JobPayload(
+    return stage_execution(
+        session,
+        ExecutionRequest(
             workspace_id=workspace_id,
-            job_type=JobType.MEMORY_INDEX,
+            kind=ExecutionKind.MEMORY_INDEX,
             resource_id=source_id,
             requested_by_user_id=requested_by_user_id,
             requested_by_agent_run_id=requested_by_agent_run_id,
-            idempotency_key=f"memory.index:{workspace_id}:{source_type}:{source_id}",
-            routing={**(routing or {}), "source_type": source_type},
-            priority=priority,
-        )
+            parameters={"source_type": source_type},
+        ),
     )

@@ -7,7 +7,7 @@ from uuid import UUID
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.files.runtime_policy import runtime_file_denial_code
 from opsmesh.resources.files.security import validate_storage_key
-from opsmesh.resources.storage.storage import ObjectStorage, StorageObjectTooLargeError
+from opsmesh.resources.storage.backends import ObjectStorage, StorageObjectTooLargeError
 
 
 class WorkspaceFileReadError(ValueError):

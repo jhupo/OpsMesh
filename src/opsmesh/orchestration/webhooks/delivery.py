@@ -6,10 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.plugins.policy import plugin_resource_available
-from opsmesh.orchestration.automations.authorization import automation_delivery_available
 from opsmesh.orchestration.webhooks.delivery_state import WebhookDeliveryStateRecorder
-from opsmesh.orchestration.webhooks.http_client import HttpxWebhookHttpClient, WebhookHttpClient
+from opsmesh.orchestration.webhooks.http_client import HttpxWebhookHTTPClient, WebhookHTTPClient
 from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from opsmesh.orchestration.webhooks.policy import (
     WEBHOOK_DELIVERY_MAX_ATTEMPTS,
@@ -21,7 +19,8 @@ from opsmesh.orchestration.webhooks.replay import (
     WebhookDeliveryReplayService,
 )
 from opsmesh.orchestration.webhooks.signing import WebhookDeliverySigner
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
@@ -31,10 +30,10 @@ class WebhookDeliveryService:
         self,
         session: Session,
         secret_service: SecretEncryptionService | None = None,
-        http_client: WebhookHttpClient | None = None,
+        http_client: WebhookHTTPClient | None = None,
     ) -> None:
         self._session = session
-        self._http_client = http_client or HttpxWebhookHttpClient()
+        self._http_client = http_client or HttpxWebhookHTTPClient()
         self._signer = WebhookDeliverySigner(secret_service)
         self._state = WebhookDeliveryStateRecorder()
 
@@ -47,6 +46,7 @@ class WebhookDeliveryService:
         event_id: str | None = None,
         available_at: datetime | None = None,
         subscription_id: UUID | None = None,
+        dispatch: bool = True,
     ) -> list[WebhookDeliveryAttempt]:
         subscriptions = self._matching_subscriptions(
             workspace_id=workspace_id,
@@ -76,6 +76,19 @@ class WebhookDeliveryService:
         self._session.add_all(attempts)
         if attempts:
             self._session.flush(attempts)
+            for attempt in attempts if dispatch else []:
+                attempt.status = "queued"
+                attempt.queued_at = now
+                attempt.execution_id = attempt.id
+                stage_execution(
+                    self._session,
+                    ExecutionRequest(
+                        execution_id=attempt.id,
+                        workspace_id=workspace_id,
+                        resource_id=attempt.id,
+                        kind=ExecutionKind.WEBHOOK_DELIVERY,
+                    ),
+                )
         return attempts
 
     def replay_attempt(
@@ -84,14 +97,12 @@ class WebhookDeliveryService:
         workspace_id: UUID,
         subscription_id: UUID,
         delivery_attempt_id: UUID,
-        queue: RedisQueue,
         rate_limiter: FixedWindowRateLimiter,
     ) -> WebhookDeliveryAttempt:
         return WebhookDeliveryReplayService(self._session, rate_limiter).replay_attempt(
             workspace_id=workspace_id,
             subscription_id=subscription_id,
             delivery_attempt_id=delivery_attempt_id,
-            queue=queue,
         )
 
     def deliver(self, *, workspace_id: UUID, delivery_attempt_id: UUID) -> WebhookDeliveryAttempt:
@@ -104,16 +115,6 @@ class WebhookDeliveryService:
         if (
             subscription is None
             or subscription.status != "active"
-            or (
-                attempt.event_type == "automation.reply"
-                and not automation_delivery_available(self._session, attempt)
-            )
-            or not plugin_resource_available(
-                self._session,
-                workspace_id,
-                "reply_channel",
-                subscription.id,
-            )
         ):
             self._state.mark_dead_lettered(
                 attempt,

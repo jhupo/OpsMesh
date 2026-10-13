@@ -4,15 +4,16 @@ import tarfile
 from pathlib import Path
 
 import pytest
-from opsmesh_operator import commands
-from opsmesh_operator.cli import parser, request
+from opsmesh_operator import commands, compose, deployments
+from opsmesh_operator.cli import build_argument_parser, send_admin_request
 from opsmesh_operator.contracts import ReleaseFile
+from opsmesh_operator.deployments import ComposeDeployment
 from opsmesh_operator.files import atomic_write, require_install_root
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.installer import provision_updater
-from opsmesh_operator.releases import ReleaseSource, extract_bundle
+from opsmesh_operator.releases import ReleaseDownloader, extract_bundle
 
-from tests.test_platform_updates import manifest
+from tests.fixtures.releases import manifest
 
 
 @pytest.mark.parametrize(
@@ -37,7 +38,7 @@ def test_release_archive_denies_escape_and_special_files(
 
 
 def test_download_checksum_denial(tmp_path: Path, monkeypatch) -> None:
-    source = ReleaseSource("jhupo/OpsMesh")
+    source = ReleaseDownloader("jhupo/OpsMesh")
 
     def download(tag, name, path, *, limit):
         path.write_bytes(b"tampered")
@@ -60,9 +61,88 @@ def test_subprocess_errors_do_not_disclose_stderr(monkeypatch) -> None:
     assert "secret" not in str(caught.value)
 
 
+@pytest.mark.parametrize("initialization_failed", [False, True])
+def test_compose_waits_for_namespace_exit_before_reporting_infrastructure_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initialization_failed: bool
+) -> None:
+    calls: list[list[str]] = []
+    installation = Installation(root=tmp_path, mode="compose", timeout_seconds=300)
+    deployment = ComposeDeployment(installation)
+    release = manifest()
+    prefix = deployment.command(installation.release_dir(release))
+
+    def run(args: list[str], *, timeout: int) -> str:
+        assert timeout == 300
+        calls.append(args[len(prefix) :])
+        return ""
+
+    def wait(command: list[str], *, service: str, timeout: int) -> None:
+        assert command == prefix and timeout == 300 and service == "temporal-namespace"
+        calls.append(["wait", service])
+        if initialization_failed:
+            raise RuntimeError("namespace initialization failed")
+
+    monkeypatch.setattr(deployments, "run_command", run)
+    monkeypatch.setattr(deployments, "wait_for_service_completion", wait)
+    if initialization_failed:
+        with pytest.raises(RuntimeError, match="namespace initialization failed"):
+            deployment.infrastructure(release)
+    else:
+        deployment.infrastructure(release)
+    assert calls[:2] == [
+        ["up", "-d", "postgres", "redis", "temporal-namespace"],
+        ["wait", "temporal-namespace"],
+    ]
+    if initialization_failed:
+        assert len(calls) == 2
+    else:
+        assert calls[2] == ["up", "-d", "--no-deps", "--wait", "postgres", "redis", "temporal"]
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_initialization_checks_native_container_exit_even_after_it_has_stopped(
+    monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    from types import SimpleNamespace
+
+    import docker
+
+    lifecycle: list[str] = []
+
+    def wait(*, timeout: int, condition: str) -> dict[str, int]:
+        assert timeout == 180 and condition == "not-running"
+        lifecycle.append("wait")
+        return {"StatusCode": exit_code}
+
+    container = SimpleNamespace(
+        labels={"com.docker.compose.service": "temporal-namespace"}, wait=wait
+    )
+    client = SimpleNamespace(
+        containers=SimpleNamespace(get=lambda identifier: container),
+        close=lambda: lifecycle.append("close"),
+    )
+
+    def query(command: list[str], *, timeout: int) -> str:
+        assert command == ["docker", "compose", "ps", "--all", "--quiet", "temporal-namespace"]
+        return "stopped-container-id\n"
+
+    monkeypatch.setattr(compose, "run_command", query)
+    monkeypatch.setattr(docker, "from_env", lambda **kwargs: client)
+    if exit_code:
+        with pytest.raises(RuntimeError, match="initialization failed"):
+            compose.wait_for_service_completion(
+                ["docker", "compose"], service="temporal-namespace", timeout=180
+            )
+    else:
+        compose.wait_for_service_completion(
+            ["docker", "compose"], service="temporal-namespace", timeout=180
+        )
+    assert lifecycle == ["wait", "close"]
+
+
 def test_admin_client_refuses_cleartext_remote_token_transport() -> None:
     with pytest.raises(ValueError, match="HTTPS"):
-        request("http://remote.example.test", "GET", "/api/v1/admin/system/version")
+        send_admin_request("http://remote.example.test", "GET", "/api/v1/admin/system/version")
 
 
 def test_installation_rejects_broad_root_and_preserves_atomic_state(tmp_path: Path) -> None:
@@ -79,7 +159,9 @@ def test_installation_rejects_broad_root_and_preserves_atomic_state(tmp_path: Pa
 
 def test_cli_requires_exact_plan_fingerprint_for_approval() -> None:
     with pytest.raises(SystemExit):
-        parser().parse_args(["update", "apply", "--plan", "00000000-0000-0000-0000-000000000001"])
+        build_argument_parser().parse_args(
+            ["update", "apply", "--plan", "00000000-0000-0000-0000-000000000001"]
+        )
 
 
 def test_updater_is_an_independent_copy_without_secrets(tmp_path: Path) -> None:

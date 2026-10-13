@@ -1,26 +1,25 @@
 from __future__ import annotations
 
-from uuid import uuid4
-
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.bootstrap.job_handlers import WorkerJobHandler
-from opsmesh.capabilities.mcp.models import McpCredentialReference
-from opsmesh.governance.credentials.service import HostedSecretReencryptService
+from opsmesh.capabilities.mcp.models import MCPCredentialReference
+from opsmesh.governance.credentials.activities import CredentialMaintenanceActivities
+from opsmesh.governance.credentials.service import SecretReencryptionService
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.users.models import User
 from opsmesh.orchestration.webhooks.models import WebhookSubscription
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.channels import seed_channel
+from tests.fixtures.database import product_engine
 
 OLD_SECRET = "old-credential-secret"
 NEW_SECRET = "new-credential-secret"
@@ -28,14 +27,19 @@ NEW_SECRET = "new-credential-secret"
 
 def test_reencrypts_workspace_hosted_secrets_from_previous_key() -> None:
     session = _session()
-    _, workspace = _seed_workspace(session, slug="rotation")
-    _, other_workspace = _seed_workspace(
+    owner, workspace = _seed_workspace(session, slug="rotation")
+    foreign_owner, other_workspace = _seed_workspace(
         session,
         email="other@example.com",
         slug="other-rotation",
     )
     old_service = SecretEncryptionService(secret=OLD_SECRET, key_id="old-key")
     new_service = _new_secret_service()
+    channel, _, _ = seed_channel(session, owner, workspace, secret_service=old_service)
+    foreign_channel, _, _ = seed_channel(
+        session, foreign_owner, other_workspace, secret_service=old_service
+    )
+    channel_revision = channel.configuration_revision
     model_credential = _model_credential(workspace.id, old_service, api_key="sk-model-secret")
     mcp_credential = _mcp_credential(workspace.id, old_service, token="mcp-secret")
     webhook = _webhook_subscription(workspace.id, old_service, signing_secret="whsec-secret")
@@ -53,7 +57,7 @@ def test_reencrypts_workspace_hosted_secrets_from_previous_key() -> None:
         "foreign": foreign_model_credential.encrypted_api_key,
     }
 
-    summary = HostedSecretReencryptService(session, new_service).reencrypt(
+    summary = SecretReencryptionService(session, new_service).reencrypt(
         workspace_id=workspace.id,
     )
     session.commit()
@@ -62,13 +66,17 @@ def test_reencrypts_workspace_hosted_secrets_from_previous_key() -> None:
     session.refresh(webhook)
     session.refresh(foreign_model_credential)
 
-    assert summary.scanned == 3
-    assert summary.reencrypted == 3
+    assert summary.scanned == 4
+    assert summary.reencrypted == 4
     assert summary.failed == 0
     assert model_credential.encryption_key_id == "current-key"
     assert mcp_credential.encryption_key_id == "current-key"
     assert webhook.encryption_key_id == "current-key"
     assert foreign_model_credential.encryption_key_id == "old-key"
+    assert channel.encryption_key_id == "current-key"
+    assert channel.configuration_revision == channel_revision
+    assert foreign_channel.encryption_key_id == "old-key"
+    assert new_service.decrypt_payload(channel.encrypted_signing_secret)
     assert model_credential.encrypted_api_key != old_ciphertexts["model"]
     assert mcp_credential.encrypted_secret_payload != old_ciphertexts["mcp"]
     assert webhook.encrypted_signing_secret != old_ciphertexts["webhook"]
@@ -87,39 +95,49 @@ def test_reencrypts_workspace_hosted_secrets_from_previous_key() -> None:
     assert event is not None
     assert event.workspace_id == workspace.id
     assert event.outcome == "success"
-    assert event.event_metadata["reencrypted"] == 3
+    assert event.event_metadata["reencrypted"] == 4
     assert "sk-model-secret" not in str(event.event_metadata)
     assert "mcp-secret" not in str(event.event_metadata)
     assert "whsec-secret" not in str(event.event_metadata)
 
-    second_summary = HostedSecretReencryptService(session, new_service).reencrypt(
+    second_summary = SecretReencryptionService(session, new_service).reencrypt(
         workspace_id=workspace.id,
     )
     session.commit()
 
     assert second_summary.reencrypted == 0
-    assert second_summary.skipped_current == 3
+    assert second_summary.skipped_current == 4
     assert second_summary.failed == 0
 
 
-def test_worker_secret_reencrypt_job_can_run_global_maintenance() -> None:
+def test_secret_rotation_activity_is_workspace_scoped_and_rejects_global_escalation() -> None:
     session = _session()
-    _, workspace = _seed_workspace(session, slug="worker-rotation")
+    owner, workspace = _seed_workspace(session, slug="worker-rotation")
+    _, other_workspace = _seed_workspace(
+        session, slug="foreign-rotation", email="foreign@test.invalid"
+    )
     old_service = SecretEncryptionService(secret=OLD_SECRET, key_id="old-key")
     credential = _model_credential(workspace.id, old_service, api_key="sk-worker-secret")
-    session.add(credential)
+    foreign = _model_credential(other_workspace.id, old_service, api_key="sk-foreign-secret")
+    session.add_all([credential, foreign])
     session.commit()
 
-    WorkerJobHandler(session, settings=_settings()).handle(
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.SECRET_REENCRYPT,
-            resource_id=uuid4(),
-            idempotency_key=f"secret.reencrypt:{workspace.id}",
-            routing={"scope": "global"},
-            max_attempts=1,
-        )
+    request = ExecutionRequest(
+        workspace_id=workspace.id,
+        kind=ExecutionKind.SECRET_REENCRYPT,
+        resource_id=workspace.id,
+        requested_by_user_id=owner.id,
     )
+    services = ActivityDependencies(
+        sessions=sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+        settings=_settings(),
+    )
+    activity = CredentialMaintenanceActivities(services)
+    with pytest.raises(ValueError, match="global"):
+        activity.reencrypt(request.model_copy(update={"parameters": {"scope": "global"}}))
+    session.refresh(credential)
+    assert credential.encryption_key_id == "old-key"
+    activity.reencrypt(request)
     session.refresh(credential)
 
     assert credential.encryption_key_id == "current-key"
@@ -128,8 +146,9 @@ def test_worker_secret_reencrypt_job_can_run_global_maintenance() -> None:
     }
     event = session.scalar(select(SecurityEvent).where(SecurityEvent.action == "secret.reencrypt"))
     assert event is not None
-    assert event.workspace_id is None
-    assert event.event_metadata["scope"] == "global"
+    assert event.workspace_id == workspace.id
+    session.refresh(foreign)
+    assert foreign.encryption_key_id == "old-key"
     assert "sk-worker-secret" not in str(event.event_metadata)
 
 
@@ -159,9 +178,9 @@ def _mcp_credential(
     secret_service: SecretEncryptionService,
     *,
     token: str,
-) -> McpCredentialReference:
+) -> MCPCredentialReference:
     encrypted = secret_service.encrypt_payload({"token": token})
-    return McpCredentialReference(
+    return MCPCredentialReference(
         workspace_id=workspace_id,
         mcp_server_id=None,
         name=f"MCP {token[-6:]}",
@@ -207,7 +226,6 @@ def _settings() -> Settings:
     return Settings(
         environment="test",
         log_format="text",
-        database_url="sqlite+pysqlite:///:memory:",
         internal_api_token="test-token",
         credential_encryption_secret=NEW_SECRET,
         credential_encryption_key_id="current-key",
@@ -216,8 +234,7 @@ def _settings() -> Settings:
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -234,12 +251,3 @@ def _seed_workspace(
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

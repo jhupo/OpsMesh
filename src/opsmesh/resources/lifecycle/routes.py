@@ -5,7 +5,6 @@ from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.resources.lifecycle.service import WorkspaceDataLifecycleService
-from opsmesh.resources.storage.storage import create_storage
 from opsmesh.resources.transfers.contracts import (
     WorkspaceDataLifecycleResponse,
     WorkspaceRecoveryReadinessActionRequest,
@@ -14,9 +13,6 @@ from opsmesh.resources.transfers.contracts import (
     WorkspaceRetentionRequest,
     WorkspaceRetentionResponse,
 )
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
-from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 
 router = APIRouter()
@@ -56,15 +52,11 @@ def apply_workspace_recovery_readiness_actions(
     request: WorkspaceRecoveryReadinessActionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-    settings: Settings = Depends(get_settings),
 ) -> WorkspaceRecoveryReadinessActionResponse:
     try:
         response = WorkspaceDataLifecycleService(session).apply_recovery_readiness_actions(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
-            queue=queue,
-            storage=create_storage(settings),
             dry_run=request.dry_run,
             actions=request.actions,
             reason=request.reason,

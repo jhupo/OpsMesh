@@ -19,14 +19,14 @@ from opsmesh.workspaces.members.models import WorkspaceMember
 from opsmesh.workspaces.quotas.models import WorkspaceQuota
 
 
-class UserOrganizationSummary(TypedDict):
+class UserWorkspaceSummary(TypedDict):
     invitation_delivery_status: str | None
     workspace_count: int
     active_workspace_count: int
     resource_usage_rate: float
 
 
-class IdentityAdminService:
+class AdminUserService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -57,8 +57,8 @@ class IdentityAdminService:
     def user_organization_summaries(
         self,
         user_ids: list[UUID],
-    ) -> dict[UUID, UserOrganizationSummary]:
-        summaries: dict[UUID, UserOrganizationSummary] = {
+    ) -> dict[UUID, UserWorkspaceSummary]:
+        summaries: dict[UUID, UserWorkspaceSummary] = {
             user_id: {
                 "invitation_delivery_status": None,
                 "workspace_count": 0,

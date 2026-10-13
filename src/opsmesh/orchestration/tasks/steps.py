@@ -27,6 +27,7 @@ FINAL_STEP_STATUSES = {
 ALLOWED_STEP_TRANSITIONS: dict[TaskStepStatus, set[TaskStepStatus]] = {
     TaskStepStatus.QUEUED: {
         TaskStepStatus.SKIPPED,
+        TaskStepStatus.FAILED,
         TaskStepStatus.RUNNING,
         TaskStepStatus.BLOCKED,
         TaskStepStatus.CANCELLED,
@@ -77,32 +78,30 @@ class TaskStepTransition:
     changed: bool
 
 
-class TaskStepStateService:
-    def transition(
-        self,
-        step: TaskStep,
-        next_status: TaskStepStatus,
-        *,
-        dependencies: dict[str, object] | None = None,
-        result_summary: str | None = None,
-        result_payload: dict[str, object] | None = None,
-    ) -> TaskStepTransition:
-        current_status = TaskStepStatus(step.status)
-        if current_status == next_status:
-            if dependencies is not None:
-                step.dependencies = dependencies
-            if result_summary is not None:
-                step.result_summary = result_summary
-            if result_payload is not None:
-                step.result_payload = result_payload
-            return TaskStepTransition(current_status, next_status, changed=False)
-
-        require_step_transition(current_status, next_status)
-        step.status = next_status.value
+def transition_task_step(
+    step: TaskStep,
+    next_status: TaskStepStatus,
+    *,
+    dependencies: dict[str, object] | None = None,
+    result_summary: str | None = None,
+    result_payload: dict[str, object] | None = None,
+) -> TaskStepTransition:
+    current_status = TaskStepStatus(step.status)
+    if current_status == next_status:
         if dependencies is not None:
             step.dependencies = dependencies
         if result_summary is not None:
             step.result_summary = result_summary
         if result_payload is not None:
             step.result_payload = result_payload
-        return TaskStepTransition(current_status, next_status, changed=True)
+        return TaskStepTransition(current_status, next_status, changed=False)
+
+    require_step_transition(current_status, next_status)
+    step.status = next_status.value
+    if dependencies is not None:
+        step.dependencies = dependencies
+    if result_summary is not None:
+        step.result_summary = result_summary
+    if result_payload is not None:
+        step.result_payload = result_payload
+    return TaskStepTransition(current_status, next_status, changed=True)

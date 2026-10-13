@@ -8,10 +8,9 @@ from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from opsmesh.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
-from opsmesh.runtime.instances.contracts import RuntimeLifecycleControl
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
 from opsmesh.teams.execution.overview import TeamExecutionOverviewService
+from opsmesh.teams.execution.overview_repository import TeamExecutionOverviewRepository
 from opsmesh.teams.operations.action_plan import (
     _group_applicable_actions,
     _merged_action_plan,
@@ -19,6 +18,7 @@ from opsmesh.teams.operations.action_plan import (
     _runtime_action_plan,
 )
 from opsmesh.teams.operations.actions import TeamCommandCenterActionApplier
+from opsmesh.teams.operations.queues import command_center_queues
 from opsmesh.teams.operations.views import (
     _dict,
     _list,
@@ -30,7 +30,8 @@ from opsmesh.teams.operations.views import (
 )
 from opsmesh.teams.provider_readiness.service import TeamProviderReadinessService
 from opsmesh.teams.sessions.scheduling_blocks import scheduled_run_blocking_summary
-from opsmesh.teams.sessions.service import TeamRuntimeService
+from opsmesh.teams.sessions.service import TeamOperationService
+from opsmesh.teams.sessions.state_builder import TeamOperationSnapshot
 
 
 class TeamCommandCenterService:
@@ -46,35 +47,54 @@ class TeamCommandCenterService:
         team_id: UUID,
         include_completed: bool = False,
         queue_limit: int = 50,
+        runtime_state: TeamOperationSnapshot | None = None,
     ) -> dict[str, object] | None:
+        task_limit = max(1, min(queue_limit * 4, 1000))
+        tasks = TeamExecutionOverviewRepository(self._session).tasks(
+            workspace_id=workspace_id,
+            team_id=team_id,
+            include_completed=include_completed,
+            limit=task_limit + 1,
+        )
+        task_ids = [task.id for task in tasks[:task_limit]]
+        repository = TeamExecutionOverviewRepository(self._session)
+        steps = repository.steps(workspace_id, task_ids)
+        runs = repository.runs(workspace_id, task_ids)
+        manager_diagnostics = TaskManagerDiagnosticsService(self._session).diagnostics_for_tasks(
+            workspace_id=workspace_id, tasks=tasks[:task_limit], steps=steps
+        )
         overview = TeamExecutionOverviewService(self._session).get_overview(
             workspace_id=workspace_id,
             team_id=team_id,
             include_completed=include_completed,
+            task_limit=task_limit,
+            tasks=tasks,
+            steps=steps,
+            runs=runs,
+            manager_diagnostics=manager_diagnostics,
         )
         if overview is None:
             return None
 
-        handoff_queue = TaskExecutionDiagnosticsService(self._session).list_handoff_queue(
+        handoff_queue, manager_queue = command_center_queues(
+            self._session,
             workspace_id=workspace_id,
-            limit=queue_limit,
-            offset=0,
             team_id=team_id,
-            include_terminal=False,
-        )
-        manager_queue = TaskManagerDiagnosticsService(self._session).list_manager_queue(
-            workspace_id=workspace_id,
+            overview=overview,
             limit=queue_limit,
-            offset=0,
-            team_id=team_id,
-            include_healthy=False,
+            manager_diagnostics=manager_diagnostics,
+            tasks=tasks[:task_limit],
+            steps=steps,
+            runs=runs,
         )
         action_plan = _merged_action_plan(
             overview=overview,
             handoff_queue=handoff_queue,
             manager_queue=manager_queue,
         )
-        runtime_state = TeamRuntimeService(self._session).get_state(
+        runtime_state = runtime_state or TeamOperationService(
+            self._session
+        ).get_or_initialize_state(
             workspace_id=workspace_id,
             team_id=team_id,
         )
@@ -105,8 +125,8 @@ class TeamCommandCenterService:
                 provider_readiness=provider_readiness,
             ),
             "provider_readiness": provider_readiness,
-            "operating_policy": getattr(runtime_state, "operating_policy", {}),
-            "memory_summary": getattr(runtime_state, "memory_summary", {}),
+            "operating_policy": runtime_state.operating_policy,
+            "memory_summary": runtime_state.memory_summary,
             "overview": overview,
             "queues": {
                 "handoff": handoff_queue,
@@ -129,8 +149,7 @@ class TeamCommandCenterService:
         max_actions: int = 5,
         max_tasks_per_action: int = 100,
         enqueue_runs: bool = False,
-        queue: RedisQueue | None = None,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
@@ -184,7 +203,7 @@ class TeamCommandCenterService:
             else None
         )
         scheduled_runs = (
-            RunOrchestrationService(self._session, queue=queue).schedule_team_steps(
+            RunOrchestrationService(self._session).schedule_team_steps(
                 workspace_id=workspace_id,
                 team_id=team_id,
                 requested_by_user_id=actor_user_id,

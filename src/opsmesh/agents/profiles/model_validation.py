@@ -19,7 +19,7 @@ from opsmesh.agents.providers.model_api import (
 from opsmesh.agents.providers.models import ModelProviderCredential
 
 
-class AgentModelValidator:
+class AgentModelConfigValidator:
     def __init__(self, session: Session) -> None:
         self._session = session
 

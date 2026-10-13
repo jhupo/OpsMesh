@@ -5,29 +5,25 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
-import fakeredis
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.types import JSON
 
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
 from opsmesh.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from opsmesh.identity.users.models import User
+from opsmesh.resources.memory.activities import MemoryActivities
 from opsmesh.resources.memory.authorization import AuthorizedMemoryScope
 from opsmesh.resources.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from opsmesh.resources.memory.embedding_jobs import MemoryEmbeddingJobHandler
-from opsmesh.resources.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from opsmesh.resources.memory.embedding_service import (
     MemoryEmbeddingResult,
     OpenAIMemoryEmbeddingProvider,
     WorkspaceMemoryEmbeddingProviderResolver,
+    WorkspaceMemoryEmbeddingService,
 )
 from opsmesh.resources.memory.lifecycle import WorkspaceMemoryLifecycleService
 from opsmesh.resources.memory.models import (
@@ -49,17 +45,16 @@ from opsmesh.resources.memory.retrieval_search import (
     MemorySearchHit,
     MemorySearchRequest,
 )
-from opsmesh.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
-from opsmesh.runtime.backends.factory import build_runtime_backend_registry
-from opsmesh.runtime.queues.context import WorkerJobHandlerContext
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.resources.memory.semantic import SemanticMemoryService, SemanticMemoryUpsert
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
+from tests.fixtures.temporal import durable_executions
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:
@@ -172,8 +167,12 @@ def test_memory_candidates_are_prefiltered_by_each_resource_grant() -> None:
     assert {item["title"] for item in results} == {"Allowed A", "Allowed B"}
 
 
+@pytest.mark.parametrize("change_configuration", [False, True])
+@pytest.mark.parametrize("interrupted", [False, True])
 def test_embedding_configuration_schedules_and_completes_versioned_work(
     monkeypatch: pytest.MonkeyPatch,
+    change_configuration: bool,
+    interrupted: bool,
 ) -> None:
     session = _session()
     user, workspace = _seed_workspace(session, "embedding")
@@ -205,7 +204,7 @@ def test_embedding_configuration_schedules_and_completes_versioned_work(
         metadata={},
         changed_by_user_id=user.id,
     )
-    semantic_service = AgentSemanticMemoryService(session)
+    semantic_service = SemanticMemoryService(session)
     entry = semantic_service.upsert(semantic_command)
     assert entry.embedding_status == "not_applicable"
     configuration = configuration_service.update(
@@ -224,73 +223,100 @@ def test_embedding_configuration_schedules_and_completes_versioned_work(
     session.commit()
     session.refresh(entry)
     assert configuration.version == 2
-    assert entry.embedding_status == "pending"
+    assert entry.embedding_status == "queued"
     assert entry.embedding_generation == 1
 
-    queue = _queue()
-    scheduled = WorkspaceMemoryEmbeddingScheduler(session).enqueue_pending(
-        queue=queue,
-        limit=10,
-    )
-    session.commit()
-    job = queue.dequeue()
-    assert scheduled.enqueued == 1
-    assert job is not None
-    assert job.job_type == JobType.MEMORY_EMBED
-    assert job.routing == {"embedding_generation": 1}
+    from opsmesh.resources.memory.models import WorkspaceMemoryConfiguration
+
+    engine = session.get_bind()
+    sessions = sessionmaker(engine, expire_on_commit=False)
+    requests = durable_executions(session, workspace.id, ExecutionKind.MEMORY_EMBED)
+    assert len(requests) == 1 and requests[0].parameters == {"embedding_generation": 1}
+    workspace_id, user_id = workspace.id, user.id
+    session.rollback()
+    if interrupted:
+        with sessions.begin() as previous_attempt:
+            prepared = WorkspaceMemoryEmbeddingService(previous_attempt).prepare(
+                workspace_id=workspace_id,
+                memory_entry_id=entry.id,
+                embedding_generation=1,
+            )
+            assert prepared is not None
+        # A committed prepare survives a Worker exit before the native retry.
+        session.refresh(entry)
+        assert entry.embedding_status == "processing"
+        session.rollback()
+    calls = []
+    closed = []
+
+    class Provider(_FakeEmbeddingProvider):
+        def embed(self, text):
+            assert engine.pool.checkedout() == 0
+            calls.append(text)
+            if change_configuration:
+                with sessions.begin() as updating:
+                    current = updating.scalar(select(WorkspaceMemoryConfiguration))
+                    WorkspaceMemoryConfigurationService(updating).update(
+                        workspace_id=workspace_id,
+                        actor_user_id=user_id,
+                        command=MemoryConfigurationUpdate(
+                            embedding_enabled=False,
+                            embedding_credential_id=None,
+                            embedding_model=current.embedding_model,
+                            embedding_dimensions=current.embedding_dimensions,
+                            retrieval_policy=current.retrieval_policy,
+                            lifecycle_policy=current.lifecycle_policy,
+                            expected_version=current.version,
+                        ),
+                    )
+            return super().embed(text)
+
+        def close(self):
+            closed.append(True)
 
     monkeypatch.setattr(
-        WorkspaceMemoryEmbeddingProviderResolver,
-        "resolve",
-        lambda *_args, **_kwargs: _FakeEmbeddingProvider(),
+        WorkspaceMemoryEmbeddingProviderResolver, "resolve", lambda *_a, **_kw: Provider()
     )
-    MemoryEmbeddingJobHandler(
-        WorkerJobHandlerContext(
-            runtime_backends=build_runtime_backend_registry(None, lambda: 30),
-            session=session,
-            settings=Settings(environment="test"),
-        )
-    ).handle(job)
+    activities = MemoryActivities(ActivityDependencies(sessions, Settings(environment="test")))
+    activities.embed(requests[0])
     session.refresh(entry)
-
+    if change_configuration:
+        assert entry.embedding is None and entry.embedding_status == "not_applicable"
+        assert not list(session.scalars(select(WorkspaceMemoryEmbeddingEvent)))
+        assert len(calls) == len(closed) == 1
+        return
     assert entry.embedding_status == "ready"
     assert entry.embedding_model == "text-embedding-3-small"
     assert entry.embedding_content_fingerprint == entry.content_fingerprint
     event = session.scalars(select(WorkspaceMemoryEmbeddingEvent)).one()
-    assert event.status == "completed"
-    assert event.input_tokens == 12
+    assert event.status == "completed" and event.input_tokens == 12
+    session.rollback()
+    activities.embed(requests[0])
+    assert len(calls) == len(closed) == 1
 
-    semantic_service.archive(entry, expected_revision=1, changed_by_user_id=user.id)
-    assert entry.embedding is None
-    assert entry.embedding_status == "not_applicable"
+    semantic_service.archive(entry, expected_revision=1, changed_by_user_id=user_id)
+    assert entry.embedding is None and entry.embedding_status == "not_applicable"
     reactivated = semantic_service.upsert(replace(semantic_command, expected_revision=2))
-    assert reactivated.embedding_status == "pending"
-    assert reactivated.embedding_generation == 3
-
-    reactivated.embedding_status = "processing"
-    reactivated.embedding_processing_started_at = datetime.now(UTC) - timedelta(hours=1)
+    assert reactivated.embedding_status == "queued" and reactivated.embedding_generation == 3
     session.commit()
-    recovered = WorkspaceMemoryEmbeddingScheduler(session).enqueue_pending(
-        queue=queue,
-        limit=10,
-        stale_after_seconds=60,
+    reactivated.embedding_status = "failed"
+    reactivated.embedding_last_error_code = "embedding_provider_timeout"
+    session.commit()
+    assert (
+        configuration_service.retry_failed_embeddings(
+            workspace_id=workspace_id, actor_user_id=user_id
+        )
+        == 1
     )
     session.commit()
-    assert recovered.recovered == 1
-    assert recovered.enqueued == 1
-    assert reactivated.embedding_status == "queued"
-    assert reactivated.embedding_generation == 4
-    recovery_event = session.scalars(
-        select(WorkspaceMemoryEmbeddingEvent).where(
-            WorkspaceMemoryEmbeddingEvent.status == "recovered"
-        )
-    ).one()
-    assert recovery_event.error_code == "embedding_processing_abandoned"
-
+    session.refresh(reactivated)
+    assert reactivated.embedding_status == "queued" and reactivated.embedding_generation == 4
+    requests = durable_executions(session, workspace_id, ExecutionKind.MEMORY_EMBED)
+    assert sorted(item.parameters["embedding_generation"] for item in requests) == [1, 3, 4]
     with pytest.raises(MemoryConfigurationConflictError, match="version is 2"):
         configuration_service.update(
-            workspace_id=workspace.id,
-            actor_user_id=user.id,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
             command=MemoryConfigurationUpdate(
                 embedding_enabled=False,
                 embedding_credential_id=None,
@@ -359,7 +385,7 @@ def test_lifecycle_archives_promotes_and_records_deterministic_evidence() -> Non
         promotion_min_access_count=3,
     ).model_dump(mode="json")
     now = datetime(2026, 9, 9, tzinfo=UTC)
-    old_semantic = AgentSemanticMemoryService(session).upsert(
+    old_semantic = SemanticMemoryService(session).upsert(
         SemanticMemoryUpsert(
             workspace_id=workspace.id,
             scope_type="workspace",
@@ -390,9 +416,21 @@ def test_lifecycle_archives_promotes_and_records_deterministic_evidence() -> Non
         expires_at=now + timedelta(days=30),
     )
     session.add_all([expired, promotable])
+    _, foreign = _seed_workspace(session, "foreign-lifecycle")
+    WorkspaceMemoryConfigurationService(session).create_default(foreign.id)
+    foreign_episode = _episode(
+        foreign.id,
+        "foreign-expired",
+        importance=20,
+        access_count=0,
+        expires_at=now - timedelta(seconds=1),
+    )
+    session.add(foreign_episode)
     session.flush()
 
-    summary = WorkspaceMemoryLifecycleService(session).run_due(now=now, limit=10)
+    summary = WorkspaceMemoryLifecycleService(session).run_workspace(
+        workspace_id=workspace.id, now=now, limit=10
+    )
     session.commit()
 
     assert summary.archived_episodes == 1
@@ -401,6 +439,7 @@ def test_lifecycle_archives_promotes_and_records_deterministic_evidence() -> Non
     assert expired.status == "archived"
     assert old_semantic.status == "archived"
     assert promotable.status == "promoted"
+    assert foreign_episode.status == "active"
     promoted = session.scalar(
         select(WorkspaceMemoryEntry).where(
             WorkspaceMemoryEntry.workspace_id == workspace.id,
@@ -544,24 +583,8 @@ def _scoped_memory(
     )
 
 
-def _queue() -> RedisQueue:
-    return RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        blocking_timeout_seconds=0,
-        visibility_timeout_seconds=900,
-    )
-
-
 def _session() -> Session:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = JSON()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 

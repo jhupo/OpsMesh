@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,

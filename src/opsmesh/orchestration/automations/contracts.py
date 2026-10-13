@@ -6,45 +6,12 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from opsmesh_plugin_sdk.messaging.contracts import AttachmentKind, MessageAttachment
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from opsmesh_plugin_sdk.messaging.contracts import AttachmentKind, MessageAction
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from opsmesh.capabilities.references.schema import reject_embedded_secrets, validate_json_schema
 from opsmesh.orchestration.definitions.contracts import WorkflowDataBinding
-from opsmesh.orchestration.scheduling.calendar import next_run_at
-
-MessageAction = Literal["start", "follow_up", "pause", "resume", "cancel"]
-
-
-class AutomationMessage(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    event_id: str = Field(min_length=1, max_length=160)
-    conversation_id: str = Field(min_length=1, max_length=160)
-    sender_id: str = Field(min_length=1, max_length=160)
-    occurred_at: AwareDatetime
-    text: str = Field(default="", max_length=16_000)
-    contract_version: int = Field(default=1, ge=1)
-    data: dict[str, object] = Field(default_factory=dict, max_length=64)
-    action: MessageAction = "start"
-    reply_to_event_id: UUID | None = None
-    attachments: list[MessageAttachment] = Field(default_factory=list, max_length=5)
-
-    @model_validator(mode="after")
-    def validate_message(self) -> AutomationMessage:
-        if self.action in {"start", "follow_up"} and not (
-            self.text or self.data or self.attachments
-        ):
-            raise ValueError("Message requires text or structured data")
-        if self.attachments and self.action != "start":
-            raise ValueError("Attachments belong to the initial message of a task")
-        if len({item.file_id for item in self.attachments}) != len(self.attachments):
-            raise ValueError("Attachment references must be unique")
-        if (self.action == "start") != (self.reply_to_event_id is None):
-            raise ValueError("Only start messages omit reply_to_event_id")
-        if self.action == "follow_up" and len(self.text) > 4000:
-            raise ValueError("Follow-up messages are limited to 4000 characters")
-        return self
+from opsmesh.orchestration.scheduling.specs import build_schedule_spec
 
 
 class ExternalIdentityRequest(BaseModel):
@@ -72,7 +39,9 @@ class AutomationConfiguration(BaseModel):
     input_defaults: dict[str, object] = Field(default_factory=dict, max_length=64)
     trigger_type: Literal["message", "schedule"]
     allowed_senders: list[str] = Field(default_factory=list, max_length=256)
-    reply_subscription_id: UUID | None = None
+    channel_connection_id: UUID | None = None
+    allowed_conversations: list[str] = Field(default_factory=list, max_length=256)
+    reply_connection_id: UUID | None = None
     schedule_type: Literal["one_shot", "hourly", "daily"] | None = None
     schedule_config: dict[str, object] = Field(default_factory=dict, max_length=4)
     overlap_policy: Literal["queue", "skip"] = "queue"
@@ -113,18 +82,11 @@ class AutomationConfiguration(BaseModel):
                 raise ValueError("Scheduled automations require schedule_type")
             if self.allowed_senders:
                 raise ValueError("Scheduled automations cannot define allowed_senders")
-            from datetime import UTC
-
-            next_run_at(
-                schedule_type=self.schedule_type,
-                schedule_config=self.schedule_config,
-                after=datetime.now(UTC),
-                include_now=True,
-            )
+            build_schedule_spec(self.schedule_type, self.schedule_config)
         return self
 
 
-class AutomationUpdate(BaseModel):
+class AutomationUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)

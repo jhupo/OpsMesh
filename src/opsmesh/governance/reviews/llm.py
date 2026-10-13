@@ -6,18 +6,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from anthropic import Anthropic, AnthropicError
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from opsmesh.agents.providers.classification import (
     canonical_model_provider,
-    is_anthropic_provider,
     is_openai_compatible_provider,
 )
 from opsmesh.agents.providers.contracts import ResolvedModelProvider
 from opsmesh.agents.providers.model_api import (
-    ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
@@ -25,7 +22,6 @@ from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 OPENAI_RESPONSES_REVIEWER = "openai_responses"
 OPENAI_CHAT_REVIEWER = "openai_chat_completions"
-ANTHROPIC_MESSAGES_REVIEWER = "anthropic_messages"
 
 
 @dataclass(frozen=True)
@@ -129,33 +125,6 @@ class OpenAIChatCompletionsResourceReviewAdapter(ResourceReviewProviderAdapter):
         return completion.choices[0].message.parsed
 
 
-class AnthropicMessagesResourceReviewAdapter(ResourceReviewProviderAdapter):
-    def __init__(self, client_factory: Callable[..., Anthropic] = Anthropic) -> None:
-        self._client_factory = client_factory
-
-    @property
-    def key(self) -> str:
-        return ANTHROPIC_MESSAGES_REVIEWER
-
-    def review(self, request: ResourceReviewAdapterRequest) -> StructuredResourceReview:
-        with self._client_factory(
-            api_key=request.provider.api_key,
-            base_url=request.provider.base_url,
-            max_retries=0,
-        ) as client:
-            message = client.messages.parse(
-                model=request.provider.model,
-                max_tokens=request.max_output_tokens,
-                system=request.instructions,
-                messages=[{"role": "user", "content": request.input_text}],
-                output_format=StructuredResourceReview,
-                timeout=request.timeout_seconds,
-            )
-        if message.parsed_output is None:
-            raise ValueError("Anthropic Messages review returned no structured output")
-        return message.parsed_output
-
-
 class LlmResourceReviewer:
     def __init__(
         self,
@@ -192,7 +161,7 @@ class LlmResourceReviewer:
         )
         try:
             decision = adapter.review(request)
-        except (OpenAIError, AnthropicError, ValidationError, ValueError, OSError) as exc:
+        except (OpenAIError, ValidationError, ValueError, OSError) as exc:
             raise RuntimeError("Review model request failed") from exc
         return _review_result(decision, provider=provider, adapter_key=adapter.key)
 
@@ -201,17 +170,12 @@ def _default_adapters() -> dict[str, ResourceReviewProviderAdapter]:
     adapters: tuple[ResourceReviewProviderAdapter, ...] = (
         OpenAIResponsesResourceReviewAdapter(),
         OpenAIChatCompletionsResourceReviewAdapter(),
-        AnthropicMessagesResourceReviewAdapter(),
     )
     return {adapter.key: adapter for adapter in adapters}
 
 
 def _reviewer_key(provider: ResolvedModelProvider) -> str:
     provider_name = canonical_model_provider(provider.provider)
-    if is_anthropic_provider(provider_name):
-        if provider.model_api not in {None, ANTHROPIC_MESSAGES_API}:
-            raise ValueError(f"Unsupported Anthropic review model API: {provider.model_api}")
-        return ANTHROPIC_MESSAGES_REVIEWER
     if not is_openai_compatible_provider(provider_name):
         raise ValueError(f"Unsupported review model provider: {provider_name or 'unset'}")
     if provider.model_api == OPENAI_CHAT_COMPLETIONS_API:
@@ -264,10 +228,8 @@ def _review_result(
 
 
 __all__ = [
-    "ANTHROPIC_MESSAGES_REVIEWER",
     "OPENAI_CHAT_REVIEWER",
     "OPENAI_RESPONSES_REVIEWER",
-    "AnthropicMessagesResourceReviewAdapter",
     "LlmResourceReviewer",
     "LlmReviewResult",
     "OpenAIChatCompletionsResourceReviewAdapter",

@@ -7,12 +7,12 @@ from opsmesh.capabilities.tools.files import WorkspaceFileProductTools
 from opsmesh.capabilities.tools.knowledge import KnowledgeProductTools
 from opsmesh.capabilities.tools.mailbox import AgentMailboxProductTools
 from opsmesh.capabilities.tools.memory import WorkspaceMemoryProductTools
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.resources.artifacts.service import ArtifactPersistenceService
 from opsmesh.resources.files.content import (
     WorkspaceFileContentReader,
 )
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 

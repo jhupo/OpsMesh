@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.models import AuditIntegrityCheck
@@ -13,24 +12,31 @@ from opsmesh.messaging.notifications.service import GovernanceNotificationServic
 from opsmesh.workspaces.management.models import Workspace
 
 
-@dataclass(frozen=True)
-class AuditIntegrityRunSummary:
-    checked_workspaces: int
-    valid_workspaces: int
-    invalid_workspaces: int
-    skipped_workspaces: int
-
-
 class AuditIntegrityService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def check_workspace(
+    def verify_and_record_workspace_integrity(
         self,
         workspace_id: UUID,
         *,
         checked_at: datetime | None = None,
     ) -> AuditIntegrityCheck:
+        """Verify the retained audit chain and persist a check and notification.
+
+        The check is flushed and the governance notification is created or
+        updated in the borrowed Session. The caller owns commit and rollback.
+
+        Args:
+            workspace_id: Tenant whose retained hash chain is verified.
+            checked_at: Optional timestamp for the persisted check.
+
+        Returns:
+            The persisted integrity result, including any broken event.
+
+        Raises:
+            ValueError: The workspace does not exist.
+        """
         workspace_exists = self._session.scalar(
             select(Workspace.id).where(Workspace.id == workspace_id)
         )
@@ -56,56 +62,4 @@ class AuditIntegrityService:
             .where(AuditIntegrityCheck.workspace_id == workspace_id)
             .order_by(AuditIntegrityCheck.created_at.desc(), AuditIntegrityCheck.id.desc())
             .limit(1)
-        )
-
-    def run_due(
-        self,
-        *,
-        interval_seconds: int,
-        limit: int,
-        now: datetime | None = None,
-    ) -> AuditIntegrityRunSummary:
-        now = now or datetime.now(UTC)
-        cutoff = now - timedelta(seconds=interval_seconds)
-        latest_checks = (
-            select(
-                AuditIntegrityCheck.workspace_id.label("workspace_id"),
-                func.max(AuditIntegrityCheck.created_at).label("checked_at"),
-            )
-            .group_by(AuditIntegrityCheck.workspace_id)
-            .subquery()
-        )
-        workspace_ids = list(
-            self._session.scalars(
-                select(Workspace.id)
-                .outerjoin(
-                    latest_checks,
-                    latest_checks.c.workspace_id == Workspace.id,
-                )
-                .where(
-                    or_(
-                        latest_checks.c.checked_at.is_(None),
-                        latest_checks.c.checked_at < cutoff,
-                    )
-                )
-                .order_by(latest_checks.c.checked_at.asc().nullsfirst(), Workspace.id)
-                .limit(limit)
-            ).all()
-        )
-        total_workspaces = int(
-            self._session.scalar(select(func.count()).select_from(Workspace)) or 0
-        )
-        valid = 0
-        invalid = 0
-        for workspace_id in workspace_ids:
-            check = self.check_workspace(workspace_id, checked_at=now)
-            if check.valid:
-                valid += 1
-            else:
-                invalid += 1
-        return AuditIntegrityRunSummary(
-            checked_workspaces=valid + invalid,
-            valid_workspaces=valid,
-            invalid_workspaces=invalid,
-            skipped_workspaces=max(0, total_workspaces - len(workspace_ids)),
         )

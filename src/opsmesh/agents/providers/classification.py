@@ -3,7 +3,6 @@
 import re
 
 OPENAI_COMPATIBLE_PROVIDERS = frozenset({"openai", "openai-compatible"})
-ANTHROPIC_PROVIDERS = frozenset({"anthropic"})
 
 
 def model_provider_key(provider: str | None) -> str:
@@ -19,5 +18,8 @@ def is_openai_compatible_provider(provider: str | None) -> bool:
     return canonical_model_provider(provider) in OPENAI_COMPATIBLE_PROVIDERS
 
 
-def is_anthropic_provider(provider: str | None) -> bool:
-    return canonical_model_provider(provider) in ANTHROPIC_PROVIDERS
+def require_model_provider(provider: str) -> str:
+    canonical = canonical_model_provider(provider)
+    if canonical not in OPENAI_COMPATIBLE_PROVIDERS:
+        raise ValueError(f"Unsupported model provider: {provider}")
+    return canonical

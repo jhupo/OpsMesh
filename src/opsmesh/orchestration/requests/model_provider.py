@@ -9,7 +9,7 @@ from opsmesh.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )
-from opsmesh.agents.providers.resolution import ModelProviderResolutionService
+from opsmesh.agents.providers.resolution import ModelProviderResolver
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.queries import authorization_snapshot_for_run
 from opsmesh.shared.config import Settings
@@ -65,7 +65,7 @@ class RunRequestModelProviderService:
         prefer_model_api: bool = False,
     ) -> dict[str, Any]:
         model_api = canonical_model_api(model_api)
-        resolved = ModelProviderResolutionService(
+        resolved = ModelProviderResolver(
             self.session,
             self.secret_service(),
         ).resolve_for_agent(

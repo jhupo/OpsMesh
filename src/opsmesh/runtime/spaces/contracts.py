@@ -2,28 +2,31 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 RuntimeSpaceScope = Literal["workspace", "team", "task"]
 RuntimeSpaceStatus = Literal["active", "paused", "disabled", "quarantined", "archived"]
 
 
-def default_network_policy() -> dict[str, object]:
-    return {"mode": "none"}
-
-
 class RuntimeSpaceCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     scope: RuntimeSpaceScope = "workspace"
     target_id: UUID | None = None
     default_runtime_template_id: UUID | None = None
     policy: dict[str, object] = Field(default_factory=dict)
-    network_policy: dict[str, object] = Field(default_factory=default_network_policy)
-    storage_policy: dict[str, object] = Field(default_factory=dict)
-    cleanup_policy: dict[str, object] = Field(default_factory=dict)
+    storage_metadata: dict[str, object] = Field(
+        default_factory=dict,
+        description="Descriptive storage metadata; does not configure storage execution.",
+    )
+    cleanup_metadata: dict[str, object] = Field(
+        default_factory=dict,
+        description="Descriptive cleanup metadata; does not schedule deletion or archival.",
+    )
     quota_limits: dict[str, int] = Field(default_factory=dict)
 
     @field_validator("quota_limits")
@@ -38,12 +41,19 @@ class RuntimeSpaceCreateRequest(BaseModel):
 
 
 class RuntimeSpaceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(default=None, min_length=1, max_length=160)
     status: RuntimeSpaceStatus | None = None
     policy: dict[str, object] | None = None
-    network_policy: dict[str, object] | None = None
-    storage_policy: dict[str, object] | None = None
-    cleanup_policy: dict[str, object] | None = None
+    storage_metadata: dict[str, object] | None = Field(
+        default=None,
+        description="Descriptive storage metadata; does not configure storage execution.",
+    )
+    cleanup_metadata: dict[str, object] | None = Field(
+        default=None,
+        description="Descriptive cleanup metadata; does not schedule deletion or archival.",
+    )
     quota_limits: dict[str, int] | None = None
 
     @field_validator("quota_limits")
@@ -68,7 +78,7 @@ class RuntimeSpaceForceReleaseRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=240)
 
 
-class RuntimeSpaceResponse(TimestampedModel):
+class RuntimeSpaceResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID | None
     default_runtime_template_id: UUID | None
@@ -76,11 +86,14 @@ class RuntimeSpaceResponse(TimestampedModel):
     scope: str
     status: str
     policy: dict[str, object]
-    network_policy: dict[str, object]
-    storage_policy: dict[str, object]
-    cleanup_policy: dict[str, object]
+    storage_metadata: dict[str, object] = Field(
+        description="Descriptive storage metadata; does not configure storage execution."
+    )
+    cleanup_metadata: dict[str, object] = Field(
+        description="Descriptive cleanup metadata; does not schedule deletion or archival."
+    )
 
-    @field_serializer("policy", "network_policy", "storage_policy", "cleanup_policy")
+    @field_serializer("policy", "storage_metadata", "cleanup_metadata")
     def _serialize_policies(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
@@ -123,21 +136,14 @@ class RuntimeSpaceReservationDiagnosticResponse(BaseModel):
     expires_at: datetime | None
 
 
-class RuntimeSpaceRuntimeDiagnosticResponse(BaseModel):
+class RuntimeEnvironmentDiagnosticResponse(BaseModel):
     id: UUID
     name: str
-    runtime_provider: str
-    runtime_type: str
+    sandbox_backend_id: str
     status: str
-    connection_status: str
-    has_docker_container: bool
-    limits: dict[str, object]
-    network_policy: dict[str, object]
-    capabilities: dict[str, object]
-    policy_resolution: dict[str, object]
-    last_heartbeat_at: datetime | None
+    sandbox_options: dict[str, object]
 
-    @field_serializer("limits", "network_policy", "capabilities", "policy_resolution")
+    @field_serializer("sandbox_options")
     def _serialize_runtime_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
@@ -160,11 +166,11 @@ class RuntimeSpaceDiagnosticsResponse(BaseModel):
     runtime_space: RuntimeSpaceResponse
     quotas: list[RuntimeSpaceQuotaDiagnosticResponse]
     active_reservations: list[RuntimeSpaceReservationDiagnosticResponse]
-    runtimes: list[RuntimeSpaceRuntimeDiagnosticResponse]
+    runtimes: list[RuntimeEnvironmentDiagnosticResponse]
     blocked_steps: list[RuntimeSpaceBlockedStepDiagnosticResponse]
 
 
-class RuntimeSpaceEventResponse(ORMModel):
+class RuntimeSpaceEventResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     runtime_space_id: UUID

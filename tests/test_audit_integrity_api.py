@@ -1,36 +1,31 @@
 from collections.abc import Generator
 from uuid import uuid4
 
-import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from opsmesh.bootstrap.job_handlers import WorkerJobHandler
+from opsmesh.governance.audit.activities import AuditIntegrityActivities
 from opsmesh.governance.audit.models import AuditEvent, AuditIntegrityCheck
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
 from opsmesh.messaging.notifications.models import WorkspaceNotification
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
+from tests.fixtures.temporal import durable_executions
 
 TOKEN = "audit-integrity-api-token"
 
 
 def test_audit_integrity_api_queues_worker_verification_and_reports_status() -> None:
-    client, session, queue = _client()
+    client, session = _client()
     owner, workspace = _seed_workspace(session, "audit-integrity")
     other_owner, _ = _seed_workspace(session, "audit-integrity-other")
     AuditService(session).record_user_action(
@@ -61,11 +56,15 @@ def test_audit_integrity_api_queues_worker_verification_and_reports_status() -> 
     assert queued.json()["status"] == "queued"
     assert forbidden.status_code == 403
 
-    job = queue.dequeue()
+    job = durable_executions(session, workspace.id, ExecutionKind.AUDIT_INTEGRITY)[-1]
     assert job is not None
-    assert job.job_type == JobType.AUDIT_INTEGRITY_CHECK
+    assert job.kind == ExecutionKind.AUDIT_INTEGRITY
     assert job.workspace_id == workspace.id
-    WorkerJobHandler(session).handle(job)
+    AuditIntegrityActivities(
+        ActivityDependencies(
+            sessionmaker(session.get_bind(), expire_on_commit=False), client.app.state.settings
+        )
+    ).check_integrity(job)
     session.commit()
 
     status = client.get(
@@ -102,9 +101,13 @@ def test_audit_integrity_api_queues_worker_verification_and_reports_status() -> 
         headers=_headers(owner.id),
     )
     assert requeued.status_code == 202
-    corrupt_job = queue.dequeue()
+    corrupt_job = durable_executions(session, workspace.id, ExecutionKind.AUDIT_INTEGRITY)[-1]
     assert corrupt_job is not None
-    WorkerJobHandler(session).handle(corrupt_job)
+    AuditIntegrityActivities(
+        ActivityDependencies(
+            sessionmaker(session.get_bind(), expire_on_commit=False), client.app.state.settings
+        )
+    ).check_integrity(corrupt_job)
     session.commit()
 
     invalid = client.get(
@@ -133,29 +136,17 @@ def test_audit_integrity_api_queues_worker_verification_and_reports_status() -> 
     )
 
 
-def _client() -> tuple[TestClient, Session, RedisQueue]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def _client() -> tuple[TestClient, Session]:
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    queue = RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        blocking_timeout_seconds=0,
-    )
     app = create_app(
         Settings(
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=engine.url.render_as_string(hide_password=False),
         )
     )
 
@@ -168,8 +159,7 @@ def _client() -> tuple[TestClient, Session, RedisQueue]:
 
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_worker_queue] = lambda: queue
-    return TestClient(app), session, queue
+    return TestClient(app), session
 
 
 def _seed_workspace(session: Session, slug: str) -> tuple[User, Workspace]:
@@ -188,12 +178,3 @@ def _seed_workspace(session: Session, slug: str) -> tuple[User, Workspace]:
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

@@ -31,7 +31,7 @@ BUSINESS_ROOTS = {
 ENTRYPOINTS = {
     "opsmesh.main",
     "opsmesh.delivery",
-    "opsmesh.runtime.workers.cli",
+    "opsmesh.runtime.temporal.cli",
     "opsmesh.platform.updates.daemon",
 }
 

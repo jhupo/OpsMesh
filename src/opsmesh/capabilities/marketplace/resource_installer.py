@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.service import AgentManagementService
+from opsmesh.agents.profiles.service import AgentProfileService
 from opsmesh.capabilities.marketplace.listing_payloads import (
     agent_create_request_from_listing,
     marketplace_source_checksum,
@@ -10,9 +10,9 @@ from opsmesh.capabilities.marketplace.listing_payloads import (
     mcp_tool_requests_from_listing,
 )
 from opsmesh.capabilities.marketplace.models import MarketplaceListing
-from opsmesh.capabilities.mcp.catalog.servers import McpServerService
+from opsmesh.capabilities.mcp.catalog.servers import MCPServerService
 from opsmesh.capabilities.plugins.contracts import PluginInstallRequest
-from opsmesh.capabilities.plugins.service import PluginService
+from opsmesh.capabilities.plugins.lifecycle import PluginLifecycleService
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.shared.config import Settings
@@ -33,7 +33,7 @@ class MarketplaceResourceInstaller:
         config: dict[str, object],
     ) -> UUID | None:
         if listing.listing_type == "agent":
-            agent = AgentManagementService(self._session, self._settings).create_agent(
+            agent = AgentProfileService(self._session, self._settings).create_agent(
                 workspace_id=workspace_id,
                 data=agent_create_request_from_listing(listing, config),
                 actor_user_id=user_id,
@@ -49,7 +49,7 @@ class MarketplaceResourceInstaller:
             )
             return install.id
         if listing.listing_type == "mcp_server":
-            service = McpServerService(self._session, settings=self._settings)
+            service = MCPServerService(self._session, settings=self._settings)
             server = service.create_mcp_server(
                 workspace_id,
                 mcp_server_create_request_from_listing(listing),
@@ -67,7 +67,7 @@ class MarketplaceResourceInstaller:
             return server.id
         if listing.listing_type == "plugin":
             return (
-                PluginService(self._session)
+                PluginLifecycleService(self._session)
                 .install(
                     workspace_id,
                     user_id,

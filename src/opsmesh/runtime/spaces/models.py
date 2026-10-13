@@ -31,17 +31,12 @@ class RuntimeSpace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scope: Mapped[str] = mapped_column(String(32), nullable=False, default="workspace")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
-    network_policy: Mapped[dict[str, object]] = mapped_column(
+    storage_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
     )
-    storage_policy: Mapped[dict[str, object]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-    )
-    cleanup_policy: Mapped[dict[str, object]] = mapped_column(
+    cleanup_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,

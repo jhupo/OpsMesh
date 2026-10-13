@@ -17,7 +17,6 @@ from opsmesh.shared.utils import dict_or_empty, uuid_or_none
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -92,10 +91,12 @@ class TaskCorrectionDiagnosticsService:
             "message_id": message.id,
             "sequence": message.sequence,
             "mode": mode,
-            "target_type": payload.get("target_type") if isinstance(
+            "target_type": payload.get("target_type")
+            if isinstance(
                 payload.get("target_type"),
                 str,
-            ) else target.get("target_type"),
+            )
+            else target.get("target_type"),
             "target": redact_sensitive_payload(target),
             "instruction": message.body,
             "metadata": redact_sensitive_payload(metadata),

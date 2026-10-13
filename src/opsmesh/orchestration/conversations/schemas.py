@@ -11,11 +11,11 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
-class ConversationCreate(BaseModel):
+class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(default="New conversation", min_length=1, max_length=240)
     mode: Literal["auto", "agent", "team"] = "auto"
@@ -28,7 +28,7 @@ class ConversationCreate(BaseModel):
     orchestration_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def validate_target(self) -> "ConversationCreate":
+    def validate_target(self) -> "ConversationCreateRequest":
         if self.orchestration_definition_id is not None and self.mode != "team":
             raise ValueError("Workflow execution requires team mode")
         if self.orchestration_version is not None and self.orchestration_definition_id is None:
@@ -43,7 +43,7 @@ class ConversationCreate(BaseModel):
         return self
 
 
-class ConversationResponse(TimestampedModel):
+class ConversationResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID
     title: str
@@ -56,7 +56,7 @@ class ConversationResponse(TimestampedModel):
     orchestration_version: int | None
 
 
-class MessageCreate(BaseModel):
+class ConversationMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     body: str = Field(min_length=1, max_length=32000)
 
@@ -74,7 +74,7 @@ class FinalAgentResponse(BaseModel):
     role: str | None
 
 
-class TurnResponse(TimestampedModel):
+class ConversationTurnResponse(TimestampedContract):
     conversation_id: UUID
     sequence: int
     body: str
@@ -93,7 +93,7 @@ class TurnResponse(TimestampedModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class ExecutionRunResponse(BaseModel):
+class ConversationRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     status: str
@@ -104,13 +104,13 @@ class ExecutionRunResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class ExecutionResponse(TimestampedModel):
+class ConversationExecutionResponse(TimestampedContract):
     turn_id: UUID
     task_id: UUID
-    runs: list[ExecutionRunResponse]
+    runs: list[ConversationRunResponse]
 
 
-class EventResponse(BaseModel):
+class ConversationEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     turn_id: UUID

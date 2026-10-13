@@ -1,221 +1,112 @@
-from __future__ import annotations
+"""Durable schedule intent; native Temporal owns time and occurrence delivery."""
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.orchestration.scheduling.calendar import next_run_at, utc_datetime
-from opsmesh.orchestration.scheduling.models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
+from opsmesh.orchestration.scheduling.models import WorkspaceScheduledJob
+from opsmesh.orchestration.scheduling.specs import build_schedule_spec
 from opsmesh.orchestration.scheduling.types import (
     ACTIVE_STATUS,
-    COMPLETED_STATUS,
+    EXECUTE_ACTION,
     PAUSED_STATUS,
-    QUEUE_JOB_ACTION,
     RECORD_DUE_ACTION,
-    ScheduledJobCreate,
-    ScheduledJobMaintenanceSummary,
+    ScheduledJobCreateCommand,
 )
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.db.pagination import page_scalars_by_offset
 from opsmesh.workspaces.management.models import Workspace
 
 
-def increment_count(counts: dict[str, int], key: str | None) -> None:
-    item = key or "unspecified"
-    counts[item] = counts.get(item, 0) + 1
-
-
-def validate_action(data: ScheduledJobCreate) -> None:
-    if data.action_type not in {QUEUE_JOB_ACTION, RECORD_DUE_ACTION}:
-        raise ValueError("Scheduled job action_type must be queue_job or record_due_action")
-    if data.action_type != QUEUE_JOB_ACTION:
+def validate_action(data: ScheduledJobCreateCommand) -> None:
+    if data.action_type == RECORD_DUE_ACTION:
+        if data.execution_kind is not None or data.resource_id is not None or data.parameters:
+            raise ValueError("Recorded schedules cannot contain an execution")
         return
-    if data.job_type is None:
-        raise ValueError("Queue scheduled jobs require job_type")
-    try:
-        job_type = JobType(data.job_type)
-    except ValueError as exc:
-        raise ValueError("Queue scheduled jobs require a supported job_type") from exc
-    if data.resource_id is None:
-        raise ValueError("Queue scheduled jobs require resource_id")
-    if job_type == JobType.MODEL_PROVIDER_HEALTH_CHECK:
-        validate_provider_health_routing(data.routing)
+    if (
+        data.action_type != EXECUTE_ACTION
+        or data.execution_kind is None
+        or data.resource_id is None
+    ):
+        raise ValueError("Execution schedules require an execution_kind and resource_id")
+    if data.execution_kind in {
+        ExecutionKind.SCHEDULE_CONTROL,
+        ExecutionKind.SCHEDULE_TICK,
+        ExecutionKind.CONVERSATION,
+        ExecutionKind.ENTRY_EVENT,
+        ExecutionKind.REPLY_DELIVERY,
+    }:
+        raise ValueError("This execution kind is not a schedulable product operation")
+    ExecutionRequest(
+        workspace_id=UUID(int=0),
+        resource_id=data.resource_id,
+        kind=data.execution_kind,
+        parameters=data.parameters,
+    )
+    if data.execution_kind == ExecutionKind.MODEL_PROVIDER_HEALTH:
+        validate_provider_health_parameters(data.parameters)
 
 
-def validate_provider_health_routing(routing: dict[str, object]) -> None:
-    allowed_keys = {"probes", "timeout_seconds"}
-    unknown = sorted(set(routing) - allowed_keys)
-    if unknown:
-        raise ValueError(
-            "Model provider health check scheduled jobs only support probes and timeout_seconds"
-        )
-    probes = routing.get("probes")
-    if probes is not None:
-        if not isinstance(probes, list):
-            raise ValueError("Model provider health check probes must be a list")
-        parsed = tuple(dict.fromkeys(item for item in probes if isinstance(item, str) and item))
-        if not parsed:
-            raise ValueError("Model provider health check probes must include at least one probe")
-        invalid = sorted(set(parsed) - {"models", "inference"})
-        if invalid:
-            raise ValueError(f"Unsupported provider health probe: {', '.join(invalid)}")
-    timeout_seconds = routing.get("timeout_seconds")
-    if timeout_seconds is not None:
-        if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int | float):
-            raise ValueError("Model provider health check timeout_seconds must be a number")
-        if timeout_seconds <= 0 or timeout_seconds > 60:
-            raise ValueError("Model provider health check timeout_seconds must be between 0 and 60")
+def validate_provider_health_parameters(parameters: Mapping[str, object]) -> None:
+    probes = parameters.get("probes")
+    if probes is not None and (
+        not isinstance(probes, list)
+        or not probes
+        or any(item not in {"models", "inference"} for item in probes)
+    ):
+        raise ValueError("Health probes must contain models or inference")
+    timeout = parameters.get("timeout_seconds")
+    if timeout is not None and (
+        isinstance(timeout, bool) or not isinstance(timeout, int | float) or not 0 < timeout <= 60
+    ):
+        raise ValueError("Health timeout_seconds must be between 0 and 60")
+
+
+def stage_schedule_control(
+    session: Session, *, workspace_id: UUID, resource_id: UUID, owner_kind: str, user_id: UUID
+) -> None:
+    stage_execution(
+        session,
+        ExecutionRequest(
+            workspace_id=workspace_id,
+            resource_id=resource_id,
+            kind=ExecutionKind.SCHEDULE_CONTROL,
+            requested_by_user_id=user_id,
+            parameters={"owner_kind": owner_kind},
+        ),
+    )
 
 
 class WorkspaceScheduledJobService:
-    """Own schedule lifecycle, workspace validation and durable dispatch evidence."""
-
     def __init__(self, session: Session) -> None:
         self._session = session
-
-    def _record_created_audit(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        workspace_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action="workspace.scheduled_job.created",
-            target_type="workspace_scheduled_job",
-            target_id=scheduled_job.id,
-            metadata={
-                "name": scheduled_job.name,
-                "schedule_type": scheduled_job.schedule_type,
-                "schedule_config": scheduled_job.schedule_config,
-                "action_type": scheduled_job.action_type,
-                "job_type": scheduled_job.job_type,
-                "metadata": scheduled_job.metadata_,
-            },
-        )
-
-    def _record_paused_audit(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        workspace_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action="workspace.scheduled_job.paused",
-            target_type="workspace_scheduled_job",
-            target_id=scheduled_job.id,
-            metadata={"name": scheduled_job.name},
-        )
-
-    def _record_resumed_audit(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        workspace_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action="workspace.scheduled_job.resumed",
-            target_type="workspace_scheduled_job",
-            target_id=scheduled_job.id,
-            metadata={
-                "name": scheduled_job.name,
-                "next_run_at": scheduled_job.next_run_at.isoformat()
-                if scheduled_job.next_run_at is not None
-                else None,
-            },
-        )
-
-    def _record_due_audit(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        status: str,
-        queued_job_id: UUID | None,
-        message: str | None,
-    ) -> None:
-        actor_user_id = scheduled_job.created_by_user_id
-        if actor_user_id is None:
-            workspace = self._session.get(Workspace, scheduled_job.workspace_id)
-            actor_user_id = workspace.owner_user_id if workspace is not None else None
-        if actor_user_id is None:
-            return
-        AuditService(self._session).record_user_action(
-            workspace_id=scheduled_job.workspace_id,
-            user_id=actor_user_id,
-            action="workspace.scheduled_job.due",
-            target_type="workspace_scheduled_job",
-            target_id=scheduled_job.id,
-            metadata={
-                "status": status,
-                "queued_job_id": str(queued_job_id) if queued_job_id is not None else None,
-                "message": message,
-                "action_type": scheduled_job.action_type,
-                "job_type": scheduled_job.job_type,
-                "metadata": scheduled_job.metadata_,
-            },
-        )
-
-    def _apply_due_action(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        due_at: datetime,
-        queue: RedisQueue | None,
-    ) -> tuple[str, UUID | None, str | None]:
-        if scheduled_job.action_type == RECORD_DUE_ACTION:
-            return "recorded", None, "Due action recorded"
-        if queue is None:
-            return "skipped", None, "Worker queue is unavailable"
-        if scheduled_job.job_type is None or scheduled_job.resource_id is None:
-            return "skipped", None, "Queue job action is incomplete"
-        try:
-            job_type = JobType(scheduled_job.job_type)
-        except ValueError:
-            return "skipped", None, "Queue job type is unsupported"
-        queued_job = JobPayload(
-            workspace_id=scheduled_job.workspace_id,
-            job_type=job_type,
-            resource_id=scheduled_job.resource_id,
-            requested_by_user_id=scheduled_job.created_by_user_id,
-            routing=scheduled_job.routing,
-            priority=scheduled_job.priority,
-            max_attempts=scheduled_job.max_attempts,
-            idempotency_key=(
-                "workspace.scheduled_job:"
-                f"{scheduled_job.workspace_id}:{scheduled_job.id}:{due_at.isoformat()}"
-            ),
-        )
-        if not queue.enqueue(queued_job):
-            return "skipped", None, "Queue idempotency key already exists"
-        return "enqueued", queued_job.job_id, None
 
     def create(
         self,
         *,
         workspace: Workspace,
         user_id: UUID,
-        data: ScheduledJobCreate,
-        now: datetime | None = None,
+        data: ScheduledJobCreateCommand,
     ) -> WorkspaceScheduledJob:
-        current_time = utc_datetime(now)
-        self._validate_create_data(workspace.id, data)
-        scheduled_job = WorkspaceScheduledJob(
+        validate_action(data)
+        build_schedule_spec(data.schedule_type, data.schedule_config)
+        if data.execution_kind == ExecutionKind.MODEL_PROVIDER_HEALTH:
+            credential = self._session.scalar(
+                select(ModelProviderCredential.id).where(
+                    ModelProviderCredential.workspace_id == workspace.id,
+                    ModelProviderCredential.id == data.resource_id,
+                    ModelProviderCredential.status == "active",
+                )
+            )
+            if credential is None:
+                raise ValueError("Health schedule requires an active workspace credential")
+        item = WorkspaceScheduledJob(
             workspace_id=workspace.id,
             created_by_user_id=user_id,
             name=data.name,
@@ -223,41 +114,32 @@ class WorkspaceScheduledJobService:
             schedule_config=data.schedule_config,
             status=ACTIVE_STATUS,
             action_type=data.action_type,
-            job_type=data.job_type,
+            execution_kind=data.execution_kind.value if data.execution_kind else None,
             resource_id=data.resource_id,
-            routing=data.routing,
-            priority=data.priority,
-            max_attempts=data.max_attempts,
+            parameters=data.parameters,
             metadata_=data.metadata,
-            next_run_at=next_run_at(
-                schedule_type=data.schedule_type,
-                schedule_config=data.schedule_config,
-                after=current_time,
-                include_now=True,
-            ),
+            revision=1,
         )
-        self._session.add(scheduled_job)
-        self._session.flush([scheduled_job])
-        self._record_created_audit(scheduled_job, workspace_id=workspace.id, user_id=user_id)
+        self._session.add(item)
+        self._session.flush()
+        self._stage(item, user_id, "workspace.scheduled_job.created")
         self._session.commit()
-        self._session.refresh(scheduled_job)
-        return scheduled_job
+        self._session.refresh(item)
+        return item
 
     def pause(
-        self,
-        *,
-        workspace_id: UUID,
-        scheduled_job_id: UUID,
-        user_id: UUID,
+        self, *, workspace_id: UUID, scheduled_job_id: UUID, user_id: UUID
     ) -> WorkspaceScheduledJob:
-        scheduled_job = self._require_job(workspace_id, scheduled_job_id)
-        if scheduled_job.status == ACTIVE_STATUS:
-            scheduled_job.status = PAUSED_STATUS
-            scheduled_job.paused_at = datetime.now(UTC)
-            self._record_paused_audit(scheduled_job, workspace_id=workspace_id, user_id=user_id)
+        item = self._require(workspace_id, scheduled_job_id)
+        if item.status == ACTIVE_STATUS:
+            item.status = PAUSED_STATUS
+            item.paused_at = datetime.now(UTC)
+            item.next_run_at = None
+            item.revision += 1
+            self._stage(item, user_id, "workspace.scheduled_job.paused")
             self._session.commit()
-            self._session.refresh(scheduled_job)
-        return scheduled_job
+            self._session.refresh(item)
+        return item
 
     def resume(
         self,
@@ -265,185 +147,62 @@ class WorkspaceScheduledJobService:
         workspace_id: UUID,
         scheduled_job_id: UUID,
         user_id: UUID,
-        now: datetime | None = None,
     ) -> WorkspaceScheduledJob:
-        scheduled_job = self._require_job(workspace_id, scheduled_job_id)
-        if scheduled_job.status == PAUSED_STATUS:
-            current_time = utc_datetime(now)
-            scheduled_job.status = ACTIVE_STATUS
-            scheduled_job.paused_at = None
-            scheduled_job.next_run_at = next_run_at(
-                schedule_type=scheduled_job.schedule_type,
-                schedule_config=scheduled_job.schedule_config,
-                after=current_time,
-                include_now=True,
-            )
-            self._record_resumed_audit(scheduled_job, workspace_id=workspace_id, user_id=user_id)
+        item = self._require(workspace_id, scheduled_job_id)
+        if item.status == PAUSED_STATUS:
+            if item.execution_kind is not None:
+                ExecutionKind(item.execution_kind)
+            item.status = ACTIVE_STATUS
+            item.paused_at = None
+            item.revision += 1
+            self._stage(item, user_id, "workspace.scheduled_job.resumed")
             self._session.commit()
-            self._session.refresh(scheduled_job)
-        return scheduled_job
-
-    def _advance_schedule(
-        self,
-        scheduled_job: WorkspaceScheduledJob,
-        *,
-        due_at: datetime,
-        now: datetime,
-    ) -> None:
-        scheduled_job.last_run_at = now
-        if scheduled_job.schedule_type == "one_shot":
-            scheduled_job.status = COMPLETED_STATUS
-            scheduled_job.next_run_at = None
-            scheduled_job.completed_at = now
-            return
-        scheduled_job.next_run_at = next_run_at(
-            schedule_type=scheduled_job.schedule_type,
-            schedule_config=scheduled_job.schedule_config,
-            after=max(utc_datetime(due_at), utc_datetime(now)),
-            include_now=False,
-        )
-
-    def enqueue_due(
-        self,
-        *,
-        queue: RedisQueue | None,
-        limit: int = 100,
-        now: datetime | None = None,
-    ) -> ScheduledJobMaintenanceSummary:
-        current_time = utc_datetime(now)
-        due_jobs = self._due_jobs(limit=limit, now=current_time)
-
-        enqueued = 0
-        recorded = 0
-        skipped = 0
-        enqueued_by_job_type: dict[str, int] = {}
-        recorded_by_job_type: dict[str, int] = {}
-        skipped_by_job_type: dict[str, int] = {}
-        for scheduled_job in due_jobs:
-            due_at = utc_datetime(scheduled_job.next_run_at or current_time)
-            event_status, queued_job_id, message = self._apply_due_action(
-                scheduled_job,
-                due_at=due_at,
-                queue=queue,
-            )
-            job_type = scheduled_job.job_type or scheduled_job.action_type
-            if event_status == "enqueued":
-                enqueued += 1
-                increment_count(enqueued_by_job_type, job_type)
-            elif event_status == "recorded":
-                recorded += 1
-                increment_count(recorded_by_job_type, job_type)
-            else:
-                skipped += 1
-                increment_count(skipped_by_job_type, job_type)
-            self._advance_schedule(scheduled_job, due_at=due_at, now=current_time)
-            self._session.add(
-                WorkspaceScheduledJobEvent(
-                    workspace_id=scheduled_job.workspace_id,
-                    scheduled_job_id=scheduled_job.id,
-                    due_at=due_at,
-                    action_type=scheduled_job.action_type,
-                    status=event_status,
-                    queued_job_id=queued_job_id,
-                    message=message,
-                    metadata_={
-                        "scheduled_job_name": scheduled_job.name,
-                        "job_type": scheduled_job.job_type,
-                        "resource_id": str(scheduled_job.resource_id)
-                        if scheduled_job.resource_id is not None
-                        else None,
-                        "metadata": scheduled_job.metadata_,
-                    },
-                )
-            )
-            self._record_due_audit(
-                scheduled_job,
-                status=event_status,
-                queued_job_id=queued_job_id,
-                message=message,
-            )
-
-        if due_jobs:
-            self._session.commit()
-        return ScheduledJobMaintenanceSummary(
-            enqueued=enqueued,
-            recorded=recorded,
-            skipped=skipped,
-            enqueued_by_job_type=dict(sorted(enqueued_by_job_type.items())),
-            recorded_by_job_type=dict(sorted(recorded_by_job_type.items())),
-            skipped_by_job_type=dict(sorted(skipped_by_job_type.items())),
-        )
+            self._session.refresh(item)
+        return item
 
     def list_jobs(
-        self,
-        *,
-        workspace_id: UUID,
-        limit: int,
-        offset: int,
-        status: str | None = None,
+        self, *, workspace_id: UUID, limit: int, offset: int, status: str | None = None
     ) -> tuple[list[WorkspaceScheduledJob], int]:
-        statement = self._workspace_statement(workspace_id)
-        if status is not None:
-            statement = statement.where(WorkspaceScheduledJob.status == status)
-        statement = statement.order_by(
-            WorkspaceScheduledJob.created_at.desc(),
-            WorkspaceScheduledJob.id.desc(),
-        )
-        return page_scalars_by_offset(self._session, statement, limit=limit, offset=offset)
-
-    def _due_jobs(self, *, limit: int, now: datetime) -> list[WorkspaceScheduledJob]:
-        statement = (
-            select(WorkspaceScheduledJob)
-            .where(
-                WorkspaceScheduledJob.status == ACTIVE_STATUS,
-                WorkspaceScheduledJob.next_run_at.is_not(None),
-                WorkspaceScheduledJob.next_run_at <= now,
-            )
-            .order_by(WorkspaceScheduledJob.next_run_at.asc(), WorkspaceScheduledJob.id.asc())
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        )
-        return list(self._session.scalars(statement).all())
-
-    def _workspace_statement(
-        self,
-        workspace_id: UUID,
-    ) -> Select[tuple[WorkspaceScheduledJob]]:
-        return select(WorkspaceScheduledJob).where(
+        statement = select(WorkspaceScheduledJob).where(
             WorkspaceScheduledJob.workspace_id == workspace_id
         )
-
-    def _require_job(
-        self,
-        workspace_id: UUID,
-        scheduled_job_id: UUID,
-    ) -> WorkspaceScheduledJob:
-        scheduled_job = self._session.scalar(
-            self._workspace_statement(workspace_id).where(
-                WorkspaceScheduledJob.id == scheduled_job_id
-            )
+        if status is not None:
+            statement = statement.where(WorkspaceScheduledJob.status == status)
+        return page_scalars_by_offset(
+            self._session,
+            statement.order_by(
+                WorkspaceScheduledJob.created_at.desc(), WorkspaceScheduledJob.id.desc()
+            ),
+            limit=limit,
+            offset=offset,
         )
-        if scheduled_job is None:
+
+    def _require(self, workspace_id: UUID, scheduled_job_id: UUID) -> WorkspaceScheduledJob:
+        item = self._session.scalar(
+            select(WorkspaceScheduledJob)
+            .where(
+                WorkspaceScheduledJob.workspace_id == workspace_id,
+                WorkspaceScheduledJob.id == scheduled_job_id,
+            )
+            .with_for_update()
+        )
+        if item is None:
             raise ValueError("Scheduled job not found")
-        return scheduled_job
+        return item
 
-    def _validate_create_data(self, workspace_id: UUID, data: ScheduledJobCreate) -> None:
-        validate_action(data)
-        self._validate_workspace_resource(workspace_id, data)
-
-    def _validate_workspace_resource(self, workspace_id: UUID, data: ScheduledJobCreate) -> None:
-        if data.action_type != QUEUE_JOB_ACTION:
-            return
-        if data.job_type != JobType.MODEL_PROVIDER_HEALTH_CHECK.value:
-            return
-        credential = self._session.scalar(
-            select(ModelProviderCredential).where(
-                ModelProviderCredential.workspace_id == workspace_id,
-                ModelProviderCredential.id == data.resource_id,
-                ModelProviderCredential.status == "active",
-            )
+    def _stage(self, item: WorkspaceScheduledJob, user_id: UUID, action: str) -> None:
+        stage_schedule_control(
+            self._session,
+            workspace_id=item.workspace_id,
+            resource_id=item.id,
+            owner_kind="scheduled_job",
+            user_id=user_id,
         )
-        if credential is None:
-            raise ValueError(
-                "Model provider health check scheduled jobs require an active credential"
-            )
+        AuditService(self._session).record_user_action(
+            workspace_id=item.workspace_id,
+            user_id=user_id,
+            action=action,
+            target_type="workspace_scheduled_job",
+            target_id=item.id,
+            metadata={"revision": item.revision, "schedule_type": item.schedule_type},
+        )

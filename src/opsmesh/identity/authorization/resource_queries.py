@@ -10,16 +10,28 @@ from dataclasses import dataclass
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ColumnElement, Table, and_, event, exists, inspect, or_, select
+from sqlalchemy import (
+    Column,
+    ColumnElement,
+    Table,
+    and_,
+    event,
+    exists,
+    inspect,
+    literal,
+    or_,
+    select,
+)
 from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 from sqlalchemy.sql.elements import ClauseElement
 from sqlalchemy.sql.visitors import iterate
 
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.authorization.models import SecuredResource
+from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.identity.authorization.resources import (
     RESOURCE_TABLES,
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
@@ -52,7 +64,7 @@ _PARENTS: dict[str, tuple[str, str]] = {
     "task_steps": ("task_id", "tasks"),
     "task_transfers": ("task_id", "tasks"),
     "task_messages": ("task_id", "tasks"),
-    "task_event_outbox": ("task_id", "tasks"),
+    "task_events": ("task_id", "tasks"),
     "task_planning_attempts": ("task_id", "tasks"),
     "agent_runs": ("task_id", "tasks"),
     "approvals": ("task_id", "tasks"),
@@ -75,9 +87,16 @@ _PARENTS: dict[str, tuple[str, str]] = {
     "runtime_space_quotas": ("runtime_space_id", "runtime_spaces"),
     "runtime_commands": ("workspace_runtime_id", "workspace_runtimes"),
     "runtime_events": ("workspace_runtime_id", "workspace_runtimes"),
-    "runtime_leases": ("workspace_runtime_id", "workspace_runtimes"),
     "local_file_references": ("task_id", "tasks"),
     "file_access_events": ("workspace_file_id", "workspace_files"),
+    "workspace_archive_verifications": ("export_job_id", "workspace_export_jobs"),
+    "workspace_restore_drill_operations": ("export_job_id", "workspace_export_jobs"),
+}
+
+_ARCHIVE_OPERATION_OWNERS = {
+    "workspace_export_jobs": "created_by_user_id",
+    "workspace_archive_verifications": "user_id",
+    "workspace_restore_drill_operations": "user_id",
 }
 
 # These are already governed by workspace-role or dedicated control-plane policy. Unknown
@@ -140,7 +159,7 @@ def require_resource_row(
         )
         is None
     ):
-        raise ResourceAccessDenied()
+        raise ResourceAccessDeniedError()
 
 
 def unbind_resource_queries(session: Session) -> None:
@@ -176,8 +195,35 @@ def _row_predicate(
     table = Base.metadata.tables[table_name]
     service = ResourceAuthorizationService(session, scope.user)
     tenant = table.c.workspace_id == scope.workspace_id
-    if table_name in {"conversations", "queue_dispatches"}:
+    if table_name == "conversations":
         return and_(tenant, table.c.created_by_user_id == scope.user.user_id)
+    if table_name in _ARCHIVE_OPERATION_OWNERS:
+        owner = or_(
+            table.c[_ARCHIVE_OPERATION_OWNERS[table_name]] == scope.user.user_id,
+            and_(
+                literal(
+                    scope.user.allows_workspace_action(scope.workspace_id, WorkspaceAction.ADMIN)
+                ),
+                _workspace_admin(scope),
+            ),
+        )
+        if table_name not in _PARENTS:
+            return and_(tenant, owner)
+        column, parent_name = _PARENTS[table_name]
+        parent = Base.metadata.tables[parent_name]
+        return and_(
+            tenant,
+            owner,
+            exists(
+                select(parent.c.id)
+                .where(
+                    parent.c.workspace_id == table.c.workspace_id,
+                    parent.c.id == table.c[column],
+                    _row_predicate(session, scope, parent_name, ResourceAction.READ),
+                )
+                .correlate_except(parent)
+            ),
+        )
     if table_name == "marketplace_listings" and action == ResourceAction.READ:
         return or_(
             and_(tenant, _workspace_admin(scope)),
@@ -435,12 +481,17 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
         if "workspace_id" not in table.c or table.name in _WORKSPACE_METADATA:
             continue
         if row.workspace_id != scope.workspace_id:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         if row in session.new:
-            if table.name in {"conversations", "queue_dispatches"}:
+            if table.name == "conversations":
                 if row.created_by_user_id != scope.user.user_id:
-                    raise ResourceAccessDenied()
+                    raise ResourceAccessDeniedError()
                 continue
+            if table.name in _ARCHIVE_OPERATION_OWNERS:
+                if getattr(row, _ARCHIVE_OPERATION_OWNERS[table.name]) != scope.user.user_id:
+                    raise ResourceAccessDeniedError()
+                if table.name == "workspace_export_jobs":
+                    continue
             if table.name in _ROOTS or table.name in _APPENDED_EVIDENCE:
                 continue
             if (
@@ -508,4 +559,4 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
         # Core table expressions avoid recursive ORM loading during flush; no commit or bypass
         # is exposed to the caller. This remains the same database transaction.
         if session.connection().scalar(statement) is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()

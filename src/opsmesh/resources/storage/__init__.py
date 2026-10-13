@@ -1,2 +1,1 @@
 """Workspace file domain."""
-

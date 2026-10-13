@@ -47,6 +47,23 @@ class ConversationAdvanceService:
         )
         if conversation is None:
             return
+        unreleased = self.session.scalar(
+            select(AgentRun.id)
+            .join(ConversationExecution, ConversationExecution.task_id == AgentRun.task_id)
+            .join(ConversationTurn, ConversationTurn.id == ConversationExecution.turn_id)
+            .where(
+                AgentRun.workspace_id == workspace_id,
+                ConversationExecution.workspace_id == workspace_id,
+                ConversationTurn.workspace_id == workspace_id,
+                ConversationTurn.conversation_id == conversation_id,
+                AgentRun.status.in_(TERMINAL),
+                AgentRun.started_at.is_not(None),
+                AgentRun.execution_released_at.is_(None),
+            )
+            .limit(1)
+        )
+        if unreleased is not None:
+            return
         while True:
             turn = self.session.scalar(
                 select(ConversationTurn)

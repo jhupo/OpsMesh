@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.identity.invitations.schemas import UserInvitationRequest, UserInvitationResponse
 from opsmesh.identity.invitations.service import UserInvitationService
@@ -22,7 +22,7 @@ def invite_user(
     settings: Settings = Depends(get_settings),
 ) -> UserInvitationResponse:
     invitation = UserInvitationService(session, settings).invite(**payload.model_dump())
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_invited",
         outcome="allowed",
@@ -43,7 +43,7 @@ def resend_user_invitation(
     settings: Settings = Depends(get_settings),
 ) -> UserInvitationResponse:
     invitation = UserInvitationService(session, settings).resend(user_id)
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="identity.user_invitation_resent",
         outcome="allowed",

@@ -1,147 +1,80 @@
-"""Validate the published runtime image with the official MCP SDK."""
+"""Verify a compute image through the official SDK sandbox lifecycle and MCP SDK."""
 
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
-import tempfile
-from collections.abc import Sequence
+import asyncio
+import io
+import shutil
+from contextlib import closing
 from pathlib import Path
 
-MCP_SDK_PACKAGE = "openai-agents"
-MCP_SDK_STDIO_ENTRYPOINT = "agents.mcp.MCPServerStdio"
-MCP_CONTRACT_VERSION = 2
+import docker
+from agents.mcp import MCPServerStdio
+from agents.sandbox import Manifest
+from agents.sandbox.sandboxes import DockerSandboxClient, DockerSandboxClientOptions
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", required=True, help="Runtime image tag or digest")
-    parser.add_argument(
-        "--fixture",
-        type=Path,
-        default=Path("tests/fixtures/mcp_stdio_server.py"),
-        help="FastMCP stdio fixture mounted into the image for the probe",
-    )
-    args = parser.parse_args(argv)
-    fixture = args.fixture.resolve()
-    if not fixture.is_file():
-        raise SystemExit(f"MCP stdio fixture does not exist: {fixture}")
-
-    _run(["docker", "image", "inspect", args.image], description="inspect runtime image")
-    user = _run(
-        ["docker", "image", "inspect", "--format", "{{.Config.User}}", args.image],
-        description="inspect runtime image user",
-    ).stdout.strip()
-    if user != "opsmesh-runtime":
-        raise SystemExit(f"runtime image must run as opsmesh-runtime, got {user!r}")
-
-    check = _run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--read-only",
-            "--tmpfs",
-            "/tmp",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            args.image,
-            "python",
-            "-m",
-            "opsmesh_runtime.mcp_stdio_client",
-            "--check",
-        ],
-        description="probe runtime MCP SDK capability",
-    )
-    report = _json_object(check.stdout, "runtime capability report")
-    if report.get("status") != "ready":
-        raise SystemExit("runtime capability report is not ready")
-    if report.get("sdk_package") != MCP_SDK_PACKAGE:
-        raise SystemExit("runtime capability report has an unexpected SDK package")
-    if report.get("contract_version") != MCP_CONTRACT_VERSION:
-        raise SystemExit("runtime capability report has an unexpected contract version")
-    if report.get("stdio_server") != "available":
-        raise SystemExit("runtime capability report has no native stdio server")
-
-    with tempfile.TemporaryDirectory(prefix="opsmesh-runtime-probe-") as temporary:
-        request_path = Path(temporary) / "request.json"
-        request_path.write_text(
-            json.dumps(
-                {
-                    "contract_version": MCP_CONTRACT_VERSION,
-                    "client": {
-                        "package": MCP_SDK_PACKAGE,
-                        "entrypoint": MCP_SDK_STDIO_ENTRYPOINT,
-                    },
-                    "server": {
-                        "command": "python",
-                        "args": ["/fixtures/mcp_stdio_server.py"],
-                    },
-                    "tool": {
-                        "name": "echo",
-                        "arguments": {"message": "runtime-image-ready"},
-                        "timeout_seconds": 10,
-                    },
-                },
-                separators=(",", ":"),
-            ),
-            encoding="utf-8",
+async def probe(image: str, fixture: Path) -> None:
+    with closing(docker.from_env()) as daemon:
+        client = DockerSandboxClient(daemon)
+        session = await client.create(
+            manifest=Manifest(),
+            options=DockerSandboxClientOptions(image=image),
         )
-        result = _run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--network",
-                "none",
-                "--read-only",
-                "--tmpfs",
-                "/tmp",
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges",
-                "--mount",
-                f"type=bind,src={fixture.parent},dst=/fixtures,readonly",
-                "--mount",
-                f"type=bind,src={request_path},dst=/tmp/request.json,readonly",
-                args.image,
+        try:
+            await session.start()
+            await session.write(Path("/workspace/mcp_fixture.py"), io.BytesIO(fixture.read_bytes()))
+            result = await session.exec(
                 "python",
-                "-m",
-                "opsmesh_runtime.mcp_stdio_client",
-                "--request-file",
-                "/tmp/request.json",
-            ],
-            description="execute FastMCP stdio probe in runtime image",
-        )
-        payload = _json_object(result.stdout, "runtime MCP result")
-        if payload.get("structuredContent") != {"message": "runtime-image-ready"}:
-            raise SystemExit("runtime MCP probe returned an unexpected result")
-    return 0
+                "-c",
+                "import mcp; print('native-mcp-ready')",
+                shell=False,
+            )
+            if result.exit_code != 0:
+                raise RuntimeError("Compute image cannot load the MCP SDK")
+            executable = shutil.which("docker")
+            if executable is None:
+                raise RuntimeError("Compute acceptance requires Docker CLI for duplex stdio")
+            async with MCPServerStdio(
+                params={
+                    "command": executable,
+                    "args": [
+                        "exec",
+                        "-i",
+                        session.state.container_id,
+                        "python",
+                        "/workspace/mcp_fixture.py",
+                    ],
+                },
+                max_retry_attempts=0,
+                client_session_timeout_seconds=30,
+            ) as server:
+                tools = await server.list_tools()
+                if "echo" not in {tool.name for tool in tools}:
+                    raise RuntimeError("Native MCP discovery did not return the fixture tool")
+                response = await server.call_tool("echo", {"message": "native-stdio-ready"})
+                if response.is_error or response.structured_content != {
+                    "message": "native-stdio-ready"
+                }:
+                    raise RuntimeError("Native MCP tool result failed protocol validation")
+            state = client.serialize_session_state(session.state)
+            resumed = await client.resume(client.deserialize_session_state(state))
+            content = await resumed.read(Path("/workspace/mcp_fixture.py"))
+            with content:
+                assert content.read() == fixture.read_bytes()
+        finally:
+            await session.shutdown()
+    print("Native SDK sandbox lifecycle, file I/O and MCP stdio round trip verified")
 
 
-def _run(command: list[str], *, description: str) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
-    if completed.returncode != 0:
-        detail = completed.stderr.strip()[-2_000:]
-        raise SystemExit(f"{description} failed ({completed.returncode}): {detail}")
-    return completed
-
-
-def _json_object(raw: str, description: str) -> dict[str, object]:
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"{description} was not valid JSON") from exc
-    if not isinstance(value, dict):
-        raise SystemExit(f"{description} was not a JSON object")
-    return value
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image", required=True)
+    parser.add_argument("--fixture", type=Path, default=Path("tests/fixtures/mcp_stdio_server.py"))
+    args = parser.parse_args()
+    asyncio.run(probe(args.image, args.fixture.resolve(strict=True)))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -8,16 +8,15 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeEvent,
-    AgentRuntimeGuardrail,
-    AgentRuntimeGuardrailResult,
-    AgentRuntimeGuardrails,
-    AgentRuntimeOutputSchema,
-    AgentRuntimeStructuredOutput,
+    AgentGuardrailConfig,
+    AgentGuardrailResult,
+    AgentGuardrailSpec,
+    AgentLifecycleEvent,
+    AgentOutputSchemaSpec,
+    AgentStructuredOutput,
 )
 from opsmesh.agents.execution.errors import (
-    AgentRuntimeGuardrailBlockedError,
-    AgentRuntimeOutputValidationError,
+    AgentOutputValidationError,
 )
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
@@ -26,9 +25,7 @@ MAX_BLOCKED_TERMS = 100
 MAX_TERM_LENGTH = 256
 MAX_CHARACTER_LIMIT = 1_000_000
 _NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
-_SUPPORTED_GUARDRAIL_KINDS = frozenset(
-    {"blocked_terms", "max_characters", "json_schema"}
-)
+_SUPPORTED_GUARDRAIL_KINDS = frozenset({"blocked_terms", "max_characters", "json_schema"})
 
 
 def runtime_controls_snapshot(
@@ -48,14 +45,14 @@ def runtime_controls_snapshot(
 
 def runtime_controls_from_snapshot(
     snapshot: dict[str, object],
-) -> tuple[AgentRuntimeOutputSchema | None, AgentRuntimeGuardrails | None]:
+) -> tuple[AgentOutputSchemaSpec | None, AgentGuardrailConfig | None]:
     return (
         parse_output_schema(snapshot.get("output_schema")),
         parse_guardrails(snapshot.get("guardrails")),
     )
 
 
-def parse_output_schema(value: object) -> AgentRuntimeOutputSchema | None:
+def parse_output_schema(value: object) -> AgentOutputSchemaSpec | None:
     if value is None:
         return None
     raw = _mapping(value, "Agent output schema")
@@ -66,11 +63,9 @@ def parse_output_schema(value: object) -> AgentRuntimeOutputSchema | None:
     if not isinstance(strict, bool):
         raise ValueError("Agent output schema strict must be a boolean")
     version = raw.get("version")
-    if version is not None and (
-        not isinstance(version, str) or not version or len(version) > 64
-    ):
+    if version is not None and (not isinstance(version, str) or not version or len(version) > 64):
         raise ValueError("Agent output schema version must be a non-empty short string")
-    return AgentRuntimeOutputSchema(
+    return AgentOutputSchemaSpec(
         name=name,
         schema=dict(schema),
         strict=strict,
@@ -78,7 +73,7 @@ def parse_output_schema(value: object) -> AgentRuntimeOutputSchema | None:
     )
 
 
-def parse_guardrails(value: object) -> AgentRuntimeGuardrails | None:
+def parse_guardrails(value: object) -> AgentGuardrailConfig | None:
     if value is None:
         return None
     raw = _mapping(value, "Agent guardrails")
@@ -87,10 +82,10 @@ def parse_guardrails(value: object) -> AgentRuntimeGuardrails | None:
         raise ValueError(f"Unknown agent guardrail stages: {', '.join(sorted(unknown))}")
     input_guardrails = _parse_guardrail_stage(raw.get("input", []), "input")
     output_guardrails = _parse_guardrail_stage(raw.get("output", []), "output")
-    return AgentRuntimeGuardrails(input=input_guardrails, output=output_guardrails)
+    return AgentGuardrailConfig(input=input_guardrails, output=output_guardrails)
 
 
-def guardrails_snapshot(value: AgentRuntimeGuardrails | None) -> dict[str, object] | None:
+def guardrails_snapshot(value: AgentGuardrailConfig | None) -> dict[str, object] | None:
     if value is None:
         return None
     return {
@@ -100,16 +95,16 @@ def guardrails_snapshot(value: AgentRuntimeGuardrails | None) -> dict[str, objec
 
 
 def evaluate_guardrail(
-    definition: AgentRuntimeGuardrail,
+    definition: AgentGuardrailSpec,
     value: object,
     *,
     stage: str,
-) -> AgentRuntimeGuardrailResult:
+) -> AgentGuardrailResult:
     if stage not in {"input", "output"}:
         raise ValueError("Agent guardrail stage must be input or output")
     passed, evidence = _evaluate(definition, value)
     status = "passed" if passed else "blocked" if definition.blocking else "flagged"
-    return AgentRuntimeGuardrailResult(
+    return AgentGuardrailResult(
         stage=stage,
         name=definition.name,
         kind=definition.kind,
@@ -119,34 +114,20 @@ def evaluate_guardrail(
     )
 
 
-def evaluate_guardrail_stage(
-    definitions: tuple[AgentRuntimeGuardrail, ...],
-    value: object,
-    *,
-    stage: str,
-    results: list[AgentRuntimeGuardrailResult],
-) -> None:
-    for definition in definitions:
-        result = evaluate_guardrail(definition, value, stage=stage)
-        results.append(result)
-        if result.status == "blocked":
-            raise AgentRuntimeGuardrailBlockedError(result)
-
-
 def validated_structured_output(
-    schema: AgentRuntimeOutputSchema,
+    schema: AgentOutputSchemaSpec,
     value: object,
-) -> AgentRuntimeStructuredOutput:
+) -> AgentStructuredOutput:
     normalized = _structured_value(schema, value)
     validator = Draft202012Validator(schema.schema)
     error = next(validator.iter_errors(normalized), None)
     if error is not None:
-        raise AgentRuntimeOutputValidationError(
+        raise AgentOutputValidationError(
             schema_name=schema.name,
             schema_version=schema.version,
             validator=str(error.validator or "schema"),
         )
-    return AgentRuntimeStructuredOutput(
+    return AgentStructuredOutput(
         value=normalized,
         schema_name=schema.name,
         schema_version=schema.version,
@@ -155,10 +136,10 @@ def validated_structured_output(
 
 
 def guardrail_events(
-    results: list[AgentRuntimeGuardrailResult],
-) -> list[AgentRuntimeEvent]:
+    results: list[AgentGuardrailResult],
+) -> list[AgentLifecycleEvent]:
     return [
-        AgentRuntimeEvent(
+        AgentLifecycleEvent(
             event_type=f"agent.guardrail.{result.status}",
             message=f"Agent {result.stage} guardrail {result.status}.",
             payload=redact_sensitive_payload(asdict(result)),
@@ -170,14 +151,14 @@ def guardrail_events(
 def _parse_guardrail_stage(
     value: object,
     stage: str,
-) -> tuple[AgentRuntimeGuardrail, ...]:
+) -> tuple[AgentGuardrailSpec, ...]:
     if not isinstance(value, list):
         raise ValueError(f"Agent {stage} guardrails must be a list")
     if len(value) > MAX_GUARDRAILS_PER_STAGE:
         raise ValueError(
             f"Agent {stage} guardrails exceed the {MAX_GUARDRAILS_PER_STAGE} item limit"
         )
-    parsed: list[AgentRuntimeGuardrail] = []
+    parsed: list[AgentGuardrailSpec] = []
     names: set[str] = set()
     for raw_item in value:
         item = _mapping(raw_item, f"Agent {stage} guardrail")
@@ -194,7 +175,7 @@ def _parse_guardrail_stage(
         if not isinstance(blocking, bool):
             raise ValueError(f"Agent {stage} guardrail {name} blocking must be a boolean")
         parsed.append(
-            AgentRuntimeGuardrail(
+            AgentGuardrailSpec(
                 name=name,
                 kind=kind,
                 config=dict(config),
@@ -249,7 +230,7 @@ def _maximum_characters(config: dict[str, object]) -> int:
 
 
 def _evaluate(
-    definition: AgentRuntimeGuardrail,
+    definition: AgentGuardrailSpec,
     value: object,
 ) -> tuple[bool, dict[str, object]]:
     if definition.kind == "blocked_terms":
@@ -280,12 +261,12 @@ def _evaluate(
     }
 
 
-def _structured_value(schema: AgentRuntimeOutputSchema, value: object) -> object:
+def _structured_value(schema: AgentOutputSchemaSpec, value: object) -> object:
     if isinstance(value, str) and schema.schema.get("type") != "string":
         try:
             return json.loads(value)
         except json.JSONDecodeError as exc:
-            raise AgentRuntimeOutputValidationError(
+            raise AgentOutputValidationError(
                 schema_name=schema.name,
                 schema_version=schema.version,
                 validator="json",

@@ -5,15 +5,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.messages.models import AgentMessageThread
-from opsmesh.agents.sessions.models import PersistentAgentSession
-from opsmesh.runtime.instances.contracts import RuntimeLifecycleControl, RuntimeLimits
+from opsmesh.agents.sessions.models import AgentSessionMetadata
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
 from opsmesh.teams.management.models import (
-    TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_SESSION_SCOPE,
-    TEAM_RUNTIME_STALL_STATUSES,
-    TEAM_RUNTIME_STALL_THRESHOLD,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_THREAD_KEY,
@@ -21,52 +18,49 @@ from opsmesh.teams.management.models import (
     AgentTeam,
 )
 from opsmesh.teams.organization.service import TeamOperatingContextService
+from opsmesh.teams.sessions.advancement import TeamAdvancementRecorder
+from opsmesh.teams.sessions.agent_sessions import TeamAgentSessionStore
 from opsmesh.teams.sessions.binding import TeamWorkspaceRuntimeBindingService
-from opsmesh.teams.sessions.heartbeat import TeamRuntimeHeartbeatRecorder
-from opsmesh.teams.sessions.lifecycle import TeamRuntimeLifecycleService
-from opsmesh.teams.sessions.mailbox import TeamRuntimeMailboxStore
+from opsmesh.teams.sessions.lifecycle import TeamOperationLifecycleService
+from opsmesh.teams.sessions.mailbox import TeamMailboxStore
 from opsmesh.teams.sessions.refs import team_bound_runtime_id, team_runtime_ref
-from opsmesh.teams.sessions.repository import TeamRuntimeRepository
-from opsmesh.teams.sessions.sessions import TeamRuntimeSessionStore
-from opsmesh.teams.sessions.state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
+from opsmesh.teams.sessions.repository import TeamOperationRepository
+from opsmesh.teams.sessions.state_builder import TeamOperationSnapshot, TeamOperationSnapshotBuilder
 
 __all__ = [
-    "TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS",
     "TEAM_RUNTIME_PAUSED",
     "TEAM_RUNTIME_RUNNING",
     "TEAM_RUNTIME_SESSION_SCOPE",
-    "TEAM_RUNTIME_STALL_STATUSES",
-    "TEAM_RUNTIME_STALL_THRESHOLD",
     "TEAM_RUNTIME_STATUS_KEY",
     "TEAM_RUNTIME_STOPPED",
     "TEAM_RUNTIME_THREAD_KEY",
     "TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY",
-    "TeamRuntimeService",
-    "TeamRuntimeState",
+    "TeamOperationService",
+    "TeamOperationSnapshot",
     "team_bound_runtime_id",
     "team_runtime_ref",
 ]
 
 
-class TeamRuntimeService:
+class TeamOperationService:
     """Persistent controls and shared context for a team/company runtime."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
-        self._repo = TeamRuntimeRepository(session)
-        self._mailbox = TeamRuntimeMailboxStore(session)
-        self._sessions = TeamRuntimeSessionStore(session)
-        self._state_builder = TeamRuntimeStateBuilder(
+        self._repo = TeamOperationRepository(session)
+        self._mailbox = TeamMailboxStore(session)
+        self._sessions = TeamAgentSessionStore(session)
+        self._state_builder = TeamOperationSnapshotBuilder(
             repo=self._repo,
             mailbox=self._mailbox,
             operating_context=TeamOperatingContextService(session),
         )
-        self._heartbeat = TeamRuntimeHeartbeatRecorder(
+        self._advancement = TeamAdvancementRecorder(
             session=session,
             repo=self._repo,
             mailbox=self._mailbox,
         )
-        self._lifecycle = TeamRuntimeLifecycleService(
+        self._lifecycle = TeamOperationLifecycleService(
             session=session,
             repo=self._repo,
             mailbox=self._mailbox,
@@ -81,22 +75,36 @@ class TeamRuntimeService:
             state_builder=self._state_builder,
         )
 
-    def get_state(
+    def get_or_initialize_state(
         self,
         *,
         workspace_id: UUID,
         team_id: UUID,
         initialize: bool = False,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
+        """Return team state, optionally creating its shared execution context.
+
+        Args:
+            workspace_id: Tenant scope of the team lookup.
+            team_id: Team whose state is requested.
+            initialize: Create missing thread and team/member sessions when true.
+                The default reads existing context without creating it.
+
+        Returns:
+            The current snapshot, or None if the scoped team does not exist.
+
+        Initialization flushes the borrowed Session; the caller owns commit and
+        rollback. It does not start the Runtime or execute an Agent.
+        """
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
         thread: AgentMessageThread | None
-        team_session: PersistentAgentSession | None
+        team_session: AgentSessionMetadata | None
         if initialize:
             thread = self._mailbox._get_or_create_thread(team)
             team_session = self._sessions._get_or_create_team_session(team)
-            member_sessions = self._sessions.member_sessions(team)
+            member_sessions = self._sessions.ensure_member_sessions(team)
             self._session.flush()
         else:
             thread = self._mailbox._existing_thread(team)
@@ -126,7 +134,7 @@ class TeamRuntimeService:
         actor_user_id: UUID,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._workspace_binding.bind_runtime(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -142,15 +150,13 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl,
+        runtime_control: RuntimeEnvironmentService,
         template_id: UUID | None = None,
         name: str | None = None,
-        limits: RuntimeLimits | None = None,
-        network_disabled: bool = True,
         start: bool = True,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._workspace_binding.ensure_workspace_runtime(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -158,14 +164,12 @@ class TeamRuntimeService:
             runtime_control=runtime_control,
             template_id=template_id,
             name=name,
-            limits=limits,
-            network_disabled=network_disabled,
             start=start,
             reason=reason,
             metadata=metadata,
         )
 
-    def record_iteration(
+    def record_advancement(
         self,
         *,
         workspace_id: UUID,
@@ -174,45 +178,12 @@ class TeamRuntimeService:
         status: str,
         summary: dict[str, object],
     ) -> None:
-        self._heartbeat.record_iteration(
+        self._advancement.record_advancement(
             workspace_id=workspace_id,
             team_id=team_id,
             actor_user_id=actor_user_id,
             status=status,
             summary=summary,
-        )
-
-    def record_worker_failure(
-        self,
-        *,
-        workspace_id: UUID,
-        team_id: UUID,
-        worker_id: str,
-        queue_name: str,
-        job_id: UUID,
-        status: str,
-        attempt: int,
-        max_attempts: int,
-        will_retry: bool,
-        error: BaseException,
-        actor_user_id: UUID | None = None,
-        routing: dict[str, object] | None = None,
-        trace_metadata: dict[str, object] | None = None,
-    ) -> None:
-        self._heartbeat.record_worker_failure(
-            workspace_id=workspace_id,
-            team_id=team_id,
-            worker_id=worker_id,
-            queue_name=queue_name,
-            job_id=job_id,
-            status=status,
-            attempt=attempt,
-            max_attempts=max_attempts,
-            will_retry=will_retry,
-            error=error,
-            actor_user_id=actor_user_id,
-            routing=routing,
-            trace_metadata=trace_metadata,
         )
 
     def start(
@@ -221,10 +192,10 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -242,10 +213,10 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -263,10 +234,10 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -284,10 +255,10 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -305,10 +276,10 @@ class TeamRuntimeService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl | None = None,
+        runtime_control: RuntimeEnvironmentService | None = None,
         instruction: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -328,10 +299,10 @@ class TeamRuntimeService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object] | None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         return self._lifecycle.transition(
             workspace_id=workspace_id,
             team_id=team_id,
@@ -346,10 +317,10 @@ class TeamRuntimeService:
     def _state(
         self,
         team: AgentTeam,
-        team_session: PersistentAgentSession | None,
+        team_session: AgentSessionMetadata | None,
         thread: AgentMessageThread | None,
-        member_sessions: list[PersistentAgentSession],
-    ) -> TeamRuntimeState:
+        member_sessions: list[AgentSessionMetadata],
+    ) -> TeamOperationSnapshot:
         return self._state_builder.build(
             team=team,
             team_session=team_session,

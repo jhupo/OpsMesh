@@ -8,16 +8,14 @@ from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.orchestration.conversations.models import ConversationTurn
 from opsmesh.orchestration.conversations.schemas import (
-    ConversationCreate,
+    ConversationCreateRequest,
+    ConversationEventResponse,
+    ConversationExecutionResponse,
+    ConversationMessageRequest,
     ConversationResponse,
-    EventResponse,
-    ExecutionResponse,
-    MessageCreate,
-    TurnResponse,
+    ConversationTurnResponse,
 )
 from opsmesh.orchestration.conversations.service import ConversationService
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
@@ -27,35 +25,34 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/conversations", tags=["con
 
 def _turn_response(
     service: ConversationService, context: WorkspaceContext, turn: ConversationTurn
-) -> TurnResponse:
+) -> ConversationTurnResponse:
     errors = service.turn_errors(context, turn.conversation_id, [turn])
-    return TurnResponse.model_validate(turn).model_copy(update={"error": errors.get(turn.id)})
+    return ConversationTurnResponse.model_validate(turn).model_copy(
+        update={"error": errors.get(turn.id)}
+    )
 
 
-@router.post("/{conversation_id}/turns/{turn_id}/retry", response_model=TurnResponse)
+@router.post("/{conversation_id}/turns/{turn_id}/retry", response_model=ConversationTurnResponse)
 def retry_turn(
     conversation_id: UUID,
     turn_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-) -> TurnResponse:
+) -> ConversationTurnResponse:
     service = ConversationService(session)
-    return _turn_response(
-        service, context, service.retry(context, conversation_id, turn_id, queue=queue)
-    )
+    return _turn_response(service, context, service.retry(context, conversation_id, turn_id))
 
 
-@router.get("/{conversation_id}/events", response_model=list[EventResponse])
+@router.get("/{conversation_id}/events", response_model=list[ConversationEventResponse])
 def list_events(
     conversation_id: UUID,
     after_id: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=200),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> list[EventResponse]:
+) -> list[ConversationEventResponse]:
     return [
-        EventResponse.model_validate(item)
+        ConversationEventResponse.model_validate(item)
         for item in ConversationService(session).events(
             context,
             conversation_id,
@@ -67,7 +64,7 @@ def list_events(
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
 def create_conversation(
-    request: ConversationCreate,
+    request: ConversationCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> ConversationResponse:
@@ -98,16 +95,17 @@ def get_conversation(
 
 
 @router.post(
-    "/{conversation_id}/messages", response_model=TurnResponse, status_code=status.HTTP_202_ACCEPTED
+    "/{conversation_id}/messages",
+    response_model=ConversationTurnResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def send_message(
     conversation_id: UUID,
-    request: MessageCreate,
+    request: ConversationMessageRequest,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=128),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-) -> TurnResponse:
+) -> ConversationTurnResponse:
     service = ConversationService(session)
     return _turn_response(
         service,
@@ -117,49 +115,49 @@ def send_message(
             conversation_id,
             request.body,
             idempotency_key,
-            queue=queue,
         ),
     )
 
 
-@router.get("/{conversation_id}/messages", response_model=PageResponse[TurnResponse])
+@router.get("/{conversation_id}/messages", response_model=PageResponse[ConversationTurnResponse])
 def list_messages(
     conversation_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[TurnResponse]:
+) -> PageResponse[ConversationTurnResponse]:
     service = ConversationService(session)
     items, total = service.turns(context, conversation_id, page)
     errors = service.turn_errors(context, conversation_id, items)
     responses = [
-        TurnResponse.model_validate(turn).model_copy(update={"error": errors.get(turn.id)})
+        ConversationTurnResponse.model_validate(turn).model_copy(
+            update={"error": errors.get(turn.id)}
+        )
         for turn in items
     ]
     return PageResponse(items=responses, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.get("/{conversation_id}/executions", response_model=PageResponse[ExecutionResponse])
+@router.get(
+    "/{conversation_id}/executions", response_model=PageResponse[ConversationExecutionResponse]
+)
 def list_executions(
     conversation_id: UUID,
     turn_id: UUID | None = Query(default=None),
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[ExecutionResponse]:
+) -> PageResponse[ConversationExecutionResponse]:
     items, total = ConversationService(session).executions(context, conversation_id, page, turn_id)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.post("/{conversation_id}/turns/{turn_id}/cancel", response_model=TurnResponse)
+@router.post("/{conversation_id}/turns/{turn_id}/cancel", response_model=ConversationTurnResponse)
 def cancel_turn(
     conversation_id: UUID,
     turn_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-) -> TurnResponse:
+) -> ConversationTurnResponse:
     service = ConversationService(session)
-    return _turn_response(
-        service, context, service.cancel(context, conversation_id, turn_id, queue=queue)
-    )
+    return _turn_response(service, context, service.cancel(context, conversation_id, turn_id))

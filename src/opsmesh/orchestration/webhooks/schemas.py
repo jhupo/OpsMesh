@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator, model_validator
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload_item
 
 
@@ -42,7 +42,7 @@ class WebhookSigningSecretRotateRequest(BaseModel):
     signing_secret: str = Field(min_length=16, max_length=4096)
 
 
-class WebhookSubscriptionResponse(ORMModel):
+class WebhookSubscriptionResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -65,7 +65,7 @@ class WebhookSubscriptionResponse(ORMModel):
         return "[redacted]"
 
 
-class WebhookDeliveryAttemptResponse(ORMModel):
+class WebhookDeliveryAttemptResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     subscription_id: UUID

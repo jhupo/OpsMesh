@@ -58,7 +58,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "workspace_skill_installs",
-        sa.Column("source_visibility", sa.String(length=32), server_default="public", nullable=False),
+        sa.Column(
+            "source_visibility", sa.String(length=32), server_default="public", nullable=False
+        ),
     )
     op.add_column(
         "workspace_skill_installs",

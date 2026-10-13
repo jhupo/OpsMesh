@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.spaces.lifecycle_support import (
-    RuntimeSpaceBlockerService,
-    RuntimeSpaceEventLog,
+    RuntimeSpaceEventRecorder,
+    RuntimeSpaceUnblockService,
 )
 from opsmesh.runtime.spaces.models import RuntimeSpace
 from opsmesh.runtime.spaces.quotas import RuntimeSpaceQuotaService
@@ -20,8 +20,8 @@ class RuntimeSpaceLifecycleService:
         self._session = session
         self._targets = RuntimeSpaceTargetService(session)
         self._quotas = RuntimeSpaceQuotaService(session)
-        self._events = RuntimeSpaceEventLog(session)
-        self._blockers = RuntimeSpaceBlockerService(session)
+        self._events = RuntimeSpaceEventRecorder(session)
+        self._blockers = RuntimeSpaceUnblockService(session)
         self._reservations = RuntimeSpaceReservationReleaseService(session)
 
     def create_runtime_space(
@@ -34,9 +34,8 @@ class RuntimeSpaceLifecycleService:
         created_by_user_id: UUID | None,
         default_runtime_template_id: UUID | None,
         policy: dict[str, object],
-        network_policy: dict[str, object],
-        storage_policy: dict[str, object],
-        cleanup_policy: dict[str, object],
+        storage_metadata: dict[str, object],
+        cleanup_metadata: dict[str, object],
         quota_limits: dict[str, int],
     ) -> RuntimeSpace:
         normalized_target_id = self._targets.normalize_target_id(
@@ -54,9 +53,8 @@ class RuntimeSpaceLifecycleService:
             name=name,
             scope=scope,
             policy=policy,
-            network_policy=network_policy,
-            storage_policy=storage_policy,
-            cleanup_policy=cleanup_policy,
+            storage_metadata=storage_metadata,
+            cleanup_metadata=cleanup_metadata,
         )
         self._session.add(runtime_space)
         self._session.flush([runtime_space])
@@ -91,9 +89,8 @@ class RuntimeSpaceLifecycleService:
         name: str | None,
         status: str | None,
         policy: dict[str, object] | None,
-        network_policy: dict[str, object] | None,
-        storage_policy: dict[str, object] | None,
-        cleanup_policy: dict[str, object] | None,
+        storage_metadata: dict[str, object] | None,
+        cleanup_metadata: dict[str, object] | None,
         quota_limits: dict[str, int] | None,
     ) -> RuntimeSpace:
         old_status = runtime_space.status
@@ -102,9 +99,8 @@ class RuntimeSpaceLifecycleService:
             ("name", name),
             ("status", status),
             ("policy", policy),
-            ("network_policy", network_policy),
-            ("storage_policy", storage_policy),
-            ("cleanup_policy", cleanup_policy),
+            ("storage_metadata", storage_metadata),
+            ("cleanup_metadata", cleanup_metadata),
         ):
             if value is not None:
                 setattr(runtime_space, field_name, value)

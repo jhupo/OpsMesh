@@ -11,9 +11,8 @@ from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.tasks.contracts import TaskCorrectionRequest
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
+from opsmesh.orchestration.tasks.state import TaskStatus, reset_task_to_draft, transition_task
 from opsmesh.resources.artifacts.models import Artifact
-from opsmesh.runtime.queues.service import RedisQueue
 
 STEP_STATUS_QUEUED = "queued"
 
@@ -30,9 +29,8 @@ class TaskCorrectionResult:
 
 
 class TaskCorrectionService:
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def create_correction(
         self,
@@ -51,15 +49,15 @@ class TaskCorrectionService:
         target_payload = self._resolve_target(task, request)
         created_step = None
         if request.mode == "stop_work":
-            TaskStateService().transition(task, TaskStatus.CANCELLED)
+            transition_task(task, TaskStatus.CANCELLED)
         else:
             created_step = self._create_follow_up_step(task, request, target_payload)
             if task.status in {"completed", "failed", "cancelled"}:
-                TaskStateService().reset_to_draft(task)
-                TaskStateService().transition(task, TaskStatus.QUEUED)
-                TaskStateService().transition(task, TaskStatus.RUNNING)
+                reset_task_to_draft(task)
+                transition_task(task, TaskStatus.QUEUED)
+                transition_task(task, TaskStatus.RUNNING)
             elif task.status == TaskStatus.BLOCKED.value:
-                TaskStateService().transition(task, TaskStatus.RUNNING)
+                transition_task(task, TaskStatus.RUNNING)
 
         message = self._append_message(
             task,
@@ -81,10 +79,8 @@ class TaskCorrectionService:
                 "created_step_id": str(created_step.id) if created_step is not None else None,
             },
         )
-        self._session.commit()
         scheduled_run_ids = self._schedule_follow_up(task, actor_user_id)
-        if scheduled_run_ids:
-            self._session.commit()
+        self._session.commit()
         self._session.refresh(message)
         self._session.refresh(task)
         if created_step is not None:
@@ -100,7 +96,7 @@ class TaskCorrectionService:
         )
 
     def _schedule_follow_up(self, task: Task, actor_user_id: UUID) -> list[UUID]:
-        if self._queue is None or task.status not in {
+        if task.status not in {
             TaskStatus.RUNNING.value,
             TaskStatus.QUEUED.value,
         }:
@@ -109,7 +105,7 @@ class TaskCorrectionService:
         # corrections use the same dependency, capacity, quota, and idempotency gates.
         from opsmesh.orchestration.runs.service import RunOrchestrationService
 
-        runs = RunOrchestrationService(self._session, queue=self._queue).schedule_workspace_steps(
+        runs = RunOrchestrationService(self._session).schedule_workspace_steps(
             workspace_id=task.workspace_id,
             requested_by_user_id=actor_user_id,
         )

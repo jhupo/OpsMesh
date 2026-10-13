@@ -1,49 +1,41 @@
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
-from opsmesh.orchestration.approvals.models import PendingToolInvocation
+from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.runs.events import RunEventRecorder
 from opsmesh.orchestration.runs.models import AUTHORIZATION_SNAPSHOT_VERSION, AgentRun
 from opsmesh.orchestration.runs.queries import authorization_snapshot_for_run
 from opsmesh.orchestration.runs.resources import (
     release_run_reservations,
 )
-from opsmesh.orchestration.runs.state import RunStateService, RunStatus
+from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.runs.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
-    STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
+from opsmesh.orchestration.runs.temporal import run_execution_reference
 from opsmesh.orchestration.runs.terminal_state import RunTerminalStateService
+from opsmesh.orchestration.runs.tree_lock import lock_run_execution_tree, lock_task_execution_tree
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
-    TaskStateService,
     TaskStatus,
+    transition_task,
 )
-from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.platform.updates.admission import require_execution_admission
+from opsmesh.runtime.temporal.outbox import stage_cancellation, stage_execution
+from opsmesh.shared.errors import ConflictError
 from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
-
-EnqueueRun = Callable[[AgentRun, UUID | None], bool]
-
-
-@dataclass(frozen=True)
-class StaleRunRecoverySummary:
-    recovered_runs: int
-    requeued_runs: int = 0
-    failed_runs: int = 0
 
 
 @dataclass(slots=True)
 class RunControlService:
     session: Session
-    enqueue_run: EnqueueRun
 
     def cancel_task(
         self,
@@ -53,8 +45,11 @@ class RunControlService:
         actor_user_id: UUID,
         commit: bool = True,
     ) -> Task | None:
+        lock_task_execution_tree(self.session, workspace_id, task_id)
         task = self.session.scalar(
-            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+            select(Task)
+            .where(Task.workspace_id == workspace_id, Task.id == task_id)
+            .with_for_update()
         )
         if task is None:
             return None
@@ -62,7 +57,7 @@ class RunControlService:
             raise ValueError("Task is already cancelled")
 
         completed_at = datetime.now(UTC)
-        TaskStateService().transition(task, TaskStatus.CANCELLED, completed_at=completed_at)
+        transition_task(task, TaskStatus.CANCELLED, completed_at=completed_at)
 
         active_runs = self.session.scalars(
             select(AgentRun).where(
@@ -71,18 +66,28 @@ class RunControlService:
                 AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
             )
         ).all()
-        worker_cancel_requests = 0
-        cancelled_approvals = 0
+        cancelled_approvals = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Approval)
+                .where(
+                    Approval.workspace_id == workspace_id,
+                    Approval.agent_run_id.in_([run.id for run in active_runs]),
+                    Approval.status == "pending",
+                )
+            )
+            or 0
+        )
         for run in active_runs:
-            worker_cancel_requests += self.terminal_states().mark_run_cancelled(
+            if run.status not in ACTIVE_RUN_STATUS_VALUES:
+                continue
+            self.terminal_states().mark_run_cancelled(
                 run,
                 completed_at=completed_at,
-            )
-            cancelled_approvals += AgentToolApprovalLifecycleService(self.session).cancel_for_run(
-                workspace_id=workspace_id,
-                run_id=run.id,
                 actor_user_id=actor_user_id,
             )
+            self._stage_run_cancellation(run)
+        self.terminal_states().cancel_task_steps(workspace_id=workspace_id, task_id=task.id)
 
         AuditService(self.session).record_user_action(
             workspace_id=workspace_id,
@@ -93,7 +98,7 @@ class RunControlService:
             metadata={
                 "title": task.title,
                 "cancelled_runs": len(active_runs),
-                "worker_cancel_requests": worker_cancel_requests,
+                "temporal_cancellation_count": len(active_runs),
                 "cancelled_approvals": cancelled_approvals,
             },
         )
@@ -108,27 +113,38 @@ class RunControlService:
         workspace_id: UUID,
         run_id: UUID,
         actor_user_id: UUID,
+        commit: bool = True,
     ) -> AgentRun | None:
+        lock_run_execution_tree(self.session, workspace_id, run_id)
         run = self.session.scalar(
-            select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+            select(AgentRun)
+            .where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+            .with_for_update()
         )
         if run is None:
             return None
 
         completed_at = datetime.now(UTC)
-        worker_cancel_requests = self.terminal_states().mark_run_cancelled(
-            run,
-            completed_at=completed_at,
-        )
+        was_active = run.status in ACTIVE_RUN_STATUS_VALUES
+        if not was_active:
+            if commit:
+                self.session.commit()
+            return run
         cancelled_approvals = AgentToolApprovalLifecycleService(self.session).cancel_for_run(
             workspace_id=workspace_id,
             run_id=run.id,
             actor_user_id=actor_user_id,
         )
+        self.terminal_states().mark_run_cancelled(
+            run,
+            completed_at=completed_at,
+            actor_user_id=actor_user_id,
+        )
+        self._stage_run_cancellation(run)
         if run.task_id is not None:
             task = self.session.get(Task, run.task_id)
             if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
-                TaskStateService().transition(
+                transition_task(
                     task,
                     TaskStatus.CANCELLED,
                     completed_at=completed_at,
@@ -142,12 +158,13 @@ class RunControlService:
             target_id=run.id,
             metadata={
                 "task_id": str(run.task_id) if run.task_id is not None else None,
-                "worker_cancel_requests": worker_cancel_requests,
+                "temporal_cancellation_count": 1 if was_active else 0,
                 "cancelled_approvals": cancelled_approvals,
             },
         )
-        self.session.commit()
-        self.session.refresh(run)
+        if commit:
+            self.session.commit()
+            self.session.refresh(run)
         return run
 
     def retry_failed_run(
@@ -158,13 +175,38 @@ class RunControlService:
         actor_user_id: UUID,
         commit: bool = True,
     ) -> AgentRun | None:
+        lock_run_execution_tree(self.session, workspace_id, run_id)
         failed_run = self.session.scalar(
-            select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+            select(AgentRun)
+            .where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if failed_run is None:
             return None
         if RunStatus(failed_run.status) != RunStatus.FAILED:
             raise ValueError("Only failed runs can be retried")
+        execution_lane = (
+            (AgentRun.task_id == failed_run.task_id)
+            & (AgentRun.task_step_id == failed_run.task_step_id)
+            if failed_run.task_id is not None
+            else AgentRun.id == failed_run.id
+        )
+        if (
+            self.session.scalar(
+                select(AgentRun.id)
+                .where(
+                    AgentRun.workspace_id == workspace_id,
+                    execution_lane,
+                    AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES)
+                    | (AgentRun.started_at.is_not(None) & AgentRun.execution_released_at.is_(None)),
+                )
+                .limit(1)
+            )
+            is not None
+        ):
+            raise ConflictError("Previous execution has not released its session")
+        require_execution_admission(self.session)
         snapshot = authorization_snapshot_for_run(failed_run)
         if snapshot and snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
             raise ValueError(
@@ -175,7 +217,7 @@ class RunControlService:
             self.session.get(Task, failed_run.task_id) if failed_run.task_id is not None else None
         )
         if task is not None:
-            TaskStateService().transition(task, TaskStatus.QUEUED)
+            transition_task(task, TaskStatus.QUEUED)
 
         retry_run = AgentRun(
             workspace_id=failed_run.workspace_id,
@@ -199,7 +241,7 @@ class RunControlService:
             "run.retry_queued",
             f"Retry queued from failed run {failed_run.id}",
         )
-        self.enqueue_run(retry_run, actor_user_id)
+        self._stage_run_execution(retry_run, actor_user_id)
         AuditService(self.session).record_user_action(
             workspace_id=workspace_id,
             user_id=actor_user_id,
@@ -216,225 +258,27 @@ class RunControlService:
             self.session.refresh(retry_run)
         return retry_run
 
-    def recover_stale_running_runs(
-        self,
-        *,
-        stale_after_seconds: int,
-        limit: int = 100,
-    ) -> StaleRunRecoverySummary:
-        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
-        stale_runs = self.session.scalars(
-            select(AgentRun)
-            .where(
-                AgentRun.status == RunStatus.RUNNING.value,
-                AgentRun.started_at.is_not(None),
-                AgentRun.started_at < cutoff,
-            )
-            .order_by(AgentRun.started_at.asc())
-            .limit(limit)
-        ).all()
-        for run in stale_runs:
-            self.terminal_states().mark_run_recovered_failed(run)
-        self.session.commit()
-        return StaleRunRecoverySummary(
-            recovered_runs=len(stale_runs),
-            failed_runs=len(stale_runs),
-        )
-
-    def recover_stale_worker_runs(
-        self,
-        *,
-        stale_after_seconds: int,
-        limit: int = 100,
-        requested_by_user_id: UUID | None = None,
-        reason: str | None = None,
-    ) -> StaleRunRecoverySummary:
-        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
-        candidates = self.session.scalars(
-            select(AgentRun)
-            .where(AgentRun.status.in_(STALE_RECOVERABLE_RUN_STATUS_VALUES))
-            .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
-            .limit(limit * 3)
-        ).all()
-        stale_runs = [
-            run
-            for run in candidates
-            if (anchor := stale_recovery_anchor(run)) is not None and anchor < cutoff
-        ][:limit]
-
-        requeued = 0
-        failed = 0
-        for run in stale_runs:
-            if self._runtime_wall_time_expired(run, now=datetime.now(UTC)):
-                self.fail_recovered_run(
-                    run,
-                    code="runtime_wall_time_exceeded",
-                    message="Run exceeded the authorized runtime wall-time limit",
-                    retryable=True,
-                    event_message="Marked failed after runtime wall-time limit expired",
-                )
-                failed += 1
-                continue
-            if run.status == RunStatus.QUEUED.value:
-                self.requeue_stale_run(
-                    run,
-                    requested_by_user_id=requested_by_user_id,
-                    reason=reason or "worker_maintenance_stale_queued_run",
-                )
-                requeued += 1
-                continue
-            if run.status == RunStatus.RUNNING.value and self._has_resumable_tool_state(run):
-                self.requeue_interrupted_tool_run(
-                    run,
-                    requested_by_user_id=requested_by_user_id,
-                    reason=reason or "worker_maintenance_interrupted_tool_run",
-                )
-                requeued += 1
-                continue
-            self.fail_recovered_run(
-                run,
-                code="stale_worker_run",
-                message=stale_recovery_failure_message(run.status),
-                retryable=True,
-                event_message="Marked failed by worker maintenance recovery",
-            )
-            failed += 1
-        self.session.commit()
-        return StaleRunRecoverySummary(
-            recovered_runs=requeued + failed,
-            requeued_runs=requeued,
-            failed_runs=failed,
-        )
-
-    def _runtime_wall_time_expired(self, run: AgentRun, *, now: datetime) -> bool:
-        if (
-            run.status
-            not in {
-                RunStatus.RUNNING.value,
-                RunStatus.WAITING_RUNTIME.value,
-            }
-            or run.runtime_id is None
-        ):
-            return False
-        runtime = self.session.scalar(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.workspace_id == run.workspace_id,
-                WorkspaceRuntime.id == run.runtime_id,
-            )
-        )
-        if runtime is None:
-            return False
-        timeout = runtime.limits.get("timeout_seconds")
-        if not isinstance(timeout, int) or timeout <= 0:
-            return False
-        execution = run.input.get("runtime_execution")
-        if isinstance(execution, dict) and execution.get("mode") == "shared":
-            if execution.get("status") != "active":
-                return False
-            active_since = execution.get("active_since")
-            if not isinstance(active_since, str):
-                return False
-            started_at = datetime.fromisoformat(active_since)
-        else:
-            started_at = run.started_at or run.updated_at
-        if started_at is None:
-            return False
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=UTC)
-        return now - started_at.astimezone(UTC) >= timedelta(seconds=timeout)
-
-    def requeue_stale_run(
-        self,
-        run: AgentRun,
-        *,
-        requested_by_user_id: UUID | None,
-        reason: str | None = None,
-    ) -> bool:
-        if RunStatus(run.status) != RunStatus.QUEUED:
-            raise ValueError("Only queued runs can be requeued")
-        run.error = None
-        enqueued = self.enqueue_run(run, requested_by_user_id)
-        RunEventRecorder(self.session).append_event(
-            run,
-            "run.requeued",
-            "Requeued by stale run recovery control",
-            {
-                "reason": reason,
-                "enqueued": enqueued,
-            },
-        )
-        return enqueued
-
-    def requeue_interrupted_tool_run(
-        self,
-        run: AgentRun,
-        *,
-        requested_by_user_id: UUID | None,
-        reason: str,
-    ) -> bool:
-        invocations = self.session.scalars(
-            select(PendingToolInvocation).where(
-                PendingToolInvocation.workspace_id == run.workspace_id,
-                PendingToolInvocation.agent_run_id == run.id,
-                PendingToolInvocation.status.in_(
-                    ("approved", "rejected", "executing", "completed", "failed")
-                ),
-            )
-        ).all()
-        outcome_unknown = 0
-        for invocation in invocations:
-            if invocation.status == "executing":
-                invocation.status = "outcome_unknown"
-                outcome_unknown += 1
-        RunStateService().transition(run, RunStatus.QUEUED)
-        run.error = None
-        enqueued = self.enqueue_run(run, requested_by_user_id)
-        RunEventRecorder(self.session).append_event(
-            run,
-            "run.requeued_after_tool_interruption",
-            "Requeued without replaying an already claimed tool call",
-            {
-                "reason": reason,
-                "enqueued": enqueued,
-                "tool_invocation_count": len(invocations),
-                "outcome_unknown_count": outcome_unknown,
-            },
-        )
-        return enqueued
-
-    def _has_resumable_tool_state(self, run: AgentRun) -> bool:
-        return (
-            self.session.scalar(
-                select(PendingToolInvocation.id).where(
-                    PendingToolInvocation.workspace_id == run.workspace_id,
-                    PendingToolInvocation.agent_run_id == run.id,
-                    PendingToolInvocation.status.in_(
-                        ("approved", "rejected", "executing", "completed", "failed")
-                    ),
-                )
-            )
-            is not None
-        )
-
-    def fail_recovered_run(
-        self,
-        run: AgentRun,
-        *,
-        code: str = "stale_worker_run",
-        message: str = "Worker stopped reporting before the run completed",
-        retryable: bool = True,
-        event_message: str = "Marked failed after worker lease expired",
-    ) -> None:
-        self.terminal_states().mark_run_recovered_failed(
-            run,
-            code=code,
-            message=message,
-            retryable=retryable,
-            event_message=event_message,
-        )
-
     def release_reservations(self, run: AgentRun, *, released_at: datetime) -> None:
         release_run_reservations(self.session, run, released_at=released_at)
+
+    def _stage_run_execution(
+        self,
+        run: AgentRun,
+        requested_by_user_id: UUID | None,
+    ) -> None:
+        stage_execution(
+            self.session,
+            run_execution_reference(self.session, run, requested_by_user_id),
+            dispatch_id=uuid4(),
+        )
+
+    def _stage_run_cancellation(self, run: AgentRun) -> None:
+        stage_cancellation(
+            self.session,
+            dispatch_id=uuid4(),
+            workspace_id=run.workspace_id,
+            workflow_id=run_execution_reference(self.session, run).workflow_id,
+        )
 
     def terminal_states(self) -> RunTerminalStateService:
         return RunTerminalStateService(
@@ -445,25 +289,3 @@ class RunControlService:
                 released_at=released_at,
             ),
         )
-
-
-def stale_recovery_anchor(run: AgentRun) -> datetime | None:
-    if run.status == RunStatus.WAITING_RUNTIME.value and run.input.get("runtime_capacity_waiting"):
-        return None
-    if run.status == RunStatus.RUNNING.value:
-        anchor = run.started_at or run.updated_at or run.created_at
-    elif run.status == RunStatus.WAITING_RUNTIME.value:
-        anchor = run.updated_at or run.started_at or run.created_at
-    elif run.status == RunStatus.QUEUED.value:
-        anchor = run.updated_at or run.created_at
-    else:
-        return None
-    if anchor.tzinfo is None:
-        return anchor.replace(tzinfo=UTC)
-    return anchor
-
-
-def stale_recovery_failure_message(status: str) -> str:
-    if status == RunStatus.WAITING_RUNTIME.value:
-        return "Runtime tool result did not arrive before the recovery window expired"
-    return "Worker stopped reporting before the run completed"

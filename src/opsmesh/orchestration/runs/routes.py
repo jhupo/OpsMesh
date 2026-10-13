@@ -3,8 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.chain_schemas import AuditEventResponse
 from opsmesh.governance.audit.queries import AuditQueryService
+from opsmesh.governance.audit.schemas import AuditEventResponse
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
@@ -17,9 +17,6 @@ from opsmesh.orchestration.runs.contracts import (
 )
 from opsmesh.orchestration.runs.control import RunControlService
 from opsmesh.orchestration.runs.queries import RunQueryService
-from opsmesh.orchestration.runs.service import RunOrchestrationService
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
@@ -115,7 +112,6 @@ def cancel_run(
     try:
         run = RunControlService(
             session=session,
-            enqueue_run=RunOrchestrationService(session).enqueue_run,
         ).cancel_run(
             workspace_id=context.workspace.id,
             run_id=agent_run_id,
@@ -142,13 +138,10 @@ def retry_run(
         )
     ),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> AgentRunResponse:
-    run_orchestration = RunOrchestrationService(session, queue=queue)
     try:
         run = RunControlService(
             session=session,
-            enqueue_run=run_orchestration.enqueue_run,
         ).retry_failed_run(
             workspace_id=context.workspace.id,
             run_id=agent_run_id,

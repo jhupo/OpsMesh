@@ -9,12 +9,12 @@ from opsmesh.orchestration.definitions.blocked_reasons import explain_blocked_re
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.spaces.contracts import (
+    RuntimeEnvironmentDiagnosticResponse,
     RuntimeSpaceBlockedStepDiagnosticResponse,
     RuntimeSpaceDiagnosticsResponse,
     RuntimeSpaceQuotaDiagnosticResponse,
     RuntimeSpaceReservationDiagnosticResponse,
     RuntimeSpaceResponse,
-    RuntimeSpaceRuntimeDiagnosticResponse,
 )
 from opsmesh.runtime.spaces.models import (
     RuntimeSpace,
@@ -84,19 +84,12 @@ class RuntimeSpaceDiagnosticsService:
                 for reservation in reservations
             ],
             runtimes=[
-                RuntimeSpaceRuntimeDiagnosticResponse(
+                RuntimeEnvironmentDiagnosticResponse(
                     id=runtime.id,
                     name=runtime.name,
-                    runtime_provider=runtime.runtime_provider,
-                    runtime_type=runtime.runtime_type,
+                    sandbox_backend_id=runtime.sandbox_backend_id,
                     status=runtime.status,
-                    connection_status=runtime.connection_status,
-                    has_docker_container=runtime.docker_container_id is not None,
-                    limits=dict(runtime.limits or {}),
-                    network_policy=dict(runtime.network_policy or {}),
-                    capabilities=dict(runtime.capabilities or {}),
-                    policy_resolution=_policy_resolution(runtime),
-                    last_heartbeat_at=runtime.last_heartbeat_at,
+                    sandbox_options=dict(runtime.sandbox_options),
                 )
                 for runtime in runtimes
             ],
@@ -165,9 +158,3 @@ def quota_diagnostic(quota: RuntimeSpaceQuota) -> RuntimeSpaceQuotaDiagnosticRes
         utilization=utilization,
         saturated=quota.limit_value > 0 and quota.reserved_value >= quota.limit_value,
     )
-
-
-def _policy_resolution(runtime: WorkspaceRuntime) -> dict[str, object]:
-    capabilities = runtime.capabilities if isinstance(runtime.capabilities, dict) else {}
-    policy_resolution = capabilities.get("policy_resolution")
-    return policy_resolution if isinstance(policy_resolution, dict) else {}

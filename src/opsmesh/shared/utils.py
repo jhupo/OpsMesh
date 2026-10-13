@@ -80,20 +80,6 @@ def positive_int_or_none(value: object) -> int | None:
     return None
 
 
-def non_negative_int(value: object) -> int:
-    """Normalize a counter value without allowing booleans or negatives."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(0, value)
-    if isinstance(value, str):
-        try:
-            return max(0, int(value))
-        except ValueError:
-            return 0
-    return 0
-
-
 def uuid_or_none(value: object) -> UUID | None:
     if isinstance(value, UUID):
         return value
@@ -168,12 +154,6 @@ def ensure_aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
-
-
-def age_seconds(now: datetime, value: datetime | None) -> int | None:
-    if value is None:
-        return None
-    return max(0, int((ensure_aware_utc(now) - ensure_aware_utc(value)).total_seconds()))
 
 
 def string_list(value: object) -> list[str]:

@@ -9,10 +9,10 @@ from opsmesh.agents.profiles.contracts import AgentProfileCreateRequest
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from opsmesh.capabilities.mcp.catalog.contracts import (
-    McpServerCreateRequest,
-    McpToolAllowRequest,
+    MCPServerCreateRequest,
+    MCPToolAllowRequest,
 )
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
     REVIEW_TYPE_MCP_SERVER,
@@ -37,7 +37,6 @@ PRIVATE_DEFINITION_KEYS = frozenset(
         "model_provider_credential_id",
         "runtime_id",
         "runtime_space_id",
-        "self_hosted_runtime_id",
         "skill_install_id",
         "source_agent_profile_id",
         "source_workspace_id",
@@ -78,7 +77,7 @@ def agent_create_request_from_listing(
     return AgentProfileCreateRequest.model_validate(payload)
 
 
-def mcp_server_create_request_from_listing(listing: MarketplaceListing) -> McpServerCreateRequest:
+def mcp_server_create_request_from_listing(listing: MarketplaceListing) -> MCPServerCreateRequest:
     manifest = dict(listing.manifest)
     payload = _mapping_from_manifest(manifest, "mcp_server")
     payload.setdefault("name", listing.name)
@@ -86,19 +85,19 @@ def mcp_server_create_request_from_listing(listing: MarketplaceListing) -> McpSe
     connection = manifest.get("connection")
     payload.setdefault("connection", dict(connection) if isinstance(connection, dict) else {})
     payload["visibility"] = "private"
-    return McpServerCreateRequest.model_validate(payload)
+    return MCPServerCreateRequest.model_validate(payload)
 
 
-def mcp_tool_requests_from_listing(listing: MarketplaceListing) -> list[McpToolAllowRequest]:
+def mcp_tool_requests_from_listing(listing: MarketplaceListing) -> list[MCPToolAllowRequest]:
     raw_tools = listing.manifest.get("tools") if isinstance(listing.manifest, dict) else None
     if not isinstance(raw_tools, list):
         return []
-    requests: list[McpToolAllowRequest] = []
+    requests: list[MCPToolAllowRequest] = []
     for item in raw_tools:
         if isinstance(item, str):
-            requests.append(McpToolAllowRequest(tool_name=item))
+            requests.append(MCPToolAllowRequest(tool_name=item))
         elif isinstance(item, dict):
-            requests.append(McpToolAllowRequest.model_validate(item))
+            requests.append(MCPToolAllowRequest.model_validate(item))
     return requests
 
 

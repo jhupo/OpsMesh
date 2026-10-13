@@ -1,19 +1,20 @@
-"""Durable cancellation intent distinguishes queued work from external work already claimed."""
-
-from datetime import UTC, datetime
+"""Record product-tool cancellation from the Temporal execution boundary."""
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeContext
-from opsmesh.capabilities.mcp.execution.events import McpToolCallLogService
+from opsmesh.agents.execution.contracts import AgentExecutionContext
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.runs.events import RunEventRecorder
 from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.runtime.self_hosted.models import SelfHostedMcpJob
 
 
-def request_tool_cancellation(session: Session, context: AgentRuntimeContext) -> None:
+def record_tool_cancellation(session: Session, context: AgentExecutionContext) -> None:
+    """Persist cancellation evidence for the current run.
+
+    Temporal owns cancellation of the in-flight Activity. There is no separate
+    MCP job, queue record, or polling state to cancel here.
+    """
     run = session.scalar(
         select(AgentRun).where(
             AgentRun.workspace_id == context.workspace_id,
@@ -22,44 +23,15 @@ def request_tool_cancellation(session: Session, context: AgentRuntimeContext) ->
     )
     if run is None:
         raise ValueError("Cancellation run is outside its workspace")
-    jobs = session.scalars(
-        select(SelfHostedMcpJob)
-        .where(
-            SelfHostedMcpJob.workspace_id == context.workspace_id,
-            SelfHostedMcpJob.agent_run_id == context.run_id,
-            SelfHostedMcpJob.status.in_(("queued", "claimed")),
-        )
-        .with_for_update()
-    ).all()
-    queued, external = 0, 0
-    now = datetime.now(UTC)
-    for job in jobs:
-        if job.cancel_requested_at is not None:
-            continue
-        job.cancel_requested_at = now
-        if job.status == "queued":
-            queued += 1
-            job.status = "failed"
-            job.completed_at = now
-            job.error_payload = {"code": "run_cancelled", "message": "Cancelled before dispatch"}
-            McpToolCallLogService(session).complete_runtime_rpc(
-                workspace_id=context.workspace_id,
-                run_id=context.run_id,
-                job_id=job.id,
-                status="failed",
-                response=None,
-                error=job.error_payload,
-            )
-        else:
-            external += 1
     metadata: dict[str, object] = {
-        "queued_operations_cancelled": queued,
-        "external_operations_awaiting_completion": external,
+        "execution_control": "temporal_activity_cancellation",
+        "workspace_id": str(context.workspace_id),
+        "run_id": str(context.run_id),
     }
     RunEventRecorder(session).append_event(
         run,
         "tool.cancellation_requested",
-        "Tool cancellation intent recorded",
+        "Temporal cancelled the active tool Activity",
         metadata,
     )
     AuditService(session).record_system_action(
@@ -69,3 +41,6 @@ def request_tool_cancellation(session: Session, context: AgentRuntimeContext) ->
         target_id=context.run_id,
         metadata=metadata,
     )
+
+
+__all__ = ["record_tool_cancellation"]

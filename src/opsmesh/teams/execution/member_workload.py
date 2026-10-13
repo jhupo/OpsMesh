@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from uuid import UUID
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.orchestration.runs.activity import run_activity
+from opsmesh.orchestration.runs.activity_summary import run_activity_summary
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.tasks.models import TaskStep
 from opsmesh.teams.execution.overview_contracts import (
@@ -115,7 +115,7 @@ def active_run_phase_counts(
     latest_events: dict[UUID, RunEvent],
 ) -> dict[str, int]:
     counts = Counter(
-        str(run_activity(run, latest_events.get(run.id)).get("phase"))
+        str(run_activity_summary(run, latest_events.get(run.id)).get("phase"))
         for run in runs
         if run.status in ACTIVE_RUN_STATUSES
     )

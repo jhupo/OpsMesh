@@ -30,17 +30,22 @@ def test_real_backup_restore_preserves_data_configuration_and_ownership(
     source = make_url(os.environ["OPSMESH_DATABASE_URL"])
     database = "opsmesh_delivery_" + uuid4().hex
     connection_options = {
-        "host": source.host, "port": source.port or 5432,
-        "user": source.username, "password": source.password,
+        "host": source.host,
+        "port": source.port or 5432,
+        "user": source.username,
+        "password": source.password,
     }
     installation = Installation(root=tmp_path, mode="systemd")
     release = ReleaseManifest(
-        tag="v0.1.0rc1", repository="jhupo/OpsMesh", commit="a" * 40,
+        tag="v0.1.0rc1",
+        repository="jhupo/OpsMesh",
+        commit="a" * 40,
         api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "b" * 64,
         worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "d" * 64,
         runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "c" * 64,
-        database_revision="backup_probe", upgrade_from_revisions=["backup_probe"],
-        rollback_database_revisions=["backup_probe"], connector_protocol=2,
+        database_revision="backup_probe",
+        upgrade_from_revisions=["backup_probe"],
+        rollback_database_revisions=["backup_probe"],
         platforms=["linux/amd64"],
         files=[ReleaseFile(name="probe.tar.gz", size=1, sha256="d" * 64)],
     )

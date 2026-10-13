@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import event, insert, inspect, select
+from sqlalchemy import event, insert, inspect, select, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapper, Session
 
@@ -12,30 +12,35 @@ from opsmesh.orchestration.conversations.models import (
     ConversationTurn,
 )
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.dispatch import stage_job
-from opsmesh.runtime.queues.models import QueueDispatch
+from opsmesh.runtime.temporal.contracts import (
+    DispatchOperation,
+    DispatchRequest,
+    ExecutionKind,
+    ExecutionRequest,
+    WorkflowSignal,
+)
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.runtime.temporal.outbox import stage_execution
 
 
-def conversation_job(
-    workspace_id: UUID, conversation_id: UUID, user_id: UUID | None = None
-) -> JobPayload:
-    request_id = uuid4()
-    return JobPayload(
-        job_id=request_id,
-        workspace_id=workspace_id,
-        job_type=JobType.CONVERSATION_ADVANCE,
-        resource_id=conversation_id,
-        requested_by_user_id=user_id,
-        idempotency_key=f"conversation.advance:{conversation_id}:{request_id}",
-        routing={"conversation_id": str(conversation_id)},
-    )
+def conversation_workflow_id(workspace_id: UUID, conversation_id: UUID) -> str:
+    return f"opsmesh:{workspace_id}:conversation:{conversation_id}"
 
 
 def request_advance(
     session: Session, workspace_id: UUID, conversation_id: UUID, user_id: UUID | None = None
 ) -> None:
-    stage_job(session, conversation_job(workspace_id, conversation_id, user_id))
+    stage_execution(
+        session,
+        ExecutionRequest(
+            execution_id=conversation_id,
+            workspace_id=workspace_id,
+            resource_id=conversation_id,
+            kind=ExecutionKind.CONVERSATION,
+            requested_by_user_id=user_id,
+        ),
+        dispatch_id=uuid4(),
+    )
 
 
 def _task_changed(mapper: Mapper[Task], connection: Connection, task: Task) -> None:
@@ -53,19 +58,30 @@ def _task_changed(mapper: Mapper[Task], connection: Connection, task: Task) -> N
         .distinct()
     )
     for conversation_id in conversation_ids:
-        job = conversation_job(task.workspace_id, conversation_id).with_trace_context()
+        dispatch_id = uuid4()
+        request = DispatchRequest(
+            dispatch_id=dispatch_id,
+            workspace_id=task.workspace_id,
+            workflow_id=conversation_workflow_id(task.workspace_id, conversation_id),
+            operation=DispatchOperation.SIGNAL,
+            signal_name="wake",
+            signal=WorkflowSignal(resource_id=task.id),
+        )
         now = datetime.now(UTC)
         connection.execute(
-            insert(QueueDispatch).values(
-                id=uuid4(),
+            insert(TemporalOutboxEntry).values(
+                id=dispatch_id,
                 workspace_id=task.workspace_id,
-                payload=job.model_dump(mode="json"),
+                workflow_id=request.workflow_id,
+                operation=request.operation.value,
+                payload=request.model_dump(mode="json"),
                 available_at=now,
                 created_at=now,
                 updated_at=now,
                 attempts=0,
             )
         )
+        connection.execute(text("SELECT pg_notify('opsmesh_temporal_dispatch', '')"))
 
 
 def register_task_notifications() -> None:

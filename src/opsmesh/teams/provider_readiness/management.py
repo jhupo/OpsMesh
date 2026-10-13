@@ -32,7 +32,7 @@ def _run_model_provider_snapshot(input_payload: object) -> dict[str, object]:
     return _dict(payload.get("model_provider"))
 
 
-class TeamProviderManagementBuilder:
+class TeamProviderManagementViewBuilder:
     def __init__(self, session: Session) -> None:
         self._session = session
 

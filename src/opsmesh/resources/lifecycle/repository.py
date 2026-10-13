@@ -27,6 +27,7 @@ class WorkspaceDataLifecycleRepository:
                     [
                         WorkspaceExportJobStatus.QUEUED.value,
                         WorkspaceExportJobStatus.RUNNING.value,
+                        WorkspaceExportJobStatus.UNKNOWN.value,
                     ]
                 ),
             )
@@ -87,7 +88,6 @@ class WorkspaceDataLifecycleRepository:
                 .limit(limit)
             ).all()
         )
-
 
     def latest_lifecycle_retention_run_at(self, workspace_id: UUID) -> datetime | None:
         latest = self._session.scalar(
@@ -208,4 +208,3 @@ class WorkspaceDataLifecycleRepository:
             .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
             .limit(1)
         )
-

@@ -18,26 +18,19 @@ from openai.types.responses import (
 )
 
 from opsmesh.agents.execution.contracts import (
+    AgentExecutionContext,
+    AgentInvocationConfig,
+    AgentProfileSnapshot,
+    AgentReference,
     AgentRunRequest,
-    AgentRuntimeAgentDefinition,
-    AgentRuntimeAgentRef,
-    AgentRuntimeAgentTarget,
-    AgentRuntimeApprovalDecision,
-    AgentRuntimeContext,
-    AgentRuntimeGuardrail,
-    AgentRuntimeGuardrails,
-    AgentRuntimeProfile,
-    AgentRuntimeStreamEvent,
-    AgentRuntimeToolDefinition,
-    AgentRuntimeToolResult,
+    AgentTargetProfile,
+    AgentToolApprovalDecision,
+    AgentToolSpec,
+    ToolExecutionResult,
 )
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError
-from opsmesh.agents.execution.providers.openai.runner import OpenAIAgentsRunner
-from opsmesh.orchestration.requests.run_gateway import _blocks_text_preview
-from opsmesh.orchestration.runs.live_events import RunLivePublisher
+from opsmesh.agents.execution.errors import AgentExecutionPolicyError
+from opsmesh.agents.execution.providers.openai.executor import OpenAIAgentExecutor
 from opsmesh.orchestration.runs.result_payloads import run_output_payload
-from opsmesh.runtime.agent_host.broker import RuntimeCallbackBroker
-from opsmesh.runtime.agent_host.wire import CONTEXT
 
 
 def message(text):
@@ -94,7 +87,7 @@ class Tools:
 
     async def execute_tool(self, **kwargs):
         self.executed.append(kwargs)
-        return AgentRuntimeToolResult(status="completed", output={"result": "approved evidence"})
+        return ToolExecutionResult(status="completed", output={"result": "approved evidence"})
 
     async def cancel_active_tools(self, **kwargs):
         pass
@@ -102,17 +95,18 @@ class Tools:
 
 def request():
     wid = uuid4()
-    profile = AgentRuntimeProfile(
+    profile = AgentProfileSnapshot(
         uuid4(), wid, 1, "Router", "router", "Choose a target only", "small"
     )
     return AgentRunRequest(
         profile,
         "Analyze the original question",
-        AgentRuntimeContext(wid, None, uuid4()),
+        AgentExecutionContext(wid, None, uuid4()),
         api_key="router-key",
         provider="openai",
         model_api="responses",
         require_handoff=True,
+        model_provider_credential_id=uuid4(),
     )
 
 
@@ -123,7 +117,7 @@ def target(root, name, *, depth=1, max_depth=2, tools=(), handoffs=(), approval=
         metadata={"agent_profile_id": str(pid)},
         allowed_tools=("evidence",) if approval else (),
         tool_definitions=(
-            AgentRuntimeToolDefinition(
+            AgentToolSpec(
                 "evidence",
                 "product",
                 "Read evidence",
@@ -134,9 +128,9 @@ def target(root, name, *, depth=1, max_depth=2, tools=(), handoffs=(), approval=
         if approval
         else (),
     )
-    return AgentRuntimeAgentTarget(
-        AgentRuntimeAgentDefinition(
-            AgentRuntimeAgentRef(name, pid, "expert"),
+    return AgentInvocationConfig(
+        AgentTargetProfile(
+            AgentReference(name, pid, "expert"),
             context.workspace_id,
             f"Act as {name}",
             model=name,
@@ -153,21 +147,25 @@ def target(root, name, *, depth=1, max_depth=2, tools=(), handoffs=(), approval=
         model_api="responses",
         nested_tools=tools,
         nested_handoffs=handoffs,
+        model_provider_credential_id=uuid4(),
     )
 
 
 def providers(monkeypatch, models):
+    from agents import ModelProvider
+
+    from opsmesh.agents.execution.providers.openai.contracts import AgentModelReference
+    from tests.fixtures.sdk import install_model_provider
+
     seen = []
 
-    class Provider:
-        def __init__(self, **kwargs):
-            self.key = kwargs["api_key"]
-
+    class Provider(ModelProvider):
         def get_model(self, name):
-            seen.append((name, self.key))
-            return models[name]
+            reference = AgentModelReference.decode(name)
+            seen.append(reference.model)
+            return models[reference.model]
 
-    monkeypatch.setattr("opsmesh.agents.execution.providers.openai.runner.OpenAIProvider", Provider)
+    install_model_provider(monkeypatch, Provider())
     return seen
 
 
@@ -181,9 +179,9 @@ def test_router_handoff_expert_owns_answer_and_sdk_session_history(monkeypatch):
 
     async def execute():
         session = SQLiteSession(uuid4().hex)
-        runner = OpenAIAgentsRunner()
-        first = await runner.run(replace(root, session=session))
-        second = await runner.run(replace(root, session=session, input_text="Explain the evidence"))
+        runner = OpenAIAgentExecutor()
+        first = await runner.run(root, session=session)
+        second = await runner.run(replace(root, input_text="Explain the evidence"), session=session)
         return first, second, await session.get_items()
 
     first, second, history = asyncio.run(execute())
@@ -198,7 +196,7 @@ def test_router_handoff_expert_owns_answer_and_sdk_session_history(monkeypatch):
     assert "Detailed expert answer" in str(small.inputs[-1])
     assert "Analyze the original question" in str(strong.inputs[0])
     assert len(small.inputs) == 2 and len(strong.inputs) == 2
-    assert ("Expert", "Expert-key") in seen
+    assert "Expert" in seen
 
 
 def test_router_complex_request_strong_manager_synthesizes_native_expert_tools(monkeypatch):
@@ -212,7 +210,7 @@ def test_router_complex_request_strong_manager_synthesizes_native_expert_tools(m
     )
     research = ScriptedModel([[message("Expert evidence")]])
     providers(monkeypatch, {"small": small, "Manager": strong, "Expert": research})
-    result = asyncio.run(OpenAIAgentsRunner().run(root))
+    result = asyncio.run(OpenAIAgentExecutor().run(root))
     assert result.final_output == "Strong synthesis" and result.final_agent == manager.target.ref
     assert len(small.inputs) == 1 and len(strong.inputs) == 2 and len(research.inputs) == 1
     assert "Expert evidence" in str(strong.inputs[-1])
@@ -245,8 +243,8 @@ def test_expert_provider_failure_stops_graph_without_root_fallback(monkeypatch, 
 
     research = FailingModel([])
     providers(monkeypatch, {"small": small, "Manager": strong, "Expert": research})
-    with pytest.raises(AgentRuntimePolicyError) as raised:
-        asyncio.run(OpenAIAgentsRunner().run(root))
+    with pytest.raises(AgentExecutionPolicyError) as raised:
+        asyncio.run(OpenAIAgentExecutor().run(root))
     assert raised.value.code == "agent_graph_model_failed"
     assert raised.value.metadata["agent_profile_id"] == str(expert.target.ref.profile_id)
     assert raised.value.metadata["replay_allowed"] is False
@@ -274,7 +272,7 @@ def test_handoff_approval_resumes_exact_target_without_rerouting(monkeypatch, ne
     providers(monkeypatch, {"small": small, "Manager": strong, "Expert": research})
 
     async def execute():
-        runner = OpenAIAgentsRunner()
+        runner = OpenAIAgentExecutor()
         paused = await runner.run(root)
         assert paused.resume_state and len(paused.interruptions) == 1
         assert not tools.executed
@@ -288,7 +286,7 @@ def test_handoff_approval_resumes_exact_target_without_rerouting(monkeypatch, ne
                     root.context, metadata={**root.context.metadata, "trace_id": "resumed-trace"}
                 ),
                 approval_decisions=(
-                    AgentRuntimeApprovalDecision(
+                    AgentToolApprovalDecision(
                         interruption.tool_call_id, interruption.tool_name, "approved"
                     ),
                 ),
@@ -312,62 +310,8 @@ def test_router_cannot_answer_or_use_foreign_target(monkeypatch):
         monkeypatch,
         {"small": ScriptedModel([[message("Weak answer")]]), "Expert": ScriptedModel([])},
     )
-    with pytest.raises(AgentRuntimePolicyError, match="must hand off"):
-        asyncio.run(OpenAIAgentsRunner().run(replace(root, handoffs=(expert,))))
+    with pytest.raises(AgentExecutionPolicyError, match="must hand off"):
+        asyncio.run(OpenAIAgentExecutor().run(replace(root, handoffs=(expert,))))
     foreign = replace(expert, target=replace(expert.target, workspace_id=uuid4()))
     with pytest.raises(ValueError, match="another workspace"):
-        asyncio.run(OpenAIAgentsRunner().run(replace(root, handoffs=(foreign,))))
-
-
-def test_nested_expert_output_guardrail_prevents_unvalidated_live_text():
-    root = request()
-    expert = replace(
-        target(root, "Expert", depth=2),
-        guardrails=AgentRuntimeGuardrails(
-            output=(AgentRuntimeGuardrail("review", "blocked_terms", {"terms": ["secret"]}),)
-        ),
-    )
-    manager = target(root, "Manager", tools=(expert,))
-    published = []
-
-    class Bus:
-        def publish(self, **kwargs):
-            published.append(kwargs)
-
-    publisher = RunLivePublisher(
-        Bus(),
-        root.context.workspace_id,
-        uuid4(),
-        root.context.run_id,
-        None,
-        None,
-        allow_text=not _blocks_text_preview(None, (manager,)),
-    )
-    publisher(AgentRuntimeStreamEvent(1, "output.text.delta", delta="secret"))
-    publisher(AgentRuntimeStreamEvent(2, "run.completed", is_terminal=True))
-    assert published == [] and publisher.text == ""
-
-
-def test_runtime_authorizes_frozen_handoff_and_nested_expert_contexts():
-    root = request()
-    expert = target(root, "Expert", depth=2)
-    manager = target(root, "Manager", tools=(expert,))
-    tools = Tools()
-    broker = RuntimeCallbackBroker(replace(root, handoffs=(manager,), tool_executor=tools))
-    asyncio.run(
-        broker.dispatch(
-            "agent.authorize", {"context": CONTEXT.dump_python(expert.context, mode="json")}
-        )
-    )
-    assert tools.authorized == [expert.context]
-    with pytest.raises(ValueError, match="changed its authorized"):
-        asyncio.run(
-            broker.dispatch(
-                "agent.authorize",
-                {
-                    "context": CONTEXT.dump_python(
-                        replace(expert.context, allowed_tools=("escape",)), mode="json"
-                    )
-                },
-            )
-        )
+        asyncio.run(OpenAIAgentExecutor().run(replace(root, handoffs=(foreign,))))

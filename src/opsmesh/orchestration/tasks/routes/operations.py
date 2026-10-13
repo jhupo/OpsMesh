@@ -1,8 +1,6 @@
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from redis import Redis
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
@@ -28,7 +26,7 @@ from opsmesh.orchestration.tasks.delivery.corrections import TaskCorrectionServi
 from opsmesh.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
 from opsmesh.orchestration.tasks.delivery.review import TaskDeliveryReviewService
 from opsmesh.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
-from opsmesh.orchestration.tasks.observation.monitor import TaskExecutionStatusService
+from opsmesh.orchestration.tasks.observation.monitor import TaskExecutionOverviewService
 from opsmesh.orchestration.tasks.observation.service import TaskObservationService
 from opsmesh.orchestration.tasks.observation.timeline import TaskTimelineService
 from opsmesh.orchestration.tasks.observation.transcript import TaskInteractionTranscriptService
@@ -55,14 +53,7 @@ from opsmesh.orchestration.tasks.schemas.status import (
     TaskObservationResponse,
 )
 from opsmesh.orchestration.tasks.schemas.timeline import TaskTimelineResponse
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
@@ -78,10 +69,9 @@ def create_task_correction(
     request: TaskCorrectionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskCorrectionResponse:
     try:
-        correction = TaskCorrectionService(session, queue=queue).create_correction(
+        correction = TaskCorrectionService(session).create_correction(
             workspace_id=context.workspace.id,
             task_id=task_id,
             actor_user_id=context.user.user_id,
@@ -105,10 +95,9 @@ def apply_task_control_action(
         workspace_dependency(WorkspaceAction.OPERATE, resource_action=ResourceAction.CONTROL)
     ),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskControlActionResponse:
     try:
-        response = TaskControlService(session, queue=queue).apply_action(
+        response = TaskControlService(session).apply_action(
             workspace_id=context.workspace.id,
             task_id=task_id,
             actor_user_id=context.user.user_id,
@@ -166,10 +155,9 @@ def apply_task_delivery_decision(
     request: TaskDeliveryDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskDeliveryDecisionResponse:
     try:
-        response = TaskDeliveryDecisionService(session, queue=queue).apply_decision(
+        response = TaskDeliveryDecisionService(session).apply_decision(
             workspace_id=context.workspace.id,
             task_id=task_id,
             actor_user_id=context.user.user_id,
@@ -318,7 +306,7 @@ def get_task_execution_status(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> TaskExecutionStatusResponse:
-    execution_status = TaskExecutionStatusService(session).get_status(
+    execution_status = TaskExecutionOverviewService(session).get_status(
         workspace_id=context.workspace.id,
         task_id=task_id,
         message_limit=message_limit,

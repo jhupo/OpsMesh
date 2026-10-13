@@ -17,7 +17,7 @@ from opsmesh.resources.memory.embedding_service import WorkspaceMemoryQueryEmbed
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryVersion
 from opsmesh.resources.memory.policy import semantic_memory_policy
 from opsmesh.resources.memory.retrieval_search import memory_scope_predicate
-from opsmesh.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from opsmesh.resources.memory.semantic import SemanticMemoryService, SemanticMemoryUpsert
 from opsmesh.resources.memory.working import AgentWorkingMemoryService
 from opsmesh.shared.db.pagination import page_scalars_by_offset
 from opsmesh.shared.security.secrets import SecretEncryptionService
@@ -143,7 +143,7 @@ class WorkspaceMemoryProductTools:
         memory_entry_id: UUID,
         scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> WorkspaceMemoryEntry:
-        entry = AgentSemanticMemoryService(self._session).get(
+        entry = SemanticMemoryService(self._session).get(
             workspace_id=context.workspace_id,
             memory_entry_id=memory_entry_id,
         )
@@ -306,7 +306,7 @@ class WorkspaceMemoryProductTools:
             tags=set(normalized_entry_tags),
             access_scopes=access_scopes,
         )
-        entry = AgentSemanticMemoryService(self._session).upsert(
+        entry = SemanticMemoryService(self._session).upsert(
             SemanticMemoryUpsert(
                 workspace_id=context.workspace_id,
                 scope_type=scope_type,
@@ -342,7 +342,7 @@ class WorkspaceMemoryProductTools:
         if run is None:
             raise ValueError("Semantic memory archives require an agent run")
         self._require_semantic_write_policy(run)
-        entry = AgentSemanticMemoryService(self._session).get(
+        entry = SemanticMemoryService(self._session).get(
             workspace_id=context.workspace_id,
             memory_entry_id=memory_entry_id,
         )
@@ -358,7 +358,7 @@ class WorkspaceMemoryProductTools:
             for scope in access_scopes
         ):
             raise ToolResourceNotFoundError("Memory entry is outside the authorized resource scope")
-        AgentSemanticMemoryService(self._session).archive(
+        SemanticMemoryService(self._session).archive(
             entry,
             expected_revision=expected_revision,
             changed_by_agent_profile_id=context.agent_profile_id,

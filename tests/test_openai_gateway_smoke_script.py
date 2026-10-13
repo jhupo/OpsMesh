@@ -146,4 +146,4 @@ def _load_script() -> ModuleType:
 
 
 def _script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "scripts" / "openai-gateway-smoke.py"
+    return Path(__file__).resolve().parents[1] / "scripts" / "openai_gateway_smoke.py"

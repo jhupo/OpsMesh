@@ -1,4 +1,5 @@
 """Administrator-managed channel identities; message metadata never grants authority."""
+
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,16 +10,16 @@ from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.orchestration.automations.models import Automation, ExternalIdentityBinding
 
 
-class ExternalIdentityService:
+class AutomationSenderIdentityService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -32,13 +33,13 @@ class ExternalIdentityService:
         active: bool,
         actor: AuthenticatedUser,
     ) -> ExternalIdentityBinding:
-        AuthorizationService(self._session).require_workspace(
+        WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=actor.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.ADMIN,
             authenticated_user=actor,
         )
-        AuthorizationService(self._session).require_workspace(
+        WorkspaceAuthorizationService(self._session).require_workspace(
             user_id=user_id, workspace_id=workspace_id, action=WorkspaceAction.READ
         )
         automation = self._session.scalar(
@@ -50,7 +51,7 @@ class ExternalIdentityService:
             .with_for_update()
         )
         if automation is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         binding = self._session.scalar(
             select(ExternalIdentityBinding).where(
                 ExternalIdentityBinding.workspace_id == workspace_id,
@@ -91,7 +92,7 @@ class ExternalIdentityService:
             .execution_options(populate_existing=True)
         )
         if binding is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         identity: dict[str, object] = {
             "user_id": str(binding.user_id),
             "token_id": None,

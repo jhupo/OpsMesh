@@ -3,26 +3,23 @@
 import asyncio
 import importlib.util
 import os
-from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.agents.execution.contracts import AgentRuntimeContext
-from opsmesh.agents.execution.tools.scoped import ScopedToolExecutor
+from opsmesh.agents.execution.contracts import AgentExecutionContext
+from opsmesh.agents.execution.providers.openai.activities import AgentExecutionActivities
+from opsmesh.agents.execution.providers.openai.tools_temporal import AgentToolOperation
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.capabilities.catalog.effective import effective_catalog_fingerprint
-from opsmesh.capabilities.mcp.execution.contracts import McpExecutionRequest
-from opsmesh.capabilities.mcp.execution.service import McpToolExecutionService
-from opsmesh.capabilities.mcp.models import McpToolCallLog
-from opsmesh.capabilities.tools.contracts import ToolPermissionError
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
+from opsmesh.identity.users.models import User
 from opsmesh.orchestration.conversations.models import (
+    Conversation,
     ConversationExecution,
     ConversationTurn,
     turn_event,
@@ -30,17 +27,15 @@ from opsmesh.orchestration.conversations.models import (
 from opsmesh.orchestration.requests.builder import RunRequestBuilder
 from opsmesh.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
 from opsmesh.orchestration.runs.authorization.tools import hydrate_agent_targets
-from opsmesh.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
+from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.shared.concurrency import BlockingIO
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
-from opsmesh.shared.db.operations import DatabaseOperations
-from tests.test_conversations_postgres import _queue, _seed_conversation
+from opsmesh.workspaces.management.models import Workspace
+from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.agent_product import _seed_workspace
+from tests.fixtures.database import temporary_postgres_schema
 from tests.test_cost_accounting import _assert_native_graph_costs
-from tests.test_mcp_execution import RecordingAdapter, _execute_mcp, _seed_run_with_mcp_tool
-from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
-from tests.test_worker_run_execution import _seed_workspace
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL required"
@@ -61,7 +56,7 @@ def test_graph_cost_records_are_idempotent_in_postgres_and_downgrade_preserves_e
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         with sessionmaker(engine, expire_on_commit=False)() as session:
             _assert_native_graph_costs(session)
@@ -74,7 +69,7 @@ def test_graph_cost_records_are_idempotent_in_postgres_and_downgrade_preserves_e
 
 
 def test_router_graph_freezes_independent_target_scopes_and_rechecks_live_profile():
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         settings = Settings(environment="test")
@@ -135,7 +130,7 @@ def test_router_graph_freezes_independent_target_scopes_and_rechecks_live_profil
             )
             session.add(run)
             session.commit()
-            root = AgentRuntimeContext(workspace.id, task.id, run.id, user_id=user.id)
+            root = AgentExecutionContext(workspace.id, task.id, run.id, user_id=user.id)
             graph = hydrate_agent_targets(
                 session=session,
                 snapshot=frozen,
@@ -148,7 +143,8 @@ def test_router_graph_freezes_independent_target_scopes_and_rechecks_live_profil
             assert direct.context.allowed_tools == ("get_agent_inbox",)
             assert synthesis.nested_tools[0].context.allowed_tools == ("get_agent_inbox",)
             assert direct.context.metadata["agent_profile_id"] == str(expert.id)
-            assert direct.model == expert.model and direct.api_key == "sk-unit-test-provider"
+            assert direct.model == expert.model
+            assert direct.model_provider_credential_id is not None
             expert.instructions = "Changed after admission"
             session.commit()
             rebuilt = hydrate_agent_targets(
@@ -171,71 +167,11 @@ def test_router_graph_freezes_independent_target_scopes_and_rechecks_live_profil
                 )
 
         async def authorize():
-            with BlockingIO(1, name="routing-authorization") as io:
-                database = DatabaseOperations(factory, io, lambda: None)
-                executor = ScopedToolExecutor(database, settings, None, _queue())
-                with pytest.raises(ValueError, match="no longer active"):
-                    await executor.authorize_agent(context=direct.context)
+            executor = AgentExecutionActivities(factory, settings)
+            with pytest.raises(ValueError, match="no longer active"):
+                await executor.authorize(AgentToolOperation(context=direct.context))
 
         asyncio.run(authorize())
-
-
-def test_handoff_expert_uses_own_mcp_scope_and_cannot_forge_another_scope():
-    with _temporary_postgres_schema() as engine:
-        Base.metadata.create_all(engine)
-        with sessionmaker(engine, expire_on_commit=False)() as session:
-            _, workspace = _seed_workspace(session)
-            run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="low")
-            router = AgentProfile(workspace_id=workspace.id, name="Router", role="router")
-            expert = AgentProfile(workspace_id=workspace.id, name="Expert", role="expert")
-            session.add_all([router, expert])
-            session.flush()
-            run.agent_profile_id = router.id
-            snapshot = deepcopy(run.input["authorization_snapshot"])
-            catalog = deepcopy(snapshot["capability_catalog"])
-            catalog["agent_profile_id"] = str(expert.id)
-            catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
-            root_catalog = {**catalog, "tools": [], "agent_profile_id": str(router.id)}
-            root_catalog["fingerprint"] = effective_catalog_fingerprint(root_catalog)
-            snapshot.update(
-                agent_profile_id=str(router.id),
-                capability_catalog=root_catalog,
-                allowed_tools=[],
-                handoffs=[
-                    {
-                        "target": {"workspace_id": str(workspace.id), "profile_id": str(expert.id)},
-                        "capability_catalog": catalog,
-                        "runtime_policy": {},
-                        "approval_policy": {},
-                    }
-                ],
-            )
-            snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
-            run.input = {"authorization_snapshot": snapshot}
-            session.commit()
-            adapter = RecordingAdapter({"evidence": "ok"})
-            service = McpToolExecutionService(session, adapter)
-            request = McpExecutionRequest(
-                workspace.id,
-                run.id,
-                "generate_image",
-                {"prompt": "test"},
-                agent_profile_id=expert.id,
-                capability_catalog_fingerprint=catalog["fingerprint"],
-                mcp_server_id=server.id,
-            )
-            assert asyncio.run(_execute_mcp(service, request)).status == "completed"
-            log = session.scalar(select(McpToolCallLog).where(McpToolCallLog.status == "completed"))
-            assert log.agent_profile_id == expert.id
-            from dataclasses import replace
-
-            for denied in (
-                replace(request, agent_profile_id=uuid4()),
-                replace(request, capability_catalog_fingerprint=root_catalog["fingerprint"]),
-            ):
-                with pytest.raises(ToolPermissionError, match="agent_capability_scope_mismatch"):
-                    asyncio.run(_execute_mcp(service, denied))
-            assert len(adapter.calls) == 1
 
 
 def test_schema_cutover_requires_drain_and_preserves_old_execution_evidence():
@@ -244,7 +180,7 @@ def test_schema_cutover_requires_drain_and_preserves_old_execution_evidence():
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         wid, uid, _, cid = _seed_conversation(factory)
@@ -321,3 +257,25 @@ def test_schema_cutover_requires_drain_and_preserves_old_execution_evidence():
                 child_id,
             }
             module.upgrade()
+
+
+def _seed_conversation(factory):
+    with factory() as session:
+        user = User(email=f"{uuid4()}@example.com", display_name="Owner")
+        workspace = Workspace(owner=user, name="Test", slug=uuid4().hex, settings={})
+        member = WorkspaceMember(workspace=workspace, user=user, role="owner")
+        session.add_all([user, workspace, member])
+        session.flush()
+        agent = AgentProfile(workspace_id=workspace.id, name="Assistant", role="assistant")
+        session.add(agent)
+        session.flush()
+        conversation = Conversation(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            title="Test",
+            mode="agent",
+            agent_profile_id=agent.id,
+        )
+        session.add(conversation)
+        session.commit()
+        return workspace.id, user.id, member.id, conversation.id

@@ -23,7 +23,9 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("image", sa.String(length=260), nullable=False),
         sa.Column("default_limits", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("default_network_policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "default_network_policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -47,14 +49,24 @@ def upgrade() -> None:
         sa.Column("capabilities", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("last_heartbeat_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["runtime_template_id"], ["runtime_templates.id"], ondelete="SET NULL"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["runtime_template_id"], ["runtime_templates.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_runtimes")),
     )
-    op.create_index("ix_workspace_runtimes_container", "workspace_runtimes", ["docker_container_id"])
-    op.create_index("ix_workspace_runtimes_workspace_status", "workspace_runtimes", ["workspace_id", "status"])
+    op.create_index(
+        "ix_workspace_runtimes_container", "workspace_runtimes", ["docker_container_id"]
+    )
+    op.create_index(
+        "ix_workspace_runtimes_workspace_status", "workspace_runtimes", ["workspace_id", "status"]
+    )
 
     op.create_table(
         "runtime_events",
@@ -66,11 +78,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runtime_events")),
     )
-    op.create_index("ix_runtime_events_workspace_runtime", "runtime_events", ["workspace_id", "workspace_runtime_id"])
-    op.create_index("ix_runtime_events_workspace_type", "runtime_events", ["workspace_id", "event_type"])
+    op.create_index(
+        "ix_runtime_events_workspace_runtime",
+        "runtime_events",
+        ["workspace_id", "workspace_runtime_id"],
+    )
+    op.create_index(
+        "ix_runtime_events_workspace_type", "runtime_events", ["workspace_id", "event_type"]
+    )
 
     op.create_table(
         "runtime_commands",
@@ -85,11 +105,19 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workspace_runtime_id"], ["workspace_runtimes.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runtime_commands")),
     )
-    op.create_index("ix_runtime_commands_workspace_runtime", "runtime_commands", ["workspace_id", "workspace_runtime_id"])
-    op.create_index("ix_runtime_commands_workspace_status", "runtime_commands", ["workspace_id", "status"])
+    op.create_index(
+        "ix_runtime_commands_workspace_runtime",
+        "runtime_commands",
+        ["workspace_id", "workspace_runtime_id"],
+    )
+    op.create_index(
+        "ix_runtime_commands_workspace_status", "runtime_commands", ["workspace_id", "status"]
+    )
 
 
 def downgrade() -> None:
@@ -104,4 +132,3 @@ def downgrade() -> None:
     op.drop_table("workspace_runtimes")
     op.drop_index("ix_runtime_templates_status", table_name="runtime_templates")
     op.drop_table("runtime_templates")
-

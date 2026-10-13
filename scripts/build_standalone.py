@@ -57,7 +57,7 @@ def copy_server_assets(target: Path) -> None:
     shutil.copy2(ROOT / "deploy/server/opsmesh-server", target / "opsmesh-server")
     (target / "opsmesh-server").chmod(0o755)
     (target / "scripts").mkdir()
-    for name in ("server-smoke-test.sh", "render-alertmanager-config.py"):
+    for name in ("server-smoke-test.sh", "render_alertmanager_config.py"):
         shutil.copy2(ROOT / "scripts" / name, target / "scripts" / name)
         (target / "scripts" / name).chmod(0o755)
 
@@ -67,7 +67,7 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
         raise ValueError("Expected a canonical release tag")
     if re.fullmatch(r"[a-f0-9]{40}", commit) is None:
         raise ValueError("Expected the full build commit")
-    for project in (ROOT, ROOT / "operator", ROOT / "runtime"):
+    for project in (ROOT, ROOT / "operator"):
         version = tomllib.loads((project / "pyproject.toml").read_text("utf-8"))["project"][
             "version"
         ]

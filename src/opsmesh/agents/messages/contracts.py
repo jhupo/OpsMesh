@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from opsmesh.agents.messages.models import AgentMessage
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 T = TypeVar("T")
@@ -30,7 +30,7 @@ class AgentMessageCreatePayload(Protocol):
     def model_dump(self, *, exclude: set[str]) -> dict[str, Any]: ...
 
 
-class AgentInbox(TypedDict):
+class AgentInboxSummary(TypedDict):
     workspace_id: UUID
     agent_profile_id: UUID
     generated_at: datetime
@@ -69,7 +69,7 @@ class AgentMessageThreadStatusRequest(BaseModel):
     status: str = Field(pattern="^(active|closed|archived)$")
 
 
-class AgentMessageThreadResponse(TimestampedModel):
+class AgentMessageThreadResponse(TimestampedContract):
     workspace_id: UUID
     task_id: UUID | None
     agent_team_id: UUID | None
@@ -77,7 +77,7 @@ class AgentMessageThreadResponse(TimestampedModel):
     status: str
 
 
-class AgentMessageResponse(TimestampedModel):
+class AgentMessageResponse(TimestampedContract):
     workspace_id: UUID
     thread_id: UUID
     task_id: UUID | None
@@ -100,12 +100,12 @@ class AgentMessageResponse(TimestampedModel):
         return redact_sensitive_text(value)
 
 
-class AgentMailboxLatestTaskMessage(BaseModel):
+class LatestTaskMessage(BaseModel):
     task_id: UUID
     message: AgentMessageResponse
 
 
-class AgentMailboxLatestTeamMessage(BaseModel):
+class LatestTeamMessage(BaseModel):
     team_id: UUID
     message: AgentMessageResponse
 
@@ -119,8 +119,8 @@ class AgentMailboxSummaryResponse(BaseModel):
     pending_count: int
     thread_status_counts: dict[str, int]
     message_status_counts: dict[str, int]
-    latest_messages_by_task: list[AgentMailboxLatestTaskMessage]
-    latest_messages_by_team: list[AgentMailboxLatestTeamMessage]
+    latest_messages_by_task: list[LatestTaskMessage]
+    latest_messages_by_team: list[LatestTeamMessage]
 
 
 class AgentInboxSummaryResponse(BaseModel):

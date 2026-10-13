@@ -5,18 +5,19 @@ from uuid import UUID
 
 from opsmesh_plugin_sdk.messaging.contracts import (
     AttachmentUpload,
+    IncomingMessage,
     MessageAttachment,
 )
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.plugins.services import PluginPrincipal, PluginServices
+from opsmesh.capabilities.plugins.authentication import PluginAuthenticationService, PluginPrincipal
 from opsmesh.capabilities.references.schema import reject_embedded_secrets
 from opsmesh.identity.authorization.context import AuthenticatedUser
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.resource_queries import execution_resource_queries
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
@@ -24,9 +25,8 @@ from opsmesh.identity.authorization.resources import (
 from opsmesh.orchestration.automations.authorization import require_automation_principal
 from opsmesh.orchestration.automations.contracts import (
     AutomationConfiguration,
-    AutomationMessage,
 )
-from opsmesh.orchestration.automations.identities import ExternalIdentityService
+from opsmesh.orchestration.automations.identities import AutomationSenderIdentityService
 from opsmesh.orchestration.automations.models import Automation
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.files.security import safe_filename
@@ -46,7 +46,7 @@ class PluginAttachmentService:
         content: bytes,
         files: WorkspaceFileService,
     ) -> MessageAttachment:
-        services = PluginServices(self.session)
+        services = PluginAuthenticationService(self.session)
         services.require_automation(principal, automation_id, "attachments.write")
         item = self.session.scalar(
             select(Automation).where(
@@ -56,18 +56,18 @@ class PluginAttachmentService:
             )
         )
         if item is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         config = AutomationConfiguration.model_validate(item.configuration)
         if (
             config.trigger_type != "message"
             or request.sender_id not in config.allowed_senders
             or request.kind not in config.allowed_attachment_kinds
         ):
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         require_automation_principal(self.session, item)
         actor = ExecutionIdentityService(self.session).restore(
             principal.workspace_id,
-            ExternalIdentityService(self.session).resolve(item, request.sender_id),
+            AutomationSenderIdentityService(self.session).resolve(item, request.sender_id),
         )
         if not 0 < len(content) <= 20 * 1024 * 1024:
             raise DomainError("Attachment exceeds limit", code="attachment_size", status_code=413)
@@ -167,13 +167,13 @@ class PluginAttachmentService:
     def require_references(
         self,
         item: Automation,
-        message: AutomationMessage,
+        message: IncomingMessage,
         actor: AuthenticatedUser,
         install_id: UUID | None,
     ) -> None:
         config = AutomationConfiguration.model_validate(item.configuration)
         if message.attachments and message.sender_id not in config.allowed_senders:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         for attachment in message.attachments:
             file = self.session.scalar(
                 select(WorkspaceFile).where(
@@ -187,7 +187,7 @@ class PluginAttachmentService:
                 or install_id is None
                 or attachment.kind not in config.allowed_attachment_kinds
             ):
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             expected = {
                 "plugin_install_id": str(install_id),
                 "automation_id": str(item.id),
@@ -195,12 +195,12 @@ class PluginAttachmentService:
                 "external_event_id": message.event_id,
             }
             if any(file.file_metadata.get(key) != value for key, value in expected.items()):
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             ResourceAuthorizationService(self.session, actor).require(
                 item.workspace_id, ResourceKind.FILE, file.id, ResourceAction.READ
             )
             if self.reference(file) != attachment:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
 
     @staticmethod
     def reference(file: WorkspaceFile) -> MessageAttachment:

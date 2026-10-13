@@ -1,197 +1,196 @@
+"""One native Worker runs concurrent SDK Tasks and resumes durable approvals."""
+
 import asyncio
-from threading import Event
-from uuid import uuid4
+import json
+import os
 
-from sqlalchemy import select
+import pytest
+from agents import Model, ModelResponse
+from agents.usage import Usage
+from openai.types.responses import ResponseFunctionToolCall
+from sqlalchemy import func, select
+from temporalio.client import WorkflowFailureError
+from temporalio.openai_agents.testing import TestModel, TestModelProvider
 
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRunResult
-from opsmesh.bootstrap.worker import build_worker_runner
-from opsmesh.orchestration.runs.live_async import buffered_live_events
-from opsmesh.orchestration.runs.live_events import RunLivePublisher
-from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.orchestration.tasks.events import TaskEventBus
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.workers.models import WorkerRunnerConfig
-from opsmesh.shared.concurrency import BlockingIO
-from tests.test_worker_runner import _queue, _seed_run, _session_factory
+from opsmesh.agents.execution.providers.openai.workflow import AgentWorkflow
+from opsmesh.agents.sessions.models import SDKSessionMessageRecord
+from opsmesh.governance.reviews.tool_execution import ToolExecutionReview
+from opsmesh.identity.authorization.execution import ExecutionIdentityService
+from opsmesh.orchestration.approvals.decisions import ApprovalDecisionService
+from opsmesh.orchestration.approvals.models import Approval
+from opsmesh.orchestration.runs.models import AgentResumeStateSnapshot, AgentRun
+from opsmesh.orchestration.runs.service import RunOrchestrationService
+from opsmesh.orchestration.tasks.models import Task
+from opsmesh.resources.artifacts.models import Artifact
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest, WorkflowSignal
+from tests.fixtures.native_agent_worker import OfflineModelProvider, answer, native_agent_worker
+
+pytest_plugins = ["tests.fixtures.native_agent_execution"]
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL") or os.getenv("OPSMESH_TEST_TEMPORAL") != "1",
+    reason="Real PostgreSQL and Temporal required",
+)
 
 
-def test_async_worker_history_uses_independent_transactions() -> None:
-    factory, queue = _session_factory(), _queue()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="async-history")
-
-    class HistorySDK:
-        async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            assert request.session is not None
-            assert await request.session.get_items() == []
-            await request.session.add_items([{"role": "user", "content": "saved history"}])
-            assert await request.session.get_items() == [
-                {"role": "user", "content": "saved history"}
-            ]
-            return AgentRunResult(final_output="completed")
-
-    queue.enqueue(
-        JobPayload(
-            workspace_id=workspace_id,
-            resource_id=run_id,
-            job_type=JobType.AGENT_RUN,
-            requested_by_user_id=user_id,
-            idempotency_key=str(run_id),
+def test_concurrent_run_completes_while_another_waits_and_cancels_independently(native_execution):
+    state = native_execution
+    with state.sessions.begin() as session:
+        task = Task(
+            workspace_id=state.request.workspace_id,
+            created_by_user_id=state.user_id,
+            owner_agent_profile_id=state.profile_id,
+            execution_identity=ExecutionIdentityService(session).capture(
+                state.request.workspace_id, state.user_id
+            ),
+            title="Concurrent fast request",
+            status="queued",
         )
-    )
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=factory,
-        config=WorkerRunnerConfig(worker_id="async-history", blocking_io_concurrency=1),
-        agent_runner=HistorySDK(),
-    )
-    assert runner.run_once()
-    with factory() as session:
-        assert session.get(AgentRun, run_id).status == "completed"
-
-
-def test_slow_live_publication_keeps_event_loop_and_control_io_available() -> None:
-    from typing import cast
-
-    from opsmesh.agents.execution.contracts import AgentRuntimeContext, AgentRuntimeProfile
-
-    entered, release = Event(), Event()
-    published = []
-
-    class SlowBus:
-        def publish(self, **values: object) -> str:
-            entered.set()
-            assert release.wait(5)
-            published.append(values)
-            return "event"
-
-    async def scenario() -> None:
-        workspace_id, task_id, run_id = uuid4(), uuid4(), uuid4()
-        request = AgentRunRequest(
-            agent_profile=AgentRuntimeProfile(
-                id=uuid4(),
-                workspace_id=workspace_id,
-                version=1,
-                name="Test",
-                role="worker",
-                instructions="Test",
-                model="test",
-            ),
-            input_text="Test",
-            context=AgentRuntimeContext(
-                workspace_id=workspace_id,
-                task_id=task_id,
-                run_id=run_id,
-            ),
-            event_sink=RunLivePublisher(
-                cast(TaskEventBus, SlowBus()),
-                workspace_id,
-                task_id,
-                run_id,
-                None,
-                None,
-            ),
+        session.add(task)
+        session.flush()
+        second_run = RunOrchestrationService(session).create_queued_run_for_task(task)
+        second = ExecutionRequest(
+            execution_id=second_run.id,
+            workspace_id=state.request.workspace_id,
+            resource_id=second_run.id,
+            kind=ExecutionKind.AGENT,
+            requested_by_user_id=state.user_id,
         )
-        with BlockingIO(1, name="test-live") as io, BlockingIO(1, name="test-control") as control:
-            try:
-                async with buffered_live_events(request, io):
-                    request.event_sink.publish("output.reset", {})
-                    while not entered.is_set():
-                        await asyncio.sleep(0.01)
-                    assert (
-                        await asyncio.wait_for(control.run(lambda: "responsive"), 1) == "responsive"
+
+    async def scenario():
+        started, stopped = asyncio.Event(), asyncio.Event()
+
+        class SlowModel(Model):
+            async def get_response(self, **kwargs):
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+
+            async def stream_response(self, **kwargs):
+                raise AssertionError("This scenario uses the nonstreaming native model Activity")
+                yield
+
+        class FastModel(Model):
+            async def get_response(self, **kwargs):
+                return answer("concurrent answer")
+
+            async def stream_response(self, **kwargs):
+                raise AssertionError("This scenario uses the nonstreaming native model Activity")
+                yield
+
+        provider = OfflineModelProvider(
+            lambda reference: (
+                SlowModel() if reference.run_id == state.request.resource_id else FastModel()
+            )
+        )
+        async with native_agent_worker(state, provider) as host, host.worker():
+            slow = await host.environment.client.start_workflow(
+                AgentWorkflow.run,
+                state.request,
+                id=state.request.workflow_id,
+                task_queue=host.task_queue,
+            )
+            await asyncio.wait_for(started.wait(), 30)
+            await asyncio.wait_for(
+                host.environment.client.execute_workflow(
+                    AgentWorkflow.run,
+                    second,
+                    id=second.workflow_id,
+                    task_queue=host.task_queue,
+                ),
+                30,
+            )
+            assert not stopped.is_set()
+            with state.sessions() as session:
+                assert session.get(AgentRun, state.request.resource_id).status == "running"
+                run = session.get(AgentRun, second.resource_id)
+                assert run.status == "completed"
+                messages = session.scalars(
+                    select(SDKSessionMessageRecord.message_data).where(
+                        SDKSessionMessageRecord.session_id == run.session_key
                     )
-                    release.set()
-            finally:
-                release.set()
-        assert published[0]["workspace_id"] == workspace_id
-        assert published[0]["task_id"] == task_id
+                ).all()
+                assert "concurrent answer" in str(messages)
+            await slow.cancel()
+            with pytest.raises(WorkflowFailureError):
+                await asyncio.wait_for(slow.result(), 15)
+            assert stopped.is_set()
 
     asyncio.run(scenario())
+    with state.sessions() as session:
+        assert session.get(AgentRun, state.request.resource_id).status == "cancelled"
+        assert session.get(AgentRun, second.resource_id).status == "completed"
 
 
-def test_async_worker_approval_resume_keeps_run_and_consumes_encrypted_state() -> None:
-    from opsmesh.agents.execution.contracts import (
-        AgentRuntimeInterruption,
-        AgentRuntimeResumeState,
+def test_native_approval_resume_survives_worker_restart_with_encrypted_evidence(
+    native_execution, monkeypatch
+):
+    state = native_execution
+    monkeypatch.setattr(
+        "opsmesh.governance.reviews.tool_execution.ToolExecutionReviewService.review_product_tool_call",
+        lambda self, **kwargs: ToolExecutionReview(
+            required=True, blocked=False, risk_level="high", reasons=["manual"], signals={}
+        ),
     )
-    from opsmesh.orchestration.approvals.decisions import ApprovalDecisionService
-    from opsmesh.orchestration.approvals.models import Approval
-    from opsmesh.orchestration.runs.models import AgentRunStateSnapshot
-    from opsmesh.shared.config import Settings
-    from opsmesh.shared.security.secrets import SecretEncryptionService
-
-    factory, queue = _session_factory(), _queue()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="async-resume")
-    settings = Settings(environment="test")
-    calls = []
-
-    class PausingSDK:
-        async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            calls.append(request.context.run_id)
-            assert request.resume_state is None
-            return AgentRunResult(
-                final_output="",
-                resume_state=AgentRuntimeResumeState(
-                    provider="openai_agents",
-                    serialized_state='{"checkpoint":"private-state"}',
-                    schema_version="1.10",
-                    sdk_version="0.17.2",
-                ),
-                interruptions=(
-                    AgentRuntimeInterruption(
-                        tool_call_id="resume-tool",
-                        tool_name="write_artifact",
-                        tool_kind="product",
-                        arguments={"filename": "result.txt", "content": "test"},
-                        policy_decision={"decision": "require_approval", "risk_level": "high"},
+    original_call = "original-write"
+    responses = [
+        ModelResponse(
+            output=[
+                ResponseFunctionToolCall(
+                    id="write-item",
+                    type="function_call",
+                    name="write_artifact",
+                    call_id=original_call,
+                    arguments=json.dumps(
+                        {"filename": "approved.txt", "content": "secret-checkpoint-evidence"}
                     ),
-                ),
-            )
+                )
+            ],
+            usage=Usage(),
+            response_id="tool-response",
+        ),
+        answer("resumed answer"),
+    ]
 
-    class ResumingSDK:
-        async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            calls.append(request.context.run_id)
-            assert request.resume_state is not None
-            assert "private-state" in request.resume_state.serialized_state
-            assert request.approval_decisions[0].status == "approved"
-            return AgentRunResult(final_output="resumed")
+    async def scenario():
+        async with native_agent_worker(
+            state, TestModelProvider(TestModel.returning_responses(responses))
+        ) as host:
+            async with host.worker():
+                handle = await host.environment.client.start_workflow(
+                    AgentWorkflow.run,
+                    state.request,
+                    id=state.request.workflow_id,
+                    task_queue=host.task_queue,
+                )
 
-    def worker(sdk: object):
-        return build_worker_runner(
-            queue=queue,
-            session_factory=factory,
-            config=WorkerRunnerConfig(worker_id="resume-worker", blocking_io_concurrency=1),
-            settings=settings,
-            agent_runner=sdk,
+                async def paused():
+                    while True:
+                        with state.sessions() as session:
+                            run = session.get(AgentRun, state.request.resource_id)
+                            if run.status == "waiting_approval":
+                                snapshot = session.scalar(select(AgentResumeStateSnapshot))
+                                assert "secret-checkpoint-evidence" not in snapshot.encrypted_state
+                                return session.scalar(select(Approval.id))
+                            assert run.status not in {"failed", "cancelled", "completed"}
+                        await asyncio.sleep(0.05)
+
+                approval_id = await asyncio.wait_for(paused(), 30)
+            with state.sessions() as session:
+                ApprovalDecisionService(session).approve(
+                    session.get(Approval, approval_id), state.user_id, "Inspected"
+                )
+            await handle.signal("approval", WorkflowSignal(resource_id=approval_id))
+            await handle.signal("approval", WorkflowSignal(resource_id=approval_id))
+            async with host.worker():
+                await asyncio.wait_for(handle.result(), 30)
+
+    asyncio.run(scenario())
+    with state.sessions() as session:
+        assert session.get(AgentRun, state.request.resource_id).status == "completed"
+        assert session.scalar(select(func.count()).select_from(Artifact)) == 1
+        assert all(
+            snapshot.status == "consumed"
+            for snapshot in session.scalars(select(AgentResumeStateSnapshot))
         )
-
-    queue.enqueue(
-        JobPayload(
-            workspace_id=workspace_id,
-            resource_id=run_id,
-            job_type=JobType.AGENT_RUN,
-            requested_by_user_id=user_id,
-            idempotency_key=str(run_id),
-        )
-    )
-    assert worker(PausingSDK()).run_once()
-    with factory() as session:
-        run = session.get(AgentRun, run_id)
-        assert run.status == "waiting_approval"
-        snapshot = session.scalar(select(AgentRunStateSnapshot))
-        assert "private-state" not in snapshot.encrypted_state
-        approval = session.scalar(select(Approval).where(Approval.agent_run_id == run_id))
-        ApprovalDecisionService(
-            session,
-            queue,
-            SecretEncryptionService(
-                secret=settings.credential_encryption_secret,
-                key_id=settings.credential_encryption_key_id,
-            ),
-        ).approve(approval, user_id, "approve test checkpoint")
-    assert worker(ResumingSDK()).run_once()
-    assert calls == [run_id, run_id]
-    with factory() as session:
-        assert session.get(AgentRun, run_id).status == "completed"
-        assert session.scalar(select(AgentRunStateSnapshot)).status == "consumed"

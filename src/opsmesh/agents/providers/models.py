@@ -29,7 +29,6 @@ class ModelProviderCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "workspace_id",
             unique=True,
             postgresql_where=text("is_default IS TRUE AND status = 'active'"),
-            sqlite_where=text("is_default = 1 AND status = 'active'"),
         ),
     )
 

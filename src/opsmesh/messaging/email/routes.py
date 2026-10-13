@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.messaging.email.schemas import (
     EmailRecipient,
     MailConfigurationResponse,
-    MailConfigurationUpdate,
+    MailConfigurationUpdateRequest,
 )
 from opsmesh.messaging.email.service import PlatformMailService
 from opsmesh.shared.config import Settings, get_settings
@@ -28,13 +28,13 @@ def get_mail_configuration(
 
 @router.put("/system/mail", response_model=MailConfigurationResponse)
 def save_mail_configuration(
-    payload: MailConfigurationUpdate,
+    payload: MailConfigurationUpdateRequest,
     request: Request,
     session: Session = DB_SESSION_DEPENDENCY,
     settings: Settings = SETTINGS_DEPENDENCY,
 ) -> MailConfigurationResponse:
     result = PlatformMailService(session, settings).save(payload)
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="platform.mail_settings_updated",
         outcome="allowed",
@@ -57,7 +57,7 @@ def test_mail_configuration(
         subject="OpsMesh 邮件测试 / Email test",
         body="OpsMesh 邮件发送配置测试成功。SMTP configuration test succeeded.",
     )
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="platform.mail_test_sent",
         outcome="allowed",

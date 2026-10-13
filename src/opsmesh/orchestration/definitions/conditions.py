@@ -48,7 +48,6 @@ class ConditionEvaluation:
 
 def validate_condition(value: object, *, path: str = "condition") -> None:
     """Validate a condition without evaluating user-provided code."""
-
     _validate(value, path=path, depth=0, counter=[0])
 
 

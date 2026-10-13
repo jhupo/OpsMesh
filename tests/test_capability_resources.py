@@ -2,15 +2,10 @@ from collections.abc import Generator
 from uuid import UUID
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
@@ -21,7 +16,7 @@ from opsmesh.shared.db.session import get_db_session
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
-from tests.fixtures.database import flow_database_url
+from tests.fixtures.database import product_engine
 
 TOKEN = "capability-resource-test-token"
 
@@ -353,7 +348,7 @@ def test_effective_catalog_denies_ambiguous_mcp_tool_names() -> None:
         tool_policy={"allowed_tools": ["search_docs"]},
     )
     servers = [
-        McpServer(
+        MCPServer(
             workspace_id=workspace.id,
             name=name,
             server_type="streamable_http",
@@ -365,7 +360,7 @@ def test_effective_catalog_denies_ambiguous_mcp_tool_names() -> None:
     session.flush()
     session.add_all(
         [
-            McpToolAllowlist(
+            MCPToolAllowlist(
                 workspace_id=workspace.id,
                 mcp_server_id=server.id,
                 tool_name="search_docs",
@@ -395,13 +390,7 @@ def test_effective_catalog_denies_ambiguous_mcp_tool_names() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        flow_database_url(),
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
     session = session_factory()
@@ -438,12 +427,3 @@ def _seed_workspace(session: Session, email: str, slug: str) -> tuple[User, Work
 
 def _headers(user_id: UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

@@ -15,7 +15,7 @@ from opsmesh.identity.authorization.resource_queries import (
     resource_query_scope,
 )
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
@@ -27,7 +27,7 @@ from opsmesh.orchestration.planning.attempts import TaskPlanningAttemptService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.platform.updates.admission import require_execution_admission
 from opsmesh.runtime.spaces.service import RuntimeSpaceService
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
@@ -73,15 +73,13 @@ class WorkspaceTaskService:
         workspace_id: UUID,
         created_by_user_id: UUID,
         command: TaskCreateCommand,
-        *,
-        queue: RedisQueue | None = None,
     ) -> Task:
+        require_execution_admission(self._session)
         task, _ = self._create_task(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
             created_by_agent_run_id=None,
             command=command,
-            queue=queue,
         )
         self._session.commit()
         self._session.refresh(task)
@@ -95,13 +93,12 @@ class WorkspaceTaskService:
         command: TaskCreateCommand,
         execution_identity: dict[str, object],
     ) -> Task:
-        """Persist admission in the caller's inbox transaction; queue recovery dispatches it."""
+        """Persist admission in the caller's transaction and stage its Temporal start."""
         task, _ = self._create_task(
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             created_by_agent_run_id=None,
             command=command,
-            queue=None,
             initiating_identity=execution_identity,
         )
         return task
@@ -114,12 +111,11 @@ class WorkspaceTaskService:
         command: TaskCreateCommand,
         execution_identity: dict[str, object],
     ) -> Task:
-        """Admission inside the conversation transaction; queue recovery dispatches after commit."""
+        """Admission inside the conversation transaction with a Temporal start intent."""
         task, _ = self._create_task(
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             command=command,
-            queue=None,
             initiating_identity=execution_identity,
             created_by_agent_run_id=None,
         )
@@ -135,7 +131,6 @@ class WorkspaceTaskService:
         input_payload: dict[str, object],
         orchestration_definition_id: UUID,
         orchestration_version: int,
-        queue: RedisQueue | None = None,
     ) -> tuple[Task, AgentRun | None]:
         """Materialize a child task through the same task admission path as user tasks."""
         if parent_task.agent_team_id is None:
@@ -162,7 +157,6 @@ class WorkspaceTaskService:
             created_by_user_id=None,
             created_by_agent_run_id=parent_run_id,
             command=command,
-            queue=queue,
         )
 
     def _create_task(
@@ -172,7 +166,6 @@ class WorkspaceTaskService:
         created_by_user_id: UUID | None,
         created_by_agent_run_id: UUID | None,
         command: TaskCreateCommand,
-        queue: RedisQueue | None,
         initiating_identity: dict[str, object] | None = None,
     ) -> tuple[Task, AgentRun | None]:
         identities = ExecutionIdentityService(self._session)
@@ -180,7 +173,7 @@ class WorkspaceTaskService:
         if initiating_identity is not None:
             identity = initiating_identity
             if str(created_by_user_id) != identity.get("user_id"):
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
         elif created_by_user_id is not None:
             identity = identities.capture(workspace_id, created_by_user_id)
         elif created_by_agent_run_id is not None:
@@ -197,10 +190,10 @@ class WorkspaceTaskService:
                 )
             )
             if parent is None:
-                raise ResourceAccessDenied()
+                raise ResourceAccessDeniedError()
             identity = parent.execution_identity
         else:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         user = identities.restore(workspace_id, identity)
         access = ResourceAuthorizationService(self._session, user)
         for kind, identifier, action in (
@@ -223,7 +216,6 @@ class WorkspaceTaskService:
                 created_by_user_id=created_by_user_id,
                 created_by_agent_run_id=created_by_agent_run_id,
                 command=command,
-                queue=queue,
                 identity=identity,
             )
 
@@ -234,7 +226,6 @@ class WorkspaceTaskService:
         created_by_user_id: UUID | None,
         created_by_agent_run_id: UUID | None,
         command: TaskCreateCommand,
-        queue: RedisQueue | None,
         identity: dict[str, object] | None,
     ) -> tuple[Task, AgentRun | None]:
         payload = _task_payload(command)
@@ -300,21 +291,22 @@ class WorkspaceTaskService:
             TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
 
         initial_run = None
-        initial_run_enqueued = False
+        initial_run_staged = False
         if task.project_plan is not None or task.agent_team_id is None:
-            orchestration = RunOrchestrationService(self._session, queue=queue)
+            orchestration = RunOrchestrationService(self._session)
             initial_run = orchestration.create_queued_run_for_task(task)
-            if initial_run is not None and queue is not None:
-                initial_run_enqueued = orchestration.enqueue_run(
+            if initial_run is not None:
+                orchestration.request_run(
                     initial_run,
                     created_by_user_id,
                 )
+                initial_run_staged = True
 
         metadata: dict[str, object] = {
             "title": task.title,
             "domain_type": task.domain_type,
             "initial_run_id": str(initial_run.id) if initial_run is not None else None,
-            "initial_run_enqueued": initial_run_enqueued,
+            "initial_run_staged": initial_run_staged,
             "workspace_project_id": str(task.workspace_project_id)
             if task.workspace_project_id is not None
             else None,

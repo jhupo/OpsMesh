@@ -3,30 +3,30 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.mcp.catalog.catalog import McpCatalogServer, McpCatalogUsage
+from opsmesh.capabilities.mcp.catalog.catalog import MCPCatalogServer, MCPCatalogUsage
 from opsmesh.capabilities.mcp.catalog.contracts import (
-    McpServerCreateRequest,
-    McpServerDiscoveryRequest,
-    McpServerDiscoveryResponse,
-    McpServerHealthCheckRequest,
-    McpServerResponse,
-    McpServerUpdateRequest,
-    McpToolAllowRequest,
-    McpToolAllowResponse,
-    McpToolAllowUpdateRequest,
+    MCPServerCreateRequest,
+    MCPServerDiscoveryRequest,
+    MCPServerDiscoveryResponse,
+    MCPServerHealthCheckRequest,
+    MCPServerResponse,
+    MCPServerUpdateRequest,
+    MCPToolAllowRequest,
+    MCPToolAllowResponse,
+    MCPToolAllowUpdateRequest,
 )
 from opsmesh.capabilities.mcp.catalog.discovery import (
-    McpDiscoveryConflict,
-    McpDiscoveryError,
-    McpToolDiscoveryService,
+    MCPDiscoveryConflictError,
+    MCPDiscoveryError,
+    MCPToolDiscoveryService,
 )
-from opsmesh.capabilities.mcp.catalog.servers import McpServerService
+from opsmesh.capabilities.mcp.catalog.servers import MCPServerService
 from opsmesh.capabilities.mcp.schemas import (
-    McpCatalogServerResponse,
-    McpCatalogToolPolicySummaryResponse,
-    McpCatalogToolResponse,
-    McpCatalogUsageResponse,
-    McpToolDescriptor,
+    MCPCatalogServerResponse,
+    MCPCatalogToolPolicySummaryResponse,
+    MCPCatalogToolResponse,
+    MCPCatalogUsageResponse,
+    MCPToolDescriptor,
 )
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
@@ -41,25 +41,25 @@ from opsmesh.shared.security.secrets import SecretEncryptionService
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 
 
-@router.get("/mcp-servers", response_model=PageResponse[McpServerResponse])
+@router.get("/mcp-servers", response_model=PageResponse[MCPServerResponse])
 def list_mcp_servers(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[McpServerResponse]:
-    items, total = McpServerService(session).list_mcp_servers(context.workspace.id, page)
+) -> PageResponse[MCPServerResponse]:
+    items, total = MCPServerService(session).list_mcp_servers(context.workspace.id, page)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.post("/mcp-servers", response_model=McpServerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/mcp-servers", response_model=MCPServerResponse, status_code=status.HTTP_201_CREATED)
 def create_mcp_server(
-    request: McpServerCreateRequest,
+    request: MCPServerCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpServerResponse:
+) -> MCPServerResponse:
     try:
-        server = McpServerService(session, settings=settings).create_mcp_server(
+        server = MCPServerService(session, settings=settings).create_mcp_server(
             context.workspace.id,
             request,
             context.user.user_id,
@@ -68,19 +68,19 @@ def create_mcp_server(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return McpServerResponse.model_validate(server)
+    return MCPServerResponse.model_validate(server)
 
 
-@router.patch("/mcp-servers/{mcp_server_id}", response_model=McpServerResponse)
+@router.patch("/mcp-servers/{mcp_server_id}", response_model=MCPServerResponse)
 def update_mcp_server(
     mcp_server_id: UUID,
-    request: McpServerUpdateRequest,
+    request: MCPServerUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpServerResponse:
+) -> MCPServerResponse:
     try:
-        server = McpServerService(session, settings=settings).update_mcp_server(
+        server = MCPServerService(session, settings=settings).update_mcp_server(
             context.workspace.id,
             mcp_server_id,
             request,
@@ -94,18 +94,18 @@ def update_mcp_server(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=error_status, detail=detail) from exc
-    return McpServerResponse.model_validate(server)
+    return MCPServerResponse.model_validate(server)
 
 
-@router.get("/mcp-catalog", response_model=PageResponse[McpCatalogServerResponse])
+@router.get("/mcp-catalog", response_model=PageResponse[MCPCatalogServerResponse])
 def list_mcp_catalog(
     page: PageParams = Depends(pagination_params),
     agent_profile_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PageResponse[McpCatalogServerResponse]:
+) -> PageResponse[MCPCatalogServerResponse]:
     try:
-        items, total = McpServerService(session).list_mcp_catalog(
+        items, total = MCPServerService(session).list_mcp_catalog(
             context.workspace.id,
             page,
             agent_profile_id=agent_profile_id,
@@ -122,17 +122,17 @@ def list_mcp_catalog(
 
 @router.post(
     "/mcp-servers/{mcp_server_id}/discover",
-    response_model=McpServerDiscoveryResponse,
+    response_model=MCPServerDiscoveryResponse,
 )
 async def discover_mcp_server_tools(
     mcp_server_id: UUID,
-    request: McpServerDiscoveryRequest,
+    request: MCPServerDiscoveryRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpServerDiscoveryResponse:
+) -> MCPServerDiscoveryResponse:
     try:
-        result = await McpToolDiscoveryService(
+        result = await MCPToolDiscoveryService(
             session,
             secret_service=SecretEncryptionService(
                 secret=settings.credential_encryption_secret,
@@ -146,51 +146,51 @@ async def discover_mcp_server_tools(
             credential_id=request.credential_id,
             actor_user_id=context.user.user_id,
         )
-    except McpDiscoveryError as exc:
+    except MCPDiscoveryError as exc:
         raise HTTPException(
             status_code=(
                 status.HTTP_409_CONFLICT
-                if isinstance(exc, McpDiscoveryConflict)
+                if isinstance(exc, MCPDiscoveryConflictError)
                 else status.HTTP_404_NOT_FOUND
                 if str(exc) == "MCP server not found or inactive"
                 else status.HTTP_422_UNPROCESSABLE_ENTITY
             ),
             detail=str(exc),
         ) from exc
-    return McpServerDiscoveryResponse.model_validate(result)
+    return MCPServerDiscoveryResponse.model_validate(result)
 
 
 @router.get(
     "/mcp-servers/{mcp_server_id}/discovered-tools",
-    response_model=list[McpToolAllowResponse],
+    response_model=list[MCPToolAllowResponse],
 )
 def list_discovered_mcp_tools(
     mcp_server_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> list[McpToolAllowResponse]:
-    service = McpServerService(session)
+) -> list[MCPToolAllowResponse]:
+    service = MCPServerService(session)
     try:
         rows = service.discovered_mcp_tools(context.workspace.id, mcp_server_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return [McpToolAllowResponse.model_validate(row) for row in rows]
+    return [MCPToolAllowResponse.model_validate(row) for row in rows]
 
 
 @router.post(
     "/mcp-servers/{mcp_server_id}/tools",
-    response_model=McpToolAllowResponse,
+    response_model=MCPToolAllowResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def allow_mcp_tool(
     mcp_server_id: UUID,
-    request: McpToolAllowRequest,
+    request: MCPToolAllowRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpToolAllowResponse:
+) -> MCPToolAllowResponse:
     try:
-        allow = McpServerService(session, settings=settings).allow_mcp_tool(
+        allow = MCPServerService(session, settings=settings).allow_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             request,
@@ -200,12 +200,12 @@ def allow_mcp_tool(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpToolAllowResponse.model_validate(allow)
+    return MCPToolAllowResponse.model_validate(allow)
 
 
 @router.post(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/enable",
-    response_model=McpToolAllowResponse,
+    response_model=MCPToolAllowResponse,
 )
 def enable_discovered_mcp_tool(
     mcp_server_id: UUID,
@@ -213,9 +213,9 @@ def enable_discovered_mcp_tool(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpToolAllowResponse:
+) -> MCPToolAllowResponse:
     try:
-        allow = McpServerService(session, settings=settings).enable_discovered_mcp_tool(
+        allow = MCPServerService(session, settings=settings).enable_discovered_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             allowlist_id,
@@ -228,40 +228,40 @@ def enable_discovered_mcp_tool(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=error_status, detail=str(exc)) from exc
-    return McpToolAllowResponse.model_validate(allow)
+    return MCPToolAllowResponse.model_validate(allow)
 
 
-@router.post("/mcp-servers/{mcp_server_id}/disable", response_model=McpServerResponse)
+@router.post("/mcp-servers/{mcp_server_id}/disable", response_model=MCPServerResponse)
 def disable_mcp_server(
     mcp_server_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
-) -> McpServerResponse:
+) -> MCPServerResponse:
     try:
-        server = McpServerService(session).disable_mcp_server(
+        server = MCPServerService(session).disable_mcp_server(
             context.workspace.id,
             mcp_server_id,
             context.user.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpServerResponse.model_validate(server)
+    return MCPServerResponse.model_validate(server)
 
 
 @router.patch(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}",
-    response_model=McpToolAllowResponse,
+    response_model=MCPToolAllowResponse,
 )
 def update_mcp_tool(
     mcp_server_id: UUID,
     allowlist_id: UUID,
-    request: McpToolAllowUpdateRequest,
+    request: MCPToolAllowUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> McpToolAllowResponse:
+) -> MCPToolAllowResponse:
     try:
-        allow = McpServerService(session, settings=settings).update_mcp_tool(
+        allow = MCPServerService(session, settings=settings).update_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             allowlist_id,
@@ -278,18 +278,18 @@ def update_mcp_tool(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=error_status, detail=message) from exc
-    return McpToolAllowResponse.model_validate(allow)
+    return MCPToolAllowResponse.model_validate(allow)
 
 
-@router.post("/mcp-servers/{mcp_server_id}/health-check", response_model=McpServerResponse)
+@router.post("/mcp-servers/{mcp_server_id}/health-check", response_model=MCPServerResponse)
 def record_mcp_server_health_check(
     mcp_server_id: UUID,
-    request: McpServerHealthCheckRequest,
+    request: MCPServerHealthCheckRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
-) -> McpServerResponse:
+) -> MCPServerResponse:
     try:
-        server = McpServerService(session).record_mcp_server_health_check(
+        server = MCPServerService(session).record_mcp_server_health_check(
             context.workspace.id,
             mcp_server_id,
             context.user.user_id,
@@ -297,21 +297,21 @@ def record_mcp_server_health_check(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpServerResponse.model_validate(server)
+    return MCPServerResponse.model_validate(server)
 
 
 @router.post(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/disable",
-    response_model=McpToolAllowResponse,
+    response_model=MCPToolAllowResponse,
 )
 def disable_mcp_tool(
     mcp_server_id: UUID,
     allowlist_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
-) -> McpToolAllowResponse:
+) -> MCPToolAllowResponse:
     try:
-        allow = McpServerService(session).disable_mcp_tool(
+        allow = MCPServerService(session).disable_mcp_tool(
             context.workspace.id,
             mcp_server_id,
             allowlist_id,
@@ -319,16 +319,16 @@ def disable_mcp_tool(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return McpToolAllowResponse.model_validate(allow)
+    return MCPToolAllowResponse.model_validate(allow)
 
 
-@router.get("/mcp-tools", response_model=list[McpToolDescriptor])
+@router.get("/mcp-tools", response_model=list[MCPToolDescriptor])
 def list_mapped_mcp_tools(
     agent_profile_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> list[McpToolDescriptor]:
-    service = McpServerService(session)
+) -> list[MCPToolDescriptor]:
+    service = MCPServerService(session)
     try:
         rows = (
             service.mcp_tools_for_agent(context.workspace.id, agent_profile_id)
@@ -338,7 +338,7 @@ def list_mapped_mcp_tools(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return [
-        McpToolDescriptor(
+        MCPToolDescriptor(
             server_id=server.id,
             server_name=server.name,
             tool_name=allow.tool_name,
@@ -355,9 +355,9 @@ def list_mapped_mcp_tools(
     ]
 
 
-def _mcp_catalog_response(item: McpCatalogServer) -> McpCatalogServerResponse:
+def _mcp_catalog_response(item: MCPCatalogServer) -> MCPCatalogServerResponse:
     server = item.server
-    return McpCatalogServerResponse(
+    return MCPCatalogServerResponse(
         id=server.id,
         name=server.name,
         server_type=server.server_type,
@@ -380,7 +380,7 @@ def _mcp_catalog_response(item: McpCatalogServer) -> McpCatalogServerResponse:
         connection_summary=item.connection_summary,
         usage=_mcp_catalog_usage_response(item.usage),
         tools=[
-            McpCatalogToolResponse(
+            MCPCatalogToolResponse(
                 id=tool.allowlist.id,
                 tool_name=tool.allowlist.tool_name,
                 title=tool.allowlist.title,
@@ -391,7 +391,7 @@ def _mcp_catalog_response(item: McpCatalogServer) -> McpCatalogServerResponse:
                 requires_approval=tool.allowlist.requires_approval,
                 risk_level=tool.allowlist.risk_level,
                 policy=tool.allowlist.policy,
-                policy_summary=McpCatalogToolPolicySummaryResponse.model_validate(
+                policy_summary=MCPCatalogToolPolicySummaryResponse.model_validate(
                     tool.policy_summary,
                 ),
                 status=tool.allowlist.status,
@@ -408,8 +408,8 @@ def _mcp_catalog_response(item: McpCatalogServer) -> McpCatalogServerResponse:
     )
 
 
-def _mcp_catalog_usage_response(item: McpCatalogUsage) -> McpCatalogUsageResponse:
-    return McpCatalogUsageResponse(
+def _mcp_catalog_usage_response(item: MCPCatalogUsage) -> MCPCatalogUsageResponse:
+    return MCPCatalogUsageResponse(
         call_count=item.call_count,
         failed_call_count=item.failed_call_count,
         last_call_at=item.last_call_at,

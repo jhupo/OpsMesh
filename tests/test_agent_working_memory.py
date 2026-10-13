@@ -1,9 +1,5 @@
 from uuid import uuid4
 
-from sqlalchemy import JSON as SqliteJSON
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
 from opsmesh.agents.profiles.models import AgentProfile
@@ -15,6 +11,7 @@ from opsmesh.resources.memory.working import AgentWorkingMemoryService
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None:
@@ -125,12 +122,6 @@ def test_working_memory_promotion_rejects_cross_workspace_record() -> None:
 
 
 def _session():
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()

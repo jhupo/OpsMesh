@@ -1,14 +1,17 @@
+import asyncio
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-import fakeredis
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
+from opsmesh.agents.execution.contracts import AgentRunResult, AgentStructuredOutput
+from opsmesh.agents.execution.providers.openai.activities import AgentExecutionActivities
+from opsmesh.agents.execution.providers.openai.workflow import AgentExecutionOutcome
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.governance.costs.models import WorkspaceCostBudget
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
@@ -23,28 +26,34 @@ from opsmesh.orchestration.planning.mutation import (
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
+from opsmesh.orchestration.requests.builder import RunRequestBuilder
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from opsmesh.shared.redis.keys import RedisKeyBuilder
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.shared.config import Settings
+from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.quotas.models import WorkspaceQuota
-from tests.fixtures.worker import WorkerFlow
-from tests.test_worker_run_execution import (
-    _build_agent_request,
+from tests.fixtures.agent_product import (
     _seed_workspace,
-    _session,
-    approve_resource_reviews_by_default,  # noqa: F401
+)
+from tests.fixtures.database import temporary_postgres_schema
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL required"
 )
 
 
 @pytest.fixture
 def planning() -> Iterator[tuple[Session, Task, AgentProfile, AgentRun]]:
-    with _session() as session:
-        engine = session.get_bind()
+    with (
+        temporary_postgres_schema() as engine,
+        sessionmaker(engine, expire_on_commit=False)() as session,
+    ):
+        Base.metadata.create_all(engine)
         user, workspace = _seed_workspace(session)
         agent = AgentProfile(workspace_id=workspace.id, name="Planner", role="manager")
         session.add(agent)
@@ -78,7 +87,6 @@ def planning() -> Iterator[tuple[Session, Task, AgentProfile, AgentRun]]:
         assert run is not None
         session.commit()
         yield session, task, agent, run
-    engine.dispose()
 
 
 def result_for(
@@ -107,7 +115,7 @@ def result_for(
         proposal["work_packages"][0].update(package_overrides)
     return AgentRunResult(
         final_output="Plan generated",
-        structured_output=AgentRuntimeStructuredOutput(
+        structured_output=AgentStructuredOutput(
             value=proposal,
             schema_name="task_plan",
             schema_version="3",
@@ -373,15 +381,13 @@ def test_plain_text_output_cannot_be_promoted_to_a_plan(planning) -> None:
     assert session.scalar(select(func.count(TaskStep.id))) == 1
 
 
-@pytest.mark.parametrize("failure", ["sdk", "worker_lost", "cancel"])
+@pytest.mark.parametrize("failure", ["sdk", "cancel"])
 def test_planner_terminal_outcomes_close_attempt(planning, failure) -> None:
     session, task, _, run = planning
     lifecycle = RunOrchestrationService(session)._run_lifecycle()
     lifecycle.mark_run_started(run)
     if failure == "sdk":
         lifecycle.mark_run_failed(run, RuntimeError("provider failed"))
-    elif failure == "worker_lost":
-        lifecycle.mark_run_recovered_failed(run)
     else:
         lifecycle.mark_run_cancelled(run, completed_at=datetime.now(UTC))
     session.commit()
@@ -397,6 +403,9 @@ def test_retry_creates_new_planner_without_erasing_failed_attempt(planning) -> N
     lifecycle = RunOrchestrationService(session)._run_lifecycle()
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_failed(run, RuntimeError("provider failed"))
+    from opsmesh.orchestration.runs.release import release_execution
+
+    release_execution(session, run.workspace_id, run.id)
     session.commit()
     TaskPlanLifecycleService(session).retry_task_plan(
         task.workspace_id, task.id, task.created_by_user_id, TaskPlanRetryCommand()
@@ -423,14 +432,12 @@ def test_retry_cannot_replace_live_planning(planning) -> None:
 
 def test_planner_request_uses_frozen_sdk_schema_and_roster(planning) -> None:
     session, task, agent, run = planning
-    request = _build_agent_request(
-        session,
+    request = RunRequestBuilder(session, Settings(environment="test")).build_agent_request(
         run,
-        JobPayload(
+        ExecutionRequest(
             workspace_id=task.workspace_id,
-            job_type=JobType.AGENT_RUN,
+            kind=ExecutionKind.AGENT,
             resource_id=run.id,
-            idempotency_key="planner-contract",
         ),
     )
     assert request.output_schema is not None
@@ -634,39 +641,32 @@ def test_future_plan_mutation_rejects_active_and_completed_side_effects(planning
     assert completed_error.value.code == "plan_mutation_completed_immutable"
 
 
-@pytest.mark.usefixtures("approve_resource_reviews_by_default")
-def test_worker_consumes_plan_then_enqueues_work_once(planning) -> None:
+def test_native_activity_consumes_plan_then_stages_work_once(planning) -> None:
     session, task, agent, run = planning
-
-    class PlannerRunner:
-        calls = 0
-
-        async def run(self, request):
-            self.calls += 1
-            assert request.output_schema.name == "task_plan"
-            assert request.context.allowed_tools == ()
-            return result_for(agent)
-
-    runner = PlannerRunner()
-    queue = RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
+    activity = AgentExecutionActivities(
+        sessionmaker(session.get_bind(), expire_on_commit=False), Settings(environment="test")
     )
-    RunOrchestrationService(session, queue).enqueue_run(run, task.created_by_user_id)
-    session.commit()
-    handler = WorkerFlow(session, queue, agent_runner=runner)
-    assert handler.process_next()
+    execution = ExecutionRequest(
+        execution_id=run.id,
+        workspace_id=task.workspace_id,
+        resource_id=run.id,
+        kind=ExecutionKind.AGENT,
+        requested_by_user_id=task.created_by_user_id,
+    )
+
+    async def process():
+        definition = await activity.prepare(execution)
+        assert definition.output_schema.name == "task_plan"
+        assert definition.context.allowed_tools == ()
+        outcome = AgentExecutionOutcome(
+            request=execution, definition=definition, result=result_for(agent)
+        )
+        await activity.complete(outcome)
+        await activity.complete(outcome)
+
+    asyncio.run(process())
+    session.expire_all()
     assert run.status == "completed"
     assert task.project_plan["strategy"] == "agent_sdk"
-    assert queue.count_queued(workspace_id=task.workspace_id) == 1
-    handler.handle(
-        JobPayload(
-            workspace_id=task.workspace_id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            idempotency_key="duplicate-planner-delivery",
-        )
-    )
-    assert runner.calls == 1
     assert session.scalar(select(func.count(TaskStep.id))) == 2
+    assert session.scalar(select(func.count(TemporalOutboxEntry.id))) == 1

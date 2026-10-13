@@ -11,12 +11,20 @@ test_container="${network}-tests"
 postgres_user="${OPSMESH_REMOTE_POSTGRES_USER:-opsmesh_test}"
 postgres_password="${OPSMESH_REMOTE_POSTGRES_PASSWORD:-opsmesh_test}"
 postgres_db="${OPSMESH_REMOTE_POSTGRES_DB:-opsmesh_test}"
-postgres_image="${OPSMESH_REMOTE_POSTGRES_IMAGE:-postgres:16-alpine}"
+postgres_image="${OPSMESH_REMOTE_POSTGRES_IMAGE:-pgvector/pgvector:0.8.6-pg16-bookworm}"
 redis_image="${OPSMESH_REMOTE_REDIS_IMAGE:-redis:7-alpine}"
-test_image="${OPSMESH_REMOTE_TEST_IMAGE:-python:3.13-slim}"
+test_image="${OPSMESH_REMOTE_TEST_IMAGE:-ghcr.io/astral-sh/uv:0.12.10-python3.12-bookworm-slim}"
 
-pytest_args="${OPSMESH_REMOTE_PYTEST_ARGS:-tests/test_capabilities_api.py tests/test_operations_api.py -k 'governance_reenables_disabled_mcp_tools or governance_repairs_unallowed_agent_mcp_tools or workspace_capability_governance_can_refresh_stale_mcp_health_checks or team_runtime_timeline_aggregates_redacts_and_scopes_events or operations_overview_includes_workspace_data_lifecycle_rollup'}"
-ruff_args="${OPSMESH_REMOTE_RUFF_ARGS:-src/opsmesh tests/test_capabilities_api.py tests/test_operations_api.py}"
+if (( $# )); then
+    pytest_args=("$@")
+else
+    pytest_args=(
+        tests/test_temporal_outbox_postgres.py
+        tests/test_temporal_node_execution_postgres.py
+        tests/test_plugin_download_temporal_postgres.py
+        tests/test_operations_api.py
+    )
+fi
 
 cleanup() {
     docker rm -f "${postgres_container}" "${redis_container}" "${test_container}" >/dev/null 2>&1 || true
@@ -64,10 +72,11 @@ docker run --rm \
     -e "OPSMESH_DATABASE_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
     -e "OPSMESH_TEST_POSTGRES_URL=postgresql+psycopg://${postgres_user}:${postgres_password}@${postgres_container}:5432/${postgres_db}" \
     -e "OPSMESH_REDIS_URL=redis://${redis_container}:6379/0" \
+    -e OPSMESH_TEST_TEMPORAL=1 \
+    -e UV_PROJECT_ENVIRONMENT=/tmp/opsmesh-validation-env \
     "${test_image}" \
-    sh -lc "
-        python -m pip install --upgrade pip &&
-        python -m pip install -e . pytest fakeredis ruff &&
-        python -m pytest ${pytest_args} &&
-        python -m ruff check ${ruff_args}
-    "
+    bash -c '
+        uv sync --frozen --all-groups &&
+        uv run --frozen pytest "$@" &&
+        uv run --frozen ruff check src/opsmesh scripts tests
+    ' opsmesh-validation "${pytest_args[@]}"

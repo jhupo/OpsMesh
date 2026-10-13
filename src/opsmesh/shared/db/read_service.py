@@ -11,7 +11,7 @@ from opsmesh.shared.pagination import PageParams
 T = TypeVar("T")
 
 
-class AdminSessionService:
+class PagedQuerySupport:
     def __init__(self, session: Session) -> None:
         self._session = session
 

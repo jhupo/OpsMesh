@@ -1,23 +1,25 @@
+import asyncio
 import json
+import subprocess
+import sys
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from threading import Barrier
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from temporalio.testing import ActivityEnvironment
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.bootstrap.worker import build_worker_runner
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.identity.users.models import User
@@ -25,22 +27,36 @@ from opsmesh.main import create_app
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import FileAccessEvent, WorkspaceFile
+from opsmesh.resources.lifecycle.scheduled_backup import ScheduledBackupService
+from opsmesh.resources.lifecycle.service import WorkspaceDataLifecycleService
 from opsmesh.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
 )
-from opsmesh.resources.storage.storage import LocalStorage
-from opsmesh.resources.transfers.models import WorkspaceExportJob
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.resources.storage.backends import LocalObjectStorage
+from opsmesh.resources.transfers.activities import ArchiveExecutionActivities
+from opsmesh.resources.transfers.contracts import (
+    WorkspaceArchiveExportRequest,
+    WorkspaceArchiveRestoreDrillRequest,
+)
+from opsmesh.resources.transfers.models import WorkspaceExportJob, WorkspaceRestoreDrillOperation
+from opsmesh.resources.transfers.restore_operations import (
+    RestoreDrillOperationService,
+    restore_drill_engine,
+    restore_drill_lock,
+)
+from opsmesh.resources.transfers.restore_storage import RestoreDrillStorage
+from opsmesh.resources.transfers.service import WorkspaceExportService
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from opsmesh.runtime.workers.runner import WorkerRunnerConfig
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.errors import DomainError
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
@@ -50,6 +66,7 @@ from opsmesh.workspaces.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-token"
 
@@ -120,11 +137,9 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
-    assert "filename=\"owner-space-workspace-export.json\"" in response.headers[
-        "content-disposition"
-    ]
+    assert 'filename="owner-space-workspace-export.json"' in response.headers["content-disposition"]
     payload = json.loads(response.content)
-    assert payload["manifest"]["format_version"] == "workspace-export.v2"
+    assert payload["manifest"]["format_version"] == "workspace-export.v3"
     assert payload["workspace"]["id"] == str(workspace.id)
     assert payload["manifest"]["counts"]["agents"] == 1
     assert payload["manifest"]["counts"]["teams"] == 1
@@ -132,9 +147,7 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
     assert payload["manifest"]["counts"]["tasks"] == 1
     assert payload["manifest"]["counts"]["task_messages"] == 1
     assert payload["tasks"][0]["team_snapshot"] == {"team": {"name": "Research Team"}}
-    assert payload["tasks"][0]["project_plan"] == {
-        "work_packages": [{"package_id": "research"}]
-    }
+    assert payload["tasks"][0]["project_plan"] == {"work_packages": [{"package_id": "research"}]}
     assert payload["task_steps"][0]["work_package_id"] == "research-1"
     assert payload["task_steps"][0]["required_role"] == "researcher"
     assert payload["task_steps"][0]["required_skills"] == ["research"]
@@ -253,6 +266,7 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         request={"include_file_bytes": True, "api_key": "sk-export"},
         storage_key="workspaces/owner/exports/archive.zip",
@@ -268,6 +282,7 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="failed",
         request={"headers": {"authorization": "Bearer hidden"}},
         error="network failed",
@@ -294,7 +309,7 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
 
     assert response.status_code == 200
     body = response.json()
-    assert body["export_import"]["format_version"] == "workspace-export.v2"
+    assert body["export_import"]["format_version"] == "workspace-export.v3"
     assert body["export_import"]["archive_import_supported"] is True
     assert body["export_import"]["latest_export_job"]["status"] == "failed"
     assert body["export_import"]["latest_export_job"]["request"]["headers"] == "[redacted]"
@@ -365,6 +380,7 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         request={"include_file_bytes": True, "api_key": "sk-export"},
         storage_key="workspaces/owner-recovery/exports/archive.zip",
@@ -380,6 +396,7 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="failed",
         request={"headers": {"authorization": "Bearer hidden"}},
         error="network failed",
@@ -389,6 +406,7 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="queued",
         request={"token": "queued-token"},
         created_at=datetime(2026, 1, 6, tzinfo=UTC),
@@ -461,9 +479,10 @@ def test_workspace_recovery_readiness_summarizes_restore_health_and_redacts_meta
     assert body["restore_readiness"]["backup_coverage"]["score"] == 100
     assert body["restore_readiness"]["backup_coverage"]["uncovered_resource_count"] == 0
     assert body["restore_readiness"]["restore_test_history"]["total_tests"] == 1
-    assert body["restore_readiness"]["restore_test_history"][
-        "latest_test_covers_latest_archive"
-    ] is True
+    assert (
+        body["restore_readiness"]["restore_test_history"]["latest_test_covers_latest_archive"]
+        is True
+    )
     assert body["restore_readiness"]["restore_test_history"]["latest_created_counts"] == {
         "files": 1
     }
@@ -502,6 +521,7 @@ def test_workspace_recovery_readiness_blocks_stale_archive_backup(tmp_path: Path
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         storage_key="workspaces/owner-stale-recovery/exports/archive.zip",
         filename="archive.zip",
@@ -562,6 +582,7 @@ def test_workspace_recovery_readiness_blocks_failed_archive_integrity_check(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         storage_key="workspaces/owner-integrity-recovery/exports/archive.zip",
         filename="archive.zip",
@@ -614,9 +635,7 @@ def test_workspace_recovery_readiness_blocks_failed_archive_integrity_check(
     assert integrity["latest_check_failed_checks"] == ["checksum_matches", "zip_readable"]
     assert integrity["latest_check_covers_latest_successful_archive"] is True
     assert body["restore_readiness"]["ready"] is False
-    assert body["restore_readiness"]["blocked_reasons"] == [
-        "latest_archive_integrity_check_failed"
-    ]
+    assert body["restore_readiness"]["blocked_reasons"] == ["latest_archive_integrity_check_failed"]
     assert body["restore_readiness"]["recommended_actions"] == [
         "repair_or_regenerate_archive_export"
     ]
@@ -625,7 +644,7 @@ def test_workspace_recovery_readiness_blocks_failed_archive_integrity_check(
 def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
     tmp_path: Path,
 ) -> None:
-    client, session, _, queue = _client_with_worker_queue(tmp_path)
+    client, session, _ = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-recovery-action@example.com",
@@ -650,6 +669,7 @@ def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
             workspace_id=workspace.id,
             created_by_user_id=owner.id,
             export_type="workspace_archive",
+            execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
             status="completed",
             request={"api_key": "should-redact"},
             job_metadata={"token": "should-redact"},
@@ -685,7 +705,7 @@ def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
     assert dry_body["applied_count"] == 0
     assert dry_body["results"][0]["status"] == "would_apply"
     assert dry_body["summary"]["metadata_keys"] == ["base_url", "token"]
-    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert len(_pending_dispatches(session, workspace.id)) == 0
     serialized_dry_run = json.dumps(dry_body)
     assert "operator-secret" not in serialized_dry_run
     assert "https://private.example" not in serialized_dry_run
@@ -709,7 +729,7 @@ def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
     assert applied_body["applied_count"] == 1
     assert applied_body["summary"]["archive_export_jobs_enqueued"] == 1
     assert applied_body["results"][0]["resource_type"] == "workspace_export_job"
-    assert queue.count_queued(workspace_id=workspace.id) == 1
+    assert len(_pending_dispatches(session, workspace.id)) == 1
     export_job = session.get(WorkspaceExportJob, UUID(applied_body["results"][0]["resource_id"]))
     assert export_job is not None
     assert export_job.status == "queued"
@@ -732,8 +752,7 @@ def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
     assert (
         session.scalar(
             select(AuditEvent).where(
-                AuditEvent.action
-                == "workspace.recovery_readiness.archive_export_enqueued",
+                AuditEvent.action == "workspace.recovery_readiness.archive_export_enqueued",
                 AuditEvent.workspace_id == workspace.id,
             )
         )
@@ -744,7 +763,7 @@ def test_workspace_recovery_readiness_actions_dry_run_and_apply_archive_export(
 def test_workspace_recovery_readiness_actions_skip_when_export_active(
     tmp_path: Path,
 ) -> None:
-    client, session, _, queue = _client_with_worker_queue(tmp_path)
+    client, session, _ = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-recovery-active@example.com",
@@ -763,6 +782,7 @@ def test_workspace_recovery_readiness_actions_skip_when_export_active(
             workspace_id=workspace.id,
             created_by_user_id=owner.id,
             export_type="workspace_archive",
+            execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
             status="queued",
             request={"include_audit_events": False},
         )
@@ -783,13 +803,13 @@ def test_workspace_recovery_readiness_actions_skip_when_export_active(
     assert body["skipped_count"] == 1
     assert body["skipped"][0]["reason"] == "archive_export_already_active"
     assert body["summary"]["active_archive_export_job_count"] == 1
-    assert queue.count_queued(workspace_id=workspace.id) == 0
+    assert len(_pending_dispatches(session, workspace.id)) == 0
 
 
 def test_workspace_recovery_readiness_actions_run_restore_import_test(
     tmp_path: Path,
 ) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-recovery-restore-action@example.com",
@@ -802,21 +822,7 @@ def test_workspace_recovery_readiness_actions_run_restore_import_test(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(
-            worker_id="recovery-restore-action-worker",
-            queue_name="agent_runs",
-        ),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
 
     dry_run = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
@@ -844,19 +850,17 @@ def test_workspace_recovery_readiness_actions_run_restore_import_test(
     body = applied.json()
     assert body["status"] == "applied"
     assert body["applied_count"] == 1
-    assert body["summary"]["restore_import_tests_completed"] == 1
+    assert body["summary"]["restore_import_tests_queued"] == 1
     assert body["results"][0]["resource_type"] == "workspace_export_job"
     assert body["results"][0]["resource_id"] == job_id
-    assert body["results"][0]["metadata"]["passed"] == (
-        body["results"][0]["metadata"]["required_resolution_count"] == 0
-    )
+    assert body["results"][0]["metadata"]["operation_status"] == "queued"
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     assert "restore-secret" not in json.dumps(body)
     assert "storage_key" not in json.dumps(body)
     assert (
         session.scalar(
             select(AuditEvent).where(
-                AuditEvent.action
-                == "workspace.recovery_readiness.restore_import_test_completed",
+                AuditEvent.action == "workspace.recovery_readiness.restore_import_test_completed",
                 AuditEvent.workspace_id == workspace.id,
             )
         )
@@ -881,25 +885,11 @@ def test_workspace_recovery_readiness_actions_run_restore_import_test(
 def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
     tmp_path: Path,
 ) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-recovery-integrity-action@example.com",
         slug="owner-recovery-integrity-action",
-    )
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(
-            worker_id="recovery-integrity-action-worker",
-            queue_name="agent_runs",
-        ),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
     )
     first_created = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
@@ -908,13 +898,14 @@ def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
     )
     assert first_created.status_code == 202
     first_job_id = first_created.json()["id"]
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     first_verified = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{first_job_id}/verify",
         headers=_headers(owner.id),
     )
-    assert first_verified.status_code == 200
-    assert first_verified.json()["verified"] is True
+    assert first_verified.status_code == 202
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
+    assert _verification_result(client, workspace.id, owner.id, first_verified)["verified"] is True
 
     second_created = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
@@ -923,7 +914,7 @@ def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
     )
     assert second_created.status_code == 202
     second_job_id = second_created.json()["id"]
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
 
     readiness = client.get(
         f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
@@ -932,17 +923,14 @@ def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
     assert readiness.status_code == 200
     readiness_body = readiness.json()
     assert (
-        readiness_body["archive_integrity"][
-            "latest_check_covers_latest_successful_archive"
-        ]
+        readiness_body["archive_integrity"]["latest_check_covers_latest_successful_archive"]
         is False
     )
-    assert "latest_archive_integrity_check_stale" in readiness_body[
-        "restore_readiness"
-    ]["warnings"]
-    assert "verify_latest_archive_integrity" in readiness_body["restore_readiness"][
-        "recommended_actions"
-    ]
+    assert "latest_archive_integrity_check_stale" in readiness_body["restore_readiness"]["warnings"]
+    assert (
+        "verify_latest_archive_integrity"
+        in readiness_body["restore_readiness"]["recommended_actions"]
+    )
 
     dry_run = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness/actions/apply",
@@ -972,17 +960,16 @@ def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
     body = applied.json()
     assert body["status"] == "applied"
     assert body["applied_count"] == 1
-    assert body["summary"]["archive_integrity_checks_completed"] == 1
+    assert body["summary"]["archive_integrity_checks_queued"] == 1
     assert body["results"][0]["resource_id"] == second_job_id
-    assert body["results"][0]["metadata"]["verified"] is True
-    assert body["results"][0]["metadata"]["failed_checks"] == []
+    assert body["results"][0]["metadata"]["operation_status"] == "queued"
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     assert "integrity-secret" not in json.dumps(body)
     assert (
         session.scalar(
             select(AuditEvent).where(
                 AuditEvent.workspace_id == workspace.id,
-                AuditEvent.action
-                == "workspace.recovery_readiness.archive_integrity_verified",
+                AuditEvent.action == "workspace.recovery_readiness.archive_integrity_verified",
             )
         )
         is not None
@@ -1035,6 +1022,7 @@ def test_workspace_recovery_readiness_warns_when_backup_schedule_is_overdue(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         storage_key="workspaces/owner-overdue-schedule/exports/archive.zip",
         filename="archive.zip",
@@ -1094,6 +1082,7 @@ def test_workspace_recovery_readiness_requires_restore_test_after_latest_archive
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         storage_key="workspaces/owner-restore-history/exports/archive.zip",
         filename="archive.zip",
@@ -1164,6 +1153,7 @@ def test_workspace_recovery_readiness_reports_backup_coverage_gap(tmp_path: Path
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         storage_key="workspaces/owner-coverage-recovery/exports/archive.zip",
         filename="archive.zip",
@@ -1258,6 +1248,7 @@ def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metad
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         request={"token": "job-secret"},
         storage_key="workspaces/owner-retention-preview/exports/old.zip",
@@ -1273,6 +1264,7 @@ def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metad
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         request={},
         storage_key="workspaces/owner-retention-preview/exports/latest.zip",
@@ -1287,7 +1279,7 @@ def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metad
     session.add_all([old_file, fresh_file, foreign_file, old_job, backup_job, task])
     session.flush()
     backup_job.job_metadata = {
-        "format_version": "workspace-export.v2",
+        "format_version": "workspace-export.v3",
         "object_inventory": [
             {
                 "archive_name": f"files/{old_file.id}/old.txt",
@@ -1375,6 +1367,7 @@ def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
         export_type="workspace_archive",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         status="completed",
         request={},
         storage_key="workspaces/owner-retention-apply/exports/latest.zip",
@@ -1388,7 +1381,7 @@ def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
     session.add_all([old_file, backup_job])
     session.flush()
     backup_job.job_metadata = {
-        "format_version": "workspace-export.v2",
+        "format_version": "workspace-export.v3",
         "object_inventory": [
             {
                 "archive_name": f"files/{old_file.id}/old.txt",
@@ -1478,6 +1471,7 @@ def test_workspace_retention_protects_files_referenced_by_active_projects(
         status="completed",
         request={},
         storage_key="workspaces/owner-retention-project-reference/exports/latest.zip",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         filename="latest.zip",
         content_type="application/zip",
         size_bytes=40,
@@ -1488,7 +1482,7 @@ def test_workspace_retention_protects_files_referenced_by_active_projects(
     session.add_all([old_file, unbacked_file, project, backup_job])
     session.flush()
     backup_job.job_metadata = {
-        "format_version": "workspace-export.v2",
+        "format_version": "workspace-export.v3",
         "object_inventory": [
             {
                 "archive_name": f"files/{old_file.id}/input.txt",
@@ -1516,9 +1510,7 @@ def test_workspace_retention_protects_files_referenced_by_active_projects(
         json={"include_export_jobs": False, "include_artifacts": False},
     )
     assert preview.status_code == 200
-    candidates = {
-        candidate["resource_id"]: candidate for candidate in preview.json()["candidates"]
-    }
+    candidates = {candidate["resource_id"]: candidate for candidate in preview.json()["candidates"]}
     assert candidates[str(old_file.id)]["action"] == "manual_review"
     assert candidates[str(old_file.id)]["reason"] == "file_referenced_by_active_project"
     assert candidates[str(unbacked_file.id)]["action"] == "manual_review"
@@ -1918,17 +1910,13 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     assert body["skipped_counts"]["skill_installs"] == 1
     assert body["estimated_counts"]["skip_total"] >= 5
     assert body["estimated_counts"]["required_resolution_total"] == 0
-    resources_by_collection = {
-        item["collection"]: item for item in body["resources"]
-    }
+    resources_by_collection = {item["collection"]: item for item in body["resources"]}
     assert resources_by_collection["agents"]["action"] == "skip"
     assert resources_by_collection["agents"]["source_count"] == 1
     assert resources_by_collection["agents"]["skip_count"] == 1
     assert resources_by_collection["team_members"]["action"] == "skip"
     assert body["required_resolutions"] == []
-    conflicts_by_collection = {
-        item["collection"]: item for item in body["conflict_plan"]
-    }
+    conflicts_by_collection = {item["collection"]: item for item in body["conflict_plan"]}
     assert conflicts_by_collection["agents"]["strategy"] == "skip_existing"
     assert conflicts_by_collection["agents"]["target_value"] == "Imported Researcher"
     assert conflicts_by_collection["teams"]["strategy"] == "skip_existing"
@@ -1939,9 +1927,7 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
     assert "task_steps" in conflicts_by_collection
     assert "task_messages" in conflicts_by_collection
     dependency_suggestion = next(
-        item
-        for item in body["suggested_resolutions"]
-        if item["collection"] == "team_members"
+        item for item in body["suggested_resolutions"] if item["collection"] == "team_members"
     )
     team_member_conflict = conflicts_by_collection["team_members"]
     assert dependency_suggestion["recommended_action"] == "import_dependency"
@@ -1950,12 +1936,15 @@ def test_workspace_metadata_import_preview_returns_conflict_plan(tmp_path: Path)
         "dependency_field": team_member_conflict["field"],
         "dependency_id": team_member_conflict["source_value"],
     }
-    assert session.scalar(
-        select(AgentProfile).where(
-            AgentProfile.workspace_id == target_workspace.id,
-            AgentProfile.name == "Imported Researcher",
+    assert (
+        session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == target_workspace.id,
+                AgentProfile.name == "Imported Researcher",
+            )
         )
-    ) is not None
+        is not None
+    )
     assert (
         len(
             session.scalars(
@@ -2495,13 +2484,16 @@ def test_workspace_metadata_import_rejects_mismatched_preview_token(
     ]
     assert body["resources"][0]["action"] == "requires_resolution"
     assert body["estimated_counts"]["required_resolution_total"] == 1
-    assert session.scalar(
-        select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id)
-    ) is None
+    assert (
+        session.scalar(select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id))
+        is None
+    )
 
 
+@pytest.mark.parametrize("unsupported_version", ["workspace-export.v2", "workspace-export.v999"])
 def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
     tmp_path: Path,
+    unsupported_version: str,
 ) -> None:
     client, session = _client(tmp_path)
     source_user, source_workspace = _seed_workspace(
@@ -2520,7 +2512,7 @@ def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
         json={"include_audit_events": False},
     )
     export_payload = json.loads(export_response.content)
-    export_payload["manifest"]["format_version"] = "workspace-export.v999"
+    export_payload["manifest"]["format_version"] = unsupported_version
 
     preview = client.post(
         f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import/preview",
@@ -2536,13 +2528,13 @@ def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
             "collection": "manifest",
             "source_id": export_payload["manifest"]["workspace_id"],
             "field": "format_version",
-            "source_value": "workspace-export.v999",
-            "target_value": "workspace-export.v2",
+            "source_value": unsupported_version,
+            "target_value": "workspace-export.v3",
             "strategy": "reject",
             "severity": "error",
             "message": (
-                "Workspace export format 'workspace-export.v999' is not supported; "
-                "expected 'workspace-export.v2'."
+                f"Workspace export format {unsupported_version!r} is not supported; "
+                "expected 'workspace-export.v3'."
             ),
         }
     ]
@@ -2552,6 +2544,19 @@ def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
         "export_supported_version",
         "cancel_import",
     ]
+
+    committed = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": export_payload, "dry_run": False},
+    )
+    assert committed.status_code == 200
+    assert committed.json()["conflict_plan"] == body["conflict_plan"]
+    assert not any(committed.json()["created_counts"].values())
+    assert (
+        session.scalar(select(AgentProfile).where(AgentProfile.workspace_id == target_workspace.id))
+        is None
+    )
 
 
 def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_snapshots(
@@ -2574,9 +2579,8 @@ def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_sna
         name="Design Runtime",
         scope="team",
         policy={"runtime_modes": ["docker"], "resource_requirements": {"cpu": 2}},
-        network_policy={"egress": "restricted"},
-        storage_policy={"max_gb": 20},
-        cleanup_policy={"idle_ttl_minutes": 60},
+        storage_metadata={"max_gb": 20},
+        cleanup_metadata={"idle_ttl_minutes": 60},
     )
     skill = Skill(
         key="poster-maker",
@@ -2713,7 +2717,6 @@ def test_workspace_metadata_export_import_preserves_runtime_spaces_and_skill_sna
         "runtime_modes": ["docker"],
         "resource_requirements": {"cpu": 2},
     }
-    assert imported_space.network_policy == {"egress": "restricted"}
     assert imported_install is not None
     assert imported_install.installed_manifest == {"tools": ["generate_image"]}
     assert imported_agent is not None
@@ -2827,11 +2830,14 @@ def test_workspace_metadata_import_preview_rejects_disabled_skill_installs(
     assert committed.status_code == 200
     assert committed.json()["created_counts"]["skill_installs"] == 0
     assert committed.json()["skipped_counts"]["skill_installs"] == 1
-    assert session.scalars(
-        select(WorkspaceSkillInstall).where(
-            WorkspaceSkillInstall.workspace_id == target_workspace.id
-        )
-    ).all() == []
+    assert (
+        session.scalars(
+            select(WorkspaceSkillInstall).where(
+                WorkspaceSkillInstall.workspace_id == target_workspace.id
+            )
+        ).all()
+        == []
+    )
 
 
 def test_workspace_metadata_import_can_exclude_disabled_skill_resolution(
@@ -2895,9 +2901,7 @@ def test_workspace_metadata_import_can_exclude_disabled_skill_resolution(
         json={
             "export": export_payload,
             "dry_run": False,
-            "resolutions": {
-                f"skill_installs:{install.id}": {"action": "exclude_skill"}
-            },
+            "resolutions": {f"skill_installs:{install.id}": {"action": "exclude_skill"}},
         },
     )
 
@@ -2908,11 +2912,14 @@ def test_workspace_metadata_import_can_exclude_disabled_skill_resolution(
     assert body["skipped_counts"]["skill_installs"] == 1
     assert body["required_resolutions"] == []
     assert body["conflict_plan"] == []
-    assert session.scalars(
-        select(WorkspaceSkillInstall).where(
-            WorkspaceSkillInstall.workspace_id == target_workspace.id
-        )
-    ).all() == []
+    assert (
+        session.scalars(
+            select(WorkspaceSkillInstall).where(
+                WorkspaceSkillInstall.workspace_id == target_workspace.id
+            )
+        ).all()
+        == []
+    )
 
 
 def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
@@ -2979,9 +2986,7 @@ def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
     assert body["created_counts"]["runtime_spaces"] == 0
     assert body["skipped_counts"]["runtime_spaces"] == 1
     assert body["skipped_counts"]["runtime_space_quotas"] == 1
-    conflict_by_collection = {
-        item["collection"]: item for item in body["conflict_plan"]
-    }
+    conflict_by_collection = {item["collection"]: item for item in body["conflict_plan"]}
     assert conflict_by_collection["runtime_spaces"] == {
         "collection": "runtime_spaces",
         "source_id": str(runtime_space.id),
@@ -3016,15 +3021,18 @@ def test_workspace_metadata_import_preview_rejects_runtime_space_without_policy(
         "recommended_action": "add_runtime_policy",
         "resolution_template": {
             "action": "add_runtime_policy",
-            "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+            "policy": {"resource_requirements": {"cpu": 1, "memory_mb": 256}},
         },
     }
     assert committed.status_code == 200
     assert committed.json()["created_counts"]["runtime_spaces"] == 0
     assert committed.json()["skipped_counts"]["runtime_spaces"] == 1
-    assert session.scalars(
-        select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
-    ).all() == []
+    assert (
+        session.scalars(
+            select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
+        ).all()
+        == []
+    )
 
 
 def test_workspace_metadata_import_can_add_missing_runtime_policy_resolution(
@@ -3083,7 +3091,7 @@ def test_workspace_metadata_import_can_add_missing_runtime_policy_resolution(
             "resolutions": {
                 f"runtime_spaces:{runtime_space.id}": {
                     "action": "add_runtime_policy",
-                    "policy": {"runtime_modes": ["docker"], "network": "restricted"},
+                    "policy": {"resource_requirements": {"cpu": 1, "memory_mb": 256}},
                 }
             },
         },
@@ -3099,7 +3107,7 @@ def test_workspace_metadata_import_can_add_missing_runtime_policy_resolution(
         select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
     )
     assert imported_runtime is not None
-    assert imported_runtime.policy == {"runtime_modes": ["docker"], "network": "restricted"}
+    assert imported_runtime.policy == {"resource_requirements": {"cpu": 1, "memory_mb": 256}}
     imported_quota = session.scalar(
         select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
     )
@@ -3205,12 +3213,16 @@ def test_workspace_metadata_import_preview_rejects_quota_reserved_over_limit(
     assert committed.json()["created_counts"]["runtime_spaces"] == 1
     assert committed.json()["created_counts"]["runtime_space_quotas"] == 0
     assert committed.json()["skipped_counts"]["runtime_space_quotas"] == 1
-    assert session.scalar(
-        select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id)
-    ) is not None
-    assert session.scalars(
-        select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
-    ).all() == []
+    assert (
+        session.scalar(select(RuntimeSpace).where(RuntimeSpace.workspace_id == target_workspace.id))
+        is not None
+    )
+    assert (
+        session.scalars(
+            select(RuntimeSpaceQuota).where(RuntimeSpaceQuota.workspace_id == target_workspace.id)
+        ).all()
+        == []
+    )
 
 
 def test_workspace_metadata_import_can_release_source_quota_reservations(
@@ -3268,9 +3280,7 @@ def test_workspace_metadata_import_can_release_source_quota_reservations(
             "export": export_payload,
             "dry_run": False,
             "resolutions": {
-                f"runtime_space_quotas:{quota.id}": {
-                    "action": "release_source_reservations"
-                }
+                f"runtime_space_quotas:{quota.id}": {"action": "release_source_reservations"}
             },
         },
     )
@@ -3377,10 +3387,8 @@ def test_workspace_archive_export_includes_metadata_and_file_bytes(tmp_path: Pat
     assert uploaded.status_code == 201
     file_id = uploaded.json()["id"]
 
-    response = client.post(
-        f"/api/v1/workspaces/{workspace.id}/exports/archive",
-        headers=_headers(owner.id),
-        json={"include_audit_events": False},
+    response = _download_archive(
+        client, session, tmp_path, workspace.id, owner.id, {"include_audit_events": False}
     )
 
     assert response.status_code == 200
@@ -3407,10 +3415,8 @@ def test_workspace_archive_export_skips_large_objects(tmp_path: Path) -> None:
     assert uploaded.status_code == 201
     file_id = uploaded.json()["id"]
 
-    response = client.post(
-        f"/api/v1/workspaces/{workspace.id}/exports/archive",
-        headers=_headers(owner.id),
-        json={"max_bytes_per_object": 3},
+    response = _download_archive(
+        client, session, tmp_path, workspace.id, owner.id, {"max_bytes_per_object": 3}
     )
 
     assert response.status_code == 200
@@ -3440,10 +3446,13 @@ def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Pa
         files={"file": ("large.txt", b"1234567890", "text/plain")},
     )
     assert uploaded.status_code == 201
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
 
     preview = client.post(
@@ -3476,9 +3485,12 @@ def test_workspace_archive_import_preview_reports_oversized_objects(tmp_path: Pa
             "message": body["conflict_plan"][0]["message"],
         }
     ]
-    assert session.scalars(
-        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
-    ).all() == []
+    assert (
+        session.scalars(
+            select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+        ).all()
+        == []
+    )
 
 
 def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Path) -> None:
@@ -3498,10 +3510,13 @@ def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Pa
         headers=_headers(source_user.id),
         files={"file": ("brief.txt", b"original", "text/plain")},
     )
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
     tampered = BytesIO()
     with (
@@ -3587,14 +3602,18 @@ def test_workspace_archive_import_preview_rejects_checksum_mismatch(tmp_path: Pa
     assert conflict_history["recent_previews"][0]["action"] == (
         "workspace.archive_import.previewed"
     )
-    assert "resolve_import_conflicts_before_restore" in readiness.json()[
-        "restore_readiness"
-    ]["recommended_actions"]
+    assert (
+        "resolve_import_conflicts_before_restore"
+        in readiness.json()["restore_readiness"]["recommended_actions"]
+    )
     assert "original" not in str(conflict_history)
     assert "tampered" not in str(conflict_history)
-    assert session.scalars(
-        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
-    ).all() == []
+    assert (
+        session.scalars(
+            select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+        ).all()
+        == []
+    )
 
 
 def test_workspace_archive_import_can_replace_checksum_mismatch_with_resolution(
@@ -3616,10 +3635,13 @@ def test_workspace_archive_import_can_replace_checksum_mismatch_with_resolution(
         headers=_headers(source_user.id),
         files={"file": ("brief.txt", b"original", "text/plain")},
     )
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
     tampered = BytesIO()
     with (
@@ -3639,11 +3661,7 @@ def test_workspace_archive_import_can_replace_checksum_mismatch_with_resolution(
         data={
             "dry_run": "false",
             "resolutions": json.dumps(
-                {
-                    f"files:{uploaded.json()['id']}": {
-                        "action": "replace_archive_object"
-                    }
-                }
+                {f"files:{uploaded.json()['id']}": {"action": "replace_archive_object"}}
             ),
         },
     )
@@ -3672,10 +3690,13 @@ def test_workspace_archive_import_rejects_invalid_resolution_json(tmp_path: Path
         email="target-invalid-archive-resolution@example.com",
         slug="target-invalid-archive-resolution",
     )
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
 
     response = client.post(
@@ -3707,18 +3728,24 @@ def test_workspace_archive_import_rejects_missing_file_runtime_policy(tmp_path: 
         files={"file": ("brief.txt", b"portable data", "text/plain")},
     )
     assert uploaded.status_code == 201
-    exported = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    exported = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
     assert exported.status_code == 200
     mutated = BytesIO()
-    with ZipFile(BytesIO(exported.content)) as source_archive, ZipFile(
-        mutated,
-        "w",
-        ZIP_DEFLATED,
-    ) as target_archive:
+    with (
+        ZipFile(BytesIO(exported.content)) as source_archive,
+        ZipFile(
+            mutated,
+            "w",
+            ZIP_DEFLATED,
+        ) as target_archive,
+    ):
         for name in source_archive.namelist():
             content = source_archive.read(name)
             if name == "metadata.json":
@@ -3756,16 +3783,18 @@ def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Pat
     )
     assert uploaded.status_code == 201
     policy = client.put(
-        f"/api/v1/workspaces/{source_workspace.id}/files/"
-        f"{uploaded.json()['id']}/runtime-policy",
+        f"/api/v1/workspaces/{source_workspace.id}/files/{uploaded.json()['id']}/runtime-policy",
         headers=_headers(source_user.id),
         json={"sensitivity": "confidential", "runtime_access": "denied"},
     )
     assert policy.status_code == 200
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
 
     dry_run = client.post(
@@ -3776,9 +3805,12 @@ def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Pat
     )
     assert dry_run.status_code == 200
     assert dry_run.json()["created_counts"]["files"] == 1
-    assert session.scalars(
-        select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
-    ).all() == []
+    assert (
+        session.scalars(
+            select(WorkspaceFile).where(WorkspaceFile.workspace_id == target_workspace.id)
+        ).all()
+        == []
+    )
 
     committed = client.post(
         f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
@@ -3852,7 +3884,7 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     predecessor_storage_key = (
         f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter-v1.txt"
     )
-    LocalStorage(str(tmp_path)).write(predecessor_storage_key, predecessor_bytes)
+    LocalObjectStorage(str(tmp_path)).write(predecessor_storage_key, predecessor_bytes)
     predecessor_artifact = Artifact(
         workspace_id=source_workspace.id,
         task_id=source_task.id,
@@ -3875,7 +3907,7 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     session.flush()
     artifact_bytes = b"chapter one artifact"
     storage_key = f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter.txt"
-    LocalStorage(str(tmp_path)).write(storage_key, artifact_bytes)
+    LocalObjectStorage(str(tmp_path)).write(storage_key, artifact_bytes)
     source_artifact = Artifact(
         workspace_id=source_workspace.id,
         task_id=source_task.id,
@@ -3897,10 +3929,13 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     )
     session.add(source_artifact)
     session.commit()
-    archive_response = client.post(
-        f"/api/v1/workspaces/{source_workspace.id}/exports/archive",
-        headers=_headers(source_user.id),
-        json={"include_audit_events": False},
+    archive_response = _download_archive(
+        client,
+        session,
+        tmp_path,
+        source_workspace.id,
+        source_user.id,
+        {"include_audit_events": False},
     )
     with ZipFile(BytesIO(archive_response.content)) as archive:
         metadata = json.loads(archive.read("metadata.json"))
@@ -3952,18 +3987,17 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
         source_artifact.id
     )
     downloaded = client.get(
-        f"/api/v1/workspaces/{target_workspace.id}/artifacts/"
-        f"{imported_artifact.id}/download",
+        f"/api/v1/workspaces/{target_workspace.id}/artifacts/{imported_artifact.id}/download",
         headers=_headers(target_user.id),
     )
     assert downloaded.status_code == 200
     assert downloaded.content == artifact_bytes
 
 
-def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
+def test_workspace_archive_export_job_runs_in_native_activity_and_downloads_zip(
     tmp_path: Path,
 ) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
     uploaded = client.post(
         f"/api/v1/workspaces/{workspace.id}/files",
@@ -3983,18 +4017,7 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
     assert created.json()["status"] == "queued"
     assert "storage_key" not in created.json()
     assert created.json()["has_storage_object"] is False
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="export-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     export_job = session.get(WorkspaceExportJob, UUID(job_id))
     assert export_job is not None
     export_job.job_metadata = {
@@ -4015,6 +4038,8 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/verify",
         headers=_headers(owner.id),
     )
+    assert verified.status_code == 202
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     readiness = client.get(
         f"/api/v1/workspaces/{workspace.id}/exports/recovery-readiness",
         headers=_headers(owner.id),
@@ -4037,8 +4062,7 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
         file_name = f"files/{uploaded.json()['id']}/brief.txt"
         assert "metadata.json" in names
         assert archive.read(file_name) == b"async archive"
-    assert verified.status_code == 200
-    verify_body = verified.json()
+    verify_body = _verification_result(client, workspace.id, owner.id, verified)
     assert verify_body["verified"] is True
     assert verify_body["failed_checks"] == []
     assert verify_body["checks"]["checksum_matches"] is True
@@ -4054,7 +4078,7 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
 def test_workspace_archive_export_job_verify_reports_tampered_archive(
     tmp_path: Path,
 ) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-tampered-archive@example.com",
@@ -4067,30 +4091,20 @@ def test_workspace_archive_export_job_verify_reports_tampered_archive(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="verify-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     export_job = session.get(WorkspaceExportJob, UUID(job_id))
     assert export_job is not None
     assert export_job.storage_key is not None
-    LocalStorage(str(tmp_path)).write(export_job.storage_key, b"tampered archive")
+    LocalObjectStorage(str(tmp_path)).write(export_job.storage_key, b"tampered archive")
 
     verified = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/verify",
         headers=_headers(owner.id),
     )
 
-    assert verified.status_code == 200
-    body = verified.json()
+    assert verified.status_code == 202
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
+    body = _verification_result(client, workspace.id, owner.id, verified)
     assert body["verified"] is False
     assert "checksum_matches" in body["failed_checks"]
     assert "zip_readable" in body["failed_checks"]
@@ -4109,7 +4123,7 @@ def test_workspace_archive_export_job_verify_reports_tampered_archive(
 def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
     tmp_path: Path,
 ) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-restore-drill@example.com",
@@ -4122,26 +4136,17 @@ def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="drill-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
 
     drill = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
         headers=_headers(owner.id),
         json={},
     )
-    assert drill.status_code == 200
-    drill_body = drill.json()
+    assert drill.status_code == 202
+    assert drill.json()["status"] == "queued" and drill.json()["result"] is None
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
+    drill_body = _restore_result(client, workspace.id, owner.id, drill)
     assert drill_body["workspace_id"] == str(workspace.id)
     assert drill_body["job_id"] == job_id
     assert drill_body["import_preview"]["dry_run"] is False
@@ -4175,8 +4180,155 @@ def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
     assert "storage_key" not in str(body)
 
 
-def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+def test_restore_drill_receipt_blocks_unknown_writes_and_scoped_reconcile_cleans_objects(
+    tmp_path: Path,
+) -> None:
+    client, session, sessions = _product_client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session, email="uncertain-drill@example.com", slug="uncertain-drill"
+    )
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert created.status_code == 202
+    job_id = UUID(created.json()["id"])
+    assert _execute_archive_exports(session, sessions, tmp_path) == 1
+    engine = restore_drill_engine(session)
+    storage = LocalObjectStorage(str(tmp_path))
+    with restore_drill_lock(engine, workspace.id):
+        operation = RestoreDrillOperationService(session).create(
+            workspace.id, job_id, owner.id, WorkspaceArchiveRestoreDrillRequest()
+        )
+        operation.status = "running"
+        session.commit()
+        receipts = RestoreDrillStorage(engine, storage, workspace.id, operation.id)
+        key = f"workspaces/{operation.temporary_workspace_id}/files/{job_id}/partial.txt"
+        receipts.write(key, b"partial restore")
+        active = client.get(
+            f"/api/v1/workspaces/{workspace.id}/exports/archive/restore-drills/{operation.id}",
+            headers=_headers(owner.id),
+        )
+        assert active.status_code == 200 and active.json()["status"] == "running"
+        busy = client.post(
+            f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+            headers=_headers(owner.id),
+            json={},
+        )
+        assert busy.status_code == 409
+    # The executor is gone and the original durable receipt survived its scope.
+    blocked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+        headers=_headers(owner.id),
+        json={},
+    )
+    assert blocked.status_code == 409
+    session.expire_all()
+    assert session.get(WorkspaceRestoreDrillOperation, operation.id).status == "unknown"
+    assert storage.exists(key)
+    foreign, foreign_workspace = _seed_workspace(
+        session, email="foreign-drill@example.com", slug="foreign-drill"
+    )
+    denied = client.post(
+        f"/api/v1/workspaces/{foreign_workspace.id}/exports/archive/restore-drills/{operation.id}/reconcile",
+        headers=_headers(foreign.id),
+        json={"reason": "foreign receipt"},
+    )
+    assert denied.status_code == 404 and storage.exists(key)
+    reconciled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/restore-drills/{operation.id}/reconcile",
+        headers=_headers(owner.id),
+        json={"reason": "Executor stopped; clean its recorded temporary objects"},
+    )
+    assert reconciled.status_code == 200 and reconciled.json()["status"] == "reconciled"
+    assert not storage.exists(key)
+    assert "storage_keys" not in reconciled.json()
+    repeated = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/restore-drills/{operation.id}/reconcile",
+        headers=_headers(owner.id),
+        json={"reason": "same cleanup"},
+    )
+    assert repeated.status_code == 200
+    resumed = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+        headers=_headers(owner.id),
+        json={},
+    )
+    assert resumed.status_code == 202
+    client.close()
+
+
+def test_restore_drill_executor_death_keeps_write_receipt_and_does_not_repeat_import(
+    tmp_path: Path,
+) -> None:
+    client, session, sessions = _product_client(tmp_path)
+    owner, workspace = _seed_workspace(session, email="crash-drill@example.com", slug="crash-drill")
+    uploaded = client.post(
+        f"/api/v1/workspaces/{workspace.id}/files",
+        headers=_headers(owner.id),
+        files={"file": ("source.txt", b"source data", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
+        headers=_headers(owner.id),
+        json={"include_audit_events": False},
+    )
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    assert _execute_archive_exports(session, sessions, tmp_path) == 1
+    engine = restore_drill_engine(session)
+    admitted = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+        headers=_headers(owner.id),
+        json={},
+    )
+    assert admitted.status_code == 202
+    crash = subprocess.run(
+        [
+            sys.executable,
+            str(Path("tests/fixtures/restore_crash.py").resolve()),
+            engine.url.render_as_string(hide_password=False),
+            str(workspace.id),
+            str(owner.id),
+            admitted.json()["id"],
+            str(tmp_path),
+        ],
+        capture_output=True,
+        timeout=60,
+    )
+    assert crash.returncode == 23, crash.stderr.decode(errors="replace")
+    session.expire_all()
+    operation = session.scalars(select(WorkspaceRestoreDrillOperation)).one()
+    assert operation.status == "running" and len(operation.storage_keys) == 1
+    storage = LocalObjectStorage(str(tmp_path))
+    partial = operation.storage_keys[0]
+    assert storage.exists(partial)
+    assert session.get(Workspace, operation.temporary_workspace_id) is None
+    blocked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{job_id}/restore-drill",
+        headers=_headers(owner.id),
+        json={},
+    )
+    assert blocked.status_code == 409
+    session.expire_all()
+    assert session.get(WorkspaceRestoreDrillOperation, operation.id).status == "unknown"
+    assert len(session.scalars(select(WorkspaceRestoreDrillOperation)).all()) == 1
+    reconciled = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/restore-drills/{operation.id}/reconcile",
+        headers=_headers(owner.id),
+        json={"reason": "Worker exited at the external write; clean the recorded object"},
+    )
+    assert reconciled.status_code == 200 and not storage.exists(partial)
+    source = session.get(WorkspaceFile, UUID(uploaded.json()["id"]))
+    assert storage.read(source.storage_key) == b"source data"
+    assert session.get(Workspace, operation.temporary_workspace_id) is None
+    client.close()
+
+
+def test_lifecycle_service_stages_due_workspace_backup_job(tmp_path: Path) -> None:
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-scheduled-backup@example.com",
@@ -4197,25 +4349,16 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
         }
     }
     session.commit()
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="lifecycle-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
+
+    maintenance = _scheduled_lifecycle(session, tmp_path)
+
+    assert maintenance.backup_jobs_enqueued == 1
+    assert len(_pending_dispatches(session, workspace.id)) == 1
+    queued_job = ExecutionRequest.model_validate(
+        _pending_dispatches(session, workspace.id)[0].payload["execution"]
     )
-
-    maintenance = runner.run_maintenance()
-
-    assert maintenance.lifecycle_backup_jobs_enqueued == 1
-    assert queue.count_queued(workspace_id=workspace.id) == 1
-    queued_job = queue.peek(limit=1)[0]
     assert queued_job.workspace_id == workspace.id
-    assert queued_job.job_type == "workspace.archive_export"
+    assert queued_job.kind is ExecutionKind.ARCHIVE_EXPORT
     export_job = session.get(WorkspaceExportJob, queued_job.resource_id)
     assert export_job is not None
     assert export_job.status == "queued"
@@ -4232,8 +4375,8 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
     assert audit is not None
     assert audit.user_id == owner.id
     assert audit.audit_metadata["reason"] == "backup_schedule_due"
-    second_maintenance = runner.run_maintenance()
-    assert second_maintenance.lifecycle_backup_jobs_skipped == 1
+    second_maintenance = _scheduled_lifecycle(session, tmp_path)
+    assert second_maintenance.backup_jobs_skipped == 1
     diagnostics = client.get(
         f"/api/v1/workspaces/{workspace.id}/exports/lifecycle-diagnostics",
         headers=_headers(owner.id),
@@ -4245,9 +4388,7 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
     assert automation["active_archive_export_job_count"] == 1
     assert automation["latest_event"]["action"] == "workspace.lifecycle.backup_skipped"
     assert automation["latest_event"]["metadata"]["reason"] == "archive_export_already_active"
-    assert {
-        event["action"] for event in automation["recent_events"]
-    } == {
+    assert {event["action"] for event in automation["recent_events"]} == {
         "workspace.lifecycle.backup_enqueued",
         "workspace.lifecycle.backup_skipped",
     }
@@ -4257,8 +4398,51 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
     assert "scheduled-secret" not in str(automation)
 
 
-def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+@pytest.mark.parametrize("manual", [False, True])
+def test_scheduled_and_manual_archive_admission_share_one_postgres_boundary(
+    tmp_path: Path, manual: bool
+) -> None:
+    client, session, sessions = _product_client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session, email="concurrent-backup@example.com", slug="concurrent-backup"
+    )
+    workspace.settings = {
+        "data_lifecycle": {
+            "backup": {"enabled": True, "schedule": "daily", "target_type": "manual_export"}
+        }
+    }
+    session.commit()
+    workspace_id, owner_id = workspace.id, owner.id
+    barrier = Barrier(2)
+
+    def create(index: int) -> None:
+        with sessions() as transaction:
+            current = transaction.get(Workspace, workspace_id)
+            barrier.wait(timeout=10)
+            try:
+                if manual and index:
+                    WorkspaceExportService(transaction).create_archive_export_job(
+                        workspace=current,
+                        user_id=owner_id,
+                        request=WorkspaceArchiveExportRequest(),
+                    )
+                else:
+                    ScheduledBackupService(transaction).run_if_due(current)
+                transaction.commit()
+            except DomainError as failure:
+                transaction.rollback()
+                assert manual and failure.code == "archive_export_active"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(create, [0, 1]))
+    session.expire_all()
+    assert len(session.scalars(select(WorkspaceExportJob)).all()) == 1
+    assert len(_pending_dispatches(session, workspace_id)) == 1
+    client.close()
+
+
+def test_lifecycle_service_applies_due_workspace_retention(tmp_path: Path) -> None:
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-scheduled-retention@example.com",
@@ -4292,6 +4476,7 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
         export_type="workspace_archive",
         status="completed",
         storage_key="workspaces/owner-scheduled-retention/exports/latest.zip",
+        execution_identity={"user_id": str(owner.id), "token_id": None, "token_scopes": None},
         filename="latest.zip",
         content_type="application/zip",
         size_bytes=50,
@@ -4302,7 +4487,7 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
     session.add_all([old_file, completed_job])
     session.flush()
     completed_job.job_metadata = {
-        "format_version": "workspace-export.v2",
+        "format_version": "workspace-export.v3",
         "object_inventory": [
             {
                 "archive_name": f"files/{old_file.id}/old.txt",
@@ -4314,22 +4499,11 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
         ],
     }
     session.commit()
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="retention-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
 
-    maintenance = runner.run_maintenance()
+    maintenance = _scheduled_lifecycle(session, tmp_path)
 
     session.refresh(old_file)
-    assert maintenance.lifecycle_retention_runs_applied == 1
+    assert maintenance.retention_runs_applied == 1
     assert old_file.status == "retention_deleted"
     assert old_file.file_metadata["retention_delete_policy"] == "soft_delete"
     audit = session.scalar(
@@ -4355,8 +4529,8 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
     assert automation["latest_event"]["action"] == "workspace.retention_applied"
 
 
-def test_worker_maintenance_runs_due_workspace_restore_drill(tmp_path: Path) -> None:
-    client, session, session_factory, queue = _client_with_worker_queue(tmp_path)
+def test_lifecycle_service_runs_due_workspace_restore_drill(tmp_path: Path) -> None:
+    client, session, session_factory = _product_client(tmp_path)
     owner, workspace = _seed_workspace(
         session,
         email="owner-scheduled-restore-drill@example.com",
@@ -4387,22 +4561,12 @@ def test_worker_maintenance_runs_due_workspace_restore_drill(tmp_path: Path) -> 
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="restore-drill-worker", queue_name="agent_runs"),
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token=TOKEN,
-            storage_root=str(tmp_path),
-        ),
-    )
-    assert runner.run_once() is True
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
 
-    maintenance = runner.run_maintenance()
+    maintenance = _scheduled_lifecycle(session, tmp_path)
 
-    assert maintenance.lifecycle_restore_drills_completed == 1
+    assert maintenance.restore_drills_queued == 1
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
     drill_audit = session.scalar(
         select(AuditEvent).where(
             AuditEvent.workspace_id == workspace.id,
@@ -4436,12 +4600,12 @@ def test_worker_maintenance_runs_due_workspace_restore_drill(tmp_path: Path) -> 
     assert automation["latest_event"]["action"] == "workspace.lifecycle.restore_drill_completed"
     assert "storage_key" not in str(automation)
 
-    second_maintenance = runner.run_maintenance()
-    assert second_maintenance.lifecycle_restore_drills_completed == 0
+    second_maintenance = _scheduled_lifecycle(session, tmp_path)
+    assert second_maintenance.restore_drills_queued == 0
 
 
 def test_workspace_archive_export_job_download_requires_completion(tmp_path: Path) -> None:
-    client, session, _, _ = _client_with_worker_queue(tmp_path)
+    client, session, _ = _product_client(tmp_path)
     owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs",
@@ -4451,8 +4615,7 @@ def test_workspace_archive_export_job_download_requires_completion(tmp_path: Pat
     assert created.status_code == 202
 
     download = client.get(
-        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/"
-        f"{created.json()['id']}/download",
+        f"/api/v1/workspaces/{workspace.id}/exports/archive/jobs/{created.json()['id']}/download",
         headers=_headers(owner.id),
     )
 
@@ -4640,7 +4803,7 @@ def test_workspace_export_import_round_trips_project_versions_and_memory_metadat
     )
     assert exported.status_code == 200
     payload = exported.json()
-    assert payload["manifest"]["format_version"] == "workspace-export.v2"
+    assert payload["manifest"]["format_version"] == "workspace-export.v3"
     assert payload["manifest"]["payload_checksum_sha256"]
     assert payload["projects"][0]["slug"] == "research-project"
     assert payload["memory_entries"][0]["memory_key"] == "research.preference"
@@ -4674,25 +4837,97 @@ def test_workspace_export_import_round_trips_project_versions_and_memory_metadat
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:
-    client, session, _, _ = _client_with_worker_queue(tmp_path)
+    client, session, _ = _product_client(tmp_path)
     return client, session
 
 
-def _client_with_worker_queue(
-    tmp_path: Path,
-) -> tuple[TestClient, Session, sessionmaker[Session], RedisQueue]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+def _pending_dispatches(session: Session, workspace_id: UUID) -> list[TemporalOutboxEntry]:
+    return list(
+        session.scalars(
+            select(TemporalOutboxEntry)
+            .where(
+                TemporalOutboxEntry.workspace_id == workspace_id,
+                TemporalOutboxEntry.published_at.is_(None),
+            )
+            .order_by(TemporalOutboxEntry.created_at, TemporalOutboxEntry.id)
+        )
     )
+
+
+def _execute_archive_exports(session, session_factory, tmp_path) -> int:
+    processed = 0
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        activities = ArchiveExecutionActivities(
+            ActivityDependencies(
+                session_factory, Settings(environment="test", storage_root=str(tmp_path))
+            ),
+            executor,
+        )
+        for row in session.scalars(
+            select(TemporalOutboxEntry).where(TemporalOutboxEntry.published_at.is_(None))
+        ):
+            request = ExecutionRequest.model_validate(row.payload["execution"])
+            if request.kind is ExecutionKind.ARCHIVE_EXPORT:
+                asyncio.run(ActivityEnvironment().run(activities.export, request))
+            elif request.kind is ExecutionKind.ARCHIVE_VERIFY:
+                asyncio.run(ActivityEnvironment().run(activities.verify, request))
+            elif request.kind is ExecutionKind.ARCHIVE_RESTORE_DRILL:
+                asyncio.run(ActivityEnvironment().run(activities.restore_drill, request))
+            else:
+                continue
+            row.published_at = datetime.now(UTC)
+            processed += 1
+    session.commit()
+    session.expire_all()
+    return processed
+
+
+def _verification_result(client, workspace_id, user_id, admitted):
+    response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/exports/archive/verifications/{admitted.json()['id']}",
+        headers=_headers(user_id),
+    )
+    assert response.status_code == 200 and response.json()["status"] == "completed"
+    return response.json()["result"]
+
+
+def _download_archive(client, session, tmp_path, workspace_id, user_id, request):
+    admitted = client.post(
+        f"/api/v1/workspaces/{workspace_id}/exports/archive/jobs",
+        headers=_headers(user_id),
+        json=request,
+    )
+    assert admitted.status_code == 202
+    session_factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False, class_=Session)
+    assert _execute_archive_exports(session, session_factory, tmp_path) == 1
+    return client.get(
+        f"/api/v1/workspaces/{workspace_id}/exports/archive/jobs/{admitted.json()['id']}/download",
+        headers=_headers(user_id),
+    )
+
+
+def _restore_result(client, workspace_id, user_id, admitted):
+    response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/exports/archive/restore-drills/{admitted.json()['id']}",
+        headers=_headers(user_id),
+    )
+    assert response.status_code == 200 and response.json()["status"] == "completed"
+    return response.json()["result"]
+
+
+def _scheduled_lifecycle(session, tmp_path):
+    return WorkspaceDataLifecycleService(session).run_scheduled_lifecycle()
+
+
+def _product_client(
+    tmp_path: Path,
+) -> tuple[TestClient, Session, sessionmaker[Session]]:
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
     session = session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
+
     app = create_app(
         Settings(
             environment="test",
@@ -4713,8 +4948,8 @@ def _client_with_worker_queue(
     app.dependency_overrides[get_db_session] = override_db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
-    app.dependency_overrides[get_worker_queue] = lambda: queue
-    return TestClient(app), session, session_factory, queue
+
+    return TestClient(app), session, session_factory
 
 
 def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, Workspace]:
@@ -4744,12 +4979,3 @@ def _retention_settings() -> dict[str, object]:
             },
         }
     }
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

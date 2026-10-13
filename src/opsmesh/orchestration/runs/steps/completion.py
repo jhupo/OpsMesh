@@ -7,15 +7,15 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.execution.contracts import AgentRunResult
 from opsmesh.capabilities.references.schema import validate_json_value
 from opsmesh.orchestration.definitions.graph import is_pm_summary_step
-from opsmesh.orchestration.planning.pm_acceptance import PmAcceptanceService
+from opsmesh.orchestration.planning.manager_acceptance import ManagerAcceptanceService
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.runs.result_payloads import run_output_payload
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import TaskMessage, TaskStep
 from opsmesh.orchestration.tasks.steps import (
-    TaskStepStateService,
     TaskStepStatus,
     step_message_payload,
+    transition_task_step,
 )
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
@@ -33,11 +33,11 @@ class TaskStepCompletionService:
         if step is None or step.workspace_id != run.workspace_id:
             return
         result_payload = result_payload_for_step(run, final_output)
-        TaskStepStateService().transition(
+        transition_task_step(
             step,
             TaskStepStatus.COMPLETED,
             result_payload=result_payload,
-            result_summary=PmAcceptanceService(self._session).step_result_summary(
+            result_summary=ManagerAcceptanceService(self._session).step_result_summary(
                 step,
                 run,
                 final_output,
@@ -68,7 +68,7 @@ class TaskStepCompletionService:
             return
         structured = result.structured_output
         if is_pm_summary_step(step):
-            PmAcceptanceService.validated_acceptance(run_output_payload(result))
+            ManagerAcceptanceService.validated_acceptance(run_output_payload(result))
         dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
         schema = dependencies.get("output_schema")
         if not isinstance(schema, dict):

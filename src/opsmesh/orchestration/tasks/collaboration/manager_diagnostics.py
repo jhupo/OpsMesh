@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -27,7 +27,7 @@ from opsmesh.orchestration.tasks.collaboration.manager_queue import (
     manager_queue_item,
     manager_queue_summary,
 )
-from opsmesh.orchestration.tasks.control.dependencies import (
+from opsmesh.orchestration.tasks.control.step_dependencies import (
     manager_agent_id as resolve_manager_agent_id,
 )
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
@@ -47,69 +47,74 @@ class TaskManagerDiagnosticsService:
         if task is None:
             return None
 
-        steps = self._steps(workspace_id, task_id)
-        messages = self._messages(workspace_id, task_id)
-        manager_agent_id = resolve_manager_agent_id(task)
-        agents = self._agents(workspace_id, steps, messages, manager_agent_id)
-        manager_agent = agents.get(manager_agent_id) if manager_agent_id is not None else None
-        manager_steps = _manager_steps(steps)
-        specialist_steps = [step for step in steps if step.id not in manager_steps["ids"]]
-        acceptance_messages = [
-            message for message in messages if message.message_type == "pm.acceptance_decision"
-        ]
-        follow_up_messages = [
-            message for message in messages if message.message_type == "pm.follow_up_created"
-        ]
-        follow_up_cycle_payloads = follow_up_cycles(steps, follow_up_messages)
-        blocked_reason_values = blocked_reasons(
-            manager_agent_id=manager_agent_id,
-            manager_steps=manager_steps,
-            specialist_steps=specialist_steps,
-            acceptance_messages=acceptance_messages,
-            follow_up_cycles=follow_up_cycle_payloads,
-        )
+        return self.diagnostics_for_tasks(workspace_id=workspace_id, tasks=[task])[task.id]
 
-        return {
-            "workspace_id": workspace_id,
-            "task_id": task_id,
-            "generated_at": datetime.now(UTC),
-            "manager": {
-                "agent_profile_id": manager_agent_id,
-                "agent": _agent_payload(manager_agent),
-                "has_manager": manager_agent_id is not None,
-                "planning_step_id": step_id(manager_steps["planning"]),
-                "summary_step_ids": [step_id(step) for step in manager_steps["summaries"]],
-                "revision_review_step_ids": [
-                    step_id(step) for step in manager_steps["revision_reviews"]
-                ],
-            },
-            "summary": {
-                "status": overall_status(blocked_reason_values),
-                "total_steps": len(steps),
-                "specialist_steps": len(specialist_steps),
-                "manager_steps": len(manager_steps["all"]),
-                "acceptance_decisions": len(acceptance_messages),
-                "follow_up_cycles": len(follow_up_cycle_payloads),
-                "step_status_counts": dict(sorted(Counter(step.status for step in steps).items())),
-                "decision_counts": dict(
-                    sorted(
-                        Counter(
-                            decision_from_message(message) for message in acceptance_messages
-                        ).items()
+    def diagnostics_for_tasks(
+        self,
+        *,
+        workspace_id: UUID,
+        tasks: list[Task],
+        steps: list[TaskStep] | None = None,
+    ) -> dict[UUID, ManagerDiagnostics]:
+        if any(task.workspace_id != workspace_id for task in tasks):
+            raise ValueError("Diagnostic task outside workspace")
+        task_ids = {task.id for task in tasks}
+        if not task_ids:
+            return {}
+        if steps is None:
+            steps = list(
+                self._session.scalars(
+                    select(TaskStep)
+                    .where(TaskStep.workspace_id == workspace_id, TaskStep.task_id.in_(task_ids))
+                    .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
+                )
+            )
+        if any(step.workspace_id != workspace_id or step.task_id not in task_ids for step in steps):
+            raise ValueError("Diagnostic step outside task scope")
+        steps = sorted(steps, key=lambda step: (step.order_index, step.created_at))
+        messages = list(
+            self._session.scalars(
+                select(TaskMessage)
+                .where(TaskMessage.workspace_id == workspace_id, TaskMessage.task_id.in_(task_ids))
+                .order_by(TaskMessage.sequence.asc())
+            )
+        )
+        agent_ids = {
+            identifier
+            for identifier in (
+                [resolve_manager_agent_id(task) for task in tasks]
+                + [step.assigned_agent_profile_id for step in steps]
+                + [message.agent_profile_id for message in messages]
+            )
+            if identifier is not None
+        }
+        agents = (
+            {
+                agent.id: agent
+                for agent in self._session.scalars(
+                    select(AgentProfile).where(
+                        AgentProfile.workspace_id == workspace_id, AgentProfile.id.in_(agent_ids)
                     )
-                ),
-            },
-            "handoff_chain": handoff_chain(
-                manager_steps=manager_steps,
-                specialist_steps=specialist_steps,
-                acceptance_messages=acceptance_messages,
-                follow_up_cycles=follow_up_cycle_payloads,
-            ),
-            "acceptance_decisions": [
-                acceptance_payload(message, follow_up_messages) for message in acceptance_messages
-            ],
-            "follow_up_cycles": follow_up_cycle_payloads,
-            "blocked_reasons": blocked_reason_values,
+                )
+            }
+            if agent_ids
+            else {}
+        )
+        steps_by_task: dict[UUID, list[TaskStep]] = defaultdict(list)
+        messages_by_task: dict[UUID, list[TaskMessage]] = defaultdict(list)
+        for step in steps:
+            steps_by_task[step.task_id].append(step)
+        for message in messages:
+            messages_by_task[message.task_id].append(message)
+        return {
+            task.id: _manager_diagnostics(
+                workspace_id=workspace_id,
+                task=task,
+                steps=steps_by_task[task.id],
+                messages=messages_by_task[task.id],
+                agents=agents,
+            )
+            for task in tasks
         }
 
     def list_manager_queue(
@@ -136,9 +141,10 @@ class TaskManagerDiagnosticsService:
             )
         )
 
+        diagnostics_by_task = self.diagnostics_for_tasks(workspace_id=workspace_id, tasks=tasks)
         items: list[ManagerQueueItem] = []
         for task in tasks:
-            diagnostics = self.get_diagnostics(workspace_id=workspace_id, task_id=task.id)
+            diagnostics = diagnostics_by_task.get(task.id)
             if diagnostics is None:
                 continue
             item = manager_queue_item(task, diagnostics)
@@ -159,49 +165,76 @@ class TaskManagerDiagnosticsService:
             "items": paged_items,
         }
 
-    def _steps(self, workspace_id: UUID, task_id: UUID) -> list[TaskStep]:
-        return list(
-            self._session.scalars(
-                select(TaskStep)
-                .where(TaskStep.workspace_id == workspace_id, TaskStep.task_id == task_id)
-                .order_by(TaskStep.order_index.asc(), TaskStep.created_at.asc())
-            )
-        )
 
-    def _messages(self, workspace_id: UUID, task_id: UUID) -> list[TaskMessage]:
-        return list(
-            self._session.scalars(
-                select(TaskMessage)
-                .where(TaskMessage.workspace_id == workspace_id, TaskMessage.task_id == task_id)
-                .order_by(TaskMessage.sequence.asc())
-            )
-        )
+def _manager_diagnostics(
+    *,
+    workspace_id: UUID,
+    task: Task,
+    steps: list[TaskStep],
+    messages: list[TaskMessage],
+    agents: dict[UUID, AgentProfile],
+) -> ManagerDiagnostics:
+    manager_agent_id = resolve_manager_agent_id(task)
+    manager_agent = agents.get(manager_agent_id) if manager_agent_id is not None else None
+    manager_steps = _manager_steps(steps)
+    specialist_steps = [step for step in steps if step.id not in manager_steps["ids"]]
+    acceptance_messages = [
+        message for message in messages if message.message_type == "pm.acceptance_decision"
+    ]
+    follow_up_messages = [
+        message for message in messages if message.message_type == "pm.follow_up_created"
+    ]
+    follow_up_cycle_payloads = follow_up_cycles(steps, follow_up_messages)
+    blocked_reason_values = blocked_reasons(
+        manager_agent_id=manager_agent_id,
+        manager_steps=manager_steps,
+        specialist_steps=specialist_steps,
+        acceptance_messages=acceptance_messages,
+        follow_up_cycles=follow_up_cycle_payloads,
+    )
 
-    def _agents(
-        self,
-        workspace_id: UUID,
-        steps: list[TaskStep],
-        messages: list[TaskMessage],
-        manager_agent_id: UUID | None,
-    ) -> dict[UUID, AgentProfile]:
-        agent_ids = {
-            agent_id
-            for agent_id in (
-                [manager_agent_id]
-                + [step.assigned_agent_profile_id for step in steps]
-                + [message.agent_profile_id for message in messages]
-            )
-            if agent_id is not None
-        }
-        if not agent_ids:
-            return {}
-        agents = self._session.scalars(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.id.in_(agent_ids),
-            )
-        ).all()
-        return {agent.id: agent for agent in agents}
+    return {
+        "workspace_id": workspace_id,
+        "task_id": task.id,
+        "generated_at": datetime.now(UTC),
+        "manager": {
+            "agent_profile_id": manager_agent_id,
+            "agent": _agent_payload(manager_agent),
+            "has_manager": manager_agent_id is not None,
+            "planning_step_id": step_id(manager_steps["planning"]),
+            "summary_step_ids": [step_id(step) for step in manager_steps["summaries"]],
+            "revision_review_step_ids": [
+                step_id(step) for step in manager_steps["revision_reviews"]
+            ],
+        },
+        "summary": {
+            "status": overall_status(blocked_reason_values),
+            "total_steps": len(steps),
+            "specialist_steps": len(specialist_steps),
+            "manager_steps": len(manager_steps["all"]),
+            "acceptance_decisions": len(acceptance_messages),
+            "follow_up_cycles": len(follow_up_cycle_payloads),
+            "step_status_counts": dict(sorted(Counter(step.status for step in steps).items())),
+            "decision_counts": dict(
+                sorted(
+                    Counter(
+                        decision_from_message(message) for message in acceptance_messages
+                    ).items()
+                )
+            ),
+        },
+        "handoff_chain": handoff_chain(
+            manager_steps=manager_steps,
+            specialist_steps=specialist_steps,
+            acceptance_messages=acceptance_messages,
+            follow_up_cycles=follow_up_cycle_payloads,
+        ),
+        "acceptance_decisions": [
+            acceptance_payload(message, follow_up_messages) for message in acceptance_messages
+        ],
+        "follow_up_cycles": follow_up_cycle_payloads,
+        "blocked_reasons": blocked_reason_values,
+    }
 
 
 def _manager_steps(steps: list[TaskStep]) -> ManagerSteps:

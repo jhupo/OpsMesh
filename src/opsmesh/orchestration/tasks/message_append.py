@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from opsmesh.orchestration.tasks.event_outbox import TaskEventOutboxService
+from opsmesh.orchestration.tasks.event_store import TaskEventStore
 from opsmesh.orchestration.tasks.models import Task, TaskMessage
 from opsmesh.resources.memory.episodic import AgentEpisodicMemoryService
 
@@ -37,7 +37,7 @@ class TaskMessageAppendService:
         max_retries: int = 3,
     ) -> None:
         self._session = session
-        self._event_outbox = TaskEventOutboxService(session)
+        self._events = TaskEventStore(session)
         self._max_retries = max(1, max_retries)
 
     def append(
@@ -144,7 +144,7 @@ class TaskMessageAppendService:
         )
 
     def _enqueue_message_created(self, message: TaskMessage) -> None:
-        self._event_outbox.enqueue(
+        self._events.append(
             workspace_id=message.workspace_id,
             task_id=message.task_id,
             event_type=TASK_MESSAGE_CREATED_EVENT_TYPE,

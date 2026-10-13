@@ -1,124 +1,107 @@
-"""Durable download inbox. Network I/O never holds a database transaction."""
+"""Native download Activities: bounded read-only transfer, atomic verified publication."""
 
-from collections.abc import Callable
+import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from uuid import UUID, uuid4
 
 from opsmesh_plugin_sdk.packaging.distribution import PluginCatalog, SignedPluginRelease
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from opsmesh.capabilities.plugins.distribution import PluginDistributionService
 from opsmesh.capabilities.plugins.models import PluginDownload
-from opsmesh.capabilities.plugins.transport import PluginFetchError, PluginHttpFetcher
+from opsmesh.capabilities.plugins.transport import PluginFetchError, PluginHTTPFetcher
 from opsmesh.governance.audit.service import AuditService
+from opsmesh.identity.auth.service import AuthenticationService
+from opsmesh.identity.authorization.context import AuthenticatedUser
+from opsmesh.identity.authorization.errors import AuthorizationError
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
+from opsmesh.runtime.temporal.activities import ActivityDependencies, authorize_execution
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
 from opsmesh.shared.errors import DomainError, PolicyDeniedError
 
 
 @dataclass(frozen=True)
-class DownloadLease:
-    workspace_id: UUID
-    job_id: UUID
-    token: UUID
+class _DownloadPlan:
+    url: str
+    allowed_hosts: list[str]
+    sha256: str
+    max_bytes: int
 
 
-class PluginDownloadWorker:
-    def __init__(
-        self, session_factory: Callable[[], Session], fetcher: PluginHttpFetcher | None = None
-    ) -> None:
-        self.session_factory = session_factory
-        self.fetcher = fetcher or PluginHttpFetcher()
+class PluginDownloadActivities:
+    def __init__(self, services: ActivityDependencies, fetcher: PluginHTTPFetcher) -> None:
+        self._services = services
+        self._fetcher = fetcher
 
-    def run_once(self) -> bool:
-        lease = self._claim()
-        if lease is None:
-            return False
+    @activity.defn(name="opsmesh.plugin.download")
+    async def download(self, request: ExecutionRequest) -> None:
+        heartbeat = asyncio.create_task(_heartbeat())
         try:
-            with self.session_factory() as session:
-                service = PluginDistributionService(session)
-                job = service.job(lease.workspace_id, lease.job_id)
-                service.authorize(job.workspace_id, job.actor_id)
-                source = service.source(job.workspace_id, job.source_id)
-                if not source.enabled or source.generation != job.source_generation:
-                    raise PolicyDeniedError("Source changed")
-                hosts = list(source.allowed_hosts)
-                url, digest = source.url, source.sha256
-                max_bytes = 1_048_576
-                if job.candidate_id is not None:
-                    candidate = service.candidate(job.workspace_id, job.candidate_id)
-                    if candidate.withdrawn:
-                        raise PolicyDeniedError("Candidate withdrawn")
-                    url, digest = candidate.url, candidate.sha256
-                    max_bytes = 262_144
-            content = self.fetcher.fetch(url, hosts, max_bytes=max_bytes)
-            if sha256(content).hexdigest() != digest:
-                raise PluginFetchError("checksum_mismatch")
-            self._finish(lease, content)
-        except PluginFetchError as exc:
-            self._fail(lease, exc.code, retry=exc.code in {"network_error", "download_timeout"})
-        except (ValueError, DomainError):
-            self._fail(lease, "verification_rejected", retry=False)
-        return True
-
-    def _claim(self) -> DownloadLease | None:
-        now = datetime.now(UTC)
-        with self.session_factory() as session:
-            job = session.scalar(
-                select(PluginDownload)
-                .where(
-                    or_(
-                        and_(
-                            PluginDownload.status == "queued",
-                            or_(
-                                PluginDownload.lease_until.is_(None),
-                                PluginDownload.lease_until <= now,
-                            ),
-                        ),
-                        and_(
-                            PluginDownload.status == "fetching", PluginDownload.lease_until <= now
-                        ),
-                    )
-                )
-                .order_by(PluginDownload.created_at, PluginDownload.id)
-                .with_for_update(skip_locked=True)
-                .limit(1)
-            )
-            if job is None:
-                return None
-            token = uuid4()
-            job.status, job.lease_token = "fetching", token
-            job.lease_until = now + timedelta(minutes=2)
-            job.attempts += 1
-            attempts = job.attempts
-            lease = DownloadLease(job.workspace_id, job.id, token)
-            session.commit()
-        if attempts > 3:
-            self._fail(lease, "recovery_exhausted", retry=False)
-            return None
-        return lease
-
-    def _finish(self, lease: DownloadLease, content: bytes) -> None:
-        with self.session_factory() as session:
-            service = PluginDistributionService(session)
-            actor_id = service.job(lease.workspace_id, lease.job_id).actor_id
-            service.authorize(lease.workspace_id, actor_id)
-            # Lock ordering matches API mutation: workspace, then job/source resources.
-            job = session.scalar(
-                select(PluginDownload)
-                .where(
-                    PluginDownload.workspace_id == lease.workspace_id,
-                    PluginDownload.id == lease.job_id,
-                )
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            if job is None or job.status != "fetching" or job.lease_token != lease.token:
+            preparation = asyncio.create_task(asyncio.to_thread(self._prepare, request))
+            try:
+                plan = await asyncio.shield(preparation)
+            except asyncio.CancelledError:
+                await preparation
+                raise
+            if plan is None:
                 return
+            # HTTPS GET is safe to repeat after worker loss. No database connection
+            # or transaction stays open during transfer, DNS or signature decoding.
+            content = await self._fetcher.fetch(
+                plan.url, plan.allowed_hosts, max_bytes=plan.max_bytes
+            )
+            if sha256(content).hexdigest() != plan.sha256:
+                raise PluginFetchError("checksum_mismatch")
+            publication = asyncio.create_task(asyncio.to_thread(self._publish, request, content))
+            try:
+                await asyncio.shield(publication)
+            except asyncio.CancelledError:
+                await publication
+                raise
+        except PluginFetchError as exc:
+            raise ApplicationError(
+                "Plugin distribution transfer failed",
+                type=exc.code,
+                non_retryable=exc.code not in {"network_error", "download_timeout"},
+            ) from None
+        except (ValueError, DomainError, AuthorizationError):
+            raise ApplicationError(
+                "Plugin distribution verification or authorization was rejected",
+                type="verification_rejected",
+                non_retryable=True,
+            ) from None
+        finally:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
+
+    def _prepare(self, request: ExecutionRequest) -> _DownloadPlan | None:
+        with self._services.transaction() as session:
+            job = self._job(session, request)
+            if job is None or job.status in {"succeeded", "failed"}:
+                return None
+            service = self._authorized(session, request, job)
             source = service.source(job.workspace_id, job.source_id)
-            if not source.enabled or source.generation != job.source_generation:
-                raise PolicyDeniedError("Source changed during download")
+            url, digest, max_bytes = source.url, source.sha256, 1_048_576
+            if job.candidate_id is not None:
+                candidate = service.candidate(job.workspace_id, job.candidate_id)
+                if candidate.withdrawn:
+                    raise PolicyDeniedError("Candidate withdrawn")
+                url, digest, max_bytes = candidate.url, candidate.sha256, 262_144
+            job.status, job.error_code = "fetching", None
+            job.attempts = activity.info().attempt
+            return _DownloadPlan(url, list(source.allowed_hosts), digest, max_bytes)
+
+    def _publish(self, request: ExecutionRequest, content: bytes) -> None:
+        with self._services.transaction() as session:
+            job = self._job(session, request)
+            if job is None or job.status in {"succeeded", "failed"}:
+                return
+            service = self._authorized(session, request, job)
+            source = service.source(job.workspace_id, job.source_id)
             if job.candidate_id is None:
                 service.apply_catalog(source, PluginCatalog.model_validate_json(content))
             else:
@@ -128,45 +111,72 @@ class PluginDownloadWorker:
                 release = SignedPluginRelease.model_validate_json(content)
                 service.verify(candidate, release)
                 candidate.verified_release = release.model_dump(mode="json")
-            job.status, job.error_code, job.lease_token, job.lease_until = (
-                "succeeded",
-                None,
-                None,
-                None,
-            )
+            job.status, job.error_code = "succeeded", None
             service.audit(job.workspace_id, job.actor_id, "download_succeeded", job.id, {})
-            session.commit()
 
-    def _fail(self, lease: DownloadLease, code: str, *, retry: bool) -> None:
-        with self.session_factory() as session:
-            # Failure recording does not need the initiating actor to remain authorized.
-            from opsmesh.workspaces.management.models import Workspace
-
-            session.scalar(
-                select(Workspace).where(Workspace.id == lease.workspace_id).with_for_update()
-            )
-            job = session.scalar(
-                select(PluginDownload)
-                .where(
-                    PluginDownload.workspace_id == lease.workspace_id,
-                    PluginDownload.id == lease.job_id,
-                )
-                .with_for_update()
-            )
-            if job is None or job.lease_token != lease.token or job.status != "fetching":
+    @activity.defn(name="opsmesh.plugin.download_failed")
+    def failed(self, request: ExecutionRequest, error_code: str) -> None:
+        with self._services.transaction() as session:
+            job = self._job(session, request)
+            if job is None or job.status in {"succeeded", "failed"}:
                 return
-            job.status = "queued" if retry and job.attempts < 3 else "failed"
-            job.error_code, job.lease_token = code, None
-            job.lease_until = (
-                datetime.now(UTC) + timedelta(seconds=30 * job.attempts)
-                if job.status == "queued"
-                else None
-            )
+            job.status, job.error_code = "failed", error_code
             AuditService(session).record_system_action(
                 workspace_id=job.workspace_id,
-                action="plugin.download_" + job.status,
+                action="plugin.download_failed",
                 target_type="plugin_distribution",
                 target_id=job.id,
-                metadata={"error_code": code, "attempts": job.attempts},
+                metadata={"error_code": error_code, "attempts": job.attempts},
+                actor_id="opsmesh.plugin_download",
             )
-            session.commit()
+
+    @staticmethod
+    def _job(session: Session, request: ExecutionRequest) -> PluginDownload | None:
+        if request.kind != ExecutionKind.PLUGIN_DOWNLOAD:
+            raise ValueError("Plugin download requires a download execution reference")
+        # Match every short product transaction's workspace -> resource lock order.
+        from opsmesh.workspaces.management.models import Workspace
+
+        session.scalar(
+            select(Workspace.id).where(Workspace.id == request.workspace_id).with_for_update()
+        )
+        return session.scalar(
+            select(PluginDownload)
+            .where(
+                PluginDownload.workspace_id == request.workspace_id,
+                PluginDownload.id == request.resource_id,
+                PluginDownload.execution_id == request.execution_id,
+            )
+            .with_for_update()
+        )
+
+    @staticmethod
+    def _authorized(
+        session: Session, request: ExecutionRequest, job: PluginDownload
+    ) -> PluginDistributionService:
+        if request.requested_by_user_id != job.actor_id:
+            raise PolicyDeniedError("Download actor differs from the authorized intent")
+        authorize_execution(session, request, action=WorkspaceAction.ADMIN)
+        actor = AuthenticationService(session).refresh_authenticated_user(
+            AuthenticatedUser(
+                user_id=job.actor_id, email="", display_name="", token_id=job.actor_token_id
+            )
+        )
+        WorkspaceAuthorizationService(session).require_workspace(
+            user_id=actor.user_id,
+            workspace_id=job.workspace_id,
+            action=WorkspaceAction.ADMIN,
+            authenticated_user=actor,
+        )
+        service = PluginDistributionService(session)
+        service.authorize(job.workspace_id, job.actor_id)
+        source = service.source(job.workspace_id, job.source_id)
+        if not source.enabled or source.generation != job.source_generation:
+            raise PolicyDeniedError("Source changed")
+        return service
+
+
+async def _heartbeat() -> None:
+    while True:
+        activity.heartbeat()
+        await asyncio.sleep(5)

@@ -4,19 +4,25 @@ import pytest
 
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.files.service import WorkspaceFileService
-from opsmesh.resources.storage.storage import LocalStorage
+from opsmesh.resources.storage.backends import LocalObjectStorage
 from tests.test_product_tools import _seed_workspace, _session
 
 
 def test_failed_upload_commit_preserves_previous_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    storage = LocalStorage(str(tmp_path))
+    storage = LocalObjectStorage(str(tmp_path))
     service = WorkspaceFileService(session, storage, 1024)
-    kwargs = dict(workspace_id=workspace.id, uploaded_by_user_id=user.id,
-                  filename="test.txt", content_type="text/plain", content=b"same content")
+    kwargs = dict(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=user.id,
+        filename="test.txt",
+        content_type="text/plain",
+        content=b"same content",
+    )
     original = service.upload_file(**kwargs)
 
     def fail() -> None:

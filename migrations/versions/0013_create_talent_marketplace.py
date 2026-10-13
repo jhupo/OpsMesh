@@ -35,10 +35,16 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["owner_user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["source_agent_profile_id"], ["agent_profiles.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["source_agent_profile_id"], ["agent_profiles.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["source_workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_talent_listings")),
         sa.UniqueConstraint(
@@ -62,11 +68,19 @@ def upgrade() -> None:
         sa.Column("hired_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["hired_by_user_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["installed_agent_profile_id"], ["agent_profiles.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["source_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["installed_agent_profile_id"], ["agent_profiles.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["talent_listing_id"], ["talent_listings.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_agent_installs")),

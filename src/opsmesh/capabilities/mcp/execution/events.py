@@ -10,18 +10,17 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from opsmesh.capabilities.mcp.execution.contracts import (
-    McpExecutionRequest,
-    McpToolCallLogRequest,
+    MCPExecutionRequest,
+    MCPToolCallLogRequest,
     snapshot_audit_metadata,
 )
-from opsmesh.capabilities.mcp.execution.diagnostics import normalize_failure, public_response
 from opsmesh.capabilities.mcp.execution.payloads import (
     error_code,
     hash_from_payload,
     response_hash_from_payload,
 )
 from opsmesh.capabilities.mcp.execution.payloads import response_hash as mcp_response_hash
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist, McpToolCallLog
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist, MCPToolCallLog
 from opsmesh.capabilities.mcp.policy import require_mcp_server
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.runs.events import RunEventRecorder
@@ -36,17 +35,101 @@ from opsmesh.shared.telemetry.trace_context import with_current_trace_metadata
 from opsmesh.shared.utils import canonical_payload, payload_hash, uuid_or_none
 
 
-class McpToolCallLogQueryService:
+class MCPToolCallLogQueryService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def log_mcp_tool_call(
+    def list_mcp_tool_call_logs(
         self,
         workspace_id: UUID,
-        data: McpToolCallLogRequest,
-    ) -> McpToolCallLog:
+        page: PageParams,
+        *,
+        mcp_server_id: UUID | None = None,
+        tool_name: str | None = None,
+        status: str | None = None,
+        trace_id: str | None = None,
+        request_id: str | None = None,
+        agent_run_id: UUID | None = None,
+        tool_call_id: str | None = None,
+        error_id: UUID | None = None,
+    ) -> tuple[list[MCPToolCallLog], int]:
+        if mcp_server_id is not None:
+            require_mcp_server(self._session, workspace_id, mcp_server_id)
+        statement = select(MCPToolCallLog).where(MCPToolCallLog.workspace_id == workspace_id)
+        if mcp_server_id is not None:
+            statement = statement.where(MCPToolCallLog.mcp_server_id == mcp_server_id)
+        if tool_name is not None:
+            statement = statement.where(MCPToolCallLog.tool_name == tool_name)
+        if status is not None:
+            statement = statement.where(MCPToolCallLog.status == status)
+        if trace_id is not None:
+            statement = statement.where(MCPToolCallLog.trace_id == trace_id)
+        if request_id is not None:
+            statement = statement.where(MCPToolCallLog.request_id == request_id)
+        if agent_run_id is not None:
+            statement = statement.where(MCPToolCallLog.agent_run_id == agent_run_id)
+        if tool_call_id is not None:
+            statement = statement.where(MCPToolCallLog.tool_call_id == tool_call_id)
+        if error_id is not None:
+            statement = statement.where(
+                MCPToolCallLog.id == error_id, MCPToolCallLog.status == "failed"
+            )
+        return self._page(statement.order_by(MCPToolCallLog.created_at.desc()), page)
+
+    def get_diagnostic(self, workspace_id: UUID, log_id: UUID) -> MCPToolCallLog:
+        log = self._session.scalar(
+            select(MCPToolCallLog).where(
+                MCPToolCallLog.workspace_id == workspace_id, MCPToolCallLog.id == log_id
+            )
+        )
+        if log is None:
+            raise ValueError("MCP call log not found")
+        return log
+
+    def get_diagnostic_notification(self, workspace_id: UUID, event_id: UUID) -> RunEvent:
+        event = self._session.scalar(
+            select(RunEvent).where(
+                RunEvent.workspace_id == workspace_id,
+                RunEvent.id == event_id,
+                RunEvent.event_type == "mcp.diagnostic.notification",
+            )
+        )
+        if event is None:
+            raise ValueError("MCP diagnostic notification not found")
+        return event
+
+    def _page(
+        self,
+        statement: Select[tuple[MCPToolCallLog]],
+        page: PageParams,
+    ) -> tuple[list[MCPToolCallLog], int]:
+        return page_scalars(self._session, statement, page)
+
+
+def _latency_ms_from_payload(
+    response: dict[str, object] | None,
+    error: dict[str, object] | None,
+) -> int | None:
+    for payload in (response, error):
+        if not isinstance(payload, dict):
+            continue
+        value = payload.get("latency_ms")
+        if isinstance(value, int) and value >= 0:
+            return value
+    return None
+
+
+@dataclass(slots=True)
+class MCPToolCallRecorder:
+    session: Session
+
+    def record_report(
+        self,
+        workspace_id: UUID,
+        data: MCPToolCallLogRequest,
+    ) -> MCPToolCallLog:
         if data.mcp_server_id is not None:
-            require_mcp_server(self._session, workspace_id, data.mcp_server_id)
+            require_mcp_server(self.session, workspace_id, data.mcp_server_id)
         allow = self._allowed_tool_by_name(workspace_id, data.tool_name)
         if allow is None:
             raise ValueError("MCP tool is not allowed for this workspace")
@@ -54,7 +137,7 @@ class McpToolCallLogQueryService:
             raise ValueError("MCP tool is not allowed for this server")
         run = self._mcp_log_run_context(workspace_id, data)
         agent = (
-            self._session.get(AgentProfile, run.agent_profile_id)
+            self.session.get(AgentProfile, run.agent_profile_id)
             if run is not None and run.agent_profile_id is not None
             else None
         )
@@ -83,7 +166,7 @@ class McpToolCallLogQueryService:
                 }
             )
         evidence = current_evidence_context()
-        log = McpToolCallLog(
+        log = MCPToolCallLog(
             workspace_id=workspace_id,
             latency_ms=_latency_ms_from_payload(response_payload, error_payload),
             argument_sha256=hash_from_payload(request_payload, "arguments_sha256"),
@@ -92,8 +175,8 @@ class McpToolCallLogQueryService:
             request_id=evidence.get("request_id"),
             worker_id=evidence.get("worker_id"),
             runtime_id=(
-                str(run.execution_runtime_id or run.runtime_id)
-                if run is not None and (run.execution_runtime_id or run.runtime_id) is not None
+                str(run.runtime_id)
+                if run is not None and run.runtime_id is not None
                 else evidence.get("runtime_id")
             ),
             trace_id=evidence.get("trace_id"),
@@ -101,152 +184,40 @@ class McpToolCallLogQueryService:
             created_at=datetime.now(UTC),
             **payload,
         )
-        self._session.add(log)
-        self._session.commit()
-        self._session.refresh(log)
-        return log
-
-    def list_mcp_tool_call_logs(
-        self,
-        workspace_id: UUID,
-        page: PageParams,
-        *,
-        mcp_server_id: UUID | None = None,
-        tool_name: str | None = None,
-        status: str | None = None,
-        trace_id: str | None = None,
-        request_id: str | None = None,
-        agent_run_id: UUID | None = None,
-        tool_call_id: str | None = None,
-        error_id: UUID | None = None,
-    ) -> tuple[list[McpToolCallLog], int]:
-        if mcp_server_id is not None:
-            require_mcp_server(self._session, workspace_id, mcp_server_id)
-        statement = select(McpToolCallLog).where(McpToolCallLog.workspace_id == workspace_id)
-        if mcp_server_id is not None:
-            statement = statement.where(McpToolCallLog.mcp_server_id == mcp_server_id)
-        if tool_name is not None:
-            statement = statement.where(McpToolCallLog.tool_name == tool_name)
-        if status is not None:
-            statement = statement.where(McpToolCallLog.status == status)
-        if trace_id is not None:
-            statement = statement.where(McpToolCallLog.trace_id == trace_id)
-        if request_id is not None:
-            statement = statement.where(McpToolCallLog.request_id == request_id)
-        if agent_run_id is not None:
-            statement = statement.where(McpToolCallLog.agent_run_id == agent_run_id)
-        if tool_call_id is not None:
-            statement = statement.where(McpToolCallLog.tool_call_id == tool_call_id)
-        if error_id is not None:
-            statement = statement.where(
-                McpToolCallLog.id == error_id, McpToolCallLog.status == "failed"
-            )
-        return self._page(statement.order_by(McpToolCallLog.created_at.desc()), page)
-
-    def get_diagnostic(self, workspace_id: UUID, log_id: UUID) -> McpToolCallLog:
-        log = self._session.scalar(
-            select(McpToolCallLog).where(
-                McpToolCallLog.workspace_id == workspace_id, McpToolCallLog.id == log_id
-            )
-        )
-        if log is None:
-            raise ValueError("MCP call log not found")
+        self.session.add(log)
+        self.session.flush()
         return log
 
     def _mcp_log_run_context(
         self,
         workspace_id: UUID,
-        data: McpToolCallLogRequest,
+        data: MCPToolCallLogRequest,
     ) -> AgentRun | None:
         if data.agent_run_id is None:
             return None
-        run = self._session.get(AgentRun, data.agent_run_id)
+        run = self.session.get(AgentRun, data.agent_run_id)
         if run is None or run.workspace_id != workspace_id:
             raise ValueError("Agent run not found")
         return run
 
-    def _allowed_tool_by_name(self, workspace_id: UUID, tool_name: str) -> McpToolAllowlist | None:
-        return self._session.scalar(
-            select(McpToolAllowlist)
-            .join(McpServer, McpServer.id == McpToolAllowlist.mcp_server_id)
+    def _allowed_tool_by_name(self, workspace_id: UUID, tool_name: str) -> MCPToolAllowlist | None:
+        return self.session.scalar(
+            select(MCPToolAllowlist)
+            .join(MCPServer, MCPServer.id == MCPToolAllowlist.mcp_server_id)
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.tool_name == tool_name,
-                McpToolAllowlist.status == "active",
-                McpToolAllowlist.platform_blocked.is_(False),
-                McpServer.status == "active",
-                McpServer.platform_blocked.is_(False),
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.tool_name == tool_name,
+                MCPToolAllowlist.status == "active",
+                MCPToolAllowlist.platform_blocked.is_(False),
+                MCPServer.status == "active",
+                MCPServer.platform_blocked.is_(False),
             )
         )
-
-    def _page(
-        self,
-        statement: Select[tuple[McpToolCallLog]],
-        page: PageParams,
-    ) -> tuple[list[McpToolCallLog], int]:
-        return page_scalars(self._session, statement, page)
-
-
-def _latency_ms_from_payload(
-    response: dict[str, object] | None,
-    error: dict[str, object] | None,
-) -> int | None:
-    for payload in (response, error):
-        if not isinstance(payload, dict):
-            continue
-        value = payload.get("latency_ms")
-        if isinstance(value, int) and value >= 0:
-            return value
-    return None
-
-
-@dataclass(slots=True)
-class McpToolCallLogService:
-    session: Session
-
-    def complete_runtime_rpc(
-        self,
-        *,
-        workspace_id: UUID,
-        run_id: UUID,
-        job_id: UUID,
-        status: str,
-        response: dict[str, object] | None,
-        error: dict[str, object] | None,
-    ) -> None:
-        logs = self.session.scalars(
-            select(McpToolCallLog).where(
-                McpToolCallLog.workspace_id == workspace_id,
-                McpToolCallLog.agent_run_id == run_id,
-                McpToolCallLog.status == "waiting_self_hosted",
-                McpToolCallLog.response["mcp_job_id"].as_string() == str(job_id),
-            )
-        ).all()
-        for log in logs:
-            log.status = "completed" if status == "completed" else "failed"
-            log.response = (
-                redact_sensitive_payload(public_response(response))
-                if response is not None
-                else None
-            )
-            log.response_sha256 = payload_hash(response) if response is not None else None
-            log.error = (
-                normalize_failure(
-                    error,
-                    code=str((error or {}).get("code", "mcp_rpc_failed")),
-                    message="Self-hosted MCP execution failed",
-                    error_id=log.id,
-                )
-                if error is not None
-                else None
-            )
-            log.error_code = error_code(error)
-        self.session.flush()
 
     def record(
         self,
         *,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         server_id: UUID | None,
         status: str,
         response: dict[str, object] | None,
@@ -255,7 +226,7 @@ class McpToolCallLogService:
         run: AgentRun | None = None,
         latency_ms: int | None = None,
         log_id: UUID | None = None,
-    ) -> McpToolCallLog:
+    ) -> MCPToolCallLog:
         argument_sha256 = payload_hash(request.arguments)
         response_sha256 = mcp_response_hash(response) if status in {"completed", "failed"} else None
         redacted_response = redact_sensitive_payload(response) if response is not None else None
@@ -278,8 +249,8 @@ class McpToolCallLogService:
             request_id=evidence.get("request_id"),
             worker_id=evidence.get("worker_id"),
             runtime_id=(
-                str(run.execution_runtime_id or run.runtime_id)
-                if run is not None and (run.execution_runtime_id or run.runtime_id) is not None
+                str(run.runtime_id)
+                if run is not None and run.runtime_id is not None
                 else evidence.get("runtime_id")
             ),
             trace_id=evidence.get("trace_id"),
@@ -298,17 +269,17 @@ class McpToolCallLogService:
             created_at=datetime.now(UTC),
         )
         if log_id is None:
-            log = McpToolCallLog(**values)
+            log = MCPToolCallLog(**values)
             self.session.add(log)
         else:
             existing_log = self.session.scalar(
-                select(McpToolCallLog)
+                select(MCPToolCallLog)
                 .where(
-                    McpToolCallLog.id == log_id,
-                    McpToolCallLog.workspace_id == request.workspace_id,
-                    McpToolCallLog.agent_run_id == request.agent_run_id,
-                    McpToolCallLog.mcp_server_id == server_id,
-                    McpToolCallLog.tool_name == request.tool_name,
+                    MCPToolCallLog.id == log_id,
+                    MCPToolCallLog.workspace_id == request.workspace_id,
+                    MCPToolCallLog.agent_run_id == request.agent_run_id,
+                    MCPToolCallLog.mcp_server_id == server_id,
+                    MCPToolCallLog.tool_name == request.tool_name,
                 )
                 .with_for_update()
             )
@@ -329,7 +300,7 @@ class McpToolCallLogService:
 
 
 @dataclass(slots=True)
-class McpExecutionNotifier:
+class MCPExecutionNotifier:
     session: Session
 
     def append_run_event(
@@ -373,9 +344,9 @@ class McpExecutionNotifier:
         self,
         *,
         run: AgentRun,
-        request: McpExecutionRequest,
+        request: MCPExecutionRequest,
         server_id: UUID | None,
-        log: McpToolCallLog,
+        log: MCPToolCallLog,
         action: str,
         snapshot: dict[str, object],
     ) -> None:

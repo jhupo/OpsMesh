@@ -4,16 +4,15 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.runtime.instances.contracts import RuntimeLifecycleControl
-from opsmesh.runtime.instances.policies.quotas import RuntimeQuotaExceededError
-from opsmesh.runtime.instances.policies.safety import RuntimeSafetyError
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
+from opsmesh.shared.errors import DomainError
 from opsmesh.teams.operations.action_plan import (
     NON_APPLICABLE_RUNTIME_ACTIONS,
     _runtime_action_result,
 )
 from opsmesh.teams.operations.operator_actions import TeamOperatorActionService
 from opsmesh.teams.operations.views import _runtime_payload, _uuid_list, _uuid_value
-from opsmesh.teams.sessions.service import TeamRuntimeService
+from opsmesh.teams.sessions.service import TeamOperationService
 
 
 class TeamCommandCenterActionApplier:
@@ -28,7 +27,7 @@ class TeamCommandCenterActionApplier:
         actor_user_id: UUID,
         grouped: list[dict[str, object]],
         max_tasks_per_action: int,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object],
     ) -> list[dict[str, object]]:
@@ -87,12 +86,12 @@ class TeamCommandCenterActionApplier:
         team_id: UUID,
         actor_user_id: UUID,
         item: dict[str, object],
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object],
     ) -> dict[str, object]:
         action = str(item["action"])
-        service = TeamRuntimeService(self._session)
+        service = TeamOperationService(self._session)
         try:
             if action in NON_APPLICABLE_RUNTIME_ACTIONS:
                 return _runtime_action_result(item, "skipped", "manual_operator_review_required")
@@ -121,7 +120,7 @@ class TeamCommandCenterActionApplier:
                 )
             else:
                 return _runtime_action_result(item, "skipped", "unsupported_runtime_action")
-        except (RuntimeQuotaExceededError, RuntimeSafetyError, ValueError) as exc:
+        except (DomainError, ValueError) as exc:
             return _runtime_action_result(item, "skipped", str(exc))
         if state is None:
             return _runtime_action_result(item, "noop", "team_not_found")

@@ -32,7 +32,7 @@ class WorkspaceCapabilityGovernanceAgentResponse(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
 
 
-class WorkspaceCapabilityGovernanceMcpServerResponse(BaseModel):
+class WorkspaceCapabilityGovernanceMCPServerResponse(BaseModel):
     server_id: UUID
     name: str
     server_type: str
@@ -55,7 +55,7 @@ class WorkspaceCapabilityGovernanceResponse(BaseModel):
     summary: dict[str, object]
     skills: list[WorkspaceCapabilityGovernanceSkillResponse]
     agents: list[WorkspaceCapabilityGovernanceAgentResponse]
-    mcp_servers: list[WorkspaceCapabilityGovernanceMcpServerResponse]
+    mcp_servers: list[WorkspaceCapabilityGovernanceMCPServerResponse]
 
     @field_serializer("summary")
     def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeContext, AgentRuntimeInterruption
+from opsmesh.agents.execution.contracts import AgentExecutionContext, AgentToolInterruption
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.approvals.pending_tools import (
     PendingToolInvocationRequest,
@@ -24,9 +24,9 @@ class AgentToolInterruptionService:
     def persist(
         self,
         *,
-        context: AgentRuntimeContext,
+        context: AgentExecutionContext,
         requested_by_agent_profile_id: UUID | None,
-        interruptions: tuple[AgentRuntimeInterruption, ...],
+        interruptions: tuple[AgentToolInterruption, ...],
     ) -> None:
         for interruption in interruptions:
             idempotency_key = _idempotency_key(context, interruption)
@@ -82,8 +82,8 @@ class AgentToolInterruptionService:
 
 
 def _idempotency_key(
-    context: AgentRuntimeContext,
-    interruption: AgentRuntimeInterruption,
+    context: AgentExecutionContext,
+    interruption: AgentToolInterruption,
 ) -> str:
     call_digest = sha256(interruption.tool_call_id.encode("utf-8")).hexdigest()
     return f"sdk-tool:{context.run_id}:{call_digest}"

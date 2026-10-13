@@ -8,7 +8,7 @@ from uuid import UUID
 from opsmesh.resources.files.security import validate_storage_key
 from opsmesh.workspaces.projects.models import AgentRunProjectSnapshot
 from opsmesh.workspaces.projects.policy import require_path_within, validate_project_layout
-from opsmesh.workspaces.projects.snapshots.format import sha256_json
+from opsmesh.workspaces.projects.snapshots.diff import sha256_json
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
@@ -91,8 +91,7 @@ def parse_run_project_manifest(
         for item in _object_list(manifest, "files")
     )
     outputs = tuple(
-        _parse_output(item, output_path=output_path)
-        for item in _object_list(manifest, "outputs")
+        _parse_output(item, output_path=output_path) for item in _object_list(manifest, "outputs")
     )
     _require_unique((item.project_file_id for item in files), "project file IDs")
     _require_unique((item.workspace_file_id for item in files), "workspace file IDs")

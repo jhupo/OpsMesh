@@ -10,7 +10,6 @@ from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.identity.authorization.resources import ResourceAction
 from opsmesh.orchestration.runs.control import RunControlService
-from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
@@ -21,8 +20,6 @@ from opsmesh.orchestration.tasks.schemas.management import (
     TaskManagerQueueResponse,
 )
 from opsmesh.orchestration.tasks.service import TaskCreateCommand, WorkspaceTaskService
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.idempotency import (
@@ -66,7 +63,6 @@ def create_task(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> TaskResponse:
     task_service = WorkspaceTaskService(session)
@@ -85,7 +81,6 @@ def create_task(
                 workspace_id=context.workspace.id,
                 created_by_user_id=context.user.user_id,
                 command=_task_create_command(request),
-                queue=queue,
             ),
             resource_id=lambda created_task: created_task.id,
         )
@@ -167,7 +162,6 @@ def cancel_task(
     try:
         task = RunControlService(
             session=session,
-            enqueue_run=RunOrchestrationService(session).enqueue_run,
         ).cancel_task(
             workspace_id=context.workspace.id,
             task_id=task_id,

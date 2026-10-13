@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -34,7 +34,7 @@ class TaskFeedbackRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class TaskResponse(TimestampedModel):
+class TaskResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID | None
     created_by_agent_run_id: UUID | None
@@ -92,7 +92,7 @@ class TaskResponse(TimestampedModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class TaskMessageResponse(TimestampedModel):
+class TaskMessageResponse(TimestampedContract):
     workspace_id: UUID
     task_id: UUID
     task_step_id: UUID | None
@@ -108,7 +108,7 @@ class TaskMessageResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class TaskPlanningAttemptResponse(ORMModel):
+class TaskPlanningAttemptResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     task_id: UUID

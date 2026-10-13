@@ -36,27 +36,39 @@ def verify_assets(assets: list[dict[str, object]], directory: Path) -> set[str]:
 
 
 def release_notes(manifest: ReleaseManifest) -> str:
-    archives = sorted(file.name for file in manifest.files if file.name.startswith(
-        ("opsmesh-cli-", "opsmesh-server-")
-    ))
+    archives = sorted(
+        file.name
+        for file in manifest.files
+        if file.name.startswith(("opsmesh-cli-", "opsmesh-server-"))
+    )
     lines = [
-        "## Ready-to-run distributions", "",
+        "## Ready-to-run distributions",
+        "",
         "Download and extract the archive for your platform. Python/pip/uv are not required.",
         "Keep the executable with its accompanying runtime directory; do not copy only the binary.",
-        "", *[f"- `{name}`" for name in archives], "",
+        "",
+        *[f"- `{name}`" for name in archives],
+        "",
         "CLI: `./opsmesh version` (Windows: `opsmesh.exe version`).",
         "Server (Linux amd64): `./opsmesh-server check`, then `migrate`, `api` or `worker`.",
-        "PostgreSQL, Redis and deployment host services remain external prerequisites.", "",
-        "## Integrity and provenance", "",
+        "PostgreSQL, Redis and deployment host services remain external prerequisites.",
+        "",
+        "## Integrity and provenance",
+        "",
         "`checksums.txt` lists SHA-256 hashes. Verify the downloaded archive before execution:",
         "```sh",
         f"gh attestation verify ARCHIVE --repo {manifest.repository} "
         f"--signer-workflow {manifest.repository}/.github/workflows/release-publish.yml "
         f"--source-ref refs/tags/{manifest.tag} --source-digest {manifest.commit} "
-        "--deny-self-hosted-runners", "```", "",
-        "## Container images", "", f"- `{manifest.image('api')}`",
+        "--deny-self-hosted-runners",
+        "```",
+        "",
+        "## Container images",
+        "",
+        f"- `{manifest.image('api')}`",
         f"- `{manifest.image('worker')}`",
-        f"- `{manifest.image('runtime')}`", "",
+        f"- `{manifest.image('runtime')}`",
+        "",
         "The `.whl` and source distributions are developer packages, not standalone executables.",
         "",
     ]
@@ -87,9 +99,9 @@ def candidate_manifest(tag: str, repository: str, directory: Path) -> ReleaseMan
 
 
 def matching_release(tag: str, repository: str) -> dict[str, object] | None:
-    pages = json.loads(command(
-        "gh", "api", f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp"
-    ))
+    pages = json.loads(
+        command("gh", "api", f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
+    )
     existing = [release for page in pages for release in page if release["tag_name"] == tag]
     if len(existing) > 1:
         raise ValueError("Expected at most one release for the tag")
@@ -100,20 +112,37 @@ def create_draft(manifest: ReleaseManifest) -> dict[str, object]:
     tag, repository = manifest.tag, manifest.repository
     # Require an existing remote tag; creating a release must never create one implicitly.
     command("gh", "api", f"repos/{repository}/git/ref/tags/{tag}")
-    return cast(dict[str, object], json.loads(command(
-        "gh", "api", f"repos/{repository}/releases", "--method", "POST",
-        "--raw-field", f"tag_name={tag}", "--field", "draft=true",
-        "--raw-field", f"body={release_notes(manifest)}",
-        "--field", "generate_release_notes=true",
-        "--field", f"prerelease={'true' if 'rc' in tag else 'false'}",
-    )))
+    return cast(
+        dict[str, object],
+        json.loads(
+            command(
+                "gh",
+                "api",
+                f"repos/{repository}/releases",
+                "--method",
+                "POST",
+                "--raw-field",
+                f"tag_name={tag}",
+                "--field",
+                "draft=true",
+                "--raw-field",
+                f"body={release_notes(manifest)}",
+                "--field",
+                "generate_release_notes=true",
+                "--field",
+                f"prerelease={'true' if 'rc' in tag else 'false'}",
+            )
+        ),
+    )
 
 
 def release_assets(release: dict[str, object], repository: str) -> list[dict[str, object]]:
     endpoint = f"repos/{repository}/releases/{release['id']}/assets?per_page=100"
-    return [asset for page in json.loads(command(
-        "gh", "api", endpoint, "--paginate", "--slurp"
-    )) for asset in page]
+    return [
+        asset
+        for page in json.loads(command("gh", "api", endpoint, "--paginate", "--slurp"))
+        for asset in page
+    ]
 
 
 def stage_release(tag: str, repository: str, directory: Path) -> None:

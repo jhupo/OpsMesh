@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from opsmesh.capabilities.references.schema import reject_embedded_secrets
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -45,7 +45,7 @@ class CapabilityUpdateRequest(BaseModel):
         return self
 
 
-class CapabilityResponse(TimestampedModel):
+class CapabilityResponse(TimestampedContract):
     key: str
     name: str
     category: str
@@ -84,7 +84,7 @@ class SkillUpdateRequest(BaseModel):
         return self
 
 
-class SkillResponse(TimestampedModel):
+class SkillResponse(TimestampedContract):
     key: str
     name: str
     version: str
@@ -121,7 +121,7 @@ class ToolGroupUpdateRequest(BaseModel):
         return self
 
 
-class ToolGroupResponse(TimestampedModel):
+class ToolGroupResponse(TimestampedContract):
     key: str
     name: str
     description: str
@@ -183,7 +183,7 @@ class CapabilityResourceResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class CapabilityMcpCredentialBinding(BaseModel):
+class CapabilityMCPCredentialBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     credential_reference_id: UUID
@@ -215,7 +215,7 @@ class CapabilityToolDescriptor(BaseModel):
     mcp_server_configuration_version: int | None = Field(default=None, ge=1)
     mcp_tool_configuration_version: int | None = Field(default=None, ge=1)
     mcp_requires_credentials: bool = False
-    mcp_credential_references: list[CapabilityMcpCredentialBinding] = Field(default_factory=list)
+    mcp_credential_references: list[CapabilityMCPCredentialBinding] = Field(default_factory=list)
     mcp_blocked_reasons: list[str] = Field(default_factory=list)
     policy: dict[str, object] = Field(default_factory=dict)
     required_resource_type: ResourceType | None = None

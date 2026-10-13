@@ -4,14 +4,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 FileSensitivity = Literal["public", "internal", "confidential", "restricted"]
 FileRuntimeAccess = Literal["allowed", "denied"]
 
 
-class WorkspaceFileResponse(TimestampedModel):
+class WorkspaceFileResponse(TimestampedContract):
     workspace_id: UUID
     uploaded_by_user_id: UUID | None
     filename: str
@@ -39,7 +39,7 @@ class WorkspaceFileRuntimePolicyRequest(BaseModel):
     runtime_access: FileRuntimeAccess
 
 
-class ArtifactResponse(ORMModel):
+class ArtifactResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     task_id: UUID | None

@@ -20,7 +20,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     bind = op.get_bind()
     dialect_name = bind.dialect.name
-    json_type = postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    json_type = (
+        postgresql.JSONB(astext_type=sa.Text()) if dialect_name == "postgresql" else sa.JSON()
+    )
     json_default = sa.text("'{}'::jsonb") if dialect_name == "postgresql" else sa.text("'{}'")
     uuid_type = postgresql.UUID(as_uuid=True) if dialect_name == "postgresql" else sa.Uuid()
 

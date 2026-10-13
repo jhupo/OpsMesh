@@ -99,9 +99,12 @@ class SkillInstallMetadataImporter:
                 ctx.id_map["skill_installs"][source_id] = str(install.id)
 
     def _skill_install_exists(self, workspace_id: UUID, installed_key: str) -> bool:
-        return self._session.scalar(
-            select(WorkspaceSkillInstall.id).where(
-                WorkspaceSkillInstall.workspace_id == workspace_id,
-                WorkspaceSkillInstall.installed_key == installed_key,
+        return (
+            self._session.scalar(
+                select(WorkspaceSkillInstall.id).where(
+                    WorkspaceSkillInstall.workspace_id == workspace_id,
+                    WorkspaceSkillInstall.installed_key == installed_key,
+                )
             )
-        ) is not None
+            is not None
+        )

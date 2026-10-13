@@ -11,7 +11,7 @@ from opsmesh.teams.management.models import TEAM_RUNTIME_STATUS_KEY, AgentTeam, 
 from opsmesh.teams.sessions.refs import _uuid_or_none, team_bound_runtime_id
 
 
-class TeamRuntimeRepository:
+class TeamOperationRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -23,7 +23,6 @@ class TeamRuntimeRepository:
             )
         )
 
-
     def runtime(self, workspace_id: UUID, workspace_runtime_id: UUID) -> WorkspaceRuntime | None:
         return self._session.scalar(
             select(WorkspaceRuntime).where(
@@ -33,13 +32,11 @@ class TeamRuntimeRepository:
             )
         )
 
-
     def bound_runtime(self, team: AgentTeam) -> WorkspaceRuntime | None:
         runtime_id = team_bound_runtime_id(team)
         if runtime_id is None:
             return None
         return self.runtime(team.workspace_id, runtime_id)
-
 
     def resolve_template_id(self, team: AgentTeam, template_id: UUID | None) -> UUID | None:
         if template_id is not None:
@@ -65,7 +62,6 @@ class TeamRuntimeRepository:
             .order_by(RuntimeTemplate.created_at.desc(), RuntimeTemplate.name.asc())
             .limit(1)
         )
-
 
     def active_members(self, workspace_id: UUID, team_id: UUID) -> list[AgentTeamMember]:
         return list(

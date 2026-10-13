@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from opsmesh.shared.contracts import ORMModel, TimestampedModel
+from opsmesh.shared.contracts import FromAttributesContract, TimestampedContract
 from opsmesh.shared.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_payload_item,
@@ -52,7 +52,7 @@ class WorkspaceProjectUpdateRequest(BaseModel):
         return self
 
 
-class WorkspaceProjectResponse(TimestampedModel):
+class WorkspaceProjectResponse(TimestampedContract):
     workspace_id: UUID
     created_by_user_id: UUID | None
     name: str
@@ -81,7 +81,7 @@ class WorkspaceProjectFileReplacementRequest(BaseModel):
     access_mode: Literal["read_only", "copy_on_write"] | None = None
 
 
-class WorkspaceProjectFileResponse(TimestampedModel):
+class WorkspaceProjectFileResponse(TimestampedContract):
     workspace_id: UUID
     project_id: UUID
     workspace_file_id: UUID
@@ -100,7 +100,7 @@ class WorkspaceProjectOutputCreateRequest(BaseModel):
     max_bytes: int = Field(gt=0, le=1_073_741_824)
 
 
-class WorkspaceProjectOutputResponse(TimestampedModel):
+class WorkspaceProjectOutputResponse(TimestampedContract):
     workspace_id: UUID
     project_id: UUID
     project_path: str
@@ -117,7 +117,7 @@ class WorkspaceProjectDetailResponse(BaseModel):
     outputs: list[WorkspaceProjectOutputResponse]
 
 
-class WorkspaceProjectConfigurationVersionResponse(ORMModel):
+class WorkspaceProjectConfigurationVersionResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     project_id: UUID
@@ -144,7 +144,7 @@ class WorkspaceProjectFileVersionResponse(WorkspaceProjectFileResponse):
     checksum_sha256: str
 
 
-class WorkspaceProjectDiffEntryResponse(ORMModel):
+class WorkspaceProjectDiffEntryResponse(FromAttributesContract):
     path: str
     operation: Literal["added", "removed", "changed"]
     before: object | None

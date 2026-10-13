@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.agents.providers.snapshots import ModelProviderResolutionService
+from opsmesh.agents.providers.selection import ModelProviderSelectionQuery
 from opsmesh.capabilities.catalog.contracts import EffectiveCapabilityCatalogResponse
 from opsmesh.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from opsmesh.governance.costs.service import CostAccountingService, CostBudgetExceededError
@@ -380,7 +380,6 @@ class PlanFeasibilityService:
             usage,
             positive_int_usage(profile.runtime_policy.get("workspace_reservation_usage")),
         )
-        merge_workspace_reservation_usage(usage, profile.runtime_policy.get("reservation_usage"))
         merge_usage_max(
             usage, positive_int_usage(profile.runtime_policy.get("resource_requirements"))
         )
@@ -443,7 +442,7 @@ class PlanFeasibilityService:
 
     def _provider_key(self, workspace_id: UUID, profile: AgentProfile) -> tuple[str, str]:
         try:
-            resolution = ModelProviderResolutionService(self._session).resolve_snapshot_for_agent(
+            resolution = ModelProviderSelectionQuery(self._session).resolve_snapshot_for_agent(
                 workspace_id=workspace_id,
                 agent_credential_id=profile.model_provider_credential_id,
                 agent_model=profile.model,
@@ -631,15 +630,6 @@ def _uuid_or_none(value: object) -> UUID | None:
         return UUID(str(value)) if value is not None else None
     except (TypeError, ValueError):
         return None
-
-
-def merge_workspace_reservation_usage(target: dict[str, int], value: object) -> None:
-    if not isinstance(value, dict):
-        return
-    for key in ("docker_runtimes", "self_hosted_jobs"):
-        amount = value.get(key)
-        if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0:
-            target[key] = max(target.get(key, 0), amount)
 
 
 def _reject(code: str) -> NoReturn:

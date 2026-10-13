@@ -16,7 +16,7 @@ from opsmesh.workspaces.projects.admin_schemas import (
     AdminProjectStatusUpdateRequest,
 )
 from opsmesh.workspaces.projects.admin_service import AdminWorkspaceProjectService
-from opsmesh.workspaces.quotas.service import WorkspaceQuotaService
+from opsmesh.workspaces.quotas.service import WorkspaceQuotaManagementService
 
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
@@ -86,7 +86,7 @@ def list_admin_project_quotas(
     management = AdminWorkspaceProjectService(session)
     if management.get_project(workspace_id, project_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    quotas = WorkspaceQuotaService(session).list_project_quotas(workspace_id, project_id)
+    quotas = WorkspaceQuotaManagementService(session).list_project_quotas(workspace_id, project_id)
     return [AdminProjectQuotaResponse.model_validate(quota) for quota in quotas]
 
 
@@ -100,7 +100,7 @@ def upsert_admin_project_quotas(
     request: AdminProjectQuotaUpsertRequest,
     session: Session = Depends(get_db_session),
 ) -> list[AdminProjectQuotaResponse]:
-    quotas = WorkspaceQuotaService(session).upsert_project_quotas(
+    quotas = WorkspaceQuotaManagementService(session).upsert_project_quotas(
         workspace_id,
         project_id,
         request,
@@ -120,7 +120,7 @@ def disable_admin_project_quota(
     quota_key: str,
     session: Session = Depends(get_db_session),
 ) -> AdminProjectQuotaResponse:
-    quota = WorkspaceQuotaService(session).disable_project_quota(
+    quota = WorkspaceQuotaManagementService(session).disable_project_quota(
         workspace_id,
         project_id,
         quota_key,

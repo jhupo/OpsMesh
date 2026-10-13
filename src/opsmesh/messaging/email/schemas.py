@@ -1,7 +1,7 @@
 """Public email DTOs shared by HTTP adapters and application services.
 
-Invitation expiry and the public URL remain here for wire/storage compatibility;
-the invitation service owns token lifetime and activation-link semantics.
+The invitation service owns token lifetime and activation-link semantics;
+these DTOs expose the workspace's configurable delivery policy.
 """
 
 import re
@@ -57,7 +57,7 @@ class MailConfiguration(BaseModel):
         return self
 
 
-class MailConfigurationUpdate(MailConfiguration):
+class MailConfigurationUpdateRequest(MailConfiguration):
     password: SecretStr | None = Field(default=None, repr=False)
     clear_password: bool = False
 

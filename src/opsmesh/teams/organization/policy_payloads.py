@@ -61,14 +61,11 @@ def _runtime_space_payload(runtime_space: RuntimeSpace | None) -> dict[str, obje
         "status": runtime_space.status,
         "default_runtime_template_id": runtime_space.default_runtime_template_id,
         "policy": redact_sensitive_payload_item(runtime_space.policy, text_mode="fragments"),
-        "network_policy": redact_sensitive_payload_item(
-            runtime_space.network_policy, text_mode="fragments"
+        "storage_metadata": redact_sensitive_payload_item(
+            runtime_space.storage_metadata, text_mode="fragments"
         ),
-        "storage_policy": redact_sensitive_payload_item(
-            runtime_space.storage_policy, text_mode="fragments"
-        ),
-        "cleanup_policy": redact_sensitive_payload_item(
-            runtime_space.cleanup_policy, text_mode="fragments"
+        "cleanup_metadata": redact_sensitive_payload_item(
+            runtime_space.cleanup_metadata, text_mode="fragments"
         ),
     }
 

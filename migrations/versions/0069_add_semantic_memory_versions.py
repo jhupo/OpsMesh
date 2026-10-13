@@ -132,9 +132,7 @@ def _rewrite_listing_snapshots(bind: sa.Connection, *, add_semantic: bool) -> No
             policy.pop("semantic_memory", None)
         snapshot["memory_policy"] = policy
         metadata["agent_snapshot"] = snapshot
-        bind.execute(
-            listings.update().where(listings.c.id == listing_id).values(metadata=metadata)
-        )
+        bind.execute(listings.update().where(listings.c.id == listing_id).values(metadata=metadata))
 
 
 def _backfill_semantic_versions() -> None:

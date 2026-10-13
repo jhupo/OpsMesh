@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.runs.queries import active_task_ids_by_agent
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.platform.settings.policy import operational_configuration
+from opsmesh.platform.settings.configuration import operational_configuration
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 
 

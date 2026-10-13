@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.agents.profiles.payloads import AGENT_PROFILE_REVIEW_FIELDS, profile_snapshot
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.models import ResourceReview
-from opsmesh.governance.reviews.policy import REVIEW_TYPE_AGENT_PROFILE
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.constants import REVIEW_TYPE_AGENT_PROFILE
+from opsmesh.governance.reviews.contracts import ResourceReviewResult
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings
 
 
@@ -19,7 +19,7 @@ class AgentProfileReviewService:
         self._session = session
         self._settings = settings
 
-    def review_profile(self, profile: AgentProfile) -> ResourceReview:
+    def review_profile(self, profile: AgentProfile) -> ResourceReviewResult:
         return self._resource_reviews().review_agent_profile(
             workspace_id=profile.workspace_id,
             visibility="private",
@@ -37,7 +37,7 @@ class AgentProfileReviewService:
         self,
         profile: AgentProfile,
         values: Mapping[str, object],
-    ) -> ResourceReview | None:
+    ) -> ResourceReviewResult | None:
         if not AGENT_PROFILE_REVIEW_FIELDS.intersection(values):
             return None
         return self.review_profile(profile)
@@ -48,7 +48,7 @@ class AgentProfileReviewService:
         workspace_id: UUID,
         actor_user_id: UUID | None,
         profile: AgentProfile,
-        review: ResourceReview,
+        review: ResourceReviewResult,
     ) -> None:
         ResourceReviewApprovalService(self._session).request_resource_review(
             workspace_id=workspace_id,
@@ -61,5 +61,5 @@ class AgentProfileReviewService:
             snapshot=profile_snapshot(profile),
         )
 
-    def _resource_reviews(self) -> ResourcePolicyReviewBuilder:
-        return ResourcePolicyReviewBuilder(self._session, self._settings)
+    def _resource_reviews(self) -> ResourcePolicyReviewService:
+        return ResourcePolicyReviewService(self._session, self._settings)

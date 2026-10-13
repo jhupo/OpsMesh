@@ -20,7 +20,7 @@ from opsmesh.orchestration.planning.agent_plan import (
 from opsmesh.orchestration.planning.attempt_models import TaskPlanningAttempt
 from opsmesh.orchestration.planning.attempts import TaskPlanningAttemptService
 from opsmesh.orchestration.planning.feasibility import PlanFeasibilityService
-from opsmesh.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from opsmesh.orchestration.planning.task_plan_steps import TaskPlanStepMaterializer
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskStep
@@ -111,7 +111,7 @@ class PlannerCompletionService:
                 else "plan_schema_invalid",
             )
             return False
-        ProjectPlanStepMaterializer(self.session).materialize(task, plan)
+        TaskPlanStepMaterializer(self.session).materialize(task, plan)
         task.project_plan = plan
         attempt.status = "completed"
         attempt.output_snapshot = plan

@@ -5,7 +5,7 @@ from opsmesh.capabilities.mcp.policy import layered_int_policy, layered_optional
 
 
 @dataclass(frozen=True)
-class McpExecutionPolicy:
+class MCPExecutionPolicy:
     timeout_seconds: int
     max_input_bytes: int
     max_output_bytes: int
@@ -16,11 +16,11 @@ class McpExecutionPolicy:
 def resolve_mcp_execution_policy(
     snapshot: dict[str, object],
     descriptor: CapabilityToolDescriptor,
-) -> McpExecutionPolicy:
+) -> MCPExecutionPolicy:
     runtime_policy = snapshot.get("runtime_policy")
     snapshot_mcp_policy = runtime_policy.get("mcp") if isinstance(runtime_policy, dict) else None
     allow_policy = descriptor.policy
-    return McpExecutionPolicy(
+    return MCPExecutionPolicy(
         timeout_seconds=layered_int_policy(
             allow_policy,
             snapshot_mcp_policy,

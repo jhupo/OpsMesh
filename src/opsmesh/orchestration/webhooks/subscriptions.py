@@ -11,7 +11,7 @@ from opsmesh.orchestration.webhooks.models import WebhookSubscription
 from opsmesh.orchestration.webhooks.policy import WEBHOOK_URL_POLICY
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.egress import EgressUrlPolicy, validate_egress_url
+from opsmesh.shared.security.egress import EgressURLPolicy, validate_egress_url
 from opsmesh.shared.security.secrets import SecretEncryptionService
 
 
@@ -20,7 +20,7 @@ class WebhookSubscriptionService:
         self,
         session: Session,
         secret_service: SecretEncryptionService,
-        egress_policy: EgressUrlPolicy = WEBHOOK_URL_POLICY,
+        egress_policy: EgressURLPolicy = WEBHOOK_URL_POLICY,
     ) -> None:
         self._session = session
         self._secret_service = secret_service
@@ -52,6 +52,7 @@ class WebhookSubscriptionService:
         self._session.commit()
         self._session.refresh(subscription)
         return subscription
+
     def list(
         self,
         *,

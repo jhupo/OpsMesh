@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.knowledge.models import KnowledgeSourceRevision
-from tests.test_workspace_api import _client, _headers, _seed_workspace
+from tests.fixtures.workspace_api import _client, _headers, _seed_workspace
 
 
 def test_knowledge_source_lifecycle_is_versioned_and_workspace_scoped() -> None:
@@ -73,8 +73,7 @@ def test_knowledge_source_lifecycle_is_versioned_and_workspace_scoped() -> None:
     assert archived.json()["version"] == 5
     assert client.get(path, headers=_headers(owner.id)).json()["total"] == 0
     assert (
-        client.get(f"{path}?include_archived=true", headers=_headers(owner.id)).json()["total"]
-        == 1
+        client.get(f"{path}?include_archived=true", headers=_headers(owner.id)).json()["total"] == 1
     )
     assert client.get(f"{path}/{source['id']}", headers=_headers(owner.id)).status_code == 404
     revisions = client.get(

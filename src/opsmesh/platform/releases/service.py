@@ -10,7 +10,7 @@ from opsmesh.platform.releases.models import ReleaseUpdateCheck, ReleaseVersion
 from opsmesh.shared.config import Settings
 
 
-class ReleaseUpdateService:
+class ReleaseCheckService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._github = GitHubReleaseClient(settings)

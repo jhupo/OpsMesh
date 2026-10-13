@@ -1,11 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.types import JSON
 
 from opsmesh.agents.execution.contracts import AgentRunResult
 from opsmesh.agents.profiles.models import AgentProfile
@@ -21,6 +18,7 @@ from opsmesh.resources.memory.policy import normalized_memory_policy
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_memory_policy_rejects_removed_root_fields() -> None:
@@ -159,13 +157,7 @@ def test_decisions_failures_and_human_feedback_create_distinct_episodes() -> Non
 
 
 def _session() -> Session:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = JSON()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 

@@ -18,7 +18,7 @@ from opsmesh.orchestration.tasks.observation.timeline import TaskTimelineService
 from opsmesh.shared.utils import dedupe_strings, dict_or_empty, int_or_zero, string_list
 
 
-class TaskExecutionStatusService:
+class TaskExecutionOverviewService:
     """Compose live task execution state for an operator-facing control panel."""
 
     def __init__(self, session: Session) -> None:
@@ -227,8 +227,6 @@ def _recommended_actions(
         statuses = {str(dict_or_empty(run).get("status")) for run in active_runs}
         if "waiting_approval" in statuses:
             actions.append({"action": "review_approval", "reason": "run_waiting_approval"})
-        if "waiting_runtime" in statuses:
-            actions.append({"action": "inspect_runtime", "reason": "run_waiting_runtime"})
     if int_or_zero(execution_summary.get("runnable_steps")) > 0 and not active_runs:
         actions.append(
             {

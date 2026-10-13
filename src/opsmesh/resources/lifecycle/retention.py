@@ -221,9 +221,7 @@ class WorkspaceRetentionService:
             return []
         action = "soft_delete" if delete_policy == "soft_delete" else "manual_review"
         reason = (
-            None
-            if action == "soft_delete"
-            else "retention_delete_policy_requires_manual_review"
+            None if action == "soft_delete" else "retention_delete_policy_requires_manual_review"
         )
         cutoff = generated_at - timedelta(days=retention_days)
         files = self._session.scalars(
@@ -241,9 +239,7 @@ class WorkspaceRetentionService:
                 select(WorkspaceProjectFile.workspace_file_id).where(
                     WorkspaceProjectFile.workspace_id == workspace_id,
                     WorkspaceProjectFile.status == "active",
-                    WorkspaceProjectFile.workspace_file_id.in_(
-                        [file.id for file in files]
-                    ),
+                    WorkspaceProjectFile.workspace_file_id.in_([file.id for file in files]),
                 )
             ).all()
         )
@@ -259,21 +255,13 @@ class WorkspaceRetentionService:
                     generated_at=generated_at,
                     retention_days=retention_days,
                     status=file.status,
-                    action=(
-                        "manual_review"
-                        if is_referenced or not is_backed_up
-                        else action
-                    ),
+                    action=("manual_review" if is_referenced or not is_backed_up else action),
                     filename=file.filename,
                     size_bytes=file.size_bytes,
                     reason=(
                         "file_referenced_by_active_project"
                         if is_referenced
-                        else (
-                            "file_not_backed_by_latest_archive"
-                            if not is_backed_up
-                            else reason
-                        )
+                        else ("file_not_backed_by_latest_archive" if not is_backed_up else reason)
                     ),
                 )
             )
@@ -312,9 +300,7 @@ class WorkspaceRetentionService:
         if retention_days is None or limit <= 0:
             return []
         cutoff = generated_at - timedelta(days=retention_days)
-        jobs = WorkspaceDataLifecycleRepository(
-            self._session
-        ).retention_export_job_candidates(
+        jobs = WorkspaceDataLifecycleRepository(self._session).retention_export_job_candidates(
             workspace_id=workspace_id,
             cutoff=cutoff,
             limit=limit,

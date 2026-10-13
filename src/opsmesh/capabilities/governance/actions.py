@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.capabilities.governance.mcp_actions import CapabilityGovernanceMcpActionService
+from opsmesh.capabilities.governance.mcp_actions import CapabilityGovernanceMCPActionService
 from opsmesh.capabilities.governance.rules import (
     governance_result,
     governance_skipped,
@@ -205,11 +205,11 @@ class CapabilityGovernanceActionService:
                     )
                 )
                 continue
-            current_tools = string_list(agent.tool_policy.get("mcp_tools"))
+            current_tools = string_list(agent.tool_policy.get("allowed_tools"))
             repaired_tools = [tool for tool in current_tools if tool not in set(missing_tools)]
             if not dry_run:
                 next_policy = dict(agent.tool_policy)
-                next_policy["mcp_tools"] = repaired_tools
+                next_policy["allowed_tools"] = repaired_tools
                 agent.tool_policy = next_policy
                 AuditService(self._session).record_user_action(
                     workspace_id=workspace_id,
@@ -242,5 +242,5 @@ class CapabilityGovernanceActionService:
             results.append(applied)
         return results, skipped
 
-    def _mcp_actions(self) -> CapabilityGovernanceMcpActionService:
-        return CapabilityGovernanceMcpActionService(self._session, self._settings)
+    def _mcp_actions(self) -> CapabilityGovernanceMCPActionService:
+        return CapabilityGovernanceMCPActionService(self._session, self._settings)

@@ -4,12 +4,38 @@ import sys
 from queue import Queue
 from uuid import uuid4
 
+from temporalio.contrib.opentelemetry import create_tracer_provider
+
 from opsmesh.shared.telemetry.logging import (
     BoundedLogHandler,
     RequestContextFilter,
     json_log_formatter,
 )
-from opsmesh.shared.telemetry.request_context import current_log_context, log_context
+from opsmesh.shared.telemetry.request_context import current_log_context
+from tests.fixtures.log_context import log_context
+
+
+def test_log_context_uses_native_activity_span_and_restores_request_scope() -> None:
+    provider = create_tracer_provider()
+    try:
+        with log_context(
+            request_id="api-request",
+            workspace_id="tenant-a",
+            trace_id="0123456789abcdef0123456789abcdef",
+            span_id="0123456789abcdef",
+        ):
+            with provider.get_tracer("native-activity-log").start_as_current_span("model") as span:
+                active = current_log_context()
+                assert active["request_id"] == "api-request"
+                assert active["workspace_id"] == "tenant-a"
+                assert active["trace_id"] == format(span.get_span_context().trace_id, "032x")
+                assert active["span_id"] == format(span.get_span_context().span_id, "016x")
+                assert active["parent_span_id"] is None
+            assert current_log_context()["trace_id"] == "0123456789abcdef0123456789abcdef"
+            assert current_log_context()["span_id"] == "0123456789abcdef"
+        assert current_log_context()["workspace_id"] is None
+    finally:
+        provider.shutdown()
 
 
 def test_log_context_filter_adds_standard_fields_to_records() -> None:
@@ -42,7 +68,7 @@ def test_log_context_filter_adds_standard_fields_to_records() -> None:
     assert record.request_id == "req-1"
     assert record.trace_id == "0123456789abcdef0123456789abcdef"
     assert record.span_id == "0123456789abcdef"
-    assert record.parent_span_id == "abcdef0123456789"
+    assert record.parent_span_id is None
     assert record.workspace_id == str(workspace_id)
     assert record.user_id == str(user_id)
     assert record.task_id is None

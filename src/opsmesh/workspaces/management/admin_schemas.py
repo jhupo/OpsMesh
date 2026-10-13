@@ -6,11 +6,11 @@ from pydantic import (
     field_serializer,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class AdminWorkspaceResponse(TimestampedModel):
+class AdminWorkspaceResponse(TimestampedContract):
     owner_user_id: UUID
     name: str
     slug: str

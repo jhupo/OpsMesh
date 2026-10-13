@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
 
 from opsmesh.shared.config import Settings, get_settings
 
@@ -26,18 +25,6 @@ class RedisPoolSnapshot:
 
 def create_redis_client(settings: Settings) -> Redis[str]:
     return Redis.from_url(
-        settings.redis_url,
-        decode_responses=True,
-        max_connections=settings.redis_max_connections,
-        socket_timeout=settings.redis_socket_timeout_seconds,
-        socket_connect_timeout=settings.redis_socket_connect_timeout_seconds,
-        health_check_interval=settings.redis_health_check_interval_seconds,
-    )
-
-
-def create_async_redis_client(settings: Settings) -> AsyncRedis[str]:
-    """Native asynchronous transport for long-lived streams; no waiting thread per client."""
-    return AsyncRedis.from_url(
         settings.redis_url,
         decode_responses=True,
         max_connections=settings.redis_max_connections,

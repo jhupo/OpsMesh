@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeApprovalDecision
+from opsmesh.agents.execution.contracts import AgentToolApprovalDecision
 from opsmesh.orchestration.approvals.models import PendingToolInvocation
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.shared.security.secrets import SecretEncryptionService
@@ -144,7 +144,7 @@ class PendingToolInvocationService:
         *,
         workspace_id: UUID,
         run_id: UUID,
-    ) -> tuple[AgentRuntimeApprovalDecision, ...]:
+    ) -> tuple[AgentToolApprovalDecision, ...]:
         from opsmesh.orchestration.approvals.models import Approval
 
         rows = self._session.execute(
@@ -167,7 +167,7 @@ class PendingToolInvocationService:
             .order_by(PendingToolInvocation.created_at, PendingToolInvocation.id)
         ).all()
         return tuple(
-            AgentRuntimeApprovalDecision(
+            AgentToolApprovalDecision(
                 tool_call_id=invocation.tool_call_id,
                 tool_name=invocation.tool_name,
                 status="rejected" if invocation.status == "rejected" else "approved",
@@ -197,10 +197,7 @@ class PendingToolInvocationService:
         if invocation is None:
             raise ValueError("Approved tool invocation not found")
         fingerprint = self._secrets.encrypt_payload(arguments).fingerprint
-        if (
-            invocation.tool_name != tool_name
-            or invocation.arguments_fingerprint != fingerprint
-        ):
+        if invocation.tool_name != tool_name or invocation.arguments_fingerprint != fingerprint:
             raise ValueError("Approved tool invocation does not match the SDK tool call")
         if invocation.status in {"completed", "failed"}:
             return invocation, self._stored_result(invocation)
@@ -228,11 +225,17 @@ class PendingToolInvocationService:
         *,
         workspace_id: UUID,
         run_id: UUID,
+        decisions: tuple[AgentToolApprovalDecision, ...],
     ) -> None:
+        if not decisions:
+            return
         invocations = self._session.scalars(
             select(PendingToolInvocation).where(
                 PendingToolInvocation.workspace_id == workspace_id,
                 PendingToolInvocation.agent_run_id == run_id,
+                tuple_(PendingToolInvocation.tool_call_id, PendingToolInvocation.tool_name).in_(
+                    {(decision.tool_call_id, decision.tool_name) for decision in decisions}
+                ),
                 PendingToolInvocation.status.in_(
                     ("approved", "rejected", "completed", "failed", "outcome_unknown")
                 ),
@@ -246,24 +249,6 @@ class PendingToolInvocationService:
                 invocation.status = "rejection_consumed"
                 invocation.completed_at = consumed_at
         self._session.flush(invocations)
-
-    def mark_stale_execution_outcome_unknown(
-        self,
-        *,
-        workspace_id: UUID,
-        run_id: UUID,
-    ) -> int:
-        invocations = self._session.scalars(
-            select(PendingToolInvocation).where(
-                PendingToolInvocation.workspace_id == workspace_id,
-                PendingToolInvocation.agent_run_id == run_id,
-                PendingToolInvocation.status == "executing",
-            )
-        ).all()
-        for invocation in invocations:
-            invocation.status = "outcome_unknown"
-        self._session.flush(invocations)
-        return len(invocations)
 
     def complete_execution(
         self,

@@ -7,7 +7,7 @@ from pydantic import (
     computed_field,
 )
 
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 
 
 class WorkspaceQuotaUpsertItem(BaseModel):
@@ -20,7 +20,7 @@ class WorkspaceQuotaUpsertRequest(BaseModel):
     quotas: list[WorkspaceQuotaUpsertItem] = Field(min_length=1, max_length=64)
 
 
-class WorkspaceQuotaResponse(TimestampedModel):
+class WorkspaceQuotaResponse(TimestampedContract):
     workspace_id: UUID
     quota_key: str
     limit_value: int
@@ -51,7 +51,7 @@ class WorkspaceQuotaResponse(TimestampedModel):
         return self.reserved_value > self.limit_value
 
 
-class WorkspaceExecutionSlotReservationResponse(TimestampedModel):
+class WorkspaceExecutionSlotReservationResponse(TimestampedContract):
     id: UUID
     workspace_project_id: UUID | None
     reservation_key: str

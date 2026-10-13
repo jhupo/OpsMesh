@@ -3,7 +3,7 @@
       - any-glob-to-any-file: ['src/**', 'tests/**', 'migrations/**']
 'area:runtime':
   - changed-files:
-      - any-glob-to-any-file: ['src/opsmesh/runtime/**', 'runtime/**', 'operator/**']
+      - any-glob-to-any-file: ['src/opsmesh/runtime/**', 'operator/**']
 'area:security':
   - changed-files:
       - any-glob-to-any-file: ['src/opsmesh/identity/**', 'src/opsmesh/shared/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']

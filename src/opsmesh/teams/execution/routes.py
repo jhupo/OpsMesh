@@ -1,8 +1,7 @@
-from typing import TYPE_CHECKING
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis import Redis
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
@@ -14,38 +13,37 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.security.redaction import redact_sensitive_payload
-from opsmesh.teams.execution.loop import (
-    TeamExecutionLoopService,
-    enqueue_team_execution_loop_job,
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+from opsmesh.teams.execution.models import TeamOrchestrationRequest
+from opsmesh.teams.execution.queries import team_orchestration_requests
+from opsmesh.teams.execution.reconciliation import (
+    TeamOrchestrationRequestNotFoundError,
+    TeamReconciliationConflictError,
+    TeamReconciliationService,
 )
-from opsmesh.teams.management.http_common import _queued_runtime_control
-from opsmesh.teams.management.service import WorkspaceTeamService
+from opsmesh.teams.execution.service import (
+    TeamOrchestrationService,
+)
+from opsmesh.teams.management.http_common import _runtime_control
 from opsmesh.teams.operations.command_center import TeamCommandCenterService
 from opsmesh.teams.operations.operator_actions import TeamOperatorActionService
 from opsmesh.teams.sessions.schemas import (
     AgentTeamCommandCenterApplyRequest,
     AgentTeamCommandCenterApplyResponse,
-    AgentTeamExecutionLoopEnqueueRequest,
-    AgentTeamExecutionLoopEnqueueResponse,
-    AgentTeamExecutionLoopFinalizeRequest,
-    AgentTeamExecutionLoopFinalizeResponse,
-    AgentTeamExecutionLoopRunRequest,
-    AgentTeamExecutionLoopRunResponse,
     AgentTeamOperatorActionRequest,
     AgentTeamOperatorActionResponse,
+    AgentTeamOrchestrationAdvanceRequest,
+    AgentTeamOrchestrationAdvanceResponse,
+    AgentTeamOrchestrationFinalizeRequest,
+    AgentTeamOrchestrationFinalizeResponse,
+    AgentTeamOrchestrationReconcileRequest,
+    AgentTeamOrchestrationSubmitRequest,
+    TeamOrchestrationResponse,
 )
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -61,7 +59,6 @@ def apply_team_command_center_actions(
         workspace_dependency(WorkspaceAction.OPERATE, path_resource_action=ResourceAction.READ)
     ),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamCommandCenterApplyResponse:
     _require_command_center_action_permissions(
@@ -82,10 +79,7 @@ def apply_team_command_center_actions(
         max_actions=request.max_actions,
         max_tasks_per_action=request.max_tasks_per_action,
         enqueue_runs=request.enqueue_runs,
-        queue=queue,
-        runtime_control=None
-        if request.dry_run
-        else _queued_runtime_control(session, queue, settings, context),
+        runtime_control=None if request.dry_run else _runtime_control(session, settings),
         reason=request.reason,
         metadata=request.metadata,
     )
@@ -118,7 +112,7 @@ def _require_command_center_action_permissions(
     ):
         return
     try:
-        AuthorizationService(session).require_workspace(
+        WorkspaceAuthorizationService(session).require_workspace(
             user_id=context.user.user_id,
             workspace_id=context.workspace.id,
             action=WorkspaceAction.MANAGE_RUNTIME,
@@ -132,66 +126,156 @@ def _require_command_center_action_permissions(
 
 
 @router.post(
-    "/teams/{team_id}/execution-loop/enqueue",
-    response_model=AgentTeamExecutionLoopEnqueueResponse,
+    "/teams/{team_id}/orchestration/requests",
+    response_model=TeamOrchestrationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-def enqueue_team_execution_loop(
+def submit_team_orchestration_request(
     team_id: UUID,
-    request: AgentTeamExecutionLoopEnqueueRequest,
+    request: AgentTeamOrchestrationSubmitRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-) -> AgentTeamExecutionLoopEnqueueResponse:
-    team = WorkspaceTeamService(session).get_team(context.workspace.id, team_id)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+) -> TeamOrchestrationResponse:
+    from opsmesh.teams.execution.dispatch import submit_team_orchestration
 
-    queued = enqueue_team_execution_loop_job(
-        session=session,
-        queue=queue,
+    try:
+        command, workflow_id = submit_team_orchestration(
+            session,
+            workspace_id=context.workspace.id,
+            team_id=team_id,
+            user_id=context.user.user_id,
+            configuration=request,
+        )
+    except TeamReconciliationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    session.commit()
+    return TeamOrchestrationResponse(
         workspace_id=context.workspace.id,
         team_id=team_id,
-        requested_by_user_id=context.user.user_id,
-        priority=request.priority,
-        routing={
-            "source": "workspace_api",
-            "trigger": "manual_enqueue",
-            "reason": request.reason,
-            "metadata": redact_sensitive_payload(request.metadata),
-        },
+        request_id=command.id,
+        workflow_id=workflow_id,
+        status=command.status,
     )
-    return AgentTeamExecutionLoopEnqueueResponse(
-        workspace_id=context.workspace.id,
-        team_id=team_id,
-        status="queued" if queued else "skipped",
-        queued=queued,
-        job_type=JobType.TEAM_EXECUTION_LOOP.value,
-        queue_name=queue.queue_name,
+
+
+@router.get(
+    "/teams/{team_id}/orchestration/requests",
+    response_model=PageResponse[TeamOrchestrationResponse],
+)
+def list_team_orchestration_requests(
+    team_id: UUID,
+    request_status: Literal["queued", "running", "completed", "failed", "unknown"] | None = None,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    page: PageParams = Depends(pagination_params),
+) -> PageResponse[TeamOrchestrationResponse]:
+    ResourceAuthorizationService(session, context.user).require(
+        context.workspace.id, ResourceKind.TEAM, team_id, ResourceAction.READ
+    )
+    items, total = team_orchestration_requests(
+        session, context.workspace.id, team_id, page, request_status
+    )
+    return PageResponse(
+        items=[_orchestration_request_response(command) for command in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/teams/{team_id}/orchestration/requests/{request_id}",
+    response_model=TeamOrchestrationResponse,
+)
+def get_team_orchestration_request(
+    team_id: UUID,
+    request_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TeamOrchestrationResponse:
+    from sqlalchemy import select
+
+    ResourceAuthorizationService(session, context.user).require(
+        context.workspace.id, ResourceKind.TEAM, team_id, ResourceAction.READ
+    )
+    command = session.scalar(
+        select(TeamOrchestrationRequest).where(
+            TeamOrchestrationRequest.workspace_id == context.workspace.id,
+            TeamOrchestrationRequest.team_id == team_id,
+            TeamOrchestrationRequest.id == request_id,
+        )
+    )
+    if command is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team request not found")
+    return _orchestration_request_response(command)
+
+
+def _orchestration_request_response(
+    command: TeamOrchestrationRequest,
+) -> TeamOrchestrationResponse:
+    from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+
+    execution = ExecutionRequest(
+        execution_id=command.id,
+        workspace_id=command.workspace_id,
+        resource_id=command.id,
+        kind=ExecutionKind.TEAM_ORCHESTRATION,
+    )
+    return TeamOrchestrationResponse(
+        workspace_id=command.workspace_id,
+        team_id=command.team_id,
+        request_id=command.id,
+        workflow_id=execution.workflow_id,
+        status=command.status,
+        result=command.result,
+        last_error_code=command.last_error_code,
+        started_at=command.started_at,
+        completed_at=command.completed_at,
     )
 
 
 @router.post(
-    "/teams/{team_id}/execution-loop/run",
-    response_model=AgentTeamExecutionLoopRunResponse,
+    "/teams/{team_id}/orchestration/requests/{request_id}/reconcile",
+    response_model=TeamOrchestrationResponse,
 )
-def run_team_execution_loop_iteration(
+def reconcile_team_orchestration_request(
     team_id: UUID,
-    request: AgentTeamExecutionLoopRunRequest,
+    request_id: UUID,
+    request: AgentTeamOrchestrationReconcileRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
-    settings: Settings = Depends(get_settings),
-) -> AgentTeamExecutionLoopRunResponse:
-    _require_execution_loop_runtime_permission(
-        session=session,
-        context=context,
-        request=request,
-    )
-    response = TeamExecutionLoopService(session).run_iteration(
+) -> TeamOrchestrationResponse:
+    try:
+        TeamReconciliationService(session).reconcile(
+            workspace_id=context.workspace.id,
+            team_id=team_id,
+            request_id=request_id,
+            user=context.user,
+            decision=request,
+        )
+    except TeamOrchestrationRequestNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except TeamReconciliationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    session.commit()
+    return get_team_orchestration_request(team_id, request_id, context, session)
+
+
+@router.post(
+    "/teams/{team_id}/orchestration/preview",
+    response_model=AgentTeamOrchestrationAdvanceResponse,
+)
+def preview_team_orchestration(
+    team_id: UUID,
+    request: AgentTeamOrchestrationAdvanceRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamOrchestrationAdvanceResponse:
+    response = TeamOrchestrationService(session).advance(
         workspace_id=context.workspace.id,
         team_id=team_id,
         actor_user_id=context.user.user_id,
-        dry_run=request.dry_run,
+        dry_run=True,
         apply_command_center_actions=request.apply_command_center_actions,
         enqueue_runs=request.enqueue_runs,
         finalize_ready_tasks=request.finalize_ready_tasks,
@@ -202,51 +286,26 @@ def run_team_execution_loop_iteration(
         max_actions=request.max_actions,
         max_tasks_per_action=request.max_tasks_per_action,
         max_finalize_tasks=request.max_finalize_tasks,
-        queue=queue,
-        runtime_control=None
-        if request.dry_run
-        else _queued_runtime_control(session, queue, settings, context),
+        runtime_control=None,
         reason=request.reason,
         metadata=request.metadata,
     )
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    return AgentTeamExecutionLoopRunResponse.model_validate(response)
-
-
-def _require_execution_loop_runtime_permission(
-    *,
-    session: Session,
-    context: WorkspaceContext,
-    request: AgentTeamExecutionLoopRunRequest,
-) -> None:
-    if request.dry_run:
-        return
-    try:
-        AuthorizationService(session).require_workspace(
-            user_id=context.user.user_id,
-            workspace_id=context.workspace.id,
-            action=WorkspaceAction.MANAGE_RUNTIME,
-            authenticated_user=context.user,
-        )
-    except PermissionDeniedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Workspace role does not allow runtime lifecycle actions",
-        ) from exc
+    return AgentTeamOrchestrationAdvanceResponse.model_validate(response)
 
 
 @router.post(
-    "/teams/{team_id}/execution-loop/finalize",
-    response_model=AgentTeamExecutionLoopFinalizeResponse,
+    "/teams/{team_id}/orchestration/finalize",
+    response_model=AgentTeamOrchestrationFinalizeResponse,
 )
-def finalize_team_execution_loop_tasks(
+def finalize_team_tasks(
     team_id: UUID,
-    request: AgentTeamExecutionLoopFinalizeRequest,
+    request: AgentTeamOrchestrationFinalizeRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
-) -> AgentTeamExecutionLoopFinalizeResponse:
-    response = TeamExecutionLoopService(session).finalize_ready_tasks(
+) -> AgentTeamOrchestrationFinalizeResponse:
+    response = TeamOrchestrationService(session).finalize_ready_tasks(
         workspace_id=context.workspace.id,
         team_id=team_id,
         actor_user_id=context.user.user_id,
@@ -255,7 +314,7 @@ def finalize_team_execution_loop_tasks(
     )
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    return AgentTeamExecutionLoopFinalizeResponse.model_validate(response)
+    return AgentTeamOrchestrationFinalizeResponse.model_validate(response)
 
 
 @router.post(

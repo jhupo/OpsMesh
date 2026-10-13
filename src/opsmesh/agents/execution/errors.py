@@ -1,11 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from opsmesh.agents.execution.contracts import (
-    AgentRuntimeCapabilities,
-    AgentRuntimeCapability,
-    AgentRuntimeGuardrailResult,
-)
+from opsmesh.agents.execution.contracts import AgentGuardrailResult
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 _SENSITIVE_URL_PATTERN = re.compile(
@@ -20,7 +16,7 @@ _SENSITIVE_PROVIDER_CONFIG_PATTERN = re.compile(
 
 
 @dataclass(frozen=True)
-class NormalizedAgentError:
+class AgentFailureDetails:
     code: str
     message: str
     retryable: bool
@@ -33,7 +29,7 @@ class NormalizedAgentError:
         }
 
 
-class AgentRuntimePolicyError(Exception):
+class AgentExecutionPolicyError(Exception):
     def __init__(
         self,
         *,
@@ -51,24 +47,27 @@ class AgentRuntimePolicyError(Exception):
         self.retryable = retryable
 
 
-class AgentRuntimeProviderError(RuntimeError):
-    """A provider SDK failed while executing a model request.
+class AgentModelProviderError(RuntimeError):
+    """A vendor SDK failed at the model boundary, with a redacted diagnostic."""
 
-    Only this typed error is eligible for model-provider fallback. Adapter code
-    must translate vendor SDK failures at the boundary so programming errors,
-    policy violations, and storage failures cannot trigger another provider.
-    """
-
-    def __init__(self, *, code: str, message: str, retryable: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        retryable: bool = True,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
         safe_message = _safe_error_message(message)
         super().__init__(safe_message)
         self.code = code
         self.message = safe_message
         self.retryable = retryable
+        self.metadata = redact_sensitive_payload(metadata or {})
 
 
-class AgentRuntimeGuardrailBlockedError(AgentRuntimePolicyError):
-    def __init__(self, result: AgentRuntimeGuardrailResult) -> None:
+class AgentGuardrailBlockedError(AgentExecutionPolicyError):
+    def __init__(self, result: AgentGuardrailResult) -> None:
         super().__init__(
             code="agent_guardrail_blocked",
             message=f"{result.stage.capitalize()} guardrail {result.name} blocked the run",
@@ -83,7 +82,7 @@ class AgentRuntimeGuardrailBlockedError(AgentRuntimePolicyError):
         )
 
 
-class AgentRuntimeOutputValidationError(AgentRuntimePolicyError):
+class AgentOutputValidationError(AgentExecutionPolicyError):
     def __init__(
         self,
         *,
@@ -103,7 +102,7 @@ class AgentRuntimeOutputValidationError(AgentRuntimePolicyError):
         )
 
 
-class AgentRuntimeCancelledError(AgentRuntimePolicyError):
+class AgentExecutionCancelledError(AgentExecutionPolicyError):
     def __init__(self) -> None:
         super().__init__(
             code="agent_runtime_cancelled",
@@ -113,49 +112,20 @@ class AgentRuntimeCancelledError(AgentRuntimePolicyError):
         )
 
 
-class AgentRuntimeCapabilityError(AgentRuntimePolicyError):
-    def __init__(
-        self,
-        capabilities: AgentRuntimeCapabilities,
-        missing: tuple[AgentRuntimeCapability, ...],
-    ) -> None:
-        names = tuple(sorted(item.value for item in missing))
-        super().__init__(
-            code="agent_runtime_capability_unsupported",
-            message=(
-                f"Runtime adapter {capabilities.adapter} does not support: "
-                + ", ".join(names)
-            ),
-            event_type="agent.capability.unsupported",
-            metadata={
-                "provider": capabilities.provider,
-                "adapter": capabilities.adapter,
-                "missing": list(names),
-                "reasons": {
-                    name: capabilities.unsupported_reasons.get(
-                        name,
-                        "The adapter does not advertise this capability.",
-                    )
-                    for name in names
-                },
-            },
-        )
-
-
-def normalize_agent_error(exc: Exception) -> NormalizedAgentError:
-    if isinstance(exc, AgentRuntimePolicyError):
-        return NormalizedAgentError(
+def normalize_agent_error(exc: Exception) -> AgentFailureDetails:
+    if isinstance(exc, AgentExecutionPolicyError):
+        return AgentFailureDetails(
             code=exc.code,
             message=exc.message,
             retryable=exc.retryable,
         )
-    if isinstance(exc, AgentRuntimeProviderError):
-        return NormalizedAgentError(
+    if isinstance(exc, AgentModelProviderError):
+        return AgentFailureDetails(
             code=exc.code,
             message=exc.message,
             retryable=exc.retryable,
         )
-    return NormalizedAgentError(
+    return AgentFailureDetails(
         code=exc.__class__.__name__,
         message=_safe_error_message(str(exc)),
         retryable=False,

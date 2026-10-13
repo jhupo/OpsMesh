@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
-SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v2"
+SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v3"
 WORKSPACE_EXPORT_SENSITIVE_FIELDS_POLICY = "secrets-excluded-redacted"
 
 
@@ -34,7 +34,10 @@ class WorkspaceArchiveExportRequest(WorkspaceExportRequest):
 class WorkspaceExportManifest(BaseModel):
     workspace_id: UUID
     exported_at: datetime
-    format_version: str
+    format_version: str = Field(
+        description=f"Current export format is {SUPPORTED_WORKSPACE_EXPORT_FORMAT}; "
+        "imports reject other versions."
+    )
     included_collections: list[str]
     counts: dict[str, int]
     payload_checksum_sha256: str
@@ -78,7 +81,7 @@ class WorkspaceArchiveExportResult(BaseModel):
     object_inventory: list[dict[str, object]] = Field(default_factory=list)
 
 
-class WorkspaceExportJobResponse(ORMModel):
+class WorkspaceExportJobResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID | None
@@ -230,6 +233,7 @@ class WorkspaceImportResponse(BaseModel):
 
 
 class WorkspaceRestoreDrillResponse(BaseModel):
+    operation_id: UUID
     workspace_id: UUID
     job_id: UUID
     drilled_at: datetime
@@ -243,6 +247,39 @@ class WorkspaceRestoreDrillResponse(BaseModel):
     @field_serializer("metadata")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class WorkspaceRestoreDrillOperationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    workspace_id: UUID
+    export_job_id: UUID
+    status: str
+    error_code: str | None
+    result: WorkspaceRestoreDrillResponse | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceRestoreDrillReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class WorkspaceArchiveExportReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class WorkspaceArchiveVerificationResponse(FromAttributesContract):
+    id: UUID
+    workspace_id: UUID
+    export_job_id: UUID
+    status: str
+    error_code: str | None
+    result: WorkspaceArchiveIntegrityResponse | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkspaceDataLifecycleResponse(BaseModel):

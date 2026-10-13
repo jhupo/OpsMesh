@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.identity.users.models import User
-from opsmesh.messaging.notifications.contracts import NotificationCreateRequest
 from opsmesh.messaging.notifications.models import (
     PlatformAnnouncement,
     PlatformAnnouncementRecipient,
     UserNotificationPreference,
     WorkspaceNotification,
 )
+from opsmesh.messaging.notifications.schemas import NotificationCreateRequest
 from opsmesh.messaging.notifications.service import NotificationCenterService
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.pagination import PageParams

@@ -1,29 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
 from opsmesh.agents.messages.models import AgentMessage, AgentMessageThread
-from opsmesh.agents.sessions.models import PersistentAgentSession
+from opsmesh.agents.sessions.models import AgentSessionMetadata
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.shared.utils import coerce_int_or_zero, datetime_or_none
 from opsmesh.teams.management.models import (
-    TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,
-    TEAM_RUNTIME_STALL_THRESHOLD,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
     AgentTeam,
 )
 from opsmesh.teams.organization.service import TeamOperatingContextService
-from opsmesh.teams.sessions.mailbox import TeamRuntimeMailboxStore
+from opsmesh.teams.sessions.mailbox import TeamMailboxStore
 from opsmesh.teams.sessions.refs import _dict_or_none, _uuid_or_none, team_runtime_metadata
-from opsmesh.teams.sessions.repository import TeamRuntimeRepository
+from opsmesh.teams.sessions.repository import TeamOperationRepository
 
 
 @dataclass(frozen=True)
-class TeamRuntimeState:
+class TeamOperationSnapshot:
     workspace_id: UUID
     team_id: UUID
     generated_at: datetime
@@ -34,7 +31,7 @@ class TeamRuntimeState:
     workspace_runtime_id: UUID | None
     runtime_status: str | None
     runtime_space_id: UUID | None
-    last_iteration: dict[str, object] | None
+    last_advancement: dict[str, object] | None
     last_message_at: datetime | None
     runtime_health: str
     member_session_count: int
@@ -44,14 +41,14 @@ class TeamRuntimeState:
     metadata: dict[str, object]
 
 
-class TeamRuntimeStateBuilder:
+class TeamOperationSnapshotBuilder:
     """Assemble the runtime state snapshot returned to APIs and schedulers."""
 
     def __init__(
         self,
         *,
-        repo: TeamRuntimeRepository,
-        mailbox: TeamRuntimeMailboxStore,
+        repo: TeamOperationRepository,
+        mailbox: TeamMailboxStore,
         operating_context: TeamOperatingContextService,
     ) -> None:
         self._repo = repo
@@ -62,10 +59,10 @@ class TeamRuntimeStateBuilder:
         self,
         *,
         team: AgentTeam,
-        team_session: PersistentAgentSession | None,
+        team_session: AgentSessionMetadata | None,
         thread: AgentMessageThread | None,
-        member_sessions: list[PersistentAgentSession],
-    ) -> TeamRuntimeState:
+        member_sessions: list[AgentSessionMetadata],
+    ) -> TeamOperationSnapshot:
         runtime_metadata = team_runtime_metadata(team)
         status = str(runtime_metadata.get("status") or TEAM_RUNTIME_STOPPED)
         workspace_runtime_id = _uuid_or_none(
@@ -77,14 +74,14 @@ class TeamRuntimeStateBuilder:
             else None
         )
         generated_at = datetime.now(UTC)
-        last_iteration_message = (
-            self._mailbox._last_iteration_message(team, thread) if thread is not None else None
+        last_advancement_message = (
+            self._mailbox._last_advancement_message(team, thread) if thread is not None else None
         )
         last_message_at = (
             self._mailbox._last_message_at(team, thread) if thread is not None else None
         )
 
-        return TeamRuntimeState(
+        return TeamOperationSnapshot(
             workspace_id=team.workspace_id,
             team_id=team.id,
             generated_at=generated_at,
@@ -97,13 +94,12 @@ class TeamRuntimeStateBuilder:
             runtime_space_id=(
                 runtime.runtime_space_id if runtime is not None else team.runtime_space_id
             ),
-            last_iteration=_last_iteration(runtime_metadata, last_iteration_message),
+            last_advancement=_last_advancement(runtime_metadata, last_advancement_message),
             last_message_at=last_message_at,
             runtime_health=_runtime_health(
                 status=status,
                 runtime=runtime,
                 metadata=runtime_metadata,
-                generated_at=generated_at,
             ),
             member_session_count=len(member_sessions),
             member_agent_ids=[
@@ -117,19 +113,19 @@ class TeamRuntimeStateBuilder:
         )
 
 
-def _last_iteration(
+def _last_advancement(
     runtime_metadata: dict[str, object],
     message: AgentMessage | None,
 ) -> dict[str, object] | None:
-    metadata_iteration = _dict_or_none(runtime_metadata.get("last_iteration"))
-    if metadata_iteration is not None:
-        return metadata_iteration
+    metadata_advancement = _dict_or_none(runtime_metadata.get("last_advancement"))
+    if metadata_advancement is not None:
+        return metadata_advancement
     if message is None:
         return None
     payload = message.payload if isinstance(message.payload, dict) else {}
-    message_iteration = _dict_or_none(payload.get("iteration"))
-    if message_iteration is not None:
-        return message_iteration
+    message_advancement = _dict_or_none(payload.get("advancement"))
+    if message_advancement is not None:
+        return message_advancement
     return {
         "status": str(payload.get("status") or "unknown"),
         "summary": _dict_or_none(payload.get("summary")) or {},
@@ -142,43 +138,14 @@ def _runtime_health(
     status: str,
     runtime: WorkspaceRuntime | None,
     metadata: dict[str, object],
-    generated_at: datetime,
 ) -> str:
     if status == TEAM_RUNTIME_STOPPED:
         return "stopped"
     if status == TEAM_RUNTIME_PAUSED:
         return "paused"
-    if runtime is not None and (
-        runtime.status != "running" or runtime.connection_status in {"offline", "error"}
-    ):
+    if runtime is not None and runtime.status != "active":
         return "degraded"
     if metadata.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY) is not None and runtime is None:
         return "degraded"
 
-    last_heartbeat_at = datetime_or_none(metadata.get("last_heartbeat_at"))
-    if last_heartbeat_at is None:
-        return "starting"
-    if generated_at - last_heartbeat_at > timedelta(
-        seconds=TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS
-    ):
-        return "stale"
-    if metadata.get("heartbeat_status") == "skipped":
-        return "degraded"
-    if _runtime_stalled(metadata):
-        return "degraded"
-    if _last_worker_failure_active(metadata):
-        return "degraded"
     return "healthy"
-
-
-def _runtime_stalled(metadata: dict[str, object]) -> bool:
-    if metadata.get("stalled_at"):
-        return True
-    return coerce_int_or_zero(metadata.get("stall_count")) >= TEAM_RUNTIME_STALL_THRESHOLD
-
-
-def _last_worker_failure_active(metadata: dict[str, object]) -> bool:
-    failure = metadata.get("last_worker_failure")
-    if not isinstance(failure, dict):
-        return False
-    return failure.get("status") in {"retrying", "failed"}

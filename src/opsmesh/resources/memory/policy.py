@@ -7,26 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 PolicyT = TypeVar("PolicyT", bound=BaseModel)
 
-DEFAULT_OUTPUT_RESERVE_TOKENS = 4_096
-DEFAULT_SAFETY_MARGIN_TOKENS = 1_024
-
-
-class ContextBudgetPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_input_tokens: int | None = Field(default=None, ge=1_024, le=1_000_000)
-    context_window_tokens: int | None = Field(default=None, ge=4_096, le=2_000_000)
-    output_reserve_tokens: int = Field(
-        default=DEFAULT_OUTPUT_RESERVE_TOKENS,
-        ge=256,
-        le=262_144,
-    )
-    safety_margin_tokens: int = Field(
-        default=DEFAULT_SAFETY_MARGIN_TOKENS,
-        ge=128,
-        le=65_536,
-    )
-
 
 class EpisodicMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,7 +48,6 @@ class SDKMemoryPolicy(BaseModel):
 class AgentMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    context_budget: ContextBudgetPolicy = Field(default_factory=ContextBudgetPolicy)
     sdk_memory: SDKMemoryPolicy = Field(default_factory=lambda: SDKMemoryPolicy())
     episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
     semantic_memory: SemanticMemoryPolicy = Field(default_factory=SemanticMemoryPolicy)
@@ -128,10 +107,6 @@ def _validated_policy(
         return policy_type.model_validate(raw)
     except ValidationError as exc:
         raise ValueError(f"Invalid memory {label} policy: {exc}") from exc
-
-
-def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
-    return agent_memory_policy(memory_policy).context_budget
 
 
 def normalized_memory_policy(value: object) -> dict[str, object]:

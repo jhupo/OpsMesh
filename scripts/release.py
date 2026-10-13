@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def validate_version(tag: str) -> None:
     require_tag(tag)
-    for directory in (ROOT, ROOT / "runtime", ROOT / "operator"):
+    for directory in (ROOT, ROOT / "operator"):
         project = tomllib.loads((directory / "pyproject.toml").read_text("utf-8"))
         if project["project"]["version"] != tag.removeprefix("v"):
             raise ValueError(f"Tag does not match {directory.name} package version")
@@ -33,9 +33,7 @@ def validate_release_policy(policy: dict[str, object], revision: str, config: Co
     if raw_down_revision is None:
         return
     down_revisions = (
-        {raw_down_revision}
-        if isinstance(raw_down_revision, str)
-        else set(raw_down_revision)
+        {raw_down_revision} if isinstance(raw_down_revision, str) else set(raw_down_revision)
     )
     supported = policy.get("upgrade_from_revisions")
     if not isinstance(supported, list) or not down_revisions.issubset(set(supported)):

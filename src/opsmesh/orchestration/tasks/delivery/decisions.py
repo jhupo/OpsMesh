@@ -20,14 +20,12 @@ from opsmesh.orchestration.tasks.delivery.corrections import (
 from opsmesh.orchestration.tasks.delivery.review import TaskDeliveryReviewService
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
+from opsmesh.orchestration.tasks.state import TaskStatus, transition_task
 from opsmesh.resources.memory.episodic import AgentEpisodicMemoryService
-from opsmesh.runtime.queues.service import RedisQueue
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -37,9 +35,8 @@ FINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 class TaskDeliveryDecisionService:
     """Apply owner/manager delivery acceptance decisions for a task."""
 
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def apply_decision(
         self,
@@ -124,7 +121,7 @@ class TaskDeliveryDecisionService:
             request=request,
         )
         if task.status not in {"completed", "failed", "cancelled"}:
-            TaskStateService().transition(task, TaskStatus.BLOCKED)
+            transition_task(task, TaskStatus.BLOCKED)
         correction = self._create_follow_up_correction(
             task,
             actor_user_id=actor_user_id,
@@ -191,7 +188,7 @@ class TaskDeliveryDecisionService:
                 "reason": "overridden" if override and blocked_reasons else "already_completed",
                 "blocked_reasons": blocked_reasons,
             }
-        TaskStateService().transition(
+        transition_task(
             task,
             TaskStatus.COMPLETED,
             completed_at=datetime.now(UTC),
@@ -267,7 +264,7 @@ class TaskDeliveryDecisionService:
                 "acceptance_message_id": str(decision_message_id),
             },
         )
-        return TaskCorrectionService(self._session, queue=self._queue).create_correction(
+        return TaskCorrectionService(self._session).create_correction(
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from uuid import UUID
@@ -9,17 +10,24 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditService
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.resources.files.security import safe_filename
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.transfers.builder import WorkspaceExportBuilder
 from opsmesh.resources.transfers.contracts import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveExportResult,
 )
 from opsmesh.workspaces.management.models import Workspace
+
+
+@dataclass(frozen=True, slots=True)
+class _ArchiveObject:
+    storage_key: str
+    checksum: str
+    archive_name: str
+    size_bytes: int
 
 
 class WorkspaceArchiveExportBuilder:
@@ -37,6 +45,20 @@ class WorkspaceArchiveExportBuilder:
         metadata = WorkspaceExportBuilder(self._session).build_export(
             workspace=workspace, user_id=user_id, request=request
         )
+        filename = f"{workspace.slug}-workspace-archive.zip"
+        files = (
+            self._objects(self._file_rows(workspace.id, request.max_items_per_collection), "files")
+            if request.include_file_bytes
+            else []
+        )
+        artifacts = (
+            self._objects(
+                self._artifact_rows(workspace.id, request.max_items_per_collection), "artifacts"
+            )
+            if request.include_artifact_bytes
+            else []
+        )
+        self._session.commit()
         skipped: list[str] = []
         object_inventory: list[dict[str, object]] = []
         total_bytes = 0
@@ -50,8 +72,7 @@ class WorkspaceArchiveExportBuilder:
                 total_bytes = self._write_rows(
                     archive=archive,
                     storage=storage,
-                    rows=self._file_rows(workspace.id, request.max_items_per_collection),
-                    prefix="files",
+                    rows=files,
                     request=request,
                     current_total=total_bytes,
                     skipped=skipped,
@@ -61,8 +82,7 @@ class WorkspaceArchiveExportBuilder:
                 total_bytes = self._write_rows(
                     archive=archive,
                     storage=storage,
-                    rows=self._artifact_rows(workspace.id, request.max_items_per_collection),
-                    prefix="artifacts",
+                    rows=artifacts,
                     request=request,
                     current_total=total_bytes,
                     skipped=skipped,
@@ -74,21 +94,8 @@ class WorkspaceArchiveExportBuilder:
                 "object-inventory.json",
                 json.dumps(object_inventory, ensure_ascii=False, indent=2, sort_keys=True),
             )
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace.id,
-            user_id=user_id,
-            action="workspace.archive_export.created",
-            target_type="workspace",
-            target_id=workspace.id,
-            metadata={
-                "included_file_bytes": request.include_file_bytes,
-                "included_artifact_bytes": request.include_artifact_bytes,
-                "skipped_objects": skipped,
-            },
-        )
-        self._session.commit()
         return WorkspaceArchiveExportResult(
-            filename=f"{workspace.slug}-workspace-archive.zip",
+            filename=filename,
             content=buffer.getvalue(),
             skipped_objects=skipped,
             manifest_counts=metadata.manifest.counts,
@@ -101,8 +108,7 @@ class WorkspaceArchiveExportBuilder:
         *,
         archive: ZipFile,
         storage: ObjectStorage,
-        rows: list[WorkspaceFile] | list[Artifact],
-        prefix: str,
+        rows: list[_ArchiveObject],
         request: WorkspaceArchiveExportRequest,
         current_total: int,
         skipped: list[str],
@@ -114,8 +120,8 @@ class WorkspaceArchiveExportBuilder:
                 archive=archive,
                 storage=storage,
                 storage_key=row.storage_key,
-                expected_checksum=row.checksum_sha256,
-                archive_name=f"{prefix}/{row.id}/{safe_filename(row.filename)}",
+                expected_checksum=row.checksum,
+                archive_name=row.archive_name,
                 size_bytes=row.size_bytes,
                 max_bytes_per_object=request.max_bytes_per_object,
                 max_total_bytes=request.max_total_bytes,
@@ -124,6 +130,18 @@ class WorkspaceArchiveExportBuilder:
                 object_inventory=object_inventory,
             )
         return total
+
+    @staticmethod
+    def _objects(rows: list[WorkspaceFile] | list[Artifact], prefix: str) -> list[_ArchiveObject]:
+        return [
+            _ArchiveObject(
+                storage_key=row.storage_key,
+                checksum=row.checksum_sha256,
+                archive_name=f"{prefix}/{row.id}/{safe_filename(row.filename)}",
+                size_bytes=row.size_bytes,
+            )
+            for row in rows
+        ]
 
     def _file_rows(self, workspace_id: UUID, limit: int) -> list[WorkspaceFile]:
         return list(

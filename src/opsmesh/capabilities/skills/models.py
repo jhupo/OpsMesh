@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -71,6 +71,7 @@ class WorkspaceSkillInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
     source_checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     platform_previous_status: Mapped[str | None] = mapped_column(String(32), nullable=True)

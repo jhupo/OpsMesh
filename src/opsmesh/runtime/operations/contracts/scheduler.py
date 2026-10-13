@@ -75,7 +75,7 @@ class SchedulerPolicyResponse(BaseModel):
     resource_limits: dict[str, float]
 
 
-class OperationsSchedulerResponse(BaseModel):
+class SchedulerOverviewResponse(BaseModel):
     generated_at: datetime
     backlog: SchedulerBacklogResponse
     priority_buckets: list[SchedulerPriorityBucketResponse]

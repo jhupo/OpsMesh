@@ -43,65 +43,35 @@ groups:
           summary: OpsMesh API latency is elevated
           description: Overall API P95 latency exceeded one second for 10 minutes.
 
-      - alert: OpsMeshQueueBacklogHigh
-        expr: opsmesh_queue_jobs{state="queued"} > 100
+      - alert: OpsMeshTemporalDispatchBacklogHigh
+        expr: opsmesh_temporal_dispatches{state="pending"} > 100
         for: 10m
         labels:
           severity: warning
           service: opsmesh-worker
         annotations:
-          summary: OpsMesh queue backlog is high
-          description: Queue {{ $labels.queue_name }} has more than 100 queued jobs for 10 minutes.
+          summary: Temporal command publication backlog is high
+          description: More than 100 committed commands are waiting for Temporal publication.
 
-      - alert: OpsMeshOldestQueuedJobStale
-        expr: opsmesh_queue_oldest_queued_age_seconds > 900
+      - alert: OpsMeshTemporalDispatchStale
+        expr: opsmesh_temporal_oldest_pending_dispatch_age_seconds > 900
         for: 5m
         labels:
           severity: warning
           service: opsmesh-worker
         annotations:
-          summary: OpsMesh queued work is stale
-          description: Queue {{ $labels.queue_name }} has work older than 15 minutes.
+          summary: Temporal command publication is delayed
+          description: A committed command has remained unpublished for more than 15 minutes.
 
-      - alert: OpsMeshDeadLettersPresent
-        expr: opsmesh_queue_jobs{state="dead_letter"} > 0
+      - alert: OpsMeshTemporalPublicationFailed
+        expr: opsmesh_temporal_dispatch_publication_errors > 0
         for: 10m
         labels:
           severity: warning
           service: opsmesh-worker
         annotations:
-          summary: OpsMesh dead-letter queue has jobs
-          description: Queue {{ $labels.queue_name }} has dead-lettered jobs waiting for operator review.
-
-      - alert: OpsMeshNoOnlineWorkersWithBacklog
-        expr: sum(opsmesh_queue_jobs{state="queued"}) > 0 and sum(opsmesh_workers{state="online"}) < 1
-        for: 5m
-        labels:
-          severity: critical
-          service: opsmesh-worker
-        annotations:
-          summary: OpsMesh has queued work and no online workers
-          description: Queued work exists, but no online worker nodes are reporting.
-
-      - alert: OpsMeshWorkerStale
-        expr: opsmesh_workers{state="stale"} > 0
-        for: 5m
-        labels:
-          severity: warning
-          service: opsmesh-worker
-        annotations:
-          summary: OpsMesh worker heartbeat is stale
-          description: At least one worker has not reported a fresh heartbeat.
-
-      - alert: OpsMeshRuntimeSaturationHigh
-        expr: opsmesh_runtime_saturation_ratio > 0.9
-        for: 10m
-        labels:
-          severity: warning
-          service: opsmesh-runtime
-        annotations:
-          summary: OpsMesh runtime capacity is close to full
-          description: Runtime {{ $labels.provider }}/{{ $labels.runtime_type }} is above 90 percent saturation.
+          summary: Temporal commands have publication failures
+          description: A committed command has a recorded failure and remains unpublished; inspect dispatch diagnostics.
 
       - alert: OpsMeshRuntimeQuotaHigh
         expr: opsmesh_runtime_space_quota_usage_ratio > 0.85
@@ -167,14 +137,13 @@ groups:
         expr: |
           opsmesh_metrics_collection_success == 0
           or absent(opsmesh_metrics_collection_success{source="postgres"})
-          or absent(opsmesh_metrics_collection_success{source="redis"})
         for: 5m
         labels:
           severity: critical
           service: opsmesh-observability
         annotations:
           summary: OpsMesh domain metrics collection is failing
-          description: Postgres or Redis metrics collection failed or stopped reporting.
+          description: PostgreSQL domain metrics collection failed or stopped reporting.
 
       - alert: OpsMeshTelemetryExportFailed
         expr: |

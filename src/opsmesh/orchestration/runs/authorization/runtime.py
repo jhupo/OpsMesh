@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRuntimeExecutionBinding
+from opsmesh.agents.execution.contracts import AgentEnvironmentBinding
 from opsmesh.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
     catalog_for_snapshot,
@@ -14,21 +14,18 @@ from opsmesh.orchestration.runs.authorization.policy import (
     file_resource_ids,
     parse_required_uuid,
     parse_uuid_set,
-    runtime_policy_disables_network,
     runtime_resource_grants,
     snapshot_file_scope_ids,
 )
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.resources.files.models import WorkspaceFile
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.pools.policy import shared_host_policy_matches
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.teams.sessions.refs import team_bound_runtime_id
 
-RUNTIME_READY_STATUSES = frozenset({"active", "running"})
+RUNTIME_READY_STATUSES = frozenset({"active"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,9 +35,7 @@ class ResolvedRunRuntimeBinding:
     workspace_runtime_id: UUID | None
     runtime_space_id: UUID | None
     capability_resource_ids: tuple[UUID, ...]
-    network_disabled: bool
     allowed_file_ids: tuple[UUID, ...]
-    execution_runtime_id: UUID | None = None
 
     def as_snapshot(self) -> dict[str, object]:
         return {
@@ -55,22 +50,19 @@ class ResolvedRunRuntimeBinding:
             "capability_resource_ids": [
                 str(resource_id) for resource_id in self.capability_resource_ids
             ],
-            "network_disabled": self.network_disabled,
             "file_access_scope": {
                 "mode": "gateway_only",
                 "allowed_file_ids": [str(file_id) for file_id in self.allowed_file_ids],
             },
         }
 
-    def as_runtime_context(self) -> AgentRuntimeExecutionBinding:
-        return AgentRuntimeExecutionBinding(
+    def as_runtime_context(self) -> AgentEnvironmentBinding:
+        return AgentEnvironmentBinding(
             mode=self.mode,
             workspace_runtime_id=self.workspace_runtime_id,
             runtime_space_id=self.runtime_space_id,
             capability_resource_ids=self.capability_resource_ids,
-            network_disabled=self.network_disabled,
             allowed_file_ids=self.allowed_file_ids,
-            execution_runtime_id=self.execution_runtime_id,
         )
 
 
@@ -84,7 +76,6 @@ class RunRuntimeAuthorizationService:
         task: Task,
         step: TaskStep | None,
         capability_catalog: dict[str, object] | None,
-        runtime_policy: dict[str, object],
     ) -> ResolvedRunRuntimeBinding:
         try:
             runtime_resource_ids, granted_runtime_ids, granted_space_ids = runtime_resource_grants(
@@ -163,24 +154,6 @@ class RunRuntimeAuthorizationService:
                 "runtime_file_scope_invalid",
                 "Effective runtime file scope is invalid",
             ) from exc
-        requested_network_disabled = runtime_policy_disables_network(runtime_policy)
-        space_network_disabled = (
-            runtime_policy_disables_network({"network": runtime_space.network_policy})
-            if runtime_space is not None
-            else False
-        )
-        actual_network_disabled = (
-            runtime.network_policy.get("mode") == "none" if runtime is not None else False
-        )
-        network_disabled = (
-            requested_network_disabled or space_network_disabled or actual_network_disabled
-        )
-        if runtime is not None and network_disabled and not actual_network_disabled:
-            raise RunRuntimeAuthorizationError(
-                "runtime_network_policy_mismatch",
-                "Selected runtime does not enforce the required disabled network policy",
-            )
-
         mode = "none"
         if runtime_resource_ids:
             mode = "capability_runtime"
@@ -194,7 +167,6 @@ class RunRuntimeAuthorizationService:
             workspace_runtime_id=runtime.id if runtime is not None else None,
             runtime_space_id=runtime_space.id if runtime_space is not None else None,
             capability_resource_ids=tuple(sorted(runtime_resource_ids, key=str)),
-            network_disabled=network_disabled,
             allowed_file_ids=file_ids,
         )
 
@@ -217,7 +189,6 @@ class RunRuntimeAuthorizationService:
                 ) from exc
             if (
                 run.runtime_id is not None
-                or run.execution_runtime_id is not None
                 or run.runtime_space_id is not None
                 or runtime_resource_ids
                 or granted_file_ids
@@ -234,7 +205,6 @@ class RunRuntimeAuthorizationService:
                 workspace_runtime_id=None,
                 runtime_space_id=None,
                 capability_resource_ids=(),
-                network_disabled=False,
                 allowed_file_ids=(),
             )
         if binding.workspace_runtime_id != run.runtime_id:
@@ -283,12 +253,6 @@ class RunRuntimeAuthorizationService:
                     "runtime_space_mismatch",
                     "Runtime space changed after the run was authorized",
                 )
-            if binding.network_disabled and runtime.network_policy.get("mode") != "none":
-                raise RunRuntimeAuthorizationError(
-                    "runtime_network_policy_mismatch",
-                    "Runtime no longer enforces the frozen network policy",
-                )
-        execution_runtime_id = self._execution_runtime_for_run(run, binding)
         if binding.runtime_space_id is not None:
             runtime_space = self._runtime_space(run.workspace_id, binding.runtime_space_id)
             if task is None:
@@ -300,54 +264,7 @@ class RunRuntimeAuthorizationService:
             else:
                 self._require_space_available_for_task(runtime_space, task)
         self._require_active_files(run.workspace_id, binding.allowed_file_ids)
-        return replace(binding, execution_runtime_id=execution_runtime_id)
-
-    def _execution_runtime_for_run(
-        self,
-        run: AgentRun,
-        binding: ResolvedRunRuntimeBinding,
-    ) -> UUID | None:
-        if run.execution_runtime_id is None:
-            return None
-        if binding.workspace_runtime_id is None:
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_binding_invalid",
-                "A per-run runtime requires an authorized parent runtime",
-            )
-        execution_runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
-        parent = self._runtime(run.workspace_id, binding.workspace_runtime_id)
-        if execution_runtime.execution_mode == "isolated":
-            valid = (
-                execution_runtime.parent_runtime_id == parent.id
-                and execution_runtime.execution_run_id == run.id
-            )
-        else:
-            valid = (
-                execution_runtime.execution_run_id is None
-                and execution_runtime.runtime_space_id == binding.runtime_space_id
-                and execution_runtime.execution_mode == parent.execution_mode
-                and (
-                    execution_runtime.id == parent.id
-                    or (
-                        parent.execution_mode == "shared"
-                        and shared_host_policy_matches(parent, execution_runtime)
-                    )
-                )
-                and RuntimeAllocationStore(self._session).get(execution_runtime, "run", run.id)
-                is not None
-            )
-        if not valid:
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_binding_invalid",
-                "Run has no authorized execution slot",
-            )
-        self._require_runtime_ready(execution_runtime)
-        if binding.network_disabled and execution_runtime.network_policy.get("mode") != "none":
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_network_policy_mismatch",
-                "Runtime violates the frozen network policy",
-            )
-        return execution_runtime.id
+        return binding
 
     def _team_for_task(self, task: Task) -> AgentTeam | None:
         if task.agent_team_id is None:
@@ -389,14 +306,10 @@ class RunRuntimeAuthorizationService:
         return runtime_space
 
     def _require_runtime_ready(self, runtime: WorkspaceRuntime) -> None:
-        if runtime.capabilities.get("plugin_install_id"):
-            raise RunRuntimeAuthorizationError(
-                "runtime_reserved", "Plugin processes cannot be used as agent sandboxes"
-            )
-        if runtime.status not in RUNTIME_READY_STATUSES or runtime.connection_status != "online":
+        if runtime.status not in RUNTIME_READY_STATUSES or not runtime.sandbox_backend_id:
             raise RunRuntimeAuthorizationError(
                 "runtime_unavailable",
-                "Authorized runtime is not active and online",
+                "Authorized sandbox environment is not active",
             )
 
     def _require_space_available_for_task(
@@ -515,10 +428,8 @@ def runtime_binding_for_snapshot(
             "Frozen runtime binding is invalid",
         ) from exc
     mode = raw.get("mode")
-    network_disabled = raw.get("network_disabled")
     if (
         mode not in {"none", "team_runtime", "capability_runtime", "runtime_space"}
-        or not isinstance(network_disabled, bool)
         or binding_workspace_id != workspace_id
     ):
         raise RunRuntimeAuthorizationError(
@@ -541,7 +452,6 @@ def runtime_binding_for_snapshot(
         workspace_runtime_id=runtime_id,
         runtime_space_id=runtime_space_id,
         capability_resource_ids=capability_resource_ids,
-        network_disabled=network_disabled,
         allowed_file_ids=allowed_file_ids,
     )
 

@@ -6,14 +6,14 @@ import pytest
 
 from opsmesh.resources.files.content import WorkspaceFileContentReader, WorkspaceFileReadError
 from opsmesh.resources.files.models import WorkspaceFile
-from opsmesh.resources.storage.storage import LocalStorage
+from opsmesh.resources.storage.backends import LocalObjectStorage
 
 
 def test_agent_file_reader_rejects_type_and_declared_or_actual_oversize(
     tmp_path: Path,
 ) -> None:
     workspace_id = uuid4()
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
     reader = WorkspaceFileContentReader(
         storage, max_bytes=5, allowed_content_types=frozenset({"text/plain"})
     )
@@ -56,7 +56,7 @@ def test_agent_file_reader_rejects_runtime_denied_and_restricted_files(
     tmp_path: Path,
 ) -> None:
     workspace_id = uuid4()
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
     reader = WorkspaceFileContentReader(
         storage, max_bytes=100, allowed_content_types=frozenset({"text/plain"})
     )

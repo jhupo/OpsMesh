@@ -38,6 +38,8 @@ jobs:
     env:
       OPSMESH_ENVIRONMENT: test
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+      OPSMESH_TEST_POSTGRES_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+      OPSMESH_TEST_TEMPORAL: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
@@ -57,7 +59,10 @@ jobs:
       - name: Fresh container deployment and runtime probe
         run: |
           cp deploy/local/env.example .env
-          docker compose -f deploy/local/compose.yml up --build --wait --wait-timeout 180
+          docker compose -f deploy/local/compose.yml up -d --build postgres redis temporal-namespace
+          uv run python -m opsmesh_operator.compose --timeout 180 -- docker compose -f deploy/local/compose.yml
+          docker compose -f deploy/local/compose.yml run --rm --no-deps migrate
+          docker compose -f deploy/local/compose.yml up -d --no-deps --build --wait --wait-timeout 180 api worker
           curl --fail http://127.0.0.1:8000/api/v1/health/ready
           docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:ci .
           uv run python scripts/check_runtime_image.py \

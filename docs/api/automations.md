@@ -138,11 +138,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/AutomationUpdate"
+  "$ref": "#/components/schemas/AutomationUpdateRequest"
 }
 ```
 
-模型：[AutomationUpdate](schemas.md#schema-AutomationUpdate)
+模型：[AutomationUpdateRequest](schemas.md#schema-AutomationUpdateRequest)
 
 ### 响应
 
@@ -210,11 +210,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/AutomationMessage"
+  "$ref": "#/components/schemas/IncomingMessage"
 }
 ```
 
-模型：[AutomationMessage](schemas.md#schema-AutomationMessage)
+模型：[IncomingMessage](schemas.md#schema-IncomingMessage)
 
 ### 响应
 
@@ -271,7 +271,7 @@ Operation ID：`stream_event_api_v1_workspaces__workspace_id__automations__autom
 | `automation_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `event_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `cursor` | query | 否 | string | `default="0-0"`; `pattern="^\\d{1,20}-\\d{1,20}$"` |
+| `cursor` | query | 否 | string | `default="0"`; `maxLength=36`; `minLength=1` |
 | `once` | query | 否 | boolean | `default=false` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |

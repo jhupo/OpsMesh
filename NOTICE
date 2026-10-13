@@ -10,6 +10,8 @@ This change does not revoke licenses already granted for earlier versions.
 Third-party dependencies retain their respective licenses.
 
 The backend skills under `.agents/skills` retain MIT-licensed material from
-wshobson/agents, Jallen64/python-code-review-skill and obra/superpowers.
+wshobson/agents, mattpocock/skills and obra/superpowers.
+The code-simplifier skill contains adapted Apache-2.0-licensed material from
+anthropics/claude-plugins-official.
 Pinned sources are recorded in `.agents/skills/README.md`; each skill directory
 retains its upstream LICENSE file. License trailing whitespace is normalized.

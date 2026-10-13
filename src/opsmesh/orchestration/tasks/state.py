@@ -37,6 +37,7 @@ ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
         TaskStatus.RUNNING,
         TaskStatus.BLOCKED,
         TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
     },
     TaskStatus.RUNNING: {
         TaskStatus.WAITING_APPROVAL,
@@ -74,38 +75,37 @@ class TaskTransition:
     changed: bool
 
 
-class TaskStateService:
-    def reset_to_draft(self, task: Task) -> TaskTransition:
-        current_status = TaskStatus(task.status)
-        if current_status == TaskStatus.DRAFT:
-            return TaskTransition(current_status, TaskStatus.DRAFT, changed=False)
-        task.status = TaskStatus.DRAFT.value
+def reset_task_to_draft(task: Task) -> TaskTransition:
+    current_status = TaskStatus(task.status)
+    if current_status == TaskStatus.DRAFT:
+        return TaskTransition(current_status, TaskStatus.DRAFT, changed=False)
+    task.status = TaskStatus.DRAFT.value
+    task.completed_at = None
+    task.final_output = None
+    return TaskTransition(current_status, TaskStatus.DRAFT, changed=True)
+
+
+def transition_task(
+    task: Task,
+    next_status: TaskStatus,
+    *,
+    completed_at: datetime | None = None,
+    final_output: dict[str, object] | None = None,
+) -> TaskTransition:
+    current_status = TaskStatus(task.status)
+    if current_status == next_status:
+        return TaskTransition(current_status, next_status, changed=False)
+
+    require_task_transition(current_status, next_status)
+    task.status = next_status.value
+
+    if next_status == TaskStatus.QUEUED:
         task.completed_at = None
         task.final_output = None
-        return TaskTransition(current_status, TaskStatus.DRAFT, changed=True)
+    elif next_status in TERMINAL_TASK_STATUSES:
+        task.completed_at = completed_at or datetime.now(UTC)
 
-    def transition(
-        self,
-        task: Task,
-        next_status: TaskStatus,
-        *,
-        completed_at: datetime | None = None,
-        final_output: dict[str, object] | None = None,
-    ) -> TaskTransition:
-        current_status = TaskStatus(task.status)
-        if current_status == next_status:
-            return TaskTransition(current_status, next_status, changed=False)
+    if final_output is not None:
+        task.final_output = final_output
 
-        require_task_transition(current_status, next_status)
-        task.status = next_status.value
-
-        if next_status == TaskStatus.QUEUED:
-            task.completed_at = None
-            task.final_output = None
-        elif next_status in TERMINAL_TASK_STATUSES:
-            task.completed_at = completed_at or datetime.now(UTC)
-
-        if final_output is not None:
-            task.final_output = final_output
-
-        return TaskTransition(current_status, next_status, changed=True)
+    return TaskTransition(current_status, next_status, changed=True)

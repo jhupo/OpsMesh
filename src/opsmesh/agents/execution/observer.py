@@ -3,25 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from opsmesh.agents.execution.contracts import (
+    AgentLifecycleEvent,
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeEvent,
-    AgentRuntimeStreamEvent,
-    AgentRuntimeStreamEventKind,
+    AgentStreamEvent,
+    AgentStreamEventKind,
 )
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 @dataclass(slots=True)
-class AgentRuntimeExecutionObserver:
+class AgentExecutionObserver:
     request: AgentRunRequest
-    events: list[AgentRuntimeEvent] = field(default_factory=list)
-    stream_events: list[AgentRuntimeStreamEvent] = field(default_factory=list)
+    events: list[AgentLifecycleEvent] = field(default_factory=list)
+    stream_events: list[AgentStreamEvent] = field(default_factory=list)
     stream_sequence: int = 0
 
     def start(self) -> None:
         if self.request.stream:
-            self.stream(AgentRuntimeStreamEventKind.RUN_STARTED.value)
+            self.stream(AgentStreamEventKind.RUN_STARTED.value)
 
     async def lifecycle(
         self,
@@ -29,7 +29,7 @@ class AgentRuntimeExecutionObserver:
         message: str,
         payload: dict[str, object] | None = None,
     ) -> None:
-        event = AgentRuntimeEvent(
+        event = AgentLifecycleEvent(
             event_type=event_type,
             message=redact_sensitive_text(message),
             payload=redact_sensitive_payload(payload or {}),
@@ -41,8 +41,8 @@ class AgentRuntimeExecutionObserver:
         if event_type in {"agent.tool.started", "agent.tool.completed", "agent.tool.failed"}:
             tool_name = (payload or {}).get("tool_name")
             if (
-                self.request.lifecycle_sink is None
-                and tool_name not in self.request.context.allowed_tools
+                self.request.lifecycle_sink is not None
+                or tool_name not in self.request.context.allowed_tools
             ):
                 self.stream(event_type, payload=payload)
 
@@ -61,7 +61,7 @@ class AgentRuntimeExecutionObserver:
             value = redact_sensitive_payload({"value": delta}).get("value")
             redacted_delta = value if isinstance(value, str) else str(value)
         self.stream_sequence += 1
-        event = AgentRuntimeStreamEvent(
+        event = AgentStreamEvent(
             sequence=self.stream_sequence,
             event_type=event_type,
             payload=redact_sensitive_payload(payload or {}),
@@ -77,8 +77,8 @@ class AgentRuntimeExecutionObserver:
         if not self.request.stream:
             return
         event_type = (
-            AgentRuntimeStreamEventKind.RUN_PAUSED.value
+            AgentStreamEventKind.RUN_PAUSED.value
             if result.resume_state is not None or result.interruptions
-            else AgentRuntimeStreamEventKind.RUN_COMPLETED.value
+            else AgentStreamEventKind.RUN_COMPLETED.value
         )
         self.stream(event_type, terminal=True)

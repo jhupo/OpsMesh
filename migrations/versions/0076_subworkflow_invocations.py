@@ -96,5 +96,7 @@ def downgrade() -> None:
         "ix_subworkflow_invocations_workspace_parent_task",
         table_name="subworkflow_invocations",
     )
-    op.drop_index("ix_subworkflow_invocations_workspace_status", table_name="subworkflow_invocations")
+    op.drop_index(
+        "ix_subworkflow_invocations_workspace_status", table_name="subworkflow_invocations"
+    )
     op.drop_table("subworkflow_invocations")

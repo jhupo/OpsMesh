@@ -14,6 +14,8 @@ class ProductToolEventRecorder:
         if context.agent_run_id is None:
             return
         RunEventWriter(self._session).append(
-            workspace_id=context.workspace_id, run_id=context.agent_run_id,
-            event_type=event_type, message=tool_name,
+            workspace_id=context.workspace_id,
+            run_id=context.agent_run_id,
+            event_type=event_type,
+            message=tool_name,
         )

@@ -13,7 +13,6 @@ from opsmesh.shared.utils import int_or_zero
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -37,7 +36,6 @@ def execution_summary(runs: list[AgentRun]) -> dict[str, object]:
     return {
         "run_count": len(runs),
         "active_run_count": sum(1 for run in runs if run.status in ACTIVE_RUN_STATUSES),
-        "waiting_runtime_run_count": status_counts.get(RunStatus.WAITING_RUNTIME.value, 0),
         "failed_run_count": status_counts.get(RunStatus.FAILED.value, 0),
         "run_status_counts": status_counts,
     }
@@ -95,13 +93,6 @@ def risk_items(
         count=int_or_zero(task.get("failed_task_count")),
         severity="critical",
         recommended_action="create_corrections",
-    )
-    append_risk(
-        risks,
-        code="waiting_runtime_runs",
-        count=int_or_zero(execution.get("waiting_runtime_run_count")),
-        severity="high",
-        recommended_action="inspect_runtime_capacity",
     )
     append_risk(
         risks,

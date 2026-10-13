@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.orchestration.tasks.collaboration.contracts import TaskOperatorActionResult
-from opsmesh.orchestration.tasks.control.dependencies import manager_agent_id
+from opsmesh.orchestration.tasks.control.step_dependencies import manager_agent_id
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 
 

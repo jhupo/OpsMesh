@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -45,11 +45,15 @@ def import_workspace_metadata(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceImportResponse:
-    return WorkspaceMetadataImportService(session).import_metadata(
-        workspace=context.workspace,
-        user_id=context.user.user_id,
-        request=request,
-    )
+    try:
+        return WorkspaceMetadataImportService(session).import_metadata(
+            workspace=context.workspace,
+            user_id=context.user.user_id,
+            request=request,
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/metadata/import/preview", response_model=WorkspaceImportResponse)
@@ -59,8 +63,12 @@ def preview_workspace_metadata_import(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceImportResponse:
     preview_request = request.model_copy(update={"dry_run": True, "preview_token": None})
-    return WorkspaceMetadataImportService(session).import_metadata(
-        workspace=context.workspace,
-        user_id=context.user.user_id,
-        request=preview_request,
-    )
+    try:
+        return WorkspaceMetadataImportService(session).import_metadata(
+            workspace=context.workspace,
+            user_id=context.user.user_id,
+            request=preview_request,
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

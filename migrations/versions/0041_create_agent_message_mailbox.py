@@ -63,9 +63,15 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["recipient_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["reply_to_message_id"], ["agent_messages.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["sender_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["recipient_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["reply_to_message_id"], ["agent_messages.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["sender_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["thread_id"], ["agent_message_threads.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),

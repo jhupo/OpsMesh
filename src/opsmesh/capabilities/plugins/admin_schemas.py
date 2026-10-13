@@ -14,10 +14,12 @@ class AdminPluginGovernanceResponse(BaseModel):
     id: UUID
     workspace_id: UUID
     plugin_key: str
+    instance_name: str
     status: str
     platform_blocked: bool
     generation: int
     current_version: str
+    current_release_id: UUID
 
 
 class AdminPluginPublisherTrustResponse(BaseModel):

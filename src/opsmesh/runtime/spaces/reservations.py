@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.runtime.spaces.lifecycle_support import RuntimeSpaceEventLog
+from opsmesh.runtime.spaces.lifecycle_support import RuntimeSpaceEventRecorder
 from opsmesh.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
@@ -17,7 +17,7 @@ from opsmesh.runtime.spaces.models import (
 from opsmesh.runtime.spaces.quotas import RuntimeSpaceQuotaCounter
 
 
-class RuntimeSpaceReservationAttachmentService:
+class RuntimeSpaceReservationBindingService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -59,7 +59,7 @@ class RuntimeSpaceCapacityReservationService:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._quota_counter = RuntimeSpaceQuotaCounter(session)
-        self._events = RuntimeSpaceEventLog(session)
+        self._events = RuntimeSpaceEventRecorder(session)
 
     def reserve_run_capacity(
         self,
@@ -225,7 +225,7 @@ class RuntimeSpaceReservationReleaseService:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._quota_counter = RuntimeSpaceQuotaCounter(session)
-        self._events = RuntimeSpaceEventLog(session)
+        self._events = RuntimeSpaceEventRecorder(session)
 
     def release_reservations_for_run(
         self,
@@ -311,9 +311,7 @@ class RuntimeSpaceReservationReleaseService:
             .with_for_update()
         )
         if reservation_key is not None:
-            statement = statement.where(
-                RuntimeSpaceReservation.reservation_key == reservation_key
-            )
+            statement = statement.where(RuntimeSpaceReservation.reservation_key == reservation_key)
         reservations = self._session.scalars(statement).all()
         if not reservations:
             return RuntimeSpaceForceReleaseResult(0, [])

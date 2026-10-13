@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_serializer
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
-class McpToolDescriptor(BaseModel):
+class MCPToolDescriptor(BaseModel):
     server_id: UUID
     server_name: str
     tool_name: str
@@ -24,7 +24,7 @@ class McpToolDescriptor(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class McpCatalogUsageResponse(BaseModel):
+class MCPCatalogUsageResponse(BaseModel):
     call_count: int
     failed_call_count: int
     last_call_at: datetime | None
@@ -32,7 +32,7 @@ class McpCatalogUsageResponse(BaseModel):
     last_error_code: str | None
 
 
-class McpCatalogToolPolicySummaryResponse(BaseModel):
+class MCPCatalogToolPolicySummaryResponse(BaseModel):
     timeout_seconds: int
     max_input_bytes: int
     max_output_bytes: int
@@ -43,7 +43,7 @@ class McpCatalogToolPolicySummaryResponse(BaseModel):
     limit_window_seconds: int
 
 
-class McpCatalogToolResponse(BaseModel):
+class MCPCatalogToolResponse(BaseModel):
     id: UUID
     tool_name: str
     title: str = ""
@@ -54,20 +54,20 @@ class McpCatalogToolResponse(BaseModel):
     requires_approval: bool
     risk_level: str
     policy: dict[str, object]
-    policy_summary: McpCatalogToolPolicySummaryResponse
+    policy_summary: MCPCatalogToolPolicySummaryResponse
     status: str
     discovery_source: str = "manual"
     discovery_status: str = "manual"
     discovery_checksum: str | None = None
     discovered_at: datetime | None = None
-    usage: McpCatalogUsageResponse
+    usage: MCPCatalogUsageResponse
 
     @field_serializer("policy")
     def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
 
 
-class McpCatalogServerResponse(BaseModel):
+class MCPCatalogServerResponse(BaseModel):
     id: UUID
     name: str
     server_type: str
@@ -88,8 +88,8 @@ class McpCatalogServerResponse(BaseModel):
     credential_count: int
     workspace_credential_count: int
     connection_summary: dict[str, object]
-    usage: McpCatalogUsageResponse
-    tools: list[McpCatalogToolResponse]
+    usage: MCPCatalogUsageResponse
+    tools: list[MCPCatalogToolResponse]
     created_at: datetime
     updated_at: datetime
 

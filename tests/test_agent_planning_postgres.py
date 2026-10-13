@@ -15,7 +15,7 @@ from opsmesh.orchestration.tasks.models import Task
 from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
-from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+from tests.fixtures.database import temporary_postgres_schema
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL integration URL required"
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_concurrent_initial_planning_creates_one_attempt() -> None:
-    with _temporary_postgres_schema() as engine:
+    with temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)
         with factory() as session:

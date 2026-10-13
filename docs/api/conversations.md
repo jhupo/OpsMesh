@@ -70,11 +70,11 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/ConversationCreate"
+  "$ref": "#/components/schemas/ConversationCreateRequest"
 }
 ```
 
-模型：[ConversationCreate](schemas.md#schema-ConversationCreate)
+模型：[ConversationCreateRequest](schemas.md#schema-ConversationCreateRequest)
 
 ### 响应
 
@@ -138,7 +138,7 @@ Operation ID：`list_events_api_v1_workspaces__workspace_id__conversations__conv
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | array&lt;[opsmesh__orchestration__conversations__schemas__EventResponse](schemas.md#schema-opsmesh__orchestration__conversations__schemas__EventResponse)&gt; |
+| 200 | Successful Response | application/json | array&lt;[ConversationEventResponse](schemas.md#schema-ConversationEventResponse)&gt; |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -169,7 +169,7 @@ Operation ID：`list_executions_api_v1_workspaces__workspace_id__conversations__
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_ExecutionResponse_](schemas.md#schema-PageResponse_ExecutionResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_ConversationExecutionResponse_](schemas.md#schema-PageResponse_ConversationExecutionResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -199,7 +199,7 @@ Operation ID：`list_messages_api_v1_workspaces__workspace_id__conversations__co
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [PageResponse_TurnResponse_](schemas.md#schema-PageResponse_TurnResponse_) |
+| 200 | Successful Response | application/json | [PageResponse_ConversationTurnResponse_](schemas.md#schema-PageResponse_ConversationTurnResponse_) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -232,17 +232,17 @@ Content-Type：`application/json`。
 
 ```json
 {
-  "$ref": "#/components/schemas/MessageCreate"
+  "$ref": "#/components/schemas/ConversationMessageRequest"
 }
 ```
 
-模型：[MessageCreate](schemas.md#schema-MessageCreate)
+模型：[ConversationMessageRequest](schemas.md#schema-ConversationMessageRequest)
 
 ### 响应
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 202 | Successful Response | application/json | [TurnResponse](schemas.md#schema-TurnResponse) |
+| 202 | Successful Response | application/json | [ConversationTurnResponse](schemas.md#schema-ConversationTurnResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -271,7 +271,7 @@ Operation ID：`cancel_turn_api_v1_workspaces__workspace_id__conversations__conv
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [TurnResponse](schemas.md#schema-TurnResponse) |
+| 200 | Successful Response | application/json | [ConversationTurnResponse](schemas.md#schema-ConversationTurnResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
@@ -293,8 +293,8 @@ Operation ID：`stream_turn_events_api_v1_workspaces__workspace_id__conversation
 | `conversation_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `turn_id` | path | 是 | string (uuid) | `format="uuid"` |
 | `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `event_cursor` | query | 否 | string | `default="0-0"`; `maxLength=64`; `pattern="^\\d+-\\d+$"` |
-| `last-event-id` | header | 否 | string anyOf null | `anyOf=[{"maxLength": 64, "pattern": "^\\d+-\\d+$", "type": "string"}, {"type": "null"}]` |
+| `event_cursor` | query | 否 | string | `default="0"`; `maxLength=36`; `minLength=1` |
+| `last-event-id` | header | 否 | string anyOf null | `anyOf=[{"maxLength": 36, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 
@@ -331,7 +331,7 @@ Operation ID：`retry_turn_api_v1_workspaces__workspace_id__conversations__conve
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [TurnResponse](schemas.md#schema-TurnResponse) |
+| 200 | Successful Response | application/json | [ConversationTurnResponse](schemas.md#schema-ConversationTurnResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

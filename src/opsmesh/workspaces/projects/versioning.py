@@ -14,7 +14,7 @@ from opsmesh.workspaces.projects.models import (
     WorkspaceProjectFile,
 )
 from opsmesh.workspaces.projects.policy import normalize_project_path
-from opsmesh.workspaces.projects.snapshots.format import ProjectDiffEntry, diff_json
+from opsmesh.workspaces.projects.snapshots.diff import ProjectDiffEntry, diff_json
 
 
 @dataclass(frozen=True, slots=True)

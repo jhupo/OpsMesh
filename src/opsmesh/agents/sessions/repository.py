@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session as DbSession
 
 from opsmesh.agents.sessions.models import (
     PERSISTENT_AGENT_SESSION_STATUSES,
-    PersistentAgentSession,
-    SDKAgentMessage,
+    AgentSessionMetadata,
+    SDKSessionMessageRecord,
 )
 
 
-class PersistentSessionRepository:
+class AgentSessionRepository:
     def __init__(self, db_session: DbSession) -> None:
         self._db_session = db_session
 
@@ -26,7 +26,7 @@ class PersistentSessionRepository:
         status: str | None,
         limit: int,
         offset: int,
-    ) -> list[PersistentAgentSession]:
+    ) -> list[AgentSessionMetadata]:
         statement = _session_filter_statement(
             workspace_id=workspace_id,
             agent_profile_id=agent_profile_id,
@@ -37,8 +37,8 @@ class PersistentSessionRepository:
         return list(
             self._db_session.scalars(
                 statement.order_by(
-                    PersistentAgentSession.updated_at.desc(),
-                    PersistentAgentSession.id,
+                    AgentSessionMetadata.updated_at.desc(),
+                    AgentSessionMetadata.id,
                 )
                 .offset(non_negative_offset(offset))
                 .limit(bounded_limit(limit))
@@ -65,11 +65,11 @@ class PersistentSessionRepository:
         )
         return int(self._db_session.scalar(statement) or 0)
 
-    def get_session(self, *, workspace_id: UUID, session_id: UUID) -> PersistentAgentSession | None:
+    def get_session(self, *, workspace_id: UUID, session_id: UUID) -> AgentSessionMetadata | None:
         return self._db_session.scalar(
-            select(PersistentAgentSession).where(
-                PersistentAgentSession.workspace_id == workspace_id,
-                PersistentAgentSession.id == session_id,
+            select(AgentSessionMetadata).where(
+                AgentSessionMetadata.workspace_id == workspace_id,
+                AgentSessionMetadata.id == session_id,
             )
         )
 
@@ -79,14 +79,14 @@ class PersistentSessionRepository:
         workspace_id: UUID,
         team_id: UUID,
         agent_profile_id: UUID,
-    ) -> list[PersistentAgentSession]:
+    ) -> list[AgentSessionMetadata]:
         return list(
             self._db_session.scalars(
-                select(PersistentAgentSession).where(
-                    PersistentAgentSession.workspace_id == workspace_id,
-                    PersistentAgentSession.agent_team_id == team_id,
-                    PersistentAgentSession.agent_profile_id == agent_profile_id,
-                    PersistentAgentSession.scope_type == "team_agent",
+                select(AgentSessionMetadata).where(
+                    AgentSessionMetadata.workspace_id == workspace_id,
+                    AgentSessionMetadata.agent_team_id == team_id,
+                    AgentSessionMetadata.agent_profile_id == agent_profile_id,
+                    AgentSessionMetadata.scope_type == "team_agent",
                 )
             )
         )
@@ -98,19 +98,19 @@ class PersistentSessionRepository:
         session_id: UUID,
         limit: int,
         offset: int,
-    ) -> list[SDKAgentMessage]:
+    ) -> list[SDKSessionMessageRecord]:
         return list(
             self._db_session.scalars(
-                select(SDKAgentMessage)
+                select(SDKSessionMessageRecord)
                 .join(
-                    PersistentAgentSession,
-                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
+                    AgentSessionMetadata,
+                    SDKSessionMessageRecord.session_id == AgentSessionMetadata.session_key,
                 )
                 .where(
-                    PersistentAgentSession.workspace_id == workspace_id,
-                    PersistentAgentSession.id == session_id,
+                    AgentSessionMetadata.workspace_id == workspace_id,
+                    AgentSessionMetadata.id == session_id,
                 )
-                .order_by(SDKAgentMessage.id.asc())
+                .order_by(SDKSessionMessageRecord.id.asc())
                 .offset(non_negative_offset(offset))
                 .limit(bounded_limit(limit))
             ).all()
@@ -119,14 +119,14 @@ class PersistentSessionRepository:
     def item_count(self, workspace_id: UUID, session_id: UUID) -> int:
         return int(
             self._db_session.scalar(
-                select(func.count(SDKAgentMessage.id))
+                select(func.count(SDKSessionMessageRecord.id))
                 .join(
-                    PersistentAgentSession,
-                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
+                    AgentSessionMetadata,
+                    SDKSessionMessageRecord.session_id == AgentSessionMetadata.session_key,
                 )
                 .where(
-                    PersistentAgentSession.workspace_id == workspace_id,
-                    PersistentAgentSession.id == session_id,
+                    AgentSessionMetadata.workspace_id == workspace_id,
+                    AgentSessionMetadata.id == session_id,
                 )
             )
             or 0
@@ -136,29 +136,37 @@ class PersistentSessionRepository:
         self,
         workspace_id: UUID,
         session_id: UUID,
-    ) -> SDKAgentMessage | None:
+    ) -> SDKSessionMessageRecord | None:
         return self._db_session.scalar(
-            select(SDKAgentMessage)
+            select(SDKSessionMessageRecord)
             .join(
-                PersistentAgentSession,
-                SDKAgentMessage.session_id == PersistentAgentSession.session_key,
+                AgentSessionMetadata,
+                SDKSessionMessageRecord.session_id == AgentSessionMetadata.session_key,
             )
             .where(
-                PersistentAgentSession.workspace_id == workspace_id,
-                PersistentAgentSession.id == session_id,
+                AgentSessionMetadata.workspace_id == workspace_id,
+                AgentSessionMetadata.id == session_id,
             )
-            .order_by(SDKAgentMessage.id.desc())
+            .order_by(SDKSessionMessageRecord.id.desc())
             .limit(1)
         )
 
     def delete_items(self, *, workspace_id: UUID, session_id: UUID) -> int:
-        item_count = self.item_count(workspace_id, session_id)
-        keys = select(PersistentAgentSession.session_key).where(
-            PersistentAgentSession.workspace_id == workspace_id,
-            PersistentAgentSession.id == session_id,
+        session = self._db_session.scalar(
+            select(AgentSessionMetadata)
+            .where(
+                AgentSessionMetadata.workspace_id == workspace_id,
+                AgentSessionMetadata.id == session_id,
+            )
+            .with_for_update()
         )
+        if session is None:
+            return 0
+        item_count = self.item_count(workspace_id, session_id)
         self._db_session.execute(
-            delete(SDKAgentMessage).where(SDKAgentMessage.session_id.in_(keys))
+            delete(SDKSessionMessageRecord).where(
+                SDKSessionMessageRecord.session_id == session.session_key
+            )
         )
         return item_count
 
@@ -179,18 +187,6 @@ def non_negative_offset(value: int) -> int:
     return max(value, 0)
 
 
-def positive_int(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    return None
-
-
-def non_negative_int(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return None
-
-
 def _session_filter_statement(
     *,
     workspace_id: UUID,
@@ -198,18 +194,18 @@ def _session_filter_statement(
     agent_team_id: UUID | None,
     task_id: UUID | None,
     status: str | None,
-) -> Select[tuple[PersistentAgentSession]]:
+) -> Select[tuple[AgentSessionMetadata]]:
     if status is not None:
         validate_status(status)
-    statement = select(PersistentAgentSession).where(
-        PersistentAgentSession.workspace_id == workspace_id
+    statement = select(AgentSessionMetadata).where(
+        AgentSessionMetadata.workspace_id == workspace_id
     )
     if agent_profile_id is not None:
-        statement = statement.where(PersistentAgentSession.agent_profile_id == agent_profile_id)
+        statement = statement.where(AgentSessionMetadata.agent_profile_id == agent_profile_id)
     if agent_team_id is not None:
-        statement = statement.where(PersistentAgentSession.agent_team_id == agent_team_id)
+        statement = statement.where(AgentSessionMetadata.agent_team_id == agent_team_id)
     if task_id is not None:
-        statement = statement.where(PersistentAgentSession.task_id == task_id)
+        statement = statement.where(AgentSessionMetadata.task_id == task_id)
     if status is not None:
-        statement = statement.where(PersistentAgentSession.status == status)
+        statement = statement.where(AgentSessionMetadata.status == status)
     return statement

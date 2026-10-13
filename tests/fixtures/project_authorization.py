@@ -63,7 +63,6 @@ def authorize_project_run(
         "workspace_runtime_id": str(runtime.id),
         "runtime_space_id": None,
         "capability_resource_ids": [str(runtime_resource.id)],
-        "network_disabled": False,
         "file_access_scope": {
             "mode": "gateway_only",
             "allowed_file_ids": file_ids,

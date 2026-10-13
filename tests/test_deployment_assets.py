@@ -13,34 +13,66 @@ def read_repo_file(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def test_compute_acceptance_uses_native_sdk_lifecycle_and_real_mcp() -> None:
+    script = read_repo_file("scripts/check_runtime_image.py")
+    compute = read_repo_file("deploy/images/Dockerfile.runtime")
 
-
-def test_self_hosted_connector_smoke_script_is_packaged_and_redacted() -> None:
-    script = read_repo_file("scripts/self-hosted-connector-smoke.sh")
-    docs = read_repo_file("runtime/CONNECTOR.md")
-
-    assert "python3" in script
-    assert "-m venv" in script
-    assert "pip install" in script
-    assert "opsmesh-self-hosted-worker" in script
-    assert "--check" in script
-    assert "--once" in script
-    assert "OPSMESH_RUNTIME_CREDENTIAL" in script
-    assert "response bodies" not in script
-    assert "self-hosted-connector-smoke.sh" in docs
-    assert "OPSMESH_CONNECTOR_EXPECTED_STATUS=completed" in docs
+    assert "from agents.sandbox.sandboxes import DockerSandboxClient" in script
+    assert "client.create(" in script and "client.resume(" in script
+    assert "await session.shutdown()" in script
+    assert 'server.call_tool("echo"' in script
+    assert "DockerSandboxClientOptions(image=image)" in script
+    assert "opsmesh_runtime" not in script + compute
+    assert "--require-hashes" in compute
 
 
 def test_compose_declares_api_worker_and_dependencies() -> None:
-    compose = read_repo_file("deploy/local/compose.yml")
+    compose = yaml.safe_load(read_repo_file("deploy/local/compose.yml"))
+    services = compose["services"]
+    assert {"api", "worker", "postgres", "redis", "migrate"} <= services.keys()
+    assert services["api"]["build"]["target"] == "api"
+    assert services["worker"]["build"]["target"] == "worker"
+    assert services["api"]["image"] != services["worker"]["image"]
+    assert "../temporal/compose.yml" in compose["include"]
+    for name in ("api", "worker"):
+        assert "OPSMESH_DATABASE_URL" in services[name]["environment"]
+        assert "OPSMESH_REDIS_URL" in services[name]["environment"]
+        assert services[name]["environment"]["OPSMESH_TEMPORAL_ADDRESS"] == "temporal:7233"
+    assert not any("docker.sock" in volume for volume in services["api"]["volumes"])
+    assert any("docker.sock" in volume for volume in services["worker"]["volumes"])
 
-    for service in ("api:", "worker:", "postgres:", "redis:"):
-        assert service in compose
-    assert "OPSMESH_DATABASE_URL" in compose
-    assert "OPSMESH_REDIS_URL" in compose
-    assert "/app/.opsmesh-storage" in compose
-    assert 'OPSMESH_RUN_MIGRATIONS: "false"' in compose
-    assert "/api/v1/health/ready" in compose
+
+def test_temporal_delivery_keeps_readonly_configuration_and_one_shot_dependencies() -> None:
+    compose = yaml.safe_load(read_repo_file("deploy/temporal/compose.yml"))
+    services = compose["services"]
+    namespace = services["temporal-namespace"]
+    assert "restart" not in namespace
+    assert namespace["depends_on"]["temporal"]["condition"] == "service_healthy"
+    assert services["temporal"]["depends_on"]["temporal-schema"] == {
+        "condition": "service_completed_successfully"
+    }
+    mount = "./dynamicconfig.yml:/etc/temporal/dynamicconfig/opsmesh.yaml:ro"
+    assert mount in services["temporal"]["volumes"]
+    assert services["temporal"]["environment"]["DYNAMIC_CONFIG_FILE_PATH"] == (
+        "/etc/temporal/dynamicconfig/opsmesh.yaml"
+    )
+    assert yaml.safe_load(read_repo_file("deploy/temporal/dynamicconfig.yml")) == {}
+    for name in ("managed-delivery.yml", "standalone.yml", "delivery-validation.yml"):
+        workflow = read_repo_file(f".github/workflows/{name}")
+        assert "python -m opsmesh_operator.compose --timeout 180" in workflow
+        assert "up -d --wait temporal-namespace" not in workflow
+
+
+def test_remote_validation_uses_locked_native_execution_and_safe_argument_boundaries() -> None:
+    script = read_repo_file("scripts/remote-backend-validation.sh")
+    assert "pgvector/pgvector:0.8.6-pg16-bookworm" in script
+    assert "uv sync --frozen --all-groups" in script
+    assert "OPSMESH_TEST_POSTGRES_URL=" in script
+    assert "OPSMESH_TEST_TEMPORAL=1" in script
+    assert 'pytest_args=("$@")' in script
+    assert 'uv run --frozen pytest "$@"' in script
+    assert "pip install" not in script
+    assert "OPSMESH_REMOTE_PYTEST_ARGS" not in script
 
 
 def test_env_template_lists_required_runtime_settings() -> None:
@@ -52,10 +84,11 @@ def test_env_template_lists_required_runtime_settings() -> None:
         "OPSMESH_TOKEN_HASH_PEPPER",
         "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET",
         "OPSMESH_CREDENTIAL_ENCRYPTION_KEY_ID",
-        "OPSMESH_WORKER_HEARTBEAT_TOKEN",
-        "OPSMESH_READINESS_WORKER_CHECK_ENABLED",
+        "OPSMESH_TEMPORAL_ADDRESS",
+        "OPSMESH_TEMPORAL_NAMESPACE",
+        "OPSMESH_TEMPORAL_ACTIVITY_CONCURRENCY",
+        "OPSMESH_TEMPORAL_BLOCKING_ACTIVITY_WORKERS",
         "OPSMESH_EXTERNAL_CALL_MAX_ATTEMPTS",
-        "OPSMESH_AUDIT_EVENT_WORM_ENABLED",
         "OPSMESH_AUDIT_INTEGRITY_CHECK_INTERVAL_SECONDS",
         "OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT",
         "OPSMESH_OTEL_TRACE_SAMPLE_RATIO",
@@ -69,13 +102,14 @@ def test_env_template_lists_required_runtime_settings() -> None:
 
 
 def test_deployment_docs_cover_processes_and_production_guards() -> None:
-    docs = read_repo_file("deploy/server/DEPLOYMENT.md")
+    docs = " ".join(read_repo_file("deploy/server/DEPLOYMENT.md").split())
 
     assert "API process" in docs
     assert "Worker process" in docs
-    assert "VPS Layout" in docs
-    assert "systemd Services" in docs
-    assert "for isolated task runtimes" in docs
+    assert "VPS layout" in docs
+    assert "systemd services" in docs
+    assert "SDK Docker provider" in docs
+    assert "Temporal" in docs
     assert "The API process must not be able to control the Docker daemon" in docs
     assert "pinned observability stack" in docs
     assert "OPSMESH_SMOKE_MONITORING=true" in docs
@@ -84,11 +118,9 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "opsmesh-worker.service" in docs
     assert "opsmesh-api" in docs
     assert "opsmesh-worker" in docs
-    assert "Only the worker receives Docker authority" in docs
+    assert "Only the Worker receives Docker authority" in docs
     assert "Do not make immutable release directories writable" in docs
-    assert "uv sync" not in docs
-    assert ".venv/" not in docs
-    assert "opsmesh-server migrate" in docs
+    assert "uv run alembic upgrade head" in docs
     api_unit = read_repo_file("deploy/server/systemd/opsmesh-api.service")
     worker_unit = read_repo_file("deploy/server/systemd/opsmesh-worker.service")
     assert "ExecStart=/opt/opsmesh/current/opsmesh-server api" in api_unit
@@ -98,16 +130,14 @@ def test_deployment_docs_cover_processes_and_production_guards() -> None:
     assert "systemctl restart" not in docs
     assert "docker compose -f deploy/server/docker-compose.backend.yml" not in docs
     assert "OPSMESH_COMPOSE_FILE" not in docs
-    assert "docker login ghcr.io" not in docs
-    assert "scripts/openai-gateway-smoke.py" in docs
+    assert "scripts/openai_gateway_smoke.py" in docs
     assert "--dry-run" in docs
     assert "--allow-external-provider-call" in docs
     assert "openai_smoke" in docs
-    assert "real provider-dispatching runner" in docs
+    assert "provider-dispatching runner" in docs
     assert "OPSMESH_AGENT_RUNNER_BACKEND" not in docs
     assert "OPSMESH_ENABLE_API_DOCS=false" in docs
     assert "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET" in docs
-
 
 
 def test_systemd_units_keep_api_out_of_docker_group() -> None:
@@ -122,7 +152,7 @@ def test_systemd_units_keep_api_out_of_docker_group() -> None:
     assert "SupplementaryGroups=docker" in worker_unit
 
 
-def test_server_env_template_uses_shared_runtime_services() -> None:
+def test_server_env_template_uses_native_temporal_execution() -> None:
     env_example = read_repo_file("deploy/server/env.example")
 
     assert "OPSMESH_ENVIRONMENT=production" in env_example
@@ -135,16 +165,14 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "OPSMESH_RELEASES_DIR=/opt/opsmesh/releases" in env_example
     assert "OPSMESH_CURRENT_LINK=/opt/opsmesh/current" in env_example
     assert "OPSMESH_API_SERVICE=opsmesh-api" in env_example
-    assert "OPSMESH_WORKER_SERVICE=opsmesh-worker" in env_example
-    assert 'OPSMESH_UV_SYNC_ARGS="--frozen --no-dev"' in env_example
     assert "OPSMESH_ENV_FILE=/opt/opsmesh/.env" in env_example
     assert "OPSMESH_MONITORING_DIR=/opt/opsmesh/current/deploy/server/monitoring" in env_example
-    assert "OPSMESH_WORKER_HEARTBEAT_TOKEN=replace-with-random-token" in env_example
+    assert "OPSMESH_TEMPORAL_WORKER_IDENTITY=" in env_example
     assert "OPSMESH_SERVICE_NAME=opsmesh-api" in env_example
     assert "OPSMESH_STORAGE_ROOT=/var/lib/opsmesh/storage" in env_example
-    assert "OPSMESH_READINESS_WORKER_CHECK_ENABLED=true" in env_example
+    assert "OPSMESH_TEMPORAL_BLOCKING_ACTIVITY_WORKERS=64" in env_example
+    assert "OPSMESH_TEMPORAL_ACTIVITY_CONCURRENCY=64" in env_example
     assert "OPSMESH_EXTERNAL_CALL_MAX_ATTEMPTS=2" in env_example
-    assert "OPSMESH_AUDIT_EVENT_WORM_ENABLED=true" in env_example
     assert "OPSMESH_AUDIT_INTEGRITY_CHECK_INTERVAL_SECONDS=3600" in env_example
     assert "OPSMESH_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317" in env_example
     assert "OPSMESH_ALERTMANAGER_CONFIG_FILE=" in env_example
@@ -152,6 +180,8 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "OPSMESH_GRAFANA_ADMIN_PASSWORD=replace-with-random-password" in env_example
     assert "replace-with-random-token" in env_example
     assert "opsmesh:opsmesh" not in env_example
+    assert "OPSMESH_WORKER_HEARTBEAT_TOKEN" not in env_example
+    assert "OPSMESH_READINESS_WORKER_CHECK_ENABLED" not in env_example
 
 
 def test_server_smoke_script_checks_health_and_migrations() -> None:
@@ -182,9 +212,8 @@ def test_server_smoke_script_checks_health_and_migrations() -> None:
     assert 'query={service_name="opsmesh-api"}' in smoke_script
 
 
-
 def test_openai_gateway_smoke_script_uses_env_key_and_marker() -> None:
-    smoke_script = read_repo_file("scripts/openai-gateway-smoke.py")
+    smoke_script = read_repo_file("scripts/openai_gateway_smoke.py")
 
     assert "#!/usr/bin/env python" in smoke_script
     assert "OPENAI_API_KEY" in smoke_script
@@ -193,8 +222,6 @@ def test_openai_gateway_smoke_script_uses_env_key_and_marker() -> None:
     assert "--allow-external-provider-call" in smoke_script
     assert "openai_smoke" in smoke_script
     assert "sk-" not in smoke_script
-
-
 
 
 def test_monitoring_assets_define_alerts_and_grafana_provisioning() -> None:
@@ -218,11 +245,9 @@ def test_monitoring_assets_define_alerts_and_grafana_provisioning() -> None:
         "OpsMeshApiDown",
         "OpsMeshHighHttp5xxRate",
         "OpsMeshHighHttpLatency",
-        "OpsMeshQueueBacklogHigh",
-        "OpsMeshDeadLettersPresent",
-        "OpsMeshNoOnlineWorkersWithBacklog",
-        "OpsMeshWorkerStale",
-        "OpsMeshRuntimeSaturationHigh",
+        "OpsMeshTemporalDispatchBacklogHigh",
+        "OpsMeshTemporalDispatchStale",
+        "OpsMeshTemporalPublicationFailed",
         "OpsMeshRuntimeQuotaHigh",
         "OpsMeshAuditIntegrityInvalid",
         "OpsMeshAuditIntegrityNotCurrent",
@@ -237,11 +262,13 @@ def test_monitoring_assets_define_alerts_and_grafana_provisioning() -> None:
     assert "opsmesh_http_requests_total" in alert_rules
     assert "clamp_min(sum(rate(opsmesh_http_requests_total[5m])), 0.000001)" in alert_rules
     assert "sum(increase(opsmesh_http_requests_total[5m])) >= 20" in alert_rules
-    assert "opsmesh_queue_jobs" in alert_rules
-    assert "opsmesh_workers" in alert_rules
-    assert "opsmesh_runtime_saturation_ratio" in alert_rules
+    assert 'opsmesh_temporal_dispatches{state="pending"}' in alert_rules
+    assert "opsmesh_temporal_oldest_pending_dispatch_age_seconds" in alert_rules
+    assert "opsmesh_temporal_dispatch_publication_errors" in alert_rules
     assert 'absent(opsmesh_metrics_collection_success{source="postgres"})' in alert_rules
-    assert 'absent(opsmesh_metrics_collection_success{source="redis"})' in alert_rules
+    for obsolete in ("opsmesh_queue_", "opsmesh_workers", "opsmesh_runtime_saturation_ratio"):
+        assert obsolete not in alert_rules + dashboard
+    assert 'source="redis"' not in alert_rules
 
     assert "receiver: opsmesh-operators" in alertmanager
     assert "url: http://127.0.0.1:9090" in datasource
@@ -251,6 +278,9 @@ def test_monitoring_assets_define_alerts_and_grafana_provisioning() -> None:
     assert "opsmesh_http_request_duration_ms_bucket" in dashboard
     assert "opsmesh_model_cost_current_month" in dashboard
     assert "opsmesh_metrics_collection_success" in dashboard
+    assert "opsmesh_temporal_dispatches" in dashboard
+    assert "opsmesh_sandbox_environments" in dashboard
+    assert "opsmesh_runtime_active_runs" in dashboard
 
 
 def test_observability_stack_is_pinned_persistent_and_correlated() -> None:
@@ -308,7 +338,7 @@ def test_observability_stack_is_pinned_persistent_and_correlated() -> None:
     assert "send_exemplars: true" in tempo
     assert "tracesToLogsV2" in datasource
     assert "derivedFields" in datasource
-    assert 'opsmesh-(api|worker)' in json.dumps(dashboard)
+    assert "opsmesh-(api|worker)" in json.dumps(dashboard)
     assert dashboard["uid"] == "opsmesh-control-plane"
 
 
@@ -328,9 +358,7 @@ def test_observability_yaml_assets_parse_and_wire_required_pipelines() -> None:
         "otel-collector",
         "grafana",
     }
-    assert all(
-        service["network_mode"] == "host" for service in compose["services"].values()
-    )
+    assert all(service["network_mode"] == "host" for service in compose["services"].values())
     assert all("ports" not in service for service in compose["services"].values())
     assert "user" not in compose["services"]["otel-collector"]
     assert collector["service"]["pipelines"]["logs"]["receivers"] == ["otlp"]
@@ -338,9 +366,7 @@ def test_observability_yaml_assets_parse_and_wire_required_pipelines() -> None:
     assert collector["service"]["pipelines"]["logs"]["exporters"] == ["otlphttp/loki"]
     assert collector["service"]["pipelines"]["traces"]["exporters"] == ["otlp/tempo"]
     assert prometheus["rule_files"] == ["/etc/prometheus/rules/*.yml"]
-    assert prometheus["scrape_configs"][1]["static_configs"][0]["targets"] == [
-        "127.0.0.1:8000"
-    ]
+    assert prometheus["scrape_configs"][1]["static_configs"][0]["targets"] == ["127.0.0.1:8000"]
     assert alerts["groups"][0]["rules"]
     assert loki["limits_config"]["allow_structured_metadata"] is True
     assert tempo["overrides"]["defaults"]["metrics_generator"]["processors"] == [
@@ -352,7 +378,7 @@ def test_observability_yaml_assets_parse_and_wire_required_pipelines() -> None:
 def test_alertmanager_renderer_requires_real_receiver_and_keeps_secret_out_of_output(
     tmp_path: Path,
 ) -> None:
-    script = ROOT / "scripts/render-alertmanager-config.py"
+    script = ROOT / "scripts/render_alertmanager_config.py"
     output = tmp_path / "alertmanager.generated.yml"
     env = os.environ.copy()
     env.update(

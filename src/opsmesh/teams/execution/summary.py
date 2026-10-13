@@ -20,7 +20,7 @@ from opsmesh.teams.execution.overview_contracts import (
 from opsmesh.teams.execution.overview_interventions import operator_intervention_plan
 
 
-def summary_bottlenecks(
+def summarize_bottlenecks(
     *,
     task_items: list[dict[str, object]],
     member_items: list[MemberWorkload],
@@ -108,25 +108,6 @@ def summary_bottlenecks(
                 count=len(high_risk_tasks),
                 task_ids=_task_item_ids(high_risk_tasks),
                 recommended_action="review_high_risk_tasks",
-            )
-        )
-
-    waiting_runtime_count = sum(1 for run in runs if run.status == RunStatus.WAITING_RUNTIME.value)
-    if waiting_runtime_count:
-        bottlenecks.append(
-            _bottleneck(
-                code="runtime_wait",
-                severity="medium",
-                count=waiting_runtime_count,
-                task_ids=sorted(
-                    {
-                        run.task_id
-                        for run in runs
-                        if run.status == RunStatus.WAITING_RUNTIME.value and run.task_id
-                    },
-                    key=str,
-                ),
-                recommended_action="inspect_runtime_capacity",
             )
         )
 
@@ -252,6 +233,7 @@ def _task_item_ids(task_items: list[dict[str, object]]) -> list[UUID]:
     task_ids = [task.get("task_id") for task in task_items]
     return sorted([task_id for task_id in task_ids if isinstance(task_id, UUID)], key=str)
 
+
 def overview_summary(
     *,
     tasks: list[Task],
@@ -273,7 +255,7 @@ def overview_summary(
     )
     active_member_tasks = sum(item["workspace_active_task_count"] for item in member_items)
     available_member_capacity = max(total_capacity - active_member_tasks, 0)
-    bottlenecks = summary_bottlenecks(
+    bottlenecks = summarize_bottlenecks(
         task_items=task_items,
         member_items=member_items,
         staffing_gaps=staffing_gaps,

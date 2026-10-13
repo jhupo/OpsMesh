@@ -43,7 +43,6 @@ def main() -> None:
         print(json.dumps({"version": version("opsmesh"), "python": sys.version.split()[0]}))
         return
     if args.command in {"bootstrap-admin", "reset-admin-password"}:
-
         from opsmesh.shared.db.session import SessionLocal
 
         with SessionLocal() as session:
@@ -85,7 +84,7 @@ def main() -> None:
         cli.run_cmd(config, options)
     else:
         module = (
-            "opsmesh.runtime.workers.cli"
+            "opsmesh.runtime.temporal.cli"
             if args.command == "worker"
             else "opsmesh.platform.updates.daemon"
         )
@@ -98,12 +97,11 @@ def check_runtime(directory: Path) -> None:
     ZoneInfo("Asia/Shanghai")
     for module in (
         "agents",
-        "claude_agent_sdk",
         "psycopg",
         "cryptography",
         "docker",
         "opsmesh.main",
-        "opsmesh.runtime.workers.cli",
+        "opsmesh.runtime.temporal.cli",
         "opsmesh.platform.updates.daemon",
     ):
         importlib.import_module(module)

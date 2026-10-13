@@ -15,9 +15,9 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.orchestration.conversations.models import ConversationExecution, ConversationTurn
-from opsmesh.orchestration.conversations.schemas import TurnResponse
+from opsmesh.orchestration.conversations.schemas import ConversationTurnResponse
 from opsmesh.orchestration.conversations.service import ConversationService
 from opsmesh.shared.errors import NotFoundError
 
@@ -36,10 +36,10 @@ def turn_stream_snapshot(
     turn_id: UUID,
 ) -> TurnStreamSnapshot:
     # Each refresh owns a short transaction/connection. Nothing stays checked out
-    # during Redis waiting or a slow client's response consumption.
+    # during notification waiting or a slow client's response consumption.
     with session_factory() as session:
         live_user = AuthenticationService(session).refresh_authenticated_user(user)
-        context = AuthorizationService(session).require_workspace(
+        context = WorkspaceAuthorizationService(session).require_workspace(
             user_id=live_user.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.READ,
@@ -70,7 +70,7 @@ def turn_stream_snapshot(
                 ResourceAction.READ,
             )
         errors = service.turn_errors(context, conversation_id, [turn])
-        response = TurnResponse.model_validate(turn).model_copy(
+        response = ConversationTurnResponse.model_validate(turn).model_copy(
             update={"error": errors.get(turn.id)}
         )
         return TurnStreamSnapshot(response.model_dump(mode="json"), task_id)

@@ -7,10 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.agents.sessions.management import PersistentAgentSessionManagementService
-from opsmesh.agents.sessions.views import PersistentSessionSummary
-from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.agents.sessions.service import AgentSessionService
+from opsmesh.agents.sessions.views import AgentSessionSummary
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.shared.utils import dict_list, dict_or_empty
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
@@ -21,21 +19,17 @@ from opsmesh.teams.operations.console_runtime_payloads import (
     runtime_blocked_steps_payload,
     runtime_payload,
     runtime_queue_suggested_actions,
-    team_loop_queue_payload,
 )
 from opsmesh.teams.operations.views import (
     _dict,
     _int_value,
-    _positive_int,
     _redacted_dict_or_none,
     _visible_task_policy,
 )
-from opsmesh.teams.provider_readiness.management import TeamProviderManagementBuilder
+from opsmesh.teams.provider_readiness.management import TeamProviderManagementViewBuilder
 from opsmesh.teams.provider_readiness.views import _agent_model_provider_payload
 from opsmesh.teams.sessions.scheduling_blocks import scheduled_run_blocking_summary
-from opsmesh.teams.sessions.service import TeamRuntimeService, TeamRuntimeState
-
-PROVIDER_RUN_STATUSES = ACTIVE_RUN_STATUSES
+from opsmesh.teams.sessions.service import TeamOperationService, TeamOperationSnapshot
 
 
 class TeamOperationsConsoleService:
@@ -49,7 +43,6 @@ class TeamOperationsConsoleService:
         *,
         workspace_id: UUID,
         team_id: UUID,
-        queue: RedisQueue | None = None,
         include_completed: bool = False,
         queue_limit: int = 50,
         message_limit: int = 10,
@@ -58,7 +51,7 @@ class TeamOperationsConsoleService:
         team = self._team(workspace_id, team_id)
         if team is None:
             return None
-        runtime_state = TeamRuntimeService(self._session).get_state(
+        runtime_state = TeamOperationService(self._session).get_or_initialize_state(
             workspace_id=workspace_id, team_id=team_id
         )
         if runtime_state is None:
@@ -68,8 +61,9 @@ class TeamOperationsConsoleService:
             team_id=team_id,
             include_completed=include_completed,
             queue_limit=queue_limit,
+            runtime_state=runtime_state,
         )
-        sessions = PersistentAgentSessionManagementService(self._session).list_sessions(
+        sessions = AgentSessionService(self._session).list_sessions(
             workspace_id=workspace_id, agent_team_id=team_id, limit=session_limit, offset=0
         )
         members = self._members(team)
@@ -86,10 +80,10 @@ class TeamOperationsConsoleService:
             if runtime_state.team_session_id is not None
             else None
         )
-        runtime_queue = team_loop_queue_payload(
-            queue=queue, workspace_id=workspace_id, team_id=team_id, limit=max(queue_limit, 0)
-        )
-        provider_management = TeamProviderManagementBuilder(self._session).payload(
+        from opsmesh.teams.execution.queries import team_orchestration_summary
+
+        runtime_queue = team_orchestration_summary(self._session, workspace_id, team_id)
+        provider_management = TeamProviderManagementViewBuilder(self._session).payload(
             workspace_id=workspace_id, members=members
         )
         runtime_blocking = scheduled_run_blocking_summary(
@@ -163,7 +157,7 @@ class TeamOperationsConsoleService:
         self,
         *,
         member: AgentTeamMember,
-        session: PersistentSessionSummary | None,
+        session: AgentSessionSummary | None,
         mailbox_reader: TeamOperationsMailboxReader,
     ) -> dict[str, object]:
         agent = self._session.get(AgentProfile, member.agent_profile_id)
@@ -203,7 +197,7 @@ def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
 
 
 def _controls_payload(
-    runtime_state: TeamRuntimeState,
+    runtime_state: TeamOperationSnapshot,
     command_center: dict[str, object] | None,
     runtime_queue: dict[str, object],
     provider_management: dict[str, object],
@@ -217,8 +211,8 @@ def _controls_payload(
         "can_resume": runtime_state.status == "paused",
         "can_stop": runtime_state.status != "stopped",
         "can_ensure_workspace_runtime": runtime_state.workspace_runtime_id is None
-        or runtime_state.runtime_status != "running"
-        or runtime_state.runtime_health in {"stale", "degraded"},
+        or runtime_state.runtime_status != "active"
+        or runtime_state.runtime_health in {"degraded"},
         "suggested_actions": [
             item
             for item in [*provider_management_actions, *action_plan]
@@ -231,7 +225,7 @@ def _controls_payload(
 
 
 def _readiness_payload(
-    runtime_state: TeamRuntimeState,
+    runtime_state: TeamOperationSnapshot,
     command_center: dict[str, object] | None,
     runtime_queue: dict[str, object],
     provider_management: dict[str, object],
@@ -239,10 +233,6 @@ def _readiness_payload(
     mailbox: dict[str, object],
     controls: dict[str, object],
 ) -> dict[str, object]:
-    runtime_metadata = dict(runtime_state.metadata)
-    stall_count = _int_value(runtime_metadata.get("stall_count"))
-    stall_threshold = _positive_int(runtime_metadata.get("stall_threshold"), 3)
-    stalled_at = runtime_metadata.get("stalled_at")
     provider_blocked = any(
         item.get("readiness_status") == "blocked"
         for item in dict_list(provider_management.get("agent_bindings"))
@@ -250,15 +240,14 @@ def _readiness_payload(
     blocked_step_count = _int_value(runtime_blocked_steps_payload(runtime_blocking).get("count"))
     queue_backlog = (
         _int_value(runtime_queue.get("queued"))
-        + _int_value(runtime_queue.get("scheduled_retry"))
-        + _int_value(runtime_queue.get("dead_letter"))
+        + _int_value(runtime_queue.get("running"))
+        + _int_value(runtime_queue.get("unknown"))
     )
     suggested_actions = dict_list(controls.get("suggested_actions"))
     suggested_actions.sort(key=lambda item: _int_value(item.get("priority")), reverse=True)
     next_action = suggested_actions[0] if suggested_actions else None
     readiness_status = _readiness_status(
         runtime_state=runtime_state,
-        stalled=bool(stalled_at) or stall_count >= stall_threshold,
         provider_blocked=provider_blocked,
         blocked_step_count=blocked_step_count,
         queue_backlog=queue_backlog,
@@ -270,12 +259,6 @@ def _readiness_payload(
             "runtime_health": runtime_state.runtime_health,
             "runtime_status": runtime_state.status,
             "workspace_runtime_status": runtime_state.runtime_status,
-            "stall": {
-                "count": stall_count,
-                "threshold": stall_threshold,
-                "reason": runtime_metadata.get("stall_reason"),
-                "stalled_at": stalled_at,
-            },
             "mailbox_unread_count": _int_value(mailbox.get("unread_count")),
             "queue_backlog": queue_backlog,
             "blocked_step_count": blocked_step_count,
@@ -292,25 +275,22 @@ def _readiness_payload(
 
 def _readiness_status(
     *,
-    runtime_state: TeamRuntimeState,
-    stalled: bool,
+    runtime_state: TeamOperationSnapshot,
     provider_blocked: bool,
     blocked_step_count: int,
     queue_backlog: int,
 ) -> str:
     if runtime_state.status in {"paused", "stopped"}:
         return runtime_state.status
-    if stalled:
-        return "stalled"
     if provider_blocked:
         return "provider_blocked"
-    if runtime_state.runtime_health in {"stale", "degraded"}:
+    if runtime_state.runtime_health in {"degraded"}:
         return runtime_state.runtime_health
     if blocked_step_count > 0:
         return "blocked"
     if queue_backlog > 0:
         return "working"
-    if runtime_state.runtime_health == "healthy" and runtime_state.runtime_status == "running":
+    if runtime_state.runtime_health == "healthy" and runtime_state.runtime_status == "active":
         return "ready"
     return runtime_state.runtime_health or "unknown"
 
@@ -365,7 +345,7 @@ def _command_center_payload(command_center: dict[str, object] | None) -> dict[st
     }
 
 
-def _session_payload(summary: PersistentSessionSummary | None) -> dict[str, object] | None:
+def _session_payload(summary: AgentSessionSummary | None) -> dict[str, object] | None:
     if summary is None:
         return None
     return {

@@ -36,13 +36,19 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_profiles")),
     )
     op.create_index("ix_agent_profiles_workspace_role", "agent_profiles", ["workspace_id", "role"])
-    op.create_index("ix_agent_profiles_workspace_status", "agent_profiles", ["workspace_id", "status"])
+    op.create_index(
+        "ix_agent_profiles_workspace_status", "agent_profiles", ["workspace_id", "status"]
+    )
 
     op.create_table(
         "agent_teams",
@@ -55,9 +61,15 @@ def upgrade() -> None:
         sa.Column("default_task_policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["manager_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["manager_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_teams")),
     )
@@ -77,9 +89,15 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["agent_team_id"], ["agent_teams.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_team_members")),
-        sa.UniqueConstraint("agent_team_id", "agent_profile_id", name="uq_agent_team_members_team_agent"),
+        sa.UniqueConstraint(
+            "agent_team_id", "agent_profile_id", name="uq_agent_team_members_team_agent"
+        ),
     )
-    op.create_index("ix_agent_team_members_workspace_team", "agent_team_members", ["workspace_id", "agent_team_id"])
+    op.create_index(
+        "ix_agent_team_members_workspace_team",
+        "agent_team_members",
+        ["workspace_id", "agent_team_id"],
+    )
 
     op.create_table(
         "tasks",
@@ -98,8 +116,12 @@ def upgrade() -> None:
         sa.Column("final_output", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_team_id"], ["agent_teams.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
@@ -121,9 +143,15 @@ def upgrade() -> None:
         sa.Column("dependencies", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("result_summary", sa.String(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["assigned_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.ForeignKeyConstraint(
+            ["assigned_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_task_steps")),
@@ -146,8 +174,12 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["task_step_id"], ["task_steps.id"], ondelete="SET NULL"),
@@ -203,7 +235,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_events")),
     )
     op.create_index("ix_audit_events_workspace_action", "audit_events", ["workspace_id", "action"])
-    op.create_index("ix_audit_events_workspace_target", "audit_events", ["workspace_id", "target_type", "target_id"])
+    op.create_index(
+        "ix_audit_events_workspace_target",
+        "audit_events",
+        ["workspace_id", "target_type", "target_id"],
+    )
 
 
 def downgrade() -> None:
@@ -232,4 +268,3 @@ def downgrade() -> None:
     op.drop_index("ix_agent_profiles_workspace_status", table_name="agent_profiles")
     op.drop_index("ix_agent_profiles_workspace_role", table_name="agent_profiles")
     op.drop_table("agent_profiles")
-

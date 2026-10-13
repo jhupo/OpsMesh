@@ -1,20 +1,17 @@
 from uuid import uuid4
 
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.identity.users.models import User
-from opsmesh.orchestration.planning.member_matching import MemberMatchingService
+from opsmesh.orchestration.planning.member_matching import TeamMemberMatcher
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.state import RunStatus
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_member_matching_ranks_by_role_and_skill_weight() -> None:
@@ -41,7 +38,7 @@ def test_member_matching_ranks_by_role_and_skill_weight() -> None:
         ]
     }
 
-    match = MemberMatchingService().match(
+    match = TeamMemberMatcher().match(
         team_snapshot=snapshot,
         required_role="ui_designer",
         required_skills=["figma"],
@@ -102,7 +99,7 @@ def test_member_matching_skips_members_at_concurrency_limit() -> None:
         ]
     }
 
-    match = MemberMatchingService(session).match(
+    match = TeamMemberMatcher(session).match(
         team_snapshot=snapshot,
         required_role="frontend_engineer",
         required_skills=["react"],
@@ -139,7 +136,7 @@ def test_member_matching_penalizes_leadership_for_execution_work() -> None:
         ]
     }
 
-    match = MemberMatchingService().match(
+    match = TeamMemberMatcher().match(
         team_snapshot=snapshot,
         required_role="backend_engineer",
         required_skills=["python"],
@@ -151,8 +148,7 @@ def test_member_matching_penalizes_leadership_for_execution_work() -> None:
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -164,12 +160,3 @@ def _seed_workspace(session: Session) -> tuple[User, Workspace]:
     session.add_all([user, workspace, membership])
     session.commit()
     return user, workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

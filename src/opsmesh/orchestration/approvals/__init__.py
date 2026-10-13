@@ -1,2 +1,1 @@
 """Approval domain."""
-

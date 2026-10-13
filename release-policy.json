@@ -1,10 +1,8 @@
 {
   "upgrade_from_revisions": [
-    "0071_platform_delivery",
-    "0072_release_schema",
-    "0102_platform_admin_credentials"
+    "0123_mcp_call_diagnostics",
+    "0127_task_event_store"
   ],
-  "rollback_database_revisions": ["0101_plugin_deployments"],
-  "connector_protocol": 2,
+  "rollback_database_revisions": [],
   "platforms": ["linux/amd64"]
 }

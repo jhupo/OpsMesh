@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from opsmesh.shared.security.egress import EgressUrlPolicy
+from opsmesh.shared.security.egress import EgressURLPolicy
 
-WEBHOOK_URL_POLICY = EgressUrlPolicy(allowed_schemes=frozenset({"http", "https"}))
+WEBHOOK_URL_POLICY = EgressURLPolicy(allowed_schemes=frozenset({"http", "https"}))
 WEBHOOK_DELIVERY_TIMEOUT_SECONDS = 10
 WEBHOOK_DELIVERY_MAX_ATTEMPTS = 3
 WEBHOOK_RETRY_BASE_DELAY_SECONDS = 60

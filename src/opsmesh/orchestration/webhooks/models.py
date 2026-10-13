@@ -95,7 +95,7 @@ class WebhookDeliveryAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     last_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     response_body_snippet: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    job_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    execution_id: Mapped[UUID | None] = mapped_column(nullable=True)
     dead_letter_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,

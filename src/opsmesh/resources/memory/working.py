@@ -12,7 +12,6 @@ from opsmesh.resources.memory.models import WorkspaceMemoryEntry
 from opsmesh.shared.utils import ensure_aware_utc
 
 WORKING_MEMORY_LAYER = "working"
-WORKING_MEMORY_SOURCE = "run_working_memory"
 
 
 class AgentWorkingMemoryService:
@@ -120,6 +119,9 @@ class AgentWorkingMemoryService:
         )
         self._session.add(promoted)
         self._session.flush([promoted])
+        from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+        stage_memory_embedding(self._session, promoted)
         source.status = "promoted"
         source.archived_at = datetime.now(UTC)
         source.memory_metadata = {

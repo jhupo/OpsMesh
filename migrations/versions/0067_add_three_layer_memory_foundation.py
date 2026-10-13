@@ -85,9 +85,7 @@ def upgrade() -> None:
         )
     ).all():
         memory_layer = "episodic" if row.entry_type == "agent_run_summary" else "semantic"
-        fingerprint = hashlib.sha256(
-            f"{row.title}\x00{row.content}".encode()
-        ).hexdigest()
+        fingerprint = hashlib.sha256(f"{row.title}\x00{row.content}".encode()).hexdigest()
         bind.execute(
             entries.update()
             .where(entries.c.id == row.id)

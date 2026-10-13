@@ -15,7 +15,7 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.errors import ForbiddenError
 
@@ -41,7 +41,7 @@ def workspace_access_context(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceAccessResponse:
     try:
-        context = AuthorizationService(session).get_access_context(
+        context = WorkspaceAuthorizationService(session).get_access_context(
             workspace_id=workspace_id, user=user
         )
     except PermissionDeniedError as exc:
@@ -57,23 +57,23 @@ def workspace_access_context(
     )
 
 
-class GrantRequest(BaseModel):
+class ResourceGrantUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actions: frozenset[ResourceAction] = Field(max_length=len(ResourceAction))
 
 
-class GrantResponse(BaseModel):
+class ResourceGrantResponse(BaseModel):
     user_id: UUID
     actions: list[ResourceAction]
 
 
-class PermissionResponse(BaseModel):
+class ResourcePermissionsResponse(BaseModel):
     kind: ResourceKind
     resource_id: UUID
     actions: list[ResourceAction]
 
 
-class OwnerRequest(BaseModel):
+class ResourceOwnerUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     user_id: UUID
 
@@ -82,7 +82,7 @@ class OwnerRequest(BaseModel):
 def assign_owner(
     kind: ResourceKind,
     resource_id: UUID,
-    payload: OwnerRequest,
+    payload: ResourceOwnerUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> None:
@@ -95,42 +95,45 @@ def assign_owner(
     session.commit()
 
 
-@router.get("/{kind}/{resource_id}/permissions", response_model=PermissionResponse)
+@router.get("/{kind}/{resource_id}/permissions", response_model=ResourcePermissionsResponse)
 def effective_permissions(
     kind: ResourceKind,
     resource_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> PermissionResponse:
+) -> ResourcePermissionsResponse:
     service = ResourceAuthorizationService(session, context.user)
     actions = service.effective_actions(context.workspace.id, kind, resource_id)
-    return PermissionResponse(kind=kind, resource_id=resource_id, actions=actions)
+    return ResourcePermissionsResponse(kind=kind, resource_id=resource_id, actions=actions)
 
 
-@router.get("/{kind}/{resource_id}/grants", response_model=list[GrantResponse])
+@router.get("/{kind}/{resource_id}/grants", response_model=list[ResourceGrantResponse])
 def list_grants(
     kind: ResourceKind,
     resource_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-) -> list[GrantResponse]:
+) -> list[ResourceGrantResponse]:
     grouped = ResourceAuthorizationService(session, context.user).list_grants(
         context.workspace.id,
         kind,
         resource_id,
     )
-    return [GrantResponse(user_id=user_id, actions=actions) for user_id, actions in grouped.items()]
+    return [
+        ResourceGrantResponse(user_id=user_id, actions=actions)
+        for user_id, actions in grouped.items()
+    ]
 
 
-@router.put("/{kind}/{resource_id}/grants/{user_id}", response_model=GrantResponse)
+@router.put("/{kind}/{resource_id}/grants/{user_id}", response_model=ResourceGrantResponse)
 def replace_grants(
     kind: ResourceKind,
     resource_id: UUID,
     user_id: UUID,
-    payload: GrantRequest,
+    payload: ResourceGrantUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-) -> GrantResponse:
+) -> ResourceGrantResponse:
     ResourceAuthorizationService(session, context.user).replace_grants(
         context.workspace.id,
         kind,
@@ -139,4 +142,4 @@ def replace_grants(
         payload.actions,
     )
     session.commit()
-    return GrantResponse(user_id=user_id, actions=sorted(payload.actions))
+    return ResourceGrantResponse(user_id=user_id, actions=sorted(payload.actions))

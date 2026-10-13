@@ -1,28 +1,58 @@
-import asyncio
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import Depends
-from redis import Redis
-from redis.exceptions import RedisError
+from fastapi import Request
+from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.orchestration.tasks.events import RedisTaskEventBus, TaskEvent, TaskEventBus
-from opsmesh.shared.config import Settings, get_settings
-from opsmesh.shared.redis.dependencies import get_redis_client
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
+from opsmesh.identity.auth.service import AuthenticationService
+from opsmesh.identity.authorization.context import AuthenticatedUser
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
+from opsmesh.orchestration.tasks.async_events import AsyncPostgresTaskEventReader
+from opsmesh.orchestration.tasks.events import TaskEvent
+from opsmesh.orchestration.tasks.observation.live_status import TaskLiveStatusService
 
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 
-def get_task_event_bus(
-    redis: RedisClient = Depends(get_redis_client),
-    settings: Settings = Depends(get_settings),
-) -> TaskEventBus:
-    return RedisTaskEventBus(redis=redis, key_prefix=settings.redis_key_prefix)
+def read_task_stream_snapshot(
+    sessions: sessionmaker[Session],
+    user: AuthenticatedUser,
+    workspace_id: UUID,
+    task_id: UUID,
+    after_sequence: int,
+    message_limit: int,
+) -> dict[str, object] | None:
+    with sessions() as session:
+        live_user = AuthenticationService(session).refresh_authenticated_user(user)
+        WorkspaceAuthorizationService(session).require_workspace(
+            user_id=live_user.user_id,
+            workspace_id=workspace_id,
+            action=WorkspaceAction.READ,
+            authenticated_user=live_user,
+        )
+        ResourceAuthorizationService(session, live_user).require(
+            workspace_id, ResourceKind.TASK, task_id, ResourceAction.READ
+        )
+        return TaskLiveStatusService(session).get_status(
+            workspace_id=workspace_id,
+            task_id=task_id,
+            after_sequence=after_sequence,
+            message_limit=message_limit,
+        )
+
+
+def get_task_event_reader(request: Request) -> AsyncPostgresTaskEventReader:
+    sessions = getattr(request.app.state, "task_event_sessions", None)
+    if sessions is None:
+        raise RuntimeError("Task event database sessions are not configured")
+    return AsyncPostgresTaskEventReader(
+        sessions=sessions, notifications=request.app.state.task_event_notifications
+    )
 
 
 def _task_event_stream_payload(task_event: TaskEvent, cursor: int) -> dict[str, object]:
@@ -34,31 +64,7 @@ def _task_event_stream_payload(task_event: TaskEvent, cursor: int) -> dict[str, 
             "event_cursor": task_event.id,
         },
     }
-    outbox_id = task_event.outbox_id or task_event.payload.get("outbox_id")
-    if isinstance(outbox_id, str):
-        payload["outbox_id"] = outbox_id
     return payload
-
-
-async def _read_task_bus_events(
-    task_event_bus: TaskEventBus,
-    *,
-    workspace_id: UUID,
-    task_id: UUID,
-    after_id: str,
-    wait_seconds: float,
-) -> list[TaskEvent]:
-    try:
-        return await asyncio.to_thread(
-            task_event_bus.read,
-            workspace_id=workspace_id,
-            task_id=task_id,
-            after_id=after_id,
-            count=10,
-            block_ms=int(max(0, wait_seconds) * 1000),
-        )
-    except RedisError:
-        return []
 
 
 def _snapshot_messages(snapshot: dict[str, object]) -> list[dict[str, object]]:

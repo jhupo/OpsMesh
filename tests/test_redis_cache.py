@@ -87,8 +87,7 @@ def test_cache_get_or_set_single_flight_only_runs_loader_once_on_concurrent_miss
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
-            executor.submit(cache.get_or_set, "expensive-concurrent", load_value)
-            for _ in range(2)
+            executor.submit(cache.get_or_set, "expensive-concurrent", load_value) for _ in range(2)
         ]
 
         assert loader_started.wait(timeout=2)
@@ -143,39 +142,6 @@ def test_cache_deletes_corrupt_json_and_returns_miss() -> None:
 
     assert cached.found is False
     assert redis.get("opsmesh:cache:operations:broken") is None
-
-
-def test_cache_delete_namespace_only_removes_matching_namespace() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    operations_cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="operations")
-    tasks_cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="tasks")
-    operations_cache.set("one", {"value": 1})
-    operations_cache.set("two", {"value": 2})
-    tasks_cache.set("one", {"value": 1})
-
-    removed = operations_cache.delete_namespace()
-
-    assert removed == 2
-    assert operations_cache.get("one").found is False
-    assert tasks_cache.get("one").found is True
-
-
-def test_cache_delete_prefix_only_removes_matching_prefix() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="operations")
-    tasks_cache = RedisJsonCache(redis, RedisKeyBuilder("opsmesh"), namespace="tasks")
-    cache.set("workspace:one:overview", {"value": 1})
-    cache.set("workspace:one:metrics", {"value": 2})
-    cache.set("workspace:two:overview", {"value": 3})
-    tasks_cache.set("workspace:one:overview", {"value": 4})
-
-    removed = cache.delete_prefix("workspace:one:")
-
-    assert removed == 2
-    assert cache.get("workspace:one:overview").found is False
-    assert cache.get("workspace:one:metrics").found is False
-    assert cache.get("workspace:two:overview").found is True
-    assert tasks_cache.get("workspace:one:overview").found is True
 
 
 def test_cache_rejects_invalid_ttl_and_empty_keys() -> None:

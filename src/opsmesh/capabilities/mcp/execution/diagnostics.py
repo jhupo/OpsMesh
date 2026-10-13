@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Literal
 from uuid import UUID
 
@@ -22,21 +23,12 @@ class ExceptionEvidence(BaseModel):
     frames: list[ErrorLocation] = Field(default_factory=list, max_length=16)
 
 
-class StderrEvidence(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    bytes: int = Field(ge=0)
-    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    records_dropped: int = Field(ge=0)
-    records: list[McpErrorDiagnostic] = Field(default_factory=list, max_length=32)
-
-
 class OperatorEvidence(BaseModel):
     model_config = ConfigDict(extra="ignore")
     exceptions: list[ExceptionEvidence] = Field(default_factory=list, max_length=8)
-    stderr: StderrEvidence | None = None
 
 
-class McpErrorDiagnostic(BaseModel):
+class MCPErrorDiagnostic(BaseModel):
     model_config = ConfigDict(extra="ignore")
     category: Literal[
         "network", "authentication", "rate_limit", "http", "protocol", "execution", "cancelled"
@@ -58,10 +50,10 @@ def normalize_failure(
 ) -> dict[str, object]:
     payload = value if isinstance(value, dict) else {}
     try:
-        diagnostic = McpErrorDiagnostic.model_validate(payload, strict=True)
+        diagnostic = MCPErrorDiagnostic.model_validate(payload, strict=True)
         evidence = OperatorEvidence.model_validate(payload.get("diagnostic", {}), strict=True)
     except ValidationError:
-        diagnostic = McpErrorDiagnostic(category="protocol")
+        diagnostic = MCPErrorDiagnostic(category="protocol")
         evidence = OperatorEvidence()
         available = False
     else:
@@ -74,9 +66,73 @@ def normalize_failure(
     }
     if error_id is not None:
         result["error_id"] = str(error_id)
-    if evidence.exceptions or evidence.stderr is not None:
+    if evidence.exceptions:
         result["diagnostic"] = evidence.model_dump(mode="json", exclude_none=True)
     return result
+
+
+def native_failure(exc: BaseException) -> dict[str, object]:
+    """Retain bounded exception types and status codes without vendor strings or URLs."""
+    exceptions: list[BaseException] = []
+    pending = [exc]
+    seen: set[int] = set()
+    while pending and len(exceptions) < 8:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        exceptions.append(current)
+        if isinstance(current, BaseExceptionGroup):
+            pending.extend(current.exceptions)
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    status_code = next(
+        (
+            status
+            for error in exceptions
+            if isinstance(
+                status := getattr(getattr(error, "response", None), "status_code", None), int
+            )
+            and 100 <= status <= 599
+        ),
+        None,
+    )
+    cancelled = isinstance(exc, asyncio.CancelledError)
+    timed_out = any(
+        isinstance(error, TimeoutError)
+        or type(error).__name__
+        in {"TimeoutException", "ReadTimeout", "ConnectTimeout", "PoolTimeout", "WriteTimeout"}
+        for error in exceptions
+    )
+    return normalize_failure(
+        {
+            "exception_type": type(exceptions[-1]).__name__,
+            "http_status": status_code,
+            "category": (
+                "cancelled"
+                if cancelled
+                else "authentication"
+                if status_code in {401, 403}
+                else "rate_limit"
+                if status_code == 429
+                else "http"
+                if status_code is not None
+                else "network"
+                if timed_out
+                else "execution"
+            ),
+            "retryable": timed_out
+            or status_code == 429
+            or (status_code is not None and status_code >= 500),
+            "diagnostic": {
+                "exceptions": [{"exception_type": type(error).__name__} for error in exceptions]
+            },
+        },
+        code="mcp_native_call_cancelled" if cancelled else "mcp_native_call_failed",
+        message="Native MCP call cancelled" if cancelled else "Native MCP call failed",
+    )
 
 
 def public_error(value: dict[str, object]) -> dict[str, object]:

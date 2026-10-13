@@ -18,7 +18,7 @@ class AgentSkillPolicyDiagnosticResponse(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
 
 
-class AgentMcpToolPolicyDiagnosticResponse(BaseModel):
+class AgentMCPToolPolicyDiagnosticResponse(BaseModel):
     tool_name: str
     allowed_by_agent_policy: bool
     allowed_in_workspace: bool
@@ -44,7 +44,7 @@ class AgentToolPolicyDiagnosticsResponse(BaseModel):
     missing_policy_tools: list[str]
     missing_agent_skill_install_ids: list[UUID]
     installed_skills: list[AgentSkillPolicyDiagnosticResponse]
-    effective_tools: list[AgentMcpToolPolicyDiagnosticResponse]
+    effective_tools: list[AgentMCPToolPolicyDiagnosticResponse]
     blocked_reasons: list[str] = Field(default_factory=list)
 
 

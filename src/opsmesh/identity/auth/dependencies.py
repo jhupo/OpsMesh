@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.context import AuthenticatedUser, WorkspaceContext
 from opsmesh.identity.authorization.errors import AuthenticationError, PermissionDeniedError
@@ -16,8 +16,8 @@ from opsmesh.identity.authorization.resource_queries import (
     require_resource_row,
     unbind_resource_queries,
 )
-from opsmesh.identity.authorization.resources import ResourceAccessDenied, ResourceAction
-from opsmesh.identity.authorization.service import AuthorizationService
+from opsmesh.identity.authorization.resources import ResourceAccessDeniedError, ResourceAction
+from opsmesh.identity.authorization.service import WorkspaceAuthorizationService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.client_ip import security_request_context
@@ -145,7 +145,7 @@ def workspace_dependency(
         session: Session = DB_SESSION_DEPENDENCY,
     ) -> AsyncIterator[WorkspaceContext]:
         try:
-            context = AuthorizationService(session).require_workspace(
+            context = WorkspaceAuthorizationService(session).require_workspace(
                 user_id=current_user.user_id,
                 workspace_id=workspace_id,
                 action=action,
@@ -187,7 +187,7 @@ def workspace_dependency(
             finally:
                 unbind_resource_queries(session)
         except PermissionDeniedError as exc:
-            SecurityAuditService(session).record_request_event(
+            SecurityEventRecorder(session).record_request_event(
                 request_context=security_request_context(request),
                 action="auth.workspace.rejected",
                 outcome="denied",
@@ -199,9 +199,9 @@ def workspace_dependency(
             )
             session.commit()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
-        except ResourceAccessDenied:
+        except ResourceAccessDeniedError:
             session.rollback()
-            SecurityAuditService(session).record_request_event(
+            SecurityEventRecorder(session).record_request_event(
                 request_context=security_request_context(request),
                 action="auth.resource.rejected",
                 outcome="denied",
@@ -225,7 +225,7 @@ def account_action_dependency(action: AccountAction) -> Callable[..., object]:
     ) -> AuthenticatedUser:
         if current_user.allows_account_action(action):
             return current_user
-        SecurityAuditService(session).record_request_event(
+        SecurityEventRecorder(session).record_request_event(
             request_context=security_request_context(request),
             action="auth.account_scope.rejected",
             outcome="denied",
@@ -272,7 +272,7 @@ def _record_auth_failure(
     user_id: UUID | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action=action,
         outcome="denied",

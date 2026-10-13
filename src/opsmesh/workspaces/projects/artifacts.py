@@ -14,13 +14,13 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import TaskStep
 from opsmesh.resources.artifacts.models import Artifact
 from opsmesh.resources.files.security import safe_filename
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.storage.backends import ObjectStorage
 from opsmesh.resources.storage.transactions import (
     CompensatingObjectStorageWrites,
     ObjectStorageCompensationError,
     ObjectStorageKeyConflictError,
 )
-from opsmesh.workspaces.projects.io.support import ProjectRunIOError
+from opsmesh.workspaces.projects.io.support import RunProjectIOError
 from opsmesh.workspaces.projects.models import AgentRunProjectSnapshot, WorkspaceProject
 from opsmesh.workspaces.projects.snapshots.manifest import RunProjectOutput
 
@@ -49,7 +49,7 @@ class PreparedProjectArtifacts:
         try:
             self.writes.compensate()
         except ObjectStorageCompensationError as exc:
-            raise ProjectRunIOError(
+            raise RunProjectIOError(
                 code="project_output_compensation_failed",
                 message="Project output persistence failed and storage cleanup was incomplete",
                 stage="output_harvest",
@@ -93,7 +93,7 @@ class ProjectOutputArtifactWriter:
             try:
                 writes.compensate()
             except ObjectStorageCompensationError as compensation_exc:
-                raise ProjectRunIOError(
+                raise RunProjectIOError(
                     code="project_output_compensation_failed",
                     message=(
                         "Project output persistence failed and storage cleanup was incomplete"
@@ -102,7 +102,7 @@ class ProjectOutputArtifactWriter:
                     retryable=False,
                 ) from compensation_exc
             if isinstance(exc, ObjectStorageKeyConflictError):
-                raise ProjectRunIOError(
+                raise RunProjectIOError(
                     code="project_output_storage_conflict",
                     message="A project output storage destination already exists",
                     stage="output_harvest",
@@ -130,7 +130,7 @@ class ProjectOutputArtifactWriter:
             .with_for_update()
         )
         if project_id is None:
-            raise ProjectRunIOError(
+            raise RunProjectIOError(
                 code="project_snapshot_project_missing",
                 message="The snapshotted project no longer exists",
                 stage="output_harvest",
@@ -224,7 +224,7 @@ class ProjectOutputArtifactWriter:
             or artifact.checksum_sha256 != sha256(content).hexdigest()
             or not self._storage.exists(artifact.storage_key)
         ):
-            raise ProjectRunIOError(
+            raise RunProjectIOError(
                 code="project_output_idempotency_conflict",
                 message="An existing harvested output does not match the runtime file",
                 stage="output_harvest",

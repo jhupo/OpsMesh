@@ -218,6 +218,7 @@ class WorkspaceSkillLifecycleService:
             user_id=user_id,
         )
         install.skill_id = skill.id
+        install.configuration_revision += 1
         copy_skill_snapshot(install, skill)
         install.config = (
             config_with_lifecycle(data.config, lifecycle_config)
@@ -265,6 +266,7 @@ class WorkspaceSkillLifecycleService:
             user_id=user_id,
         )
         install.skill_id = skill.id
+        install.configuration_revision += 1
         copy_skill_snapshot(install, skill)
         install.config = (
             config_with_lifecycle(data.config, lifecycle_config)

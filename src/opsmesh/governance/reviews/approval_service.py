@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.governance.reviews.models import ResourceReview
+from opsmesh.governance.reviews.contracts import ResourceReviewResult
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.approvals.service import ApprovalService
 from opsmesh.shared.security.redaction import redact_sensitive_payload
@@ -22,7 +22,7 @@ class ResourceReviewApprovalService:
         target_type: str,
         target_id: UUID,
         target_name: str,
-        review: ResourceReview,
+        review: ResourceReviewResult,
         snapshot: dict[str, object],
     ) -> Approval:
         approval = ApprovalService(self._session).create_approval(

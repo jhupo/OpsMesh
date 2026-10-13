@@ -8,9 +8,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.identity.authorization.permissions import WorkspaceRole
-from opsmesh.platform.settings.policy import operational_configuration
-from opsmesh.resources.memory.models import WorkspaceMemoryConfiguration
-from opsmesh.resources.memory.policy import default_lifecycle_policy, default_retrieval_policy
+from opsmesh.resources.memory.configuration import WorkspaceMemoryConfigurationService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars
@@ -66,18 +64,9 @@ class WorkspaceService:
             user_id=owner_user_id,
             role=WorkspaceRole.OWNER.value,
         )
-        memory_configuration = WorkspaceMemoryConfiguration(
-            workspace=workspace,
-            embedding_enabled=False,
-            embedding_model=operational_configuration(self._session).default_embedding_model,
-            embedding_dimensions=operational_configuration(
-                self._session
-            ).default_embedding_dimensions,
-            retrieval_policy=default_retrieval_policy(),
-            lifecycle_policy=default_lifecycle_policy(),
-        )
-        self._session.add_all([workspace, membership, memory_configuration])
+        self._session.add_all([workspace, membership])
         flush_or_raise_conflict(self._session, "Workspace slug already exists")
+        WorkspaceMemoryConfigurationService(self._session).create_default(workspace.id)
         validate_resource_review_settings(
             self._session, workspace_id=workspace.id, settings=workspace.settings
         )

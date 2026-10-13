@@ -15,7 +15,7 @@ from opsmesh.resources.memory.models import (
     WorkspaceMemoryLifecycleEvent,
 )
 from opsmesh.resources.memory.policy import MemoryLifecyclePolicy, memory_lifecycle_policy
-from opsmesh.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from opsmesh.resources.memory.semantic import SemanticMemoryService, SemanticMemoryUpsert
 from opsmesh.shared.utils import ensure_aware_utc
 from opsmesh.teams.management.models import AgentTeam
 
@@ -31,56 +31,38 @@ class WorkspaceMemoryLifecycleService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def run_due(
+    def run_workspace(
         self,
         *,
+        workspace_id: UUID,
         now: datetime | None = None,
         limit: int = 100,
     ) -> MemoryLifecycleSummary:
         if limit <= 0:
             return MemoryLifecycleSummary()
         now = ensure_aware_utc(now or datetime.now(UTC))
-        configurations = self._session.scalars(
-            select(WorkspaceMemoryConfiguration).order_by(
-                WorkspaceMemoryConfiguration.updated_at.asc()
+        configuration = self._session.scalar(
+            select(WorkspaceMemoryConfiguration).where(
+                WorkspaceMemoryConfiguration.workspace_id == workspace_id
             )
-        ).all()
+        )
+        if configuration is None:
+            return MemoryLifecycleSummary()
         archived_episodes = 0
         archived_semantic = 0
         promoted_episodes = 0
-        remaining = limit
-        for configuration in configurations:
-            if remaining <= 0:
-                break
-            policy = memory_lifecycle_policy(configuration.lifecycle_policy)
-            entries = self._due_entries(
-                configuration.workspace_id,
-                policy=policy,
-                now=now,
-                limit=remaining,
-            )
-            for entry in entries:
-                if _expired_episode(entry, policy, now):
-                    self._archive_episode(
-                        entry,
-                        configuration_version=configuration.version,
-                        now=now,
-                    )
-                    archived_episodes += 1
-                elif _stale_semantic(entry, policy, now):
-                    self._archive_semantic(
-                        entry,
-                        configuration_version=configuration.version,
-                    )
-                    archived_semantic += 1
-                elif _promotion_eligible(entry, policy):
-                    self._promote_episode(
-                        entry,
-                        configuration_version=configuration.version,
-                        now=now,
-                    )
-                    promoted_episodes += 1
-                remaining -= 1
+        policy = memory_lifecycle_policy(configuration.lifecycle_policy)
+        entries = self._due_entries(workspace_id, policy=policy, now=now, limit=limit)
+        for entry in entries:
+            if _expired_episode(entry, policy, now):
+                self._archive_episode(entry, configuration_version=configuration.version, now=now)
+                archived_episodes += 1
+            elif _stale_semantic(entry, policy, now):
+                self._archive_semantic(entry, configuration_version=configuration.version)
+                archived_semantic += 1
+            elif _promotion_eligible(entry, policy):
+                self._promote_episode(entry, configuration_version=configuration.version, now=now)
+                promoted_episodes += 1
         return MemoryLifecycleSummary(
             archived_episodes=archived_episodes,
             archived_semantic=archived_semantic,
@@ -165,7 +147,7 @@ class WorkspaceMemoryLifecycleService:
         configuration_version: int,
     ) -> None:
         before = _entry_state(entry)
-        AgentSemanticMemoryService(self._session).archive(
+        SemanticMemoryService(self._session).archive(
             entry,
             expected_revision=entry.revision,
             change_reason="Archived by workspace semantic memory retention policy",
@@ -188,7 +170,7 @@ class WorkspaceMemoryLifecycleService:
     ) -> None:
         before = _entry_state(entry)
         scope_type, scope_id = self._promotion_scope(entry)
-        promoted = AgentSemanticMemoryService(self._session).upsert(
+        promoted = SemanticMemoryService(self._session).upsert(
             SemanticMemoryUpsert(
                 workspace_id=entry.workspace_id,
                 scope_type=scope_type,

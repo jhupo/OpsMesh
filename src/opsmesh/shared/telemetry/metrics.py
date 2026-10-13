@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Literal, cast
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.gc_collector import GCCollector
 from prometheus_client.platform_collector import PlatformCollector
@@ -15,8 +15,8 @@ from prometheus_client.registry import Collector
 
 DEFAULT_HTTP_DURATION_BUCKETS = (10, 50, 100, 250, 500, 1000, 2500, 5000)
 HTTP_METHODS = frozenset({"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"})
-MetricKind = Literal["counter", "gauge", "histogram"]
-PrometheusMetric = Counter | Gauge | Histogram
+MetricKind = Literal["counter", "histogram"]
+PrometheusMetric = Counter | Histogram
 
 
 @dataclass(frozen=True)
@@ -76,21 +76,6 @@ class MetricsRegistry:
         )
         metric.labels(**normalized).inc(amount)
 
-    def set_gauge(
-        self,
-        name: str,
-        value: float,
-        *,
-        labels: Mapping[str, object] | None = None,
-        help_text: str | None = None,
-    ) -> None:
-        normalized = _string_labels(labels or {})
-        metric = cast(
-            Gauge,
-            self._metric("gauge", name, tuple(sorted(normalized)), help_text),
-        )
-        metric.labels(**normalized).set(float(value))
-
     def observe(
         self,
         name: str,
@@ -144,13 +129,6 @@ class MetricsRegistry:
             description = help_text or f"{name} metric."
             if kind == "counter":
                 metric: PrometheusMetric = Counter(
-                    name,
-                    description,
-                    labelnames=label_names,
-                    registry=self._registry,
-                )
-            elif kind == "gauge":
-                metric = Gauge(
                     name,
                     description,
                     labelnames=label_names,

@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from uuid import UUID
-
-from sqlalchemy import update
-from sqlalchemy.orm import Session
-
 from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.shared.security.egress import EgressUrlPolicy, url_host, validate_egress_url
+from opsmesh.shared.security.egress import EgressURLPolicy, url_host, validate_egress_url
 
 MODEL_PROVIDER_NOT_ACTIVE = "model_provider_not_active"
 MODEL_PROVIDER_UNHEALTHY = "model_provider_unhealthy"
@@ -22,6 +17,8 @@ def credential_not_selectable_reasons(
     if credential is None:
         return ["model_provider_missing"]
     reasons: list[str] = []
+    if not is_openai_compatible_provider(credential.provider):
+        reasons.append("model_provider_unsupported")
     if credential.status != "active":
         reasons.append(MODEL_PROVIDER_NOT_ACTIVE)
     if credential.health_status == "unhealthy":
@@ -43,32 +40,11 @@ def model_provider_base_url_host(base_url: str | None) -> str | None:
     return url_host(base_url)
 
 
-class ModelProviderDefaultService:
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    def unset_other_defaults(
-        self,
-        workspace_id: UUID,
-        credential_id: UUID | None = None,
-    ) -> None:
-        statement = update(ModelProviderCredential).where(
-            ModelProviderCredential.workspace_id == workspace_id
-        )
-        if credential_id is not None:
-            statement = statement.where(ModelProviderCredential.id != credential_id)
-        self._session.execute(statement.values(is_default=False))
-
-
 def validated_base_url(
     base_url: str | None,
     *,
-    provider: str | None,
-    egress_policy: EgressUrlPolicy,
+    egress_policy: EgressURLPolicy,
 ) -> str | None:
     if base_url is None:
         return None
-    validated = validate_egress_url(base_url, policy=egress_policy)
-    if is_openai_compatible_provider(provider):
-        return validated
-    return validated.rstrip("/")
+    return validate_egress_url(base_url, policy=egress_policy)

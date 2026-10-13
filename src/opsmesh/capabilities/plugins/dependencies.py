@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile
-from opsmesh.capabilities.mcp.models import McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPToolAllowlist
 from opsmesh.capabilities.plugins.models import PluginBinding
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.capabilities.skills.models import WorkspaceSkillInstall
@@ -47,9 +47,9 @@ def binding_dependents(
         needles.add(skill.installed_key)
         needles.update(skill.installed_capability_keys)
     for tool_name, capability_key in session.execute(
-        select(McpToolAllowlist.tool_name, McpToolAllowlist.capability_key).where(
-            McpToolAllowlist.workspace_id == workspace_id,
-            McpToolAllowlist.mcp_server_id.in_(server_ids),
+        select(MCPToolAllowlist.tool_name, MCPToolAllowlist.capability_key).where(
+            MCPToolAllowlist.workspace_id == workspace_id,
+            MCPToolAllowlist.mcp_server_id.in_(server_ids),
         )
     ):
         needles.add(tool_name)

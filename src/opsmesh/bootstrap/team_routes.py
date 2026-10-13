@@ -8,7 +8,7 @@ from opsmesh.teams.sessions.runtime_routes import router as runtime_router
 
 router = APIRouter()
 router.include_router(overview_router)
+router.include_router(member_router)
+router.include_router(execution_router)
 router.include_router(session_router)
 router.include_router(runtime_router)
-router.include_router(execution_router)
-router.include_router(member_router)

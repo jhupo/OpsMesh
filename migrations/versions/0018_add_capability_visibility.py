@@ -44,6 +44,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("mcp_servers", "visibility")
-    op.drop_constraint(op.f("fk_skills_owner_workspace_id_workspaces"), "skills", type_="foreignkey")
+    op.drop_constraint(
+        op.f("fk_skills_owner_workspace_id_workspaces"), "skills", type_="foreignkey"
+    )
     op.drop_column("skills", "visibility")
     op.drop_column("skills", "owner_workspace_id")

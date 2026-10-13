@@ -67,9 +67,8 @@ def create_runtime_space(
             created_by_user_id=context.user.user_id,
             default_runtime_template_id=request.default_runtime_template_id,
             policy=request.policy,
-            network_policy=request.network_policy,
-            storage_policy=request.storage_policy,
-            cleanup_policy=request.cleanup_policy,
+            storage_metadata=request.storage_metadata,
+            cleanup_metadata=request.cleanup_metadata,
             quota_limits=request.quota_limits,
         )
     except ValueError as exc:
@@ -126,9 +125,8 @@ def update_runtime_space(
         name=request.name,
         status=request.status,
         policy=request.policy,
-        network_policy=request.network_policy,
-        storage_policy=request.storage_policy,
-        cleanup_policy=request.cleanup_policy,
+        storage_metadata=request.storage_metadata,
+        cleanup_metadata=request.cleanup_metadata,
         quota_limits=request.quota_limits,
     )
     if runtime_space is None:

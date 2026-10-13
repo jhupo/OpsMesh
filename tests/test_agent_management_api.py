@@ -1,49 +1,36 @@
 import json
-from collections.abc import Generator
-from pathlib import Path
-from tempfile import TemporaryDirectory
+import os
 from uuid import UUID
-from weakref import finalize
 
-import fakeredis
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from opsmesh.agents.profiles.models import AgentProfile, AgentProfileVersion
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
 from opsmesh.agents.sessions.models import (
-    PersistentAgentSession,
-    SDKAgentMessage,
-    SDKAgentSession,
+    AgentSessionMetadata,
+    SDKSessionMessageRecord,
+    SDKSessionRecord,
 )
 from opsmesh.governance.audit.models import AuditEvent
-from opsmesh.governance.reviews.service import ResourceReview
+from opsmesh.governance.reviews.service import ResourceReviewResult
 from opsmesh.identity.users.models import User
-from opsmesh.main import create_app
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
-from opsmesh.shared.config import Settings, get_settings
-from opsmesh.shared.db.base import Base
-from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
+pytest_plugins = ["tests.fixtures.agent_api"]
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL required"
+)
 
 
 @pytest.fixture(autouse=True)
 def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
-        return ResourceReview(
+        return ResourceReviewResult(
             required=False,
             risk_level="low",
             reasons=["llm_review.approved"],
@@ -51,13 +38,13 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "opsmesh.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "opsmesh.governance.reviews.service.ResourcePolicyReviewService.review_agent_profile",
         fake_review,
     )
 
 
-def test_agent_management_lifecycle_versions_and_sessions() -> None:
-    client, session = _client()
+def test_agent_management_lifecycle_versions_and_sessions(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     other_owner, other_workspace = _seed_workspace(
         session,
@@ -86,7 +73,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
         "temperature": 0.2,
         "model_api": "responses",
     }
-    assert created.json()["model_provider"]["model_api"] == "responses"
+    assert created.json()["model_provider"]["model_api"] is None
     assert created.json()["model_provider"]["model_apis"] == []
     assert created.json()["model_provider"]["default_model_api"] is None
     assert created.json()["model_provider"]["model_capability"] is None
@@ -161,7 +148,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
     agent_uuid = UUID(agent_id)
     agent = session.get(AgentProfile, agent_uuid)
     assert agent is not None
-    persistent_session = PersistentAgentSession(
+    persistent_session = AgentSessionMetadata(
         workspace_id=workspace.id,
         session_key=f"{workspace.id}:team_agent:team-1:{agent_id}",
         scope_type="team_agent",
@@ -171,15 +158,15 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
     )
     session.add(persistent_session)
     session.flush()
-    session.add(SDKAgentSession(session_id=persistent_session.session_key))
+    session.add(SDKSessionRecord(session_id=persistent_session.session_key))
     session.flush()
     session.add_all(
         [
-            SDKAgentMessage(
+            SDKSessionMessageRecord(
                 session_id=persistent_session.session_key,
                 message_data=json.dumps({"role": "user", "content": "first"}),
             ),
-            SDKAgentMessage(
+            SDKSessionMessageRecord(
                 session_id=persistent_session.session_key,
                 message_data=json.dumps({"role": "assistant", "content": "second"}),
             ),
@@ -234,8 +221,8 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
     )
 
 
-def test_agent_management_rejects_unknown_model_api_settings() -> None:
-    client, session = _client()
+def test_agent_management_rejects_unknown_model_api_settings(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     agent = AgentProfile(
         workspace_id=workspace.id,
@@ -266,8 +253,8 @@ def test_agent_management_rejects_unknown_model_api_settings() -> None:
     assert "Unsupported model_api" in patched.json()["error"]["message"]
 
 
-def test_agent_management_validates_model_provider_credentials_across_versions() -> None:
-    client, session = _client()
+def test_agent_management_validates_model_provider_credentials_across_versions(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     other_owner, other_workspace = _seed_workspace(
         session,
@@ -281,11 +268,11 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
     primary = provider_service.create(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
-        name="Primary Claude Gateway",
-        provider="anthropic",
+        name="Primary OpenAI Gateway",
+        provider="openai",
         api_key="sk-agent-primary-provider",
-        default_model="claude-sonnet-4-5",
-        base_url="https://api.anthropic.com",
+        default_model="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1",
         is_default=False,
     )
     backup = provider_service.create(
@@ -329,7 +316,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
             "role": "researcher",
             "model": "workspace-default",
             "model_provider_credential_id": str(primary.id),
-            "model_settings": {"model_api": "responses"},
+            "model_settings": {"model_api": "unsupported_api"},
         },
     )
     created = client.post(
@@ -342,7 +329,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
             "model_provider_credential_id": str(primary.id),
             "model_settings": {
                 "temperature": 0.2,
-                "model_api": "anthropic_messages",
+                "model_api": "responses",
                 "api_key": "sk-agent-model-settings-secret",
             },
         },
@@ -397,26 +384,26 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
     )
 
     assert unsupported_create.status_code == 400
-    assert "not supported by provider anthropic" in unsupported_create.json()["error"]["message"]
+    assert "Unsupported model_api" in unsupported_create.json()["error"]["message"]
     assert created.status_code == 201
     assert created.json()["model_provider_credential_id"] == str(primary.id)
     assert created.json()["model_provider"] == {
         "source": "agent_override",
-        "selected_model": "claude-sonnet-4-5",
+        "selected_model": "gpt-4.1-mini",
         "agent_model": "workspace-default",
         "credential_id": str(primary.id),
         "credential_reference": f"model_provider_credentials:{primary.id}",
-        "credential_name": "Primary Claude Gateway",
-        "provider": "anthropic",
-        "default_model": "claude-sonnet-4-5",
-        "base_url_host": "api.anthropic.com",
+        "credential_name": "Primary OpenAI Gateway",
+        "provider": "openai",
+        "default_model": "gpt-4.1-mini",
+        "base_url_host": "api.openai.com",
         "base_url_configured": True,
         "api_key_fingerprint": primary.api_key_fingerprint,
         "is_default": False,
-        "model_api": "anthropic_messages",
+        "model_api": "responses",
         "requested_model_api": None,
-        "model_apis": ["anthropic_messages"],
-        "default_model_api": "anthropic_messages",
+        "model_apis": ["responses", "chat_completions"],
+        "default_model_api": None,
         "model_capability": None,
         "credential_status": "active",
         "credential_health_status": "unknown",
@@ -504,8 +491,8 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
     assert "provider.example.test/v1" not in str(update_audit)
 
 
-def test_agent_management_rejects_null_mutable_fields() -> None:
-    client, session = _client()
+def test_agent_management_rejects_null_mutable_fields(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -532,8 +519,10 @@ def test_agent_management_rejects_null_mutable_fields() -> None:
     assert "cannot be null" in null_clone.json()["error"]["message"]
 
 
-def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypatch) -> None:
-    client, session = _client()
+def test_agent_update_requires_resource_review_for_high_impact_changes(
+    agent_api, monkeypatch
+) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -543,15 +532,15 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
     assert created.status_code == 201
 
     def review_agent_profile(self, **kwargs):  # noqa: ANN001, ANN202
-        return ResourceReview(
+        return ResourceReviewResult(
             required="production" in str(kwargs.get("instructions", "")).lower(),
             risk_level="high",
             reasons=["llm_review.detected_broad_authority"],
-            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
-        "opsmesh.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "opsmesh.governance.reviews.service.ResourcePolicyReviewService.review_agent_profile",
         review_agent_profile,
     )
 
@@ -565,8 +554,8 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
     assert updated.json()["status"] == "pending_approval"
 
 
-def test_agent_management_patch_rejects_unknown_status_field() -> None:
-    client, session = _client()
+def test_agent_management_patch_rejects_unknown_status_field(agent_api) -> None:
+    client, session = agent_api
     owner, workspace = _seed_workspace(session)
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -582,50 +571,6 @@ def test_agent_management_patch_rejects_unknown_status_field() -> None:
     )
     assert patched.status_code == 422
     assert patched.json()["error"]["code"] == "validation_error"
-
-
-def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    directory = TemporaryDirectory(prefix="opsmesh-api-", ignore_cleanup_errors=True)
-    engine = create_engine(
-        f"sqlite+pysqlite:///{Path(directory.name) / 'api.db'}",
-        future=True,
-        json_serializer=json.dumps,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-    seed_session = session_factory()
-    finalize(seed_session, _cleanup_database, engine, directory)
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    app = create_app(
-        Settings(
-            environment="test",
-            internal_api_token=TOKEN,
-            redis_url="redis://localhost:6379/0",
-            database_url="sqlite+pysqlite:///:memory:",
-        )
-    )
-
-    def override_db_session() -> Generator[Session, None, None]:
-        request_session = session_factory()
-        try:
-            yield request_session
-        finally:
-            request_session.close()
-
-    app.dependency_overrides[get_db_session] = override_db_session
-    app.dependency_overrides[get_settings] = lambda: app.state.settings
-    app.dependency_overrides[get_redis_client] = lambda: redis
-    worker_queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder(app.state.settings.redis_key_prefix),
-        queue_name=app.state.settings.worker_queue_name,
-        blocking_timeout_seconds=0,
-    )
-    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
-    return TestClient(app), seed_session
 
 
 def _seed_workspace(
@@ -647,17 +592,3 @@ def _headers(user_id: object) -> dict[str, str]:
         "Authorization": f"Bearer {TOKEN}",
         "X-User-ID": str(user_id),
     }
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
-
-
-def _cleanup_database(engine, directory):
-    engine.dispose()
-    directory.cleanup()

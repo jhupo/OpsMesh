@@ -16,6 +16,7 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    type_annotation_map = {datetime: DateTime(timezone=True)}
 
 
 class UUIDPrimaryKeyMixin:
@@ -40,4 +41,3 @@ class TimestampMixin:
         onupdate=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
-

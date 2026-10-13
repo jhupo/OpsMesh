@@ -40,12 +40,11 @@ class WorkspaceArchiveFileImporter:
         request: WorkspaceArchiveImportRequest,
         item: dict[str, object],
         response: WorkspaceImportResponse,
-        total_bytes: int,
-    ) -> int:
+    ) -> None:
         source_id = _string_field(item, "id")
         if _archive_resolution_action(request, "files", source_id) == "exclude_object":
             response.skipped_counts["files"] += 1
-            return total_bytes
+            return
         filename = safe_filename(_string_field(item, "filename", "file.bin"))
         content = self._blob_reader.read_blob(
             archive_name=f"files/{source_id}/{filename}",
@@ -53,15 +52,13 @@ class WorkspaceArchiveFileImporter:
             collection="files",
             response=response,
             request=request,
-            total_bytes=total_bytes,
             expected_checksum=_string_field(item, "checksum_sha256"),
             allow_checksum_replacement=(
-                _archive_resolution_action(request, "files", source_id)
-                == "replace_archive_object"
+                _archive_resolution_action(request, "files", source_id) == "replace_archive_object"
             ),
         )
         if content is None:
-            return total_bytes
+            return
         checksum_result = _validated_checksum(
             content=content,
             source_checksum=_string_field(item, "checksum_sha256"),
@@ -77,15 +74,14 @@ class WorkspaceArchiveFileImporter:
         )
         if not checksum_result.matched:
             response.skipped_counts["files"] += 1
-            return total_bytes
+            return
         sensitivity, runtime_access = validate_file_runtime_policy(
             sensitivity=_string_field(item, "sensitivity"),
             runtime_access=_string_field(item, "runtime_access"),
         )
         response.created_counts["files"] += 1
-        total_bytes += len(content)
         if request.dry_run:
-            return total_bytes
+            return
         imported_filename = safe_filename(f"{request.name_prefix}{filename}")
         file_id = uuid4()
         file = WorkspaceFile(
@@ -110,4 +106,4 @@ class WorkspaceArchiveFileImporter:
         self._session.flush()
         self._storage_writes.write_new(file.storage_key, content)
         response.id_map["files"][source_id] = str(file.id)
-        return total_bytes
+        return

@@ -10,7 +10,7 @@ from opsmesh.shared.http.security_context import SecurityRequestContext
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class SecurityAuditService:
+class SecurityEventRecorder:
     def __init__(self, session: Session) -> None:
         self._session = session
 

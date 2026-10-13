@@ -1,2 +1,1 @@
 """Redis coordination infrastructure."""
-

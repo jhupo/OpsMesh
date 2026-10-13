@@ -1,5 +1,5 @@
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -10,50 +10,12 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-
-
-class PluginDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "plugin_deployments"
-    __table_args__ = (
-        UniqueConstraint("workspace_id", "install_id", name="uq_plugin_deployment_install"),
-        ForeignKeyConstraint(
-            ["workspace_id", "install_id"],
-            ["plugin_installs.workspace_id", "plugin_installs.id"],
-        ),
-        ForeignKeyConstraint(
-            ["workspace_id", "runtime_id"],
-            ["workspace_runtimes.workspace_id", "workspace_runtimes.id"],
-        ),
-        CheckConstraint("desired_state IN ('running', 'stopped')", name="deployment_desired"),
-        CheckConstraint("revision > 0", name="deployment_revision"),
-        Index("ix_plugin_deployments_due", "next_check_at"),
-    )
-    workspace_id: Mapped[UUID] = mapped_column()
-    install_id: Mapped[UUID] = mapped_column()
-    template_id: Mapped[UUID] = mapped_column(ForeignKey("runtime_templates.id"))
-    image: Mapped[str] = mapped_column(String(260))
-    desired_state: Mapped[str] = mapped_column(String(20), default="running")
-    status: Mapped[str] = mapped_column(String(24), default="pending")
-    revision: Mapped[int] = mapped_column(Integer, default=1)
-    applied_revision: Mapped[int] = mapped_column(Integer, default=0)
-    generation: Mapped[int] = mapped_column(Integer)
-    execution_identity: Mapped[dict[str, object]] = mapped_column(JSONB)
-    configuration: Mapped[dict[str, object]] = mapped_column(JSONB)
-    encrypted_environment: Mapped[str] = mapped_column(Text)
-    encryption_key_id: Mapped[str] = mapped_column(String(120))
-    runtime_id: Mapped[UUID | None] = mapped_column(nullable=True)
-    credential_id: Mapped[UUID | None] = mapped_column(ForeignKey("plugin_credentials.id"))
-    credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    error_code: Mapped[str | None] = mapped_column(String(64))
 
 
 class PluginTrustKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -106,36 +68,38 @@ class PluginValue(TimestampMixin, Base):
     value: Mapped[dict[str, object]] = mapped_column(JSONB)
 
 
-class PluginInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class PluginInstallation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "plugin_installs"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "plugin_key", name="uq_plugin_install_key"),
+        UniqueConstraint("workspace_id", "instance_name", name="uq_plugin_install_name"),
         UniqueConstraint("workspace_id", "id", name="uq_plugin_install_scope"),
         CheckConstraint(
             "status IN ('active', 'disabled', 'uninstalled')", name="ck_plugin_install_status"
         ),
         CheckConstraint("generation > 0", name="ck_plugin_generation"),
+        ForeignKeyConstraint(
+            ["workspace_id", "plugin_key", "current_release_id"],
+            ["plugin_releases.workspace_id", "plugin_releases.plugin_key", "plugin_releases.id"],
+            name="fk_plugin_install_current_release",
+        ),
     )
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     plugin_key: Mapped[str] = mapped_column(String(120))
+    instance_name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(32), default="active")
     platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     generation: Mapped[int] = mapped_column(Integer, default=1)
     current_version: Mapped[str] = mapped_column(String(64))
+    current_release_id: Mapped[UUID] = mapped_column()
+    approved_permissions: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
 
 class PluginRelease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "plugin_releases"
     __table_args__ = (
-        UniqueConstraint("install_id", "version", name="uq_plugin_release_version"),
-        UniqueConstraint("workspace_id", "install_id", "id", name="uq_plugin_release_scope"),
+        UniqueConstraint("workspace_id", "plugin_key", "version", name="uq_plugin_release_version"),
+        UniqueConstraint("workspace_id", "plugin_key", "id", name="uq_plugin_release_scope"),
         CheckConstraint("status IN ('available', 'retired')", name="ck_plugin_release_status"),
-        ForeignKeyConstraint(
-            ["workspace_id", "install_id"],
-            ["plugin_installs.workspace_id", "plugin_installs.id"],
-            name="fk_plugin_release_install_scope",
-            ondelete="CASCADE",
-        ),
         ForeignKeyConstraint(
             ["workspace_id", "trust_key_id"],
             ["plugin_trust_keys.workspace_id", "plugin_trust_keys.id"],
@@ -143,39 +107,38 @@ class PluginRelease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
-    install_id: Mapped[UUID] = mapped_column()
+    plugin_key: Mapped[str] = mapped_column(String(120))
     trust_key_id: Mapped[UUID] = mapped_column()
     version: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), default="available")
     package: Mapped[dict[str, object]] = mapped_column(JSONB)
     checksum: Mapped[str] = mapped_column(String(64))
-    approved_permissions: Mapped[list[str]] = mapped_column(JSONB)
 
 
 class PluginBinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "plugin_bindings"
     __table_args__ = (
         UniqueConstraint("workspace_id", "kind", "resource_id", name="uq_plugin_resource_owner"),
-        UniqueConstraint("release_id", "capability_key", name="uq_plugin_release_capability"),
         Index("ix_plugin_bindings_install", "workspace_id", "install_id"),
         ForeignKeyConstraint(
-            ["workspace_id", "install_id", "release_id"],
-            ["plugin_releases.workspace_id", "plugin_releases.install_id", "plugin_releases.id"],
-            name="fk_plugin_binding_release_scope",
+            ["workspace_id", "install_id"],
+            ["plugin_installs.workspace_id", "plugin_installs.id"],
+            name="fk_plugin_binding_install_scope",
             ondelete="CASCADE",
         ),
         CheckConstraint(
-            "kind IN ('mcp_server', 'skill', 'message_trigger', 'reply_channel')",
+            "kind IN ('mcp_server', 'skill', 'channel')",
             name="ck_plugin_binding_kind",
         ),
+        CheckConstraint("configuration_revision > 0", name="ck_plugin_binding_revision"),
     )
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     install_id: Mapped[UUID] = mapped_column()
-    release_id: Mapped[UUID] = mapped_column()
     capability_key: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(32))
     resource_id: Mapped[UUID] = mapped_column()
     configuration: Mapped[dict[str, object]] = mapped_column(JSONB)
+    configuration_revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class PluginSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -236,16 +199,16 @@ class PluginDownload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("status IN ('queued', 'fetching', 'succeeded', 'failed')", name="status"),
-        Index("ix_plugin_downloads_due", "status", "lease_until", "created_at"),
+        Index("ix_plugin_downloads_workspace_status", "workspace_id", "status", "created_at"),
     )
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     source_id: Mapped[UUID] = mapped_column()
     candidate_id: Mapped[UUID | None] = mapped_column(nullable=True)
     actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    actor_token_id: Mapped[UUID | None] = mapped_column(nullable=True)
     request_key: Mapped[str] = mapped_column(String(120))
     source_generation: Mapped[int] = mapped_column(Integer)
+    execution_id: Mapped[UUID] = mapped_column(default=uuid4)
     status: Mapped[str] = mapped_column(String(32), default="queued")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    lease_token: Mapped[UUID | None] = mapped_column(nullable=True)
-    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -1,5 +1,9 @@
 # Configured execution instructions
 
+This document describes current user-owned product configuration. It does not define a
+default business flow or a second architecture. Migration boundaries are maintained only
+in the [architecture document](architecture.md).
+
 OpsMesh has no built-in Manager, planning, acceptance, runtime-guidance or approval
 prompt templates. Agent Profile instructions are user-owned database content and are
 frozen in the run authorization snapshot. Node descriptions and output schemas come
@@ -32,13 +36,6 @@ planning or acceptance phases do not trigger recovery.
 Workspace `settings.approvals` controls approval selection. Model review runs only
 when selected by that configuration and uses its configured model and instructions.
 SDK interruption/resume and platform authorization remain active.
-
-For Claude, `settings.approvals.claude_permission_mode` accepts `default` or `auto`.
-The setting is frozen in the run snapshot and cannot be overridden by Agent settings.
-In `auto`, platform deny/review decisions remain enforced. A platform allow proceeds
-to SDK permission evaluation rather than skipping its classifier. SDK native auto
-availability depends on the deployed Claude runtime/account/model; it has not been
-verified against a live provider here. No permission-bypass fallback is used.
 
 OpenAI uses SDK approval callbacks and RunState interruption/resume. The application
 provides business decisions; there is no assumption of a built-in general model reviewer.

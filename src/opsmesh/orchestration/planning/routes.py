@@ -1,8 +1,6 @@
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +12,7 @@ from opsmesh.orchestration.definitions.application import (
 )
 from opsmesh.orchestration.definitions.schemas import OrchestrationApplyRequest
 from opsmesh.orchestration.definitions.service import OrchestrationDefinitionError
-from opsmesh.orchestration.planning.diagnostics import ProjectPlanDiagnosticsService
+from opsmesh.orchestration.planning.diagnostics import TaskPlanDiagnosticsService
 from opsmesh.orchestration.planning.lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRegenerateCommand,
@@ -34,14 +32,7 @@ from opsmesh.orchestration.tasks.schemas.management import (
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
 )
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -52,7 +43,6 @@ def apply_orchestration_to_task(
     request: OrchestrationApplyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskResponse:
     task = session.scalar(
         select(Task).where(
@@ -69,13 +59,10 @@ def apply_orchestration_to_task(
             request.orchestration_version,
             context.user.user_id,
         )
-        orchestration = RunOrchestrationService(session, queue=queue)
+        orchestration = RunOrchestrationService(session)
         run = orchestration.create_queued_run_for_task(task)
-        if run is not None and request.enqueue and queue is not None:
-            orchestration.enqueue_run(
-                run,
-                context.user.user_id,
-            )
+        if run is not None and request.enqueue:
+            orchestration.request_run(run, context.user.user_id)
         session.commit()
         session.refresh(task)
     except OrchestrationDefinitionError as exc:
@@ -100,7 +87,6 @@ def retry_task_plan(
     request: TaskPlanRetryRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskResponse:
     try:
         task = TaskPlanLifecycleService(session).retry_task_plan(
@@ -111,8 +97,7 @@ def retry_task_plan(
                 input=request.input,
                 refresh_team_snapshot=request.refresh_team_snapshot,
             ),
-            enqueue_run=request.enqueue and queue is not None,
-            queue=queue,
+            enqueue_run=request.enqueue,
         )
     except ValueError as exc:
         message = str(exc)
@@ -133,7 +118,6 @@ def regenerate_task_plan(
     request: TaskPlanRegenerateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskResponse:
     try:
         task = TaskPlanLifecycleService(session).regenerate_task_plan(
@@ -144,8 +128,7 @@ def regenerate_task_plan(
                 input=request.input,
                 refresh_team_snapshot=request.refresh_team_snapshot,
             ),
-            enqueue_run=request.enqueue and queue is not None,
-            queue=queue,
+            enqueue_run=request.enqueue,
         )
     except ValueError as exc:
         message = str(exc)
@@ -166,7 +149,6 @@ def mutate_task_plan(
     request: TaskPlanMutationRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskResponse:
     try:
         task = TaskPlanMutationService(session).apply(
@@ -182,8 +164,7 @@ def mutate_task_plan(
                 refresh_team_snapshot=request.refresh_team_snapshot,
                 mutation_id=request.mutation_id,
             ),
-            enqueue_run=request.enqueue and queue is not None,
-            queue=queue,
+            enqueue_run=request.enqueue,
         )
     except TaskPlanMutationError as exc:
         raise HTTPException(
@@ -209,7 +190,7 @@ def get_task_plan_diagnostics(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> TaskPlanDiagnosticsResponse:
-    diagnostics = ProjectPlanDiagnosticsService(session).get_diagnostics(
+    diagnostics = TaskPlanDiagnosticsService(session).get_diagnostics(
         workspace_id=context.workspace.id,
         task_id=task_id,
     )

@@ -9,12 +9,13 @@ from opsmesh.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from opsmesh.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from opsmesh.orchestration.planning.task_plan_steps import TaskPlanStepMaterializer
 from opsmesh.orchestration.runs.eligibility import RunEligibilityService
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.runs.steps.dependencies import dependencies_satisfied
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from tests.test_worker_run_execution import _seed_workspace, _session
+from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.agent_product import _seed_workspace, _session
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def test_forward_dependency_is_materialized_and_blocks_scheduling(session: Sessi
     )
     session.add(task)
     session.flush()
-    first = ProjectPlanStepMaterializer(session).materialize(
+    first = TaskPlanStepMaterializer(session).materialize(
         task, {"work_packages": [package("after", ["before"]), package("before", [])]}
     )
     steps = {step.work_package_id: step for step in session.scalars(select(TaskStep))}
@@ -76,14 +77,19 @@ def test_forward_dependency_is_materialized_and_blocks_scheduling(session: Sessi
 
 @pytest.mark.parametrize("kind", ["missing", "foreign_workspace", "foreign_task", "malformed"])
 def test_missing_and_foreign_dependencies_never_authorize_work(session: Session, kind: str) -> None:
-    _, workspace = _seed_workspace(session)
+    user, workspace = _seed_workspace(session)
     task = Task(workspace_id=workspace.id, title="own")
-    other_task = Task(workspace_id=workspace.id, title="other")
+    foreign = Workspace(owner=user, name="Foreign", slug=uuid4().hex)
+    session.add(foreign)
+    session.flush()
+    other_task = Task(
+        workspace_id=foreign.id if kind == "foreign_workspace" else workspace.id, title="other"
+    )
     session.add_all([task, other_task])
     session.flush()
     upstream = TaskStep(
-        workspace_id=uuid4() if kind == "foreign_workspace" else workspace.id,
-        task_id=other_task.id if kind == "foreign_task" else task.id,
+        workspace_id=foreign.id if kind == "foreign_workspace" else workspace.id,
+        task_id=other_task.id if kind in {"foreign_workspace", "foreign_task"} else task.id,
         title="upstream",
         status="completed",
     )
@@ -110,7 +116,7 @@ def test_launch_rechecks_dependencies_after_candidate_selection(session: Session
     )
     session.add(task)
     session.flush()
-    ProjectPlanStepMaterializer(session).materialize(
+    TaskPlanStepMaterializer(session).materialize(
         task, {"work_packages": [package("before", []), package("after", ["before"])]}
     )
     steps = {step.work_package_id: step for step in session.scalars(select(TaskStep))}

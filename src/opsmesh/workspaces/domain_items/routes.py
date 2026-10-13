@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
@@ -24,7 +22,7 @@ from opsmesh.workspaces.domain_items.schemas import (
     RevisionRequestResponse,
     TaskViewResponse,
 )
-from opsmesh.workspaces.domain_items.service import DomainTaskService
+from opsmesh.workspaces.domain_items.service import DomainContentService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["domain-tasks"])
 
@@ -36,7 +34,7 @@ def list_domain_projects(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[DomainProjectResponse]:
-    items, total = DomainTaskService(session).list_projects(
+    items, total = DomainContentService(session).list_projects(
         context.workspace.id,
         page,
         domain_type,
@@ -55,7 +53,7 @@ def create_domain_project(
     session: Session = Depends(get_db_session),
 ) -> DomainProjectResponse:
     try:
-        project = DomainTaskService(session).create_project(context.workspace.id, request)
+        project = DomainContentService(session).create_project(context.workspace.id, request)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return DomainProjectResponse.model_validate(project)
@@ -69,7 +67,7 @@ def list_domain_items(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[DomainItemResponse]:
-    items, total = DomainTaskService(session).list_items(
+    items, total = DomainContentService(session).list_items(
         context.workspace.id,
         page,
         task_id,
@@ -89,7 +87,7 @@ def create_domain_item(
     session: Session = Depends(get_db_session),
 ) -> DomainItemResponse:
     try:
-        item = DomainTaskService(session).create_item(context.workspace.id, request)
+        item = DomainContentService(session).create_item(context.workspace.id, request)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return DomainItemResponse.model_validate(item)
@@ -101,7 +99,7 @@ def get_task_view(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> TaskViewResponse:
-    view = DomainTaskService(session).task_view(context.workspace.id, task_id)
+    view = DomainContentService(session).task_view(context.workspace.id, task_id)
     if view is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     task, project, items, comments, revision_requests = view
@@ -126,7 +124,7 @@ def create_review_comment(
     session: Session = Depends(get_db_session),
 ) -> ReviewCommentResponse:
     try:
-        comment = DomainTaskService(session).create_review_comment(
+        comment = DomainContentService(session).create_review_comment(
             context.workspace.id,
             task_id,
             context.user.user_id,
@@ -149,10 +147,9 @@ def create_revision_request(
     request: RevisionRequestCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
 ) -> RevisionRequestResponse:
     try:
-        revision = DomainTaskService(session, queue).create_revision_request(
+        revision = DomainContentService(session).create_revision_request(
             context.workspace.id,
             task_id,
             context.user.user_id,

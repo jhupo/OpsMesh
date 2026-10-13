@@ -11,10 +11,11 @@ from pathlib import Path
 import httpx
 
 from opsmesh_operator.commands import run_command
+from opsmesh_operator.compose import wait_for_service_completion
 from opsmesh_operator.contracts import ReleaseManifest
 from opsmesh_operator.files import atomic_write, sync_directory
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.releases import ReleaseSource, extract_bundle
+from opsmesh_operator.releases import ReleaseDownloader, extract_bundle
 
 
 class Deployment(ABC):
@@ -36,11 +37,9 @@ class Deployment(ABC):
             raise ValueError("This release does not support the host platform")
         if shutil.disk_usage(self.root).free < 2_000_000_000:
             raise ValueError("At least 2 GB of free space is required before staging")
-        if manifest.connector_protocol != 2:
-            raise ValueError("This updater does not support the target connector protocol")
 
     def stage(self, manifest: ReleaseManifest) -> Path:
-        source = ReleaseSource(self.installation.repository)
+        source = ReleaseDownloader(self.installation.repository)
         cache = self.root / "downloads" / manifest.tag
         cache.mkdir(parents=True, exist_ok=True)
         target = self.installation.release_dir(manifest)
@@ -163,9 +162,17 @@ class ComposeDeployment(Deployment):
         run_command(self.command(directory) + ["config", "--quiet"])
 
     def infrastructure(self, manifest: ReleaseManifest) -> None:
+        compose = self.command(self.installation.release_dir(manifest))
         run_command(
-            self.command(self.installation.release_dir(manifest))
-            + ["up", "-d", "--wait", "postgres", "redis"]
+            compose + ["up", "-d", "postgres", "redis", "temporal-namespace"],
+            timeout=self.installation.timeout_seconds,
+        )
+        wait_for_service_completion(
+            compose, service="temporal-namespace", timeout=self.installation.timeout_seconds
+        )
+        run_command(
+            compose + ["up", "-d", "--no-deps", "--wait", "postgres", "redis", "temporal"],
+            timeout=self.installation.timeout_seconds,
         )
 
     def migrate(self, manifest: ReleaseManifest) -> None:

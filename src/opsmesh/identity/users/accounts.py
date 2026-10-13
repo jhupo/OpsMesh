@@ -23,8 +23,6 @@ PLATFORM_ADMIN_USERNAME = "superadmin"
 PLATFORM_ADMIN_EMAIL = "superadmin@localhost.invalid"
 
 
-
-
 @dataclass(frozen=True)
 class ProfileChange:
     display_name: str
@@ -32,7 +30,6 @@ class ProfileChange:
     avatar_base64: str | None = field(default=None, repr=False)
     current_password: str | None = field(default=None, repr=False)
     new_password: str | None = field(default=None, repr=False)
-
 
 
 class AccountService:
@@ -193,4 +190,3 @@ class AccountService:
             raise PermissionDeniedError("API token scope does not allow profile reads")
         avatar = self._session.get(UserAvatar, actor.user_id)
         return avatar.content if avatar is not None else None
-

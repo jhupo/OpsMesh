@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.teams.execution.overview import TeamExecutionOverviewService
-from opsmesh.teams.operations.workspace_load import WorkspaceEmployeeLoadBuilder
+from opsmesh.teams.operations.workspace_load import WorkspaceAgentWorkloadBuilder
 from opsmesh.teams.operations.workspace_repository import WorkspaceCommandCenterRepository
 from opsmesh.teams.operations.workspace_views import (
     blocked_reasons,
@@ -151,7 +151,7 @@ class WorkspaceCommandCenterService:
             workspace_id=workspace_id, team_ids=team_ids, include_completed=include_completed
         )
         task_ids = [task.id for task in tasks]
-        return WorkspaceEmployeeLoadBuilder(
+        return WorkspaceAgentWorkloadBuilder(
             teams=teams,
             members=members,
             agents=self._repo.agents(workspace_id, {member.agent_profile_id for member in members}),

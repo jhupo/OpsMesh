@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.resources.knowledge.content import (
     KnowledgeContentError,
-    KnowledgeUrlFetcher,
-    fetch_runtime_id,
-    prepare_knowledge_content,
+    KnowledgeContentPlan,
+    PreparedKnowledgeContent,
+    resolve_knowledge_content,
 )
 from opsmesh.resources.knowledge.models import (
     KnowledgeCitation,
@@ -23,9 +23,8 @@ from opsmesh.resources.knowledge.models import (
 from opsmesh.resources.memory.authorization import AuthorizedMemoryScope
 from opsmesh.resources.memory.configuration import initial_embedding_status
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
-from opsmesh.resources.storage.storage import ObjectStorage
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.dispatch import stage_job
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.db.errors import flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars_by_offset
 
@@ -57,8 +56,6 @@ class KnowledgeSourceIngestionService:
             raise ValueError("Knowledge source not found")
         if source.status != "active":
             raise ValueError("Only active knowledge sources can be ingested")
-        if source.source_type == "url":
-            fetch_runtime_id(source.source_config)
         existing = self._session.scalar(
             select(KnowledgeSourceIngestion).where(
                 KnowledgeSourceIngestion.workspace_id == workspace_id,
@@ -99,17 +96,14 @@ class KnowledgeSourceIngestionService:
             target_id=source.id,
             metadata={"source_version": source.version, "ingestion_id": str(existing.id)},
         )
-        stage_job(
+        stage_execution(
             self._session,
-            JobPayload(
+            ExecutionRequest(
                 workspace_id=workspace_id,
-                job_type=JobType.KNOWLEDGE_INGEST,
+                kind=ExecutionKind.KNOWLEDGE_INGEST,
                 resource_id=source.id,
                 requested_by_user_id=requested_by_user_id,
-                idempotency_key=f"knowledge.ingest:{workspace_id}:{source.id}:v{source.version}:{uuid4()}",
-                routing={"source_version": source.version},
-                priority=-5,
-                max_attempts=1,
+                parameters={"source_version": source.version},
             ),
         )
         return existing
@@ -315,6 +309,7 @@ class KnowledgeSourceIngestionService:
         source_id: UUID,
         source_version: int,
     ) -> KnowledgeSourceIngestion | None:
+        source = self._lock_source(workspace_id, source_id)
         ingestion = self._session.scalar(
             select(KnowledgeSourceIngestion)
             .where(
@@ -326,14 +321,6 @@ class KnowledgeSourceIngestionService:
         )
         if ingestion is None or ingestion.status == "succeeded":
             return None
-        if ingestion.status == "processing":
-            return None
-        source = self._session.scalar(
-            select(KnowledgeSource).where(
-                KnowledgeSource.workspace_id == workspace_id,
-                KnowledgeSource.id == source_id,
-            )
-        )
         if source is None or source.status != "active" or source.version != source_version:
             self.fail(ingestion, "source_version_stale")
             return None
@@ -344,34 +331,40 @@ class KnowledgeSourceIngestionService:
         ingestion.error_code = None
         return ingestion
 
-    def process(
+    def complete(
         self,
         *,
         ingestion: KnowledgeSourceIngestion,
-        storage: ObjectStorage | None = None,
-        url_fetcher: KnowledgeUrlFetcher | None = None,
+        content: PreparedKnowledgeContent,
+        plan: KnowledgeContentPlan,
     ) -> KnowledgeIngestionResult:
-        source = self._session.scalar(
-            select(KnowledgeSource)
+        source = self._lock_source(ingestion.workspace_id, ingestion.source_id)
+        current = self._session.scalar(
+            select(KnowledgeSourceIngestion)
             .where(
-                KnowledgeSource.workspace_id == ingestion.workspace_id,
-                KnowledgeSource.id == ingestion.source_id,
-                KnowledgeSource.version == ingestion.source_version,
-                KnowledgeSource.status == "active",
+                KnowledgeSourceIngestion.workspace_id == ingestion.workspace_id,
+                KnowledgeSourceIngestion.id == ingestion.id,
             )
+            .execution_options(populate_existing=True)
             .with_for_update()
         )
-        if source is None:
+        if current is None:
+            raise ValueError("Knowledge ingestion is unavailable")
+        ingestion = current
+        if ingestion.status == "succeeded":
+            return self._result(ingestion)
+        if (
+            source is None
+            or source.version != ingestion.source_version
+            or source.status != "active"
+        ):
             return self._fail_result(ingestion, "source_version_stale")
         try:
-            content = prepare_knowledge_content(
-                self._session,
-                source=source,
-                storage=storage,
-                url_fetcher=url_fetcher,
-            )
+            current_plan = resolve_knowledge_content(self._session, source=source)
         except KnowledgeContentError as exc:
             return self._fail_result(ingestion, exc.code)
+        if current_plan != plan:
+            return self._fail_result(ingestion, "source_configuration_stale")
         chunks = content.chunks
         self.archive_chunks(ingestion.workspace_id, ingestion.source_id)
         entries: list[WorkspaceMemoryEntry] = []
@@ -416,6 +409,9 @@ class KnowledgeSourceIngestionService:
             entries.append(entry)
         self._session.flush()
         for index, (chunk, entry) in enumerate(zip(chunks, entries, strict=True)):
+            from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+            stage_memory_embedding(self._session, entry)
             self._session.add(
                 KnowledgeCitation(
                     workspace_id=ingestion.workspace_id,
@@ -455,16 +451,23 @@ class KnowledgeSourceIngestionService:
         return self._result(ingestion)
 
     def fail(self, ingestion: KnowledgeSourceIngestion, error_code: str) -> None:
+        source = self._lock_source(ingestion.workspace_id, ingestion.source_id)
+        current = self._session.scalar(
+            select(KnowledgeSourceIngestion)
+            .where(
+                KnowledgeSourceIngestion.workspace_id == ingestion.workspace_id,
+                KnowledgeSourceIngestion.id == ingestion.id,
+            )
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        if current is None or current.status == "succeeded":
+            return
+        ingestion = current
         ingestion.status = "failed"
         ingestion.error_code = error_code
         ingestion.completed_at = datetime.now(UTC)
-        source = self._session.scalar(
-            select(KnowledgeSource).where(
-                KnowledgeSource.workspace_id == ingestion.workspace_id,
-                KnowledgeSource.id == ingestion.source_id,
-            )
-        )
-        if source is not None:
+        if source is not None and source.version == ingestion.source_version:
             source.last_error_code = error_code
         AuditService(self._session).record_system_action(
             workspace_id=ingestion.workspace_id,

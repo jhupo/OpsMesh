@@ -18,11 +18,13 @@ AGENT_RUN_METADATA_KEYS = {"agent_run_id"}
 
 ARTIFACT_METADATA_KEYS = {"artifact_id"}
 
+
 def workspace_file_matches_project(
     file: WorkspaceFile,
     relationship_ids: ProjectSpaceRelationshipIds,
 ) -> bool:
     return metadata_matches_project(file.file_metadata, relationship_ids)
+
 
 def memory_entry_matches_project(
     entry: WorkspaceMemoryEntry,
@@ -33,6 +35,7 @@ def memory_entry_matches_project(
     if entry.created_by_agent_run_id in relationship_ids.agent_run_ids:
         return True
     return metadata_matches_project(entry.memory_metadata, relationship_ids)
+
 
 def metadata_matches_project(
     metadata: object,
@@ -63,6 +66,7 @@ def metadata_matches_project(
         return True
     return _has_uuid_value(payload, ARTIFACT_METADATA_KEYS, relationship_ids.artifact_ids)
 
+
 def source_matches_project(
     source_type: str | None,
     source_id: str | None,
@@ -83,6 +87,7 @@ def source_matches_project(
     if source_type in {"runtime", "runtime_space"}:
         return source_id in {str(space_id) for space_id in relationship_ids.runtime_space_ids}
     return False
+
 
 def _has_uuid_value(payload: dict[str, object], keys: set[str], expected: set[UUID]) -> bool:
     expected_text = {str(value) for value in expected}

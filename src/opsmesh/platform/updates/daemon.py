@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import signal
 import time
@@ -14,8 +15,8 @@ from opsmesh_operator.backups import BackupStore, digest
 from opsmesh_operator.contracts import ReleaseManifest
 from opsmesh_operator.deployments import deployment_for
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.releases import ReleaseSource
-from opsmesh_operator.update_state import Journal, UpdatePlan
+from opsmesh_operator.releases import ReleaseDownloader
+from opsmesh_operator.update_state import UpdateJournal, UpdatePlan
 from packaging.version import Version
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,9 +27,11 @@ from opsmesh.platform.updates.models import (
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from opsmesh.platform.updates.service import UpdateService
-from opsmesh.runtime.self_hosted.models import SelfHostedJobClaim, SelfHostedMcpJob
-from opsmesh.runtime.workers.models import WorkerLease
+from opsmesh.platform.updates.service import PlatformUpdateService
+from opsmesh.runtime.temporal.client import connect_temporal
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
+from opsmesh.runtime.temporal.ownership import require_managed_worker_ownership
+from opsmesh.shared.config import get_settings
 from opsmesh.shared.db.session import SessionLocal, engine
 
 logger = logging.getLogger(__name__)
@@ -67,7 +70,9 @@ class HostUpdater:
                     # Never blindly replay a subprocess after a crash or migration failure.
                     path = self.installation.root / "updates" / f"{job_id}.json"
                     journal = (
-                        Journal.model_validate_json(path.read_bytes()) if path.exists() else None
+                        UpdateJournal.model_validate_json(path.read_bytes())
+                        if path.exists()
+                        else None
                     )
                     if journal is not None and journal.phase in {
                         "succeeded",
@@ -89,7 +94,7 @@ class HostUpdater:
 
     def plan(self, job_id: UUID) -> None:
         with SessionLocal() as session:
-            job = UpdateService(session).get(job_id)
+            job = PlatformUpdateService(session).get(job_id)
             tag, action = job.tag, job.action
         previous = self.installation.current()
         if action == "backup":
@@ -107,7 +112,7 @@ class HostUpdater:
                 raise ValueError("Rollback requires one unambiguous retained release")
             target = retained[0]
         else:
-            target = ReleaseSource(self.installation.repository).fetch_manifest(
+            target = ReleaseDownloader(self.installation.repository).fetch_manifest(
                 tag, self.installation.root / "downloads" / tag
             )
         revision = self.revision()
@@ -135,7 +140,7 @@ class HostUpdater:
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
         with SessionLocal.begin() as session:
-            service = UpdateService(session)
+            service = PlatformUpdateService(session)
             job = service.get(job_id, lock=True)
             if job.status != "planning":
                 return  # cancellation during download cannot resurrect an update
@@ -145,7 +150,7 @@ class HostUpdater:
 
     def execute(self, job_id: UUID) -> None:
         with SessionLocal.begin() as session:
-            job = UpdateService(session).get(job_id, lock=True)
+            job = PlatformUpdateService(session).get(job_id, lock=True)
             if job.status != "queued" or not job.approved_at:
                 raise ValueError("Update has not been approved")
             plan = UpdatePlan.model_validate(job.plan)
@@ -160,7 +165,7 @@ class HostUpdater:
             self.mark(job_id, "failed", "stale_plan")
             return
         root = self.installation.root
-        journal = Journal(job_id=str(job_id), plan=plan, phase="preflight")
+        journal = UpdateJournal(job_id=str(job_id), plan=plan, phase="preflight")
         journal.save(root)
         self.deployment.preflight(plan.target)
         self.maintenance(True)
@@ -178,7 +183,7 @@ class HostUpdater:
         journal = self.checkpoint(job_id, journal, "backed_up", backup_id=backup_id)
         self.finish_deployment(job_id, journal)
 
-    def finish_deployment(self, job_id: UUID, journal: Journal) -> None:
+    def finish_deployment(self, job_id: UUID, journal: UpdateJournal) -> None:
         plan = journal.plan
         if plan.action == "update":
             journal = self.checkpoint(job_id, journal, "migrating")
@@ -196,12 +201,12 @@ class HostUpdater:
         self.checkpoint(job_id, journal, "succeeded")
         self.complete(job_id, plan)
 
-    def reconcile_terminal(self, job_id: UUID, journal: Journal) -> None:
+    def reconcile_terminal(self, job_id: UUID, journal: UpdateJournal) -> None:
         """Finalize a durable outcome without repeating deployment or database restoration."""
         if journal.job_id != job_id:
             raise ValueError("Host journal job identity mismatch")
         with SessionLocal.begin() as session:
-            service = UpdateService(session)
+            service = PlatformUpdateService(session)
             job = service.get(job_id, lock=True)
             if journal.plan.fingerprint() != job.plan_sha256:
                 raise ValueError("Host journal does not match approved plan")
@@ -229,14 +234,14 @@ class HostUpdater:
     def checkpoint(
         self,
         job_id: UUID,
-        journal: Journal,
+        journal: UpdateJournal,
         phase: str,
         *,
         backup_id: str | None = None,
-    ) -> Journal:
+    ) -> UpdateJournal:
         updated = journal.advance(self.installation.root, phase, backup_id=backup_id)
         with SessionLocal.begin() as session:
-            service = UpdateService(session)
+            service = PlatformUpdateService(session)
             job = service.get(job_id, lock=True)
             job.backup_id = updated.backup_id
             event = updated.history[-1]
@@ -250,7 +255,7 @@ class HostUpdater:
                 raise ValueError("Missing installation state")
             installation.maintenance = False
             installation.release_manifest = plan.target.model_dump(mode="json")
-            service = UpdateService(session)
+            service = PlatformUpdateService(session)
             job = service.get(job_id, lock=True)
             job.status, job.active_slot, job.error_code = "succeeded", None, None
             service.event(job, "succeeded")
@@ -270,30 +275,49 @@ class HostUpdater:
             return installation.maintenance
 
     def drain(self) -> None:
+        asyncio.run(self._drain())
+
+    async def _drain(self) -> None:
+        settings = get_settings()
+        client = await connect_temporal(settings)
+        await require_managed_worker_ownership(client, settings)
         deadline = time.monotonic() + self.installation.timeout_seconds
         while time.monotonic() < deadline:
-            with SessionLocal() as session:
-                active = sum(
-                    int(
-                        session.scalar(
-                            select(func.count()).select_from(model).where(model.status == status)
-                        )
-                        or 0
-                    )
-                    for model, status in (
-                        (WorkerLease, "running"),
-                        (SelfHostedJobClaim, "claimed"),
-                        (SelfHostedMcpJob, "claimed"),
-                    )
-                )
-            if not active:
+            pending_dispatches = await asyncio.to_thread(self._pending_dispatches)
+            active_execution = False
+            async for execution in client.list_workflows(
+                "WorkflowId STARTS_WITH 'opsmesh:' AND ExecutionStatus = 'Running'"
+            ):
+                description = await client.get_workflow_handle(
+                    execution.id, run_id=execution.run_id
+                ).describe(rpc_timeout=timedelta(seconds=10))
+                if any(
+                    not pending.paused for pending in description.raw_description.pending_activities
+                ):
+                    active_execution = True
+                    break
+            # Durable workflows waiting for input or approval retain their state in
+            # Temporal. They must not prevent replacing an idle Worker indefinitely.
+            if not pending_dispatches and not active_execution:
                 return
-            time.sleep(2)
+            await asyncio.sleep(2)
         raise TimeoutError("Active jobs did not drain; no task was forcibly replayed")
+
+    @staticmethod
+    def _pending_dispatches() -> int:
+        with SessionLocal() as session:
+            return int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(TemporalOutboxEntry)
+                    .where(TemporalOutboxEntry.published_at.is_(None))
+                )
+                or 0
+            )
 
     def mark(self, job_id: UUID, status: str, code: str) -> None:
         with SessionLocal.begin() as session:
-            service = UpdateService(session)
+            service = PlatformUpdateService(session)
             job = service.get(job_id, lock=True)
             if job.status == "cancelled":
                 return
@@ -308,7 +332,7 @@ class HostUpdater:
         if strategy == "restore" and not acknowledge_data_loss:
             raise ValueError("Database restoration requires explicit data-loss acknowledgement")
         with FileLock(self.installation.root / "operator.lock", timeout=0):
-            journal = Journal.model_validate_json(
+            journal = UpdateJournal.model_validate_json(
                 (self.installation.root / "updates" / f"{job_id}.json").read_bytes()
             )
             if journal.job_id != job_id:
@@ -316,7 +340,7 @@ class HostUpdater:
             database_available = True
             try:
                 with SessionLocal() as session:
-                    job = UpdateService(session).get(job_id)
+                    job = PlatformUpdateService(session).get(job_id)
                     if job.status not in {"running", "recovery_required"} or job.active_slot != 1:
                         raise ValueError("Job does not own an interrupted installation")
                     if journal.plan.fingerprint() != job.plan_sha256:
@@ -332,9 +356,8 @@ class HostUpdater:
                 return
             if database_available:
                 revision = self.revision()
-                if (
-                    strategy == "rollback"
-                    and not journal.plan.previous.accepts_database_revision(revision)
+                if strategy == "rollback" and not journal.plan.previous.accepts_database_revision(
+                    revision
                 ):
                     raise ValueError(
                         "Previous app cannot run on this schema; restore requires consent"
@@ -362,7 +385,7 @@ class HostUpdater:
                 self.backups.restore(journal.backup_id, acknowledge_data_loss=acknowledge_data_loss)
                 engine.dispose()
                 with SessionLocal.begin() as session:
-                    service = UpdateService(session)
+                    service = PlatformUpdateService(session)
                     restored_job = service.get(job_id, lock=True)
                     restored_job.backup_id = journal.backup_id
                     for event in journal.history:

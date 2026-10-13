@@ -68,6 +68,8 @@ class MemoryEmbeddingProvider(Protocol):
 
     def embed(self, text: str) -> MemoryEmbeddingResult: ...
 
+    def close(self) -> None: ...
+
 
 OpenAIClientFactory = Callable[..., OpenAI]
 
@@ -84,6 +86,7 @@ class OpenAIMemoryEmbeddingProvider:
         dimensions: int,
         timeout_seconds: float,
         provider_name: str,
+        max_retries: int = 2,
         client_factory: OpenAIClientFactory = OpenAI,
     ) -> None:
         self.provider_name = canonical_model_provider(provider_name)
@@ -93,7 +96,7 @@ class OpenAIMemoryEmbeddingProvider:
             api_key=api_key,
             base_url=base_url,
             timeout=timeout_seconds,
-            max_retries=2,
+            max_retries=max_retries,
         )
 
     def embed(self, text: str) -> MemoryEmbeddingResult:
@@ -137,6 +140,9 @@ class OpenAIMemoryEmbeddingProvider:
         input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         return MemoryEmbeddingResult(vector=vector, input_tokens=max(input_tokens, 0))
 
+    def close(self) -> None:
+        self._client.close()
+
 
 class WorkspaceMemoryEmbeddingProviderResolver:
     def __init__(
@@ -155,6 +161,7 @@ class WorkspaceMemoryEmbeddingProviderResolver:
         *,
         workspace_id: UUID,
         configuration: WorkspaceMemoryConfiguration,
+        max_retries: int = 2,
     ) -> MemoryEmbeddingProvider:
         if not configuration.embedding_enabled:
             raise MemoryEmbeddingError(
@@ -198,6 +205,7 @@ class WorkspaceMemoryEmbeddingProviderResolver:
             dimensions=configuration.embedding_dimensions,
             timeout_seconds=30,
             provider_name=credential.provider,
+            max_retries=max_retries,
             client_factory=self._client_factory,
         )
 
@@ -242,7 +250,10 @@ class WorkspaceMemoryQueryEmbeddingService:
                 workspace_id=workspace_id,
                 configuration=configuration,
             )
-            result = provider.embed(query)
+            try:
+                result = provider.embed(query)
+            finally:
+                provider.close()
         except CostBudgetExceededError:
             return MemoryQueryEmbedding(
                 vector=None,
@@ -307,7 +318,9 @@ class WorkspaceMemoryEmbeddingService:
                 WorkspaceMemoryEntry.status == "active",
                 WorkspaceMemoryEntry.memory_layer.in_(("episodic", "semantic")),
                 WorkspaceMemoryEntry.embedding_generation == embedding_generation,
-                WorkspaceMemoryEntry.embedding_status.in_(("pending", "queued", "failed")),
+                WorkspaceMemoryEntry.embedding_status.in_(
+                    ("pending", "queued", "processing", "failed")
+                ),
             )
             .with_for_update()
         )
@@ -397,6 +410,20 @@ class WorkspaceMemoryEmbeddingService:
         self,
         work: MemoryEmbeddingWork,
     ) -> WorkspaceMemoryEntry | None:
+        configuration = self._session.scalar(
+            select(WorkspaceMemoryConfiguration)
+            .where(WorkspaceMemoryConfiguration.workspace_id == work.workspace_id)
+            .execution_options(populate_existing=True)
+            .with_for_update(read=True)
+        )
+        if (
+            configuration is None
+            or not configuration.embedding_enabled
+            or configuration.embedding_credential_id != work.credential_id
+            or configuration.embedding_model != work.model
+            or configuration.embedding_dimensions != work.dimensions
+        ):
+            return None
         return self._session.scalar(
             select(WorkspaceMemoryEntry)
             .where(

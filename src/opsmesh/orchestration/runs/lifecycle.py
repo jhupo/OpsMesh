@@ -2,35 +2,40 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import AgentRunResult
-from opsmesh.agents.execution.errors import normalize_agent_error
+from opsmesh.agents.execution.errors import (
+    AgentExecutionPolicyError,
+    AgentModelProviderError,
+    normalize_agent_error,
+)
 from opsmesh.orchestration.definitions.graph import ProjectPlanValidationError
 from opsmesh.orchestration.planning.attempts import TaskPlanningAttemptService
 from opsmesh.orchestration.planning.completion import PlannerCompletionService
-from opsmesh.orchestration.planning.pm_acceptance import PmAcceptanceService
-from opsmesh.orchestration.planning.pm_final_output import PmFinalOutputService
-from opsmesh.orchestration.planning.pm_follow_up_work import PmFollowUpWorkService
+from opsmesh.orchestration.planning.manager_acceptance import ManagerAcceptanceService
+from opsmesh.orchestration.planning.manager_final_output import ManagerFinalOutputQuery
+from opsmesh.orchestration.planning.manager_follow_up import ManagerFollowUpService
 from opsmesh.orchestration.runs.memory import RunMemoryCompletionService
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.runs.result_payloads import run_output_payload
-from opsmesh.orchestration.runs.state import RunStateService, RunStatus
+from opsmesh.orchestration.runs.state import RunStatus, transition_run
 from opsmesh.orchestration.runs.steps.completion import TaskStepCompletionService
 from opsmesh.orchestration.runs.subworkflow_models import SubworkflowInvocation
 from opsmesh.orchestration.runs.task_progress import RunTaskProgressService
 from opsmesh.orchestration.runs.terminal_state import RunTerminalStateService
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from opsmesh.orchestration.tasks.state import TaskStateService, TaskStatus
+from opsmesh.orchestration.tasks.state import TaskStatus, transition_task
 from opsmesh.orchestration.tasks.steps import (
-    TaskStepStateService,
     TaskStepStatus,
     step_message_payload,
+    transition_task_step,
 )
+from opsmesh.runtime.temporal.outbox import stage_signal
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]
@@ -54,7 +59,7 @@ class RunLifecycleService:
     callbacks: RunLifecycleCallbacks
 
     def mark_run_started(self, run: AgentRun) -> None:
-        RunStateService().transition(run, RunStatus.RUNNING)
+        transition_run(run, RunStatus.RUNNING)
         self.session.flush([run])
         self.callbacks.append_event(run, "run.started", "Run started", None)
 
@@ -63,7 +68,7 @@ class RunLifecycleService:
                 select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
             )
             if task is not None:
-                TaskStateService().transition(task, TaskStatus.RUNNING)
+                transition_task(task, TaskStatus.RUNNING)
         if run.task_step_id is not None:
             step = self.session.scalar(
                 select(TaskStep).where(
@@ -73,7 +78,7 @@ class RunLifecycleService:
                 )
             )
             if step is not None:
-                TaskStepStateService().transition(step, TaskStepStatus.RUNNING)
+                transition_task_step(step, TaskStepStatus.RUNNING)
                 self.callbacks.append_event(run, "task_step.started", step.title, None)
                 self.append_task_message(
                     task_id=step.task_id,
@@ -86,17 +91,8 @@ class RunLifecycleService:
                     payload=step_message_payload(step),
                 )
 
-    def mark_run_waiting_runtime(self, run: AgentRun) -> None:
-        RunStateService().transition(run, RunStatus.WAITING_RUNTIME)
-        self.callbacks.append_event(
-            run,
-            "run.waiting.runtime",
-            "Run is waiting for runtime tool result",
-            None,
-        )
-
     def mark_run_waiting_approval(self, run: AgentRun) -> None:
-        RunStateService().transition(run, RunStatus.WAITING_APPROVAL)
+        transition_run(run, RunStatus.WAITING_APPROVAL)
         self.callbacks.append_event(
             run,
             "run.waiting.approval",
@@ -108,10 +104,10 @@ class RunLifecycleService:
                 select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
             )
             if task is not None and TaskStatus(task.status) == TaskStatus.RUNNING:
-                TaskStateService().transition(task, TaskStatus.WAITING_APPROVAL)
+                transition_task(task, TaskStatus.WAITING_APPROVAL)
 
     def mark_run_waiting_subworkflow(self, run: AgentRun) -> None:
-        RunStateService().transition(run, RunStatus.WAITING_SUBWORKFLOW)
+        transition_run(run, RunStatus.WAITING_SUBWORKFLOW)
         self.callbacks.append_event(
             run,
             "run.waiting.subworkflow",
@@ -138,7 +134,7 @@ class RunLifecycleService:
         except ValueError as exc:
             self.mark_run_failed(run, exc)
             return
-        RunStateService().transition(
+        transition_run(
             run,
             RunStatus.COMPLETED,
             output=run_output_payload(result),
@@ -178,9 +174,9 @@ class RunLifecycleService:
             if self.callbacks.task_has_open_team_work(task):
                 return
 
-        pm_acceptance_service = PmAcceptanceService(self.session)
+        pm_acceptance_service = ManagerAcceptanceService(self.session)
         pm_acceptance = pm_acceptance_service.acceptance_for_completed_run(run)
-        task_output = PmFinalOutputService(self.session).final_output_for_task(
+        task_output = ManagerFinalOutputQuery(self.session).final_output_for_task(
             task,
             fallback=run.output,
             pm_acceptance=pm_acceptance,
@@ -192,7 +188,7 @@ class RunLifecycleService:
                 pm_acceptance=pm_acceptance,
                 append_task_message=self.append_task_message,
             )
-            follow_up_runs = PmFollowUpWorkService(self.session).materialize(
+            follow_up_runs = ManagerFollowUpService(self.session).materialize(
                 task,
                 pm_acceptance=pm_acceptance,
                 requested_by_user_id=requested_by_user_id,
@@ -202,16 +198,16 @@ class RunLifecycleService:
             if follow_up_runs:
                 if task_output is not None:
                     task.final_output = task_output
-                TaskStateService().transition(task, TaskStatus.RUNNING)
+                transition_task(task, TaskStatus.RUNNING)
             else:
-                TaskStateService().transition(
+                transition_task(
                     task,
                     TaskStatus.WAITING_APPROVAL,
                     final_output=task_output,
                 )
             return
 
-        TaskStateService().transition(
+        transition_task(
             task,
             TaskStatus.COMPLETED,
             completed_at=run.completed_at,
@@ -231,12 +227,20 @@ class RunLifecycleService:
         self, run: AgentRun, exc: Exception, *, task_status: TaskStatus = TaskStatus.FAILED
     ) -> None:
         error = normalize_agent_error(exc)
+        metadata = (
+            exc.metadata
+            if isinstance(exc, AgentExecutionPolicyError | AgentModelProviderError)
+            else {}
+        )
+        failure_payload = error.as_dict()
+        if metadata:
+            failure_payload["metadata"] = metadata
         if TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
             run, code="planner_execution_failed"
         ):
             task_status = TaskStatus.BLOCKED
-        RunStateService().transition(run, RunStatus.FAILED, error=error.as_dict())
-        self.callbacks.append_event(run, "run.failed", error.message, None)
+        transition_run(run, RunStatus.FAILED, error=failure_payload)
+        self.callbacks.append_event(run, "run.failed", error.message, metadata or None)
         completed_at = run.completed_at
         if completed_at is None:
             raise ValueError("Terminal run must have a completion timestamp")
@@ -247,12 +251,12 @@ class RunLifecycleService:
                 select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
             )
             if task is not None:
-                TaskStateService().transition(
+                transition_task(
                     task,
                     task_status,
                     completed_at=run.completed_at,
                 )
-                self._fail_parent_subworkflow(task, error.as_dict())
+                self._fail_parent_subworkflow(task, failure_payload)
         if run.task_step_id is not None:
             step = self.session.scalar(
                 select(TaskStep).where(
@@ -262,40 +266,12 @@ class RunLifecycleService:
                 )
             )
             if step is not None:
-                TaskStepStateService().transition(step, TaskStepStatus.FAILED)
-        self._memory_completion().capture_failed(run, error.as_dict())
+                transition_task_step(step, TaskStepStatus.FAILED)
+        self._memory_completion().capture_failed(run, failure_payload)
         self._memory_completion().expire_working(run)
 
-    def mark_run_recovered_failed(
-        self,
-        run: AgentRun,
-        *,
-        code: str = "stale_worker_run",
-        message: str = "Worker stopped reporting before the run completed",
-        retryable: bool = True,
-        event_message: str = "Marked failed after worker lease expired",
-    ) -> None:
-        self.terminal_states().mark_run_recovered_failed(
-            run,
-            code=code,
-            message=message,
-            retryable=retryable,
-            event_message=event_message,
-        )
-
-    def mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> int:
+    def mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> None:
         return self.terminal_states().mark_run_cancelled(run, completed_at=completed_at)
-
-    def record_worker_cancel_requested(
-        self,
-        run: AgentRun,
-        *,
-        requested_at: datetime,
-    ) -> int:
-        return self.terminal_states().record_worker_cancel_requested(
-            run,
-            requested_at=requested_at,
-        )
 
     def terminal_states(self) -> RunTerminalStateService:
         return RunTerminalStateService(
@@ -303,14 +279,6 @@ class RunLifecycleService:
             append_event=self.callbacks.append_event,
             release_reservations=self.callbacks.release_reservations,
         )
-
-    def agent_result_waiting_runtime(self, result: AgentRunResult) -> bool:
-        for event in result.events:
-            if event.event_type == "tool.waiting":
-                return True
-            if event.payload.get("status") == "waiting_self_hosted":
-                return True
-        return False
 
     def mark_step_completed(self, run: AgentRun, final_output: str) -> None:
         self._step_completion().mark_step_completed(run, final_output)
@@ -418,6 +386,7 @@ class RunLifecycleService:
             ),
             requested_by_user_id,
         )
+        self._signal_subworkflow_completion(parent_run, invocation)
 
     def _fail_parent_subworkflow(
         self,
@@ -456,3 +425,18 @@ class RunLifecycleService:
                 parent_run,
                 ValueError(str(error.get("message", "Subworkflow child task failed"))),
             )
+            self._signal_subworkflow_completion(parent_run, invocation)
+
+    def _signal_subworkflow_completion(
+        self,
+        run: AgentRun,
+        invocation: SubworkflowInvocation,
+    ) -> None:
+        stage_signal(
+            self.session,
+            dispatch_id=uuid4(),
+            workspace_id=run.workspace_id,
+            workflow_id=f"opsmesh:{run.workspace_id}:orchestration:{run.id}",
+            signal_name="child_completed",
+            resource_id=invocation.id,
+        )

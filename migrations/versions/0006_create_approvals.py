@@ -35,7 +35,9 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.ForeignKeyConstraint(["agent_run_id"], ["agent_runs.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["decided_by_user_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["requested_by_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["requested_by_agent_profile_id"], ["agent_profiles.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_approvals")),
@@ -48,4 +50,3 @@ def downgrade() -> None:
     op.drop_index("ix_approvals_workspace_status", table_name="approvals")
     op.drop_index("ix_approvals_workspace_run", table_name="approvals")
     op.drop_table("approvals")
-

@@ -9,11 +9,13 @@ def bounded_text(value: str, max_length: int, default: str) -> str:
         text = default
     return text[:max_length]
 
+
 def bounded_optional(value: str | None, max_length: int) -> str | None:
     if value is None:
         return None
     text = value.strip()
     return text[:max_length] if text else None
+
 
 def normalized_tags(tags: list[str] | None) -> list[str]:
     if not tags:
@@ -29,6 +31,7 @@ def normalized_tags(tags: list[str] | None) -> list[str]:
         if len(normalized) >= 20:
             break
     return normalized
+
 
 def optional_uuid_from_metadata(value: object) -> UUID | None:
     if isinstance(value, UUID):

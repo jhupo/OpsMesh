@@ -14,7 +14,7 @@ from opsmesh.capabilities.governance.rules import (
     mcp_server_governance_actions,
     skill_governance_actions,
 )
-from opsmesh.capabilities.mcp.catalog.service import McpCatalogService
+from opsmesh.capabilities.mcp.catalog.service import MCPCatalogService
 from opsmesh.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from opsmesh.capabilities.skills.models import WorkspaceSkillInstall
 from opsmesh.shared.config import Settings, get_settings
@@ -22,7 +22,7 @@ from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.utils import dict_list, string_list
 
 
-class McpGovernanceSummary(TypedDict):
+class MCPGovernanceSummary(TypedDict):
     catalog_total: int
     blocked_reasons: Counter[str]
     allowed_tool_count: int
@@ -162,8 +162,8 @@ class CapabilityGovernanceReadService:
     def _mcp_server_governance_items(
         self,
         workspace_id: UUID,
-    ) -> tuple[list[dict[str, object]], McpGovernanceSummary]:
-        catalog_items, catalog_total = McpCatalogService(
+    ) -> tuple[list[dict[str, object]], MCPGovernanceSummary]:
+        catalog_items, catalog_total = MCPCatalogService(
             self._session,
             self._settings,
         ).list_mcp_catalog(

@@ -33,7 +33,6 @@ class ModelProviderUsageAuditResponse(BaseModel):
     model: str | None
     model_api: str | None
     credential_id: str | None
-    fallback_selected: bool | None
     reason: dict[str, object] | None = None
     failed_provider: dict[str, object] | None = None
     created_at: datetime
@@ -95,9 +94,6 @@ def usage_audit_response(event: AuditEvent) -> ModelProviderUsageAuditResponse:
         model=_string_or_none(metadata.get("model")),
         model_api=_model_api_or_none(metadata.get("model_api")),
         credential_id=_string_or_none(metadata.get("credential_id")),
-        fallback_selected=metadata.get("fallback_selected")
-        if isinstance(metadata.get("fallback_selected"), bool)
-        else None,
         reason=sanitized_metadata(reason),
         failed_provider=sanitized_provider_ref(failed_provider),
         created_at=event.created_at,

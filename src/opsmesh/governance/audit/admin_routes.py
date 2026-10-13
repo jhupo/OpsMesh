@@ -4,8 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.query_service import AdminSystemLogService
-from opsmesh.governance.audit.schemas import AdminSystemLogResponse
+from opsmesh.governance.audit.admin_queries import AdminAuditQueryService
+from opsmesh.governance.audit.schemas import AuditEventResponse
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 @router.get(
     "/system/logs",
-    response_model=PageResponse[AdminSystemLogResponse],
+    response_model=PageResponse[AuditEventResponse],
 )
 def list_admin_system_logs(
     page: PageParams = Depends(pagination_params),
@@ -29,8 +29,8 @@ def list_admin_system_logs(
     created_after: datetime | None = Query(default=None),
     created_before: datetime | None = Query(default=None),
     session: Session = Depends(get_db_session),
-) -> PageResponse[AdminSystemLogResponse]:
-    items, total = AdminSystemLogService(session).list_audit_events(
+) -> PageResponse[AuditEventResponse]:
+    items, total = AdminAuditQueryService(session).list_audit_events(
         page,
         workspace_id=workspace_id,
         user_id=user_id,
@@ -40,4 +40,4 @@ def list_admin_system_logs(
         created_after=created_after,
         created_before=created_before,
     )
-    return page_response(items, total, page, AdminSystemLogResponse)
+    return page_response(items, total, page, AuditEventResponse)

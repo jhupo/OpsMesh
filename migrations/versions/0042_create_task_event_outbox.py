@@ -27,13 +27,19 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("available_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "available_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("stream_id", sa.String(length=80), nullable=True),
         sa.Column("last_error", sa.String(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "status in ('pending', 'publishing', 'published', 'failed')",
             name=op.f("ck_task_event_outbox_status_valid"),

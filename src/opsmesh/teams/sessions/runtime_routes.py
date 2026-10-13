@@ -1,23 +1,15 @@
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis import Redis
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.runtime.instances.policies.quotas import RuntimeQuotaExceededError
-from opsmesh.runtime.instances.policies.safety import RuntimeSafetyError
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.teams.management.http_common import (
-    _enqueue_team_runtime_control,
-    _queued_runtime_control,
-    _team_runtime_limits,
+    _runtime_control,
 )
 from opsmesh.teams.sessions.schemas import (
     AgentTeamRuntimeBindRequest,
@@ -25,12 +17,7 @@ from opsmesh.teams.sessions.schemas import (
     AgentTeamRuntimeEnsureRequest,
     AgentTeamRuntimeResponse,
 )
-from opsmesh.teams.sessions.service import TeamRuntimeService
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
+from opsmesh.teams.sessions.service import TeamOperationService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
@@ -41,7 +28,7 @@ def get_team_runtime(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> AgentTeamRuntimeResponse:
-    state = TeamRuntimeService(session).get_state(
+    state = TeamOperationService(session).get_or_initialize_state(
         workspace_id=context.workspace.id,
         team_id=team_id,
     )
@@ -56,15 +43,14 @@ def start_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).start(
+        state = TeamOperationService(session).start(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -72,7 +58,6 @@ def start_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "start")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -82,15 +67,14 @@ def pause_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).pause(
+        state = TeamOperationService(session).pause(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -98,7 +82,6 @@ def pause_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "pause")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -108,15 +91,14 @@ def resume_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).resume(
+        state = TeamOperationService(session).resume(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -124,7 +106,6 @@ def resume_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "resume")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -134,15 +115,14 @@ def stop_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).stop(
+        state = TeamOperationService(session).stop(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             reason=request.reason,
             metadata=request.metadata,
         )
@@ -150,7 +130,6 @@ def stop_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "stop")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -162,7 +141,7 @@ def bind_team_runtime(
     session: Session = Depends(get_db_session),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).bind_runtime(
+        state = TeamOperationService(session).bind_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             workspace_runtime_id=request.workspace_runtime_id,
@@ -189,27 +168,20 @@ def ensure_team_runtime(
     request: AgentTeamRuntimeEnsureRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).ensure_workspace_runtime(
+        state = TeamOperationService(session).ensure_workspace_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             template_id=request.template_id,
             name=request.name,
-            limits=_team_runtime_limits(request),
-            network_disabled=request.network_disabled,
             start=request.start,
             reason=request.reason,
             metadata=request.metadata,
         )
-    except RuntimeSafetyError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
-    except RuntimeQuotaExceededError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         message = str(exc)
         code = (
@@ -220,7 +192,6 @@ def ensure_team_runtime(
         raise HTTPException(status_code=code, detail=message) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "ensure")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -230,15 +201,14 @@ def continue_team_runtime(
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
-    queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamRuntimeResponse:
     try:
-        state = TeamRuntimeService(session).continue_runtime(
+        state = TeamOperationService(session).continue_runtime(
             workspace_id=context.workspace.id,
             team_id=team_id,
             actor_user_id=context.user.user_id,
-            runtime_control=_queued_runtime_control(session, queue, settings, context),
+            runtime_control=_runtime_control(session, settings),
             instruction=request.instruction or request.reason,
             metadata=request.metadata,
         )
@@ -246,5 +216,4 @@ def continue_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(session, queue, context, team_id, request, "continue")
     return AgentTeamRuntimeResponse.model_validate(state)

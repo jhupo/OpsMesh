@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from opsmesh.agents.sessions.models import PersistentAgentSessionRef
+from opsmesh.agents.sessions.models import AgentSessionIdentity
 from opsmesh.shared.utils import dict_or_none, uuid_or_none
 from opsmesh.teams.management.models import (
     TEAM_RUNTIME_SESSION_SCOPE,
@@ -12,8 +12,8 @@ from opsmesh.teams.management.models import (
 )
 
 
-def team_runtime_ref(workspace_id: UUID, team_id: UUID) -> PersistentAgentSessionRef:
-    return PersistentAgentSessionRef(
+def team_runtime_ref(workspace_id: UUID, team_id: UUID) -> AgentSessionIdentity:
+    return AgentSessionIdentity(
         session_key=_team_session_key(workspace_id, team_id),
         workspace_id=workspace_id,
         scope_type=TEAM_RUNTIME_SESSION_SCOPE,

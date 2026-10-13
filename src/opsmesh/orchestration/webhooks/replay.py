@@ -11,8 +11,8 @@ from opsmesh.orchestration.webhooks.policy import (
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
     WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS,
 )
-from opsmesh.orchestration.webhooks.scheduler import WebhookDeliveryScheduler
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.outbox import stage_execution
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 
 
@@ -52,7 +52,6 @@ class WebhookDeliveryReplayService:
         workspace_id: UUID,
         subscription_id: UUID,
         delivery_attempt_id: UUID,
-        queue: RedisQueue,
     ) -> WebhookDeliveryAttempt:
         attempt = self._attempt(
             workspace_id=workspace_id,
@@ -73,10 +72,15 @@ class WebhookDeliveryReplayService:
             self._enforce_replay_cooldown(attempt=attempt, now=now)
             self._enforce_workspace_replay_rate_limit(workspace_id=workspace_id)
             self._reset_attempt(attempt, now=now)
-            WebhookDeliveryScheduler(self._session).enqueue_attempt(
-                queue=queue,
-                attempt=attempt,
-                now=now,
+            request = ExecutionRequest(
+                workspace_id=workspace_id,
+                resource_id=attempt.id,
+                kind=ExecutionKind.WEBHOOK_DELIVERY,
+            )
+            attempt.execution_id = request.execution_id
+            stage_execution(
+                self._session,
+                request,
             )
 
         self._session.commit()
@@ -91,11 +95,14 @@ class WebhookDeliveryReplayService:
         delivery_attempt_id: UUID,
     ) -> WebhookDeliveryAttempt:
         attempt = self._session.scalar(
-            select(WebhookDeliveryAttempt).where(
+            select(WebhookDeliveryAttempt)
+            .where(
                 WebhookDeliveryAttempt.workspace_id == workspace_id,
                 WebhookDeliveryAttempt.subscription_id == subscription_id,
                 WebhookDeliveryAttempt.id == delivery_attempt_id,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if attempt is None:
             raise ValueError("Webhook delivery attempt not found")
@@ -114,10 +121,9 @@ class WebhookDeliveryReplayService:
 
     def _reset_attempt(self, attempt: WebhookDeliveryAttempt, *, now: datetime) -> None:
         previous_status = attempt.status
-        attempt.status = "pending"
+        attempt.status = "queued"
         attempt.available_at = now
-        attempt.queued_at = None
-        attempt.job_id = None
+        attempt.queued_at = now
         attempt.delivered_at = None
         attempt.dead_lettered_at = None
         attempt.next_retry_at = None

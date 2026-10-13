@@ -6,10 +6,10 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.messages.models import AgentMessageThread
-from opsmesh.agents.sessions.models import PersistentAgentSession
+from opsmesh.agents.sessions.models import AgentSessionMetadata
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.runtime.instances.contracts import RuntimeLifecycleControl, RuntimeLimits
 from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
 from opsmesh.teams.management.models import (
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STATUS_KEY,
@@ -17,11 +17,11 @@ from opsmesh.teams.management.models import (
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
     AgentTeam,
 )
-from opsmesh.teams.sessions.mailbox import TeamRuntimeMailboxStore
+from opsmesh.teams.sessions.agent_sessions import TeamAgentSessionStore
+from opsmesh.teams.sessions.mailbox import TeamMailboxStore
 from opsmesh.teams.sessions.refs import team_runtime_metadata
-from opsmesh.teams.sessions.repository import TeamRuntimeRepository
-from opsmesh.teams.sessions.sessions import TeamRuntimeSessionStore
-from opsmesh.teams.sessions.state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
+from opsmesh.teams.sessions.repository import TeamOperationRepository
+from opsmesh.teams.sessions.state_builder import TeamOperationSnapshot, TeamOperationSnapshotBuilder
 
 
 class TeamWorkspaceRuntimeBindingService:
@@ -31,19 +31,16 @@ class TeamWorkspaceRuntimeBindingService:
         self,
         *,
         session: Session,
-        repo: TeamRuntimeRepository,
-        mailbox: TeamRuntimeMailboxStore,
-        sessions: TeamRuntimeSessionStore,
-        state_builder: TeamRuntimeStateBuilder,
+        repo: TeamOperationRepository,
+        mailbox: TeamMailboxStore,
+        sessions: TeamAgentSessionStore,
+        state_builder: TeamOperationSnapshotBuilder,
     ) -> None:
         self._session = session
         self._repo = repo
-        self._committer = TeamWorkspaceRuntimeBindingCommitter(
-            session=session,
-            mailbox=mailbox,
-            sessions=sessions,
-            state_builder=state_builder,
-        )
+        self._mailbox = mailbox
+        self._sessions = sessions
+        self._state_builder = state_builder
 
     def bind_runtime(
         self,
@@ -54,7 +51,7 @@ class TeamWorkspaceRuntimeBindingService:
         actor_user_id: UUID,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
@@ -71,12 +68,7 @@ class TeamWorkspaceRuntimeBindingService:
             reason=reason,
             metadata=metadata,
         )
-        attach_team_runtime_capabilities(
-            team=team,
-            runtime=runtime,
-            bound_at=str(runtime_metadata["runtime_bound_at"]),
-        )
-        return self._committer.commit(
+        return self._persist_binding(
             team=team,
             actor_user_id=actor_user_id,
             action="team.runtime.bound",
@@ -91,15 +83,13 @@ class TeamWorkspaceRuntimeBindingService:
         workspace_id: UUID,
         team_id: UUID,
         actor_user_id: UUID,
-        runtime_control: RuntimeLifecycleControl,
+        runtime_control: RuntimeEnvironmentService,
         template_id: UUID | None = None,
         name: str | None = None,
-        limits: RuntimeLimits | None = None,
-        network_disabled: bool = True,
         start: bool = True,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
@@ -109,8 +99,6 @@ class TeamWorkspaceRuntimeBindingService:
             runtime_control=runtime_control,
             template_id=template_id,
             name=name,
-            limits=limits,
-            network_disabled=network_disabled,
         )
         runtime, started = self._start_runtime_if_needed(
             team=team,
@@ -129,13 +117,7 @@ class TeamWorkspaceRuntimeBindingService:
             reason=reason,
             metadata=metadata,
         )
-        attach_team_runtime_capabilities(
-            team=team,
-            runtime=runtime,
-            bound_at=str(runtime_metadata["runtime_bound_at"]),
-            ensured_at=str(runtime_metadata["runtime_ensured_at"]),
-        )
-        return self._committer.commit(
+        return self._persist_binding(
             team=team,
             actor_user_id=actor_user_id,
             action="team.runtime.ensured",
@@ -148,11 +130,9 @@ class TeamWorkspaceRuntimeBindingService:
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeLifecycleControl,
+        runtime_control: RuntimeEnvironmentService,
         template_id: UUID | None,
         name: str | None,
-        limits: RuntimeLimits | None,
-        network_disabled: bool,
     ) -> tuple[WorkspaceRuntime, UUID | None, bool]:
         runtime = self._repo.bound_runtime(team)
         if runtime is not None:
@@ -165,9 +145,7 @@ class TeamWorkspaceRuntimeBindingService:
             workspace_id=team.workspace_id,
             template_id=resolved_template_id,
             name=name or f"{team.name} team runtime",
-            limits=limits,
             runtime_space_id=team.runtime_space_id,
-            network_disabled=network_disabled,
         )
         if runtime is None:
             raise ValueError("Runtime template not found")
@@ -178,35 +156,19 @@ class TeamWorkspaceRuntimeBindingService:
         *,
         team: AgentTeam,
         runtime: WorkspaceRuntime,
-        runtime_control: RuntimeLifecycleControl,
+        runtime_control: RuntimeEnvironmentService,
         start: bool,
     ) -> tuple[WorkspaceRuntime, bool]:
         if not start:
             return runtime, False
-        if runtime.status == "running" and runtime.connection_status not in {"offline", "error"}:
+        if runtime.status == "active":
             return runtime, False
-        started_runtime = runtime_control.start_runtime(team.workspace_id, runtime.id)
+        started_runtime = runtime_control.set_status(team.workspace_id, runtime.id, "active")
         if started_runtime is None:
             raise ValueError("Workspace runtime not found")
         return started_runtime, True
 
-class TeamWorkspaceRuntimeBindingCommitter:
-    """Persist workspace runtime binding messages, audit, and response state."""
-
-    def __init__(
-        self,
-        *,
-        session: Session,
-        mailbox: TeamRuntimeMailboxStore,
-        sessions: TeamRuntimeSessionStore,
-        state_builder: TeamRuntimeStateBuilder,
-    ) -> None:
-        self._session = session
-        self._mailbox = mailbox
-        self._sessions = sessions
-        self._state_builder = state_builder
-
-    def commit(
+    def _persist_binding(
         self,
         *,
         team: AgentTeam,
@@ -215,10 +177,10 @@ class TeamWorkspaceRuntimeBindingCommitter:
         message_type: str,
         body: str,
         runtime_metadata: dict[str, object],
-    ) -> TeamRuntimeState:
+    ) -> TeamOperationSnapshot:
         thread = self._mailbox._get_or_create_thread(team)
         team_session = self._sessions._get_or_create_team_session(team)
-        member_sessions = self._sessions.member_sessions(team)
+        member_sessions = self._sessions.ensure_member_sessions(team)
         self._append_message(
             team=team,
             thread=thread,
@@ -282,16 +244,17 @@ class TeamWorkspaceRuntimeBindingCommitter:
         self,
         *,
         team: AgentTeam,
-        team_session: PersistentAgentSession | None,
+        team_session: AgentSessionMetadata | None,
         thread: AgentMessageThread | None,
-        member_sessions: list[PersistentAgentSession],
-    ) -> TeamRuntimeState:
+        member_sessions: list[AgentSessionMetadata],
+    ) -> TeamOperationSnapshot:
         return self._state_builder.build(
             team=team,
             team_session=team_session,
             thread=thread,
             member_sessions=member_sessions,
         )
+
 
 def bind_runtime_metadata(
     *,
@@ -305,6 +268,7 @@ def bind_runtime_metadata(
     runtime_metadata = team_runtime_metadata(team)
     runtime_metadata[TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY] = str(runtime.id)
     runtime_metadata["runtime_bound_at"] = datetime.now(UTC).isoformat()
+    runtime_metadata["sandbox_backend_id"] = runtime.sandbox_backend_id
     runtime_metadata["updated_by_user_id"] = str(actor_user_id)
     _optional_metadata(runtime_metadata, reason=reason, metadata=metadata)
     policy[TEAM_RUNTIME_STATUS_KEY] = runtime_metadata
@@ -346,26 +310,6 @@ def ensure_runtime_metadata(
     policy[TEAM_RUNTIME_STATUS_KEY] = runtime_metadata
     team.default_task_policy = policy
     return runtime_metadata
-
-
-def attach_team_runtime_capabilities(
-    *,
-    team: AgentTeam,
-    runtime: WorkspaceRuntime,
-    bound_at: str,
-    ensured_at: str | None = None,
-) -> None:
-    capability = {
-        "workspace_id": str(team.workspace_id),
-        "team_id": str(team.id),
-        "team_name": team.name,
-        "bound_at": bound_at,
-    }
-    if ensured_at is not None:
-        capability["ensured_at"] = ensured_at
-    capabilities = dict(runtime.capabilities or {})
-    capabilities["team_runtime"] = capability
-    runtime.capabilities = capabilities
 
 
 def _optional_metadata(

@@ -6,13 +6,13 @@ from sqlalchemy import func, select
 
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.identity.users.models import User
-from opsmesh.shared.db.read_service import AdminSessionService
+from opsmesh.shared.db.read_service import PagedQuerySupport
 from opsmesh.shared.pagination import PageParams
 from opsmesh.workspaces.management.admin_service import AdminWorkspaceManagementService
 from opsmesh.workspaces.members.models import WorkspaceMember
 
 
-class AdminWorkspaceMemberService(AdminSessionService):
+class AdminWorkspaceMemberService(PagedQuerySupport):
     def list_members(
         self,
         workspace_id: UUID,
@@ -25,8 +25,10 @@ class AdminWorkspaceMemberService(AdminSessionService):
             .join(User, User.id == WorkspaceMember.user_id)
             .where(WorkspaceMember.workspace_id == workspace_id)
         )
-        count_statement = select(func.count()).select_from(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id
+        count_statement = (
+            select(func.count())
+            .select_from(WorkspaceMember)
+            .where(WorkspaceMember.workspace_id == workspace_id)
         )
         if status is not None:
             statement = statement.where(WorkspaceMember.status == status)
@@ -188,4 +190,3 @@ class AdminWorkspaceMemberService(AdminSessionService):
         self._session.commit()
         self._session.refresh(member)
         return member
-

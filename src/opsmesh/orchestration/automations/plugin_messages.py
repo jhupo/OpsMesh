@@ -6,10 +6,10 @@ from opsmesh_plugin_sdk.messaging.contracts import ApprovalDecision, ApprovalRec
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.plugins.services import PluginPrincipal, PluginServices
+from opsmesh.capabilities.plugins.authentication import PluginAuthenticationService, PluginPrincipal
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.resources import (
-    ResourceAccessDenied,
+    ResourceAccessDeniedError,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
@@ -17,17 +17,15 @@ from opsmesh.identity.authorization.resources import (
 from opsmesh.orchestration.approvals.decisions import ApprovalDecisionService
 from opsmesh.orchestration.approvals.models import Approval
 from opsmesh.orchestration.automations.contracts import AutomationConfiguration
-from opsmesh.orchestration.automations.identities import ExternalIdentityService
+from opsmesh.orchestration.automations.identities import AutomationSenderIdentityService
 from opsmesh.orchestration.automations.models import Automation
 from opsmesh.orchestration.automations.stream import AutomationStreamService
-from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.errors import DomainError
 
 
-class PluginMessageService:
-    def __init__(self, session: Session, queue: RedisQueue) -> None:
+class PluginApprovalDecisionService:
+    def __init__(self, session: Session) -> None:
         self.session = session
-        self.queue = queue
 
     def decide_approval(
         self,
@@ -37,7 +35,7 @@ class PluginMessageService:
         approval_id: UUID,
         request: ApprovalDecision,
     ) -> ApprovalReceipt:
-        PluginServices(self.session).require_automation(
+        PluginAuthenticationService(self.session).require_automation(
             principal, automation_id, "approvals.decide"
         )
         event, _ = AutomationStreamService(self.session).authorize(
@@ -55,11 +53,11 @@ class PluginMessageService:
             or request.sender_id
             not in AutomationConfiguration.model_validate(item.configuration).allowed_senders
         ):
-            raise ResourceAccessDenied()
-        identity = ExternalIdentityService(self.session).resolve(item, request.sender_id)
+            raise ResourceAccessDeniedError()
+        identity = AutomationSenderIdentityService(self.session).resolve(item, request.sender_id)
         actor = ExecutionIdentityService(self.session).restore(principal.workspace_id, identity)
         if event.task_id is None:
-            raise ResourceAccessDenied()
+            raise ResourceAccessDeniedError()
         ResourceAuthorizationService(self.session, actor).require(
             principal.workspace_id, ResourceKind.TASK, event.task_id, ResourceAction.READ
         )
@@ -71,8 +69,8 @@ class PluginMessageService:
             )
         )
         if approval is None:
-            raise ResourceAccessDenied()
-        decisions = ApprovalDecisionService(self.session, self.queue)
+            raise ResourceAccessDeniedError()
+        decisions = ApprovalDecisionService(self.session)
         decisions.require_actor(approval, actor)
         try:
             if request.decision == "approve":

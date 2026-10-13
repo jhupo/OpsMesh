@@ -4,11 +4,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from opsmesh.orchestration.tasks.schemas.core import TaskResponse
-from opsmesh.shared.contracts import TimestampedModel
+from opsmesh.shared.contracts import TimestampedContract
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-class DomainProjectResponse(TimestampedModel):
+class DomainProjectResponse(TimestampedContract):
     workspace_id: UUID
     agent_team_id: UUID | None
     domain_type: str
@@ -22,7 +22,7 @@ class DomainProjectResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class DomainItemResponse(TimestampedModel):
+class DomainItemResponse(TimestampedContract):
     workspace_id: UUID
     domain_project_id: UUID | None
     task_id: UUID | None
@@ -39,7 +39,7 @@ class DomainItemResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class ReviewCommentResponse(TimestampedModel):
+class ReviewCommentResponse(TimestampedContract):
     workspace_id: UUID
     task_id: UUID
     domain_item_id: UUID | None
@@ -54,7 +54,7 @@ class ReviewCommentResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class RevisionRequestResponse(TimestampedModel):
+class RevisionRequestResponse(TimestampedContract):
     workspace_id: UUID
     task_id: UUID
     domain_item_id: UUID | None

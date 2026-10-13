@@ -13,17 +13,17 @@ from opsmesh.capabilities.governance.rules import (
     mcp_server_should_be_governance_disabled,
     mcp_server_should_refresh_health,
 )
-from opsmesh.capabilities.mcp.catalog.catalog import McpCatalogServer
+from opsmesh.capabilities.mcp.catalog.catalog import MCPCatalogServer
 from opsmesh.capabilities.mcp.catalog.rules import connection_summary as _connection_summary
 from opsmesh.capabilities.mcp.catalog.rules import mcp_server_probeable as _mcp_server_probeable
-from opsmesh.capabilities.mcp.catalog.service import McpCatalogService
-from opsmesh.capabilities.mcp.models import McpToolAllowlist
+from opsmesh.capabilities.mcp.catalog.service import MCPCatalogService
+from opsmesh.capabilities.mcp.models import MCPToolAllowlist
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.pagination import PageParams
 
 
-class CapabilityGovernanceMcpActionService:
+class CapabilityGovernanceMCPActionService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings or get_settings()
@@ -303,21 +303,21 @@ class CapabilityGovernanceMcpActionService:
         self,
         workspace_id: UUID,
         mcp_server_id: UUID,
-    ) -> list[McpToolAllowlist]:
+    ) -> list[MCPToolAllowlist]:
         return list(
             self._session.scalars(
-                select(McpToolAllowlist)
+                select(MCPToolAllowlist)
                 .where(
-                    McpToolAllowlist.workspace_id == workspace_id,
-                    McpToolAllowlist.mcp_server_id == mcp_server_id,
-                    McpToolAllowlist.status == "disabled",
+                    MCPToolAllowlist.workspace_id == workspace_id,
+                    MCPToolAllowlist.mcp_server_id == mcp_server_id,
+                    MCPToolAllowlist.status == "disabled",
                 )
-                .order_by(McpToolAllowlist.tool_name.asc(), McpToolAllowlist.id.asc())
+                .order_by(MCPToolAllowlist.tool_name.asc(), MCPToolAllowlist.id.asc())
             )
         )
 
-    def _catalog_items(self, workspace_id: UUID) -> tuple[list[McpCatalogServer], int]:
-        return McpCatalogService(self._session, self._settings).list_mcp_catalog(
+    def _catalog_items(self, workspace_id: UUID) -> tuple[list[MCPCatalogServer], int]:
+        return MCPCatalogService(self._session, self._settings).list_mcp_catalog(
             workspace_id,
             PageParams(limit=10_000, offset=0),
         )

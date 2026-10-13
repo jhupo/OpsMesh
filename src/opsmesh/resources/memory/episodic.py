@@ -332,6 +332,9 @@ class AgentEpisodicMemoryService:
         )
         self._session.add(entry)
         self._session.flush([entry])
+        from opsmesh.resources.memory.dispatch import stage_memory_embedding
+
+        stage_memory_embedding(self._session, entry)
         return entry
 
     def _profile(self, workspace_id: UUID, profile_id: UUID | None) -> AgentProfile | None:

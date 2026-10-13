@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.model_validation import AgentModelValidator
+from opsmesh.agents.profiles.model_validation import AgentModelConfigValidator
 from opsmesh.agents.profiles.models import AgentProfile, AgentProfileVersion
 from opsmesh.agents.profiles.payloads import profile_audit_state, profile_snapshot
 from opsmesh.governance.audit.service import AuditService
@@ -14,7 +14,7 @@ from opsmesh.governance.audit.service import AuditService
 class AgentVersionRecorder:
     def __init__(self, session: Session) -> None:
         self._session = session
-        self._model_validator = AgentModelValidator(session)
+        self._model_validator = AgentModelConfigValidator(session)
 
     def bump_version(
         self,

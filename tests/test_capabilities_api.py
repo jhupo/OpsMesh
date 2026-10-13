@@ -5,17 +5,12 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.agents.providers.credentials import ModelProviderCredentialCommandService
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolCallLog
+from opsmesh.capabilities.mcp.models import MCPCredentialReference, MCPServer, MCPToolCallLog
 from opsmesh.capabilities.skills.models import Skill
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.governance.reviews.llm import LlmReviewResult, StructuredResourceReview
@@ -29,6 +24,7 @@ from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 TOKEN = "test-token"
 
@@ -167,7 +163,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
             "name": "Designer",
             "role": "designer",
             "instructions": "Create visual assets.",
-            "tool_policy": {"mcp_tools": ["generate_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image"]},
         },
     )
     assert agent.status_code == 201
@@ -209,8 +205,8 @@ def test_capability_skill_and_mcp_control_plane() -> None:
         },
     )
     assert logged.status_code == 201
-    assert session.query(McpToolCallLog).count() == 1
-    stored_log = session.query(McpToolCallLog).one()
+    assert session.query(MCPToolCallLog).count() == 1
+    stored_log = session.query(MCPToolCallLog).one()
     assert stored_log.request["api_key"] == "[redacted]"
     assert "secret-value" not in str(stored_log.request)
 
@@ -489,9 +485,7 @@ def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     response = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
@@ -529,9 +523,7 @@ def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> No
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     response = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
@@ -569,9 +561,7 @@ def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -602,9 +592,7 @@ def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -634,9 +622,7 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -691,9 +677,7 @@ def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> 
             signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
-    monkeypatch.setattr(
-        "opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review
-    )
+    monkeypatch.setattr("opsmesh.governance.reviews.llm.LlmResourceReviewer.review", require_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -758,7 +742,7 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     assert "encrypted_secret_payload" not in body
     assert "sk-secret" not in str(body)
 
-    stored = session.query(McpCredentialReference).filter_by(name="hosted-key").one()
+    stored = session.query(MCPCredentialReference).filter_by(name="hosted-key").one()
     assert stored.encrypted_secret_payload is not None
     assert "sk-secret" not in stored.encrypted_secret_payload
     assert stored.secret_fingerprint == body["secret_fingerprint"]
@@ -1122,7 +1106,7 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
             "name": "Designer",
             "role": "designer",
             "instructions": "Create visual assets.",
-            "tool_policy": {"mcp_tools": ["generate_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image"]},
         },
     )
     catalog = client.get(
@@ -1327,10 +1311,10 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
         json={
             "name": "Researcher",
             "role": "researcher",
-            "tool_policy": {"mcp_tools": ["search_docs"]},
+            "tool_policy": {"allowed_tools": ["search_docs"]},
         },
     )
-    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    stored_server = session.get(MCPServer, UUID(server.json()["id"]))
     assert stored_server is not None
     stored_server.health_status = "healthy"
     stored_server.last_health_check_at = datetime(2026, 1, 1, tzinfo=UTC)
@@ -1449,7 +1433,7 @@ def test_mcp_unhealthy_health_check_redacts_error_code_in_responses_and_audit() 
         )
         .one()
     )
-    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    stored_server = session.get(MCPServer, UUID(server.json()["id"]))
 
     assert server.status_code == 201
     assert checked.status_code == 200
@@ -1491,7 +1475,7 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
             "connection": {"command": "mcp-test", "args": []},
         },
     )
-    stored_server = session.get(McpServer, UUID(server.json()["id"]))
+    stored_server = session.get(MCPServer, UUID(server.json()["id"]))
     assert stored_server is not None
     stored_server.health_status = "healthy"
     stored_server.last_health_check_at = datetime(2026, 1, 1, tzinfo=UTC)
@@ -1920,7 +1904,7 @@ def test_mcp_tool_call_log_rejects_foreign_server_reference() -> None:
     assert foreign_server.status_code == 201
     assert foreign_tool.status_code == 201
     assert forged_log.status_code == 404
-    assert session.query(McpToolCallLog).count() == 0
+    assert session.query(MCPToolCallLog).count() == 0
 
 
 def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None:
@@ -1960,7 +1944,7 @@ def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None
         workspace_id=workspace.id,
         name="Designer",
         role="designer",
-        tool_policy={"mcp_tools": ["generate_image"]},
+        tool_policy={"allowed_tools": ["generate_image"]},
     )
     session.add_all([task, agent])
     session.flush()
@@ -2034,7 +2018,7 @@ def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None
     assert logged.json()["response"]["result"]["token"] == "[redacted]"
     assert blocked_by_agent.status_code == 404
     assert foreign_run_log.status_code == 404
-    logs = session.query(McpToolCallLog).all()
+    logs = session.query(MCPToolCallLog).all()
     assert len(logs) == 1
     assert logs[0].task_id == task.id
     assert logs[0].task_step_id == step.id
@@ -2085,7 +2069,7 @@ def test_mcp_tool_call_log_requires_tool_to_belong_to_declared_server() -> None:
     assert text_server.status_code == 201
     assert allowed.status_code == 201
     assert forged_log.status_code == 404
-    assert session.query(McpToolCallLog).count() == 0
+    assert session.query(MCPToolCallLog).count() == 0
 
 
 def test_operator_cannot_manage_capabilities() -> None:
@@ -2391,7 +2375,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
                     missing_install_id,
                 ]
             },
-            "tool_policy": {"mcp_tools": ["generate_image", "delete_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image", "delete_image"]},
         },
     )
     diagnostics = client.get(
@@ -2496,7 +2480,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
         json={
             "name": "Designer",
             "role": "designer",
-            "tool_policy": {"mcp_tools": ["generate_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image"]},
             "model_settings": {"api_key": "sk-designer"},
         },
     )
@@ -2506,7 +2490,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
         json={
             "name": "Reviewer",
             "role": "reviewer",
-            "tool_policy": {"mcp_tools": ["delete_image"]},
+            "tool_policy": {"allowed_tools": ["delete_image"]},
         },
     )
     _approve_resource_review(client, workspace.id, owner.id, reviewer.json()["id"])
@@ -2636,7 +2620,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "name": "Designer",
             "role": "designer",
             "skills": {"installed_skill_ids": [installed.json()["id"]]},
-            "tool_policy": {"mcp_tools": ["generate_image", "delete_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image", "delete_image"]},
             "model_settings": {"api_key": "sk-agent"},
         },
     )
@@ -2812,7 +2796,7 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
             },
         },
     )
-    stored_broken_server = session.get(McpServer, UUID(broken_server.json()["id"]))
+    stored_broken_server = session.get(MCPServer, UUID(broken_server.json()["id"]))
     assert stored_broken_server is not None
     stored_broken_server.connection = {}
     session.commit()
@@ -2973,7 +2957,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
         json={
             "name": "Designer",
             "role": "designer",
-            "tool_policy": {"mcp_tools": ["generate_image", "delete_image"]},
+            "tool_policy": {"allowed_tools": ["generate_image", "delete_image"]},
             "model_settings": {"api_key": "sk-agent-policy"},
         },
     )
@@ -2989,7 +2973,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
     )
     stored_agent = session.get(AgentProfile, UUID(agent.json()["id"]))
     assert stored_agent is not None
-    assert stored_agent.tool_policy["mcp_tools"] == ["generate_image", "delete_image"]
+    assert stored_agent.tool_policy["allowed_tools"] == ["generate_image", "delete_image"]
 
     applied = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/governance/actions/apply",
@@ -3027,7 +3011,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
     assert applied_body["applied_count"] == 1
     assert applied_body["summary"]["repaired_agent_mcp_policy_count"] == 1
     session.refresh(stored_agent)
-    assert stored_agent.tool_policy["mcp_tools"] == ["generate_image"]
+    assert stored_agent.tool_policy["allowed_tools"] == ["generate_image"]
 
     assert governance.status_code == 200
     governance_body = governance.json()
@@ -3228,7 +3212,7 @@ def test_workspace_skill_install_can_upgrade_and_disable_without_source_access()
         name="Writer Agent",
         role="writer",
         skills={"installed_skill_ids": [installed.json()["id"]]},
-        tool_policy={"mcp_tools": ["draft_text"]},
+        tool_policy={"allowed_tools": ["draft_text"]},
     )
     session.add(agent)
     session.commit()
@@ -3416,13 +3400,7 @@ def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
@@ -3518,15 +3496,6 @@ def _approve_resource_review(
         json={"reason": "test resource review"},
     )
     assert approved.status_code == 200
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()
 
 
 def _review_config(session, workspace, name):

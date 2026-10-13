@@ -49,11 +49,17 @@ def upgrade() -> None:
         sa.Column("body", sa.String(length=2000), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["talent_listing_id"], ["talent_listings.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["workspace_agent_install_id"], ["workspace_agent_installs.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["workspace_agent_install_id"], ["workspace_agent_installs.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_talent_listing_reviews")),
         sa.UniqueConstraint(

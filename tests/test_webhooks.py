@@ -2,43 +2,36 @@ from __future__ import annotations
 
 from collections.abc import Generator, Mapping
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from limits.storage import MemoryStorage
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from opsmesh.bootstrap.job_handlers import WorkerJobHandler
 from opsmesh.identity.users.models import User
 from opsmesh.main import create_app
 from opsmesh.orchestration.webhooks.delivery import WebhookDeliveryService
-from opsmesh.orchestration.webhooks.http_client import WebhookHttpResponse
-from opsmesh.orchestration.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
+from opsmesh.orchestration.webhooks.http_client import WebhookHTTPResponse
+from opsmesh.orchestration.webhooks.models import WebhookSubscription
 from opsmesh.orchestration.webhooks.policy import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
 )
-from opsmesh.orchestration.webhooks.scheduler import WebhookDeliveryScheduler
 from opsmesh.orchestration.webhooks.subscriptions import WebhookSubscriptionService
-from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.dependencies import get_worker_queue
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.temporal.contracts import ExecutionKind
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
+from tests.fixtures.temporal import durable_executions
 
 TOKEN = "test-token"
 SECRET = "test-credential-secret"
@@ -140,14 +133,10 @@ def test_webhook_subscription_update_and_secret_rotate_do_not_leak_secret() -> N
     assert decrypted == {"signing_secret": "whsec-rotated-secret"}
 
 
-def test_webhook_event_enqueue_and_scheduler_are_workspace_scoped() -> None:
+def test_webhook_event_stages_only_matching_workspace_delivery() -> None:
     session = _session()
     owner, workspace = _seed_workspace(session)
-    _, other_workspace = _seed_workspace(
-        session,
-        email="other@example.com",
-        slug="other-webhooks",
-    )
+    _, other = _seed_workspace(session, email="other@test.invalid", slug="other-webhooks")
     service = WebhookSubscriptionService(session, _secret_service())
     matching = service.create(
         workspace_id=workspace.id,
@@ -155,51 +144,34 @@ def test_webhook_event_enqueue_and_scheduler_are_workspace_scoped() -> None:
         name="Matching",
         target_url="https://hooks.example.test/matching",
         event_types=["task.message.created"],
-        signing_secret="whsec-matching-secret",
+        signing_secret="whsec-matching",
     )
     service.create(
-        workspace_id=workspace.id,
+        workspace_id=other.id,
         created_by_user_id=owner.id,
-        name="Different event",
-        target_url="https://hooks.example.test/different",
-        event_types=["task.completed"],
-        signing_secret="whsec-different-secret",
-    )
-    service.create(
-        workspace_id=other_workspace.id,
-        created_by_user_id=owner.id,
-        name="Other workspace",
+        name="Other",
         target_url="https://hooks.example.test/other",
         event_types=["*"],
-        signing_secret="whsec-other-secret",
+        signing_secret="whsec-other",
     )
     attempts = WebhookDeliveryService(session).enqueue_event(
         workspace_id=workspace.id,
         event_type="task.message.created",
         event_id="evt-1",
-        payload={"message_id": "message-1"},
+        payload={"message_id": "m-1"},
     )
     session.commit()
-    queue = _queue()
-
-    summary = WebhookDeliveryScheduler(session).enqueue_due(queue=queue, limit=10)
-    job = queue.dequeue()
-
-    assert [attempt.subscription_id for attempt in attempts] == [matching.id]
-    assert summary.scanned == 1
-    assert summary.enqueued == 1
-    assert summary.skipped == 0
-    assert job is not None
-    assert job.job_type == JobType.WEBHOOK_DELIVERY
-    assert job.resource_id == attempts[0].id
-    stored = session.get(WebhookDeliveryAttempt, attempts[0].id)
-    assert stored is not None
-    assert stored.status == "queued"
-    assert stored.job_id == job.job_id
+    assert [item.subscription_id for item in attempts] == [matching.id]
+    requests = durable_executions(session, workspace.id, ExecutionKind.WEBHOOK_DELIVERY)
+    assert len(requests) == 1
+    assert requests[0].resource_id == attempts[0].id
+    assert attempts[0].execution_id == requests[0].execution_id
+    assert attempts[0].status == "queued"
+    assert durable_executions(session, other.id, ExecutionKind.WEBHOOK_DELIVERY) == []
 
 
 def test_webhook_delivery_attempt_replay_requeues_idempotently_without_secret_leak() -> None:
-    client, session, queue = _client_with_queue()
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
     subscription = WebhookSubscriptionService(session, _secret_service()).create(
         workspace_id=workspace.id,
@@ -226,21 +198,19 @@ def test_webhook_delivery_attempt_replay_requeues_idempotently_without_secret_le
     )
     replayed = client.post(url, headers=_headers(owner.id))
     replayed_again = client.post(url, headers=_headers(owner.id))
-    job = queue.dequeue()
 
     assert replayed.status_code == 200
     assert replayed.json()["status"] == "queued"
     assert replayed.json()["dead_letter_metadata"]["replayed_from_status"] == "dead_lettered"
     assert "whsec-replay-secret" not in replayed.text
     assert replayed_again.status_code == 200
-    assert queue.count_queued(workspace_id=workspace.id) == 0
-    assert job is not None
-    assert job.job_type == JobType.WEBHOOK_DELIVERY
-    assert job.resource_id == attempt.id
+    requests = durable_executions(session, workspace.id, ExecutionKind.WEBHOOK_DELIVERY)
+    assert len(requests) == 2  # Original delivery plus one explicit replay intent.
+    assert requests[-1].resource_id == attempt.id
 
 
 def test_webhook_delivery_attempt_replay_enforces_cooldown_with_replay_window() -> None:
-    client, session, queue = _client_with_queue()
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
     subscription = WebhookSubscriptionService(session, _secret_service()).create(
         workspace_id=workspace.id,
@@ -276,13 +246,12 @@ def test_webhook_delivery_attempt_replay_enforces_cooldown_with_replay_window() 
 
     assert cooling_down.status_code == 429
     assert cooling_down.json()["error"]["details"]["retry_after_seconds"] > 0
-    assert queue.count_queued(workspace_id=workspace.id) == 1
     assert replayed_after_window.status_code == 200
     assert replayed_after_window.json()["status"] == "queued"
 
 
 def test_webhook_delivery_attempt_replay_enforces_workspace_rate_limit() -> None:
-    client, session, queue = _client_with_queue()
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
     subscription = WebhookSubscriptionService(session, _secret_service()).create(
         workspace_id=workspace.id,
@@ -317,11 +286,10 @@ def test_webhook_delivery_attempt_replay_enforces_workspace_rate_limit() -> None
 
     assert statuses[:WEBHOOK_REPLAY_WORKSPACE_LIMIT] == [200] * WEBHOOK_REPLAY_WORKSPACE_LIMIT
     assert statuses[-1] == 429
-    assert queue.count_queued(workspace_id=workspace.id) == WEBHOOK_REPLAY_WORKSPACE_LIMIT
 
 
 def test_webhook_delivery_attempt_replay_rejects_disabled_and_cross_workspace() -> None:
-    client, session, queue = _client_with_queue()
+    client, session = _client()
     owner, workspace = _seed_workspace(session)
     _, other_workspace = _seed_workspace(
         session,
@@ -357,16 +325,13 @@ def test_webhook_delivery_attempt_replay_rejects_disabled_and_cross_workspace() 
     cross_workspace = WebhookDeliveryService(session).replay_attempt
 
     assert disabled.status_code == 409
-    assert queue.count_queued(workspace_id=workspace.id) == 0
     with pytest.raises(ValueError, match="Webhook delivery attempt not found"):
         cross_workspace(
             workspace_id=other_workspace.id,
             subscription_id=subscription.id,
             delivery_attempt_id=attempt.id,
-            queue=queue,
             rate_limiter=FixedWindowRateLimiter(MemoryStorage()),
         )
-    assert queue.count_queued(workspace_id=workspace.id) == 0
 
 
 def test_webhook_delivery_success_sends_signed_payload_and_redacts_response_headers() -> None:
@@ -391,8 +356,8 @@ def test_webhook_delivery_success_sends_signed_payload_and_redacts_response_head
         },
     )[0]
     session.commit()
-    http_client = _RecordingHttpClient(
-        WebhookHttpResponse(
+    http_client = _RecordingHTTPClient(
+        WebhookHTTPResponse(
             status_code=202,
             body="accepted",
             headers={"Authorization": "Bearer hidden", "X-Request-ID": "req-1"},
@@ -490,7 +455,7 @@ def test_webhook_delivery_dead_letters_after_max_attempts() -> None:
     delivered = WebhookDeliveryService(
         session,
         _secret_service(),
-        _RecordingHttpClient(WebhookHttpResponse(status_code=503, body="down", headers={})),
+        _RecordingHTTPClient(WebhookHTTPResponse(status_code=503, body="down", headers={})),
     ).deliver(
         workspace_id=workspace.id,
         delivery_attempt_id=attempt.id,
@@ -499,8 +464,8 @@ def test_webhook_delivery_dead_letters_after_max_attempts() -> None:
     assert delivered.status == "dead_lettered"
     assert delivered.dead_lettered_at is not None
     assert delivered.last_status_code == 503
-    assert delivered.dead_letter_metadata["dead_lettered_at"].startswith(
-        delivered.dead_lettered_at.isoformat()
+    assert datetime.fromisoformat(delivered.dead_letter_metadata["dead_lettered_at"]) == (
+        delivered.dead_lettered_at
     )
     assert delivered.dead_letter_metadata | {"dead_lettered_at": "checked"} == {
         "reason": "Webhook endpoint returned HTTP 503",
@@ -511,43 +476,51 @@ def test_webhook_delivery_dead_letters_after_max_attempts() -> None:
     }
 
 
-def test_worker_handler_dispatches_webhook_delivery_job(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_webhook_activity_persists_signed_delivery_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    from opsmesh.orchestration.webhooks.activities import WebhookDeliveryActivities
+    from opsmesh.runtime.temporal.activities import ActivityDependencies
+    from opsmesh.runtime.temporal.contracts import ExecutionRequest
+
     session = _session()
-    workspace_id = uuid4()
-    attempt_id = uuid4()
-    calls: list[dict[str, UUID]] = []
-
-    class RecordingDeliveryService:
-        def __init__(self, *_: object) -> None:
-            pass
-
-        def deliver(self, *, workspace_id: UUID, delivery_attempt_id: UUID) -> None:
-            calls.append(
-                {
-                    "workspace_id": workspace_id,
-                    "delivery_attempt_id": delivery_attempt_id,
-                }
-            )
-
-    monkeypatch.setattr(
-        "opsmesh.orchestration.webhooks.jobs.WebhookDeliveryService",
-        RecordingDeliveryService,
+    owner, workspace = _seed_workspace(session)
+    WebhookSubscriptionService(session, _secret_service()).create(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Activity sink",
+        target_url="https://hooks.example.test/activity",
+        event_types=["*"],
+        signing_secret="whsec-act",
     )
-
-    WorkerJobHandler(session, settings=_settings()).handle(
-        JobPayload(
-            workspace_id=workspace_id,
-            job_type=JobType.WEBHOOK_DELIVERY,
-            resource_id=attempt_id,
-            idempotency_key=f"webhook.delivery:{workspace_id}:{attempt_id}:0",
+    attempt = WebhookDeliveryService(session).enqueue_event(
+        workspace_id=workspace.id,
+        event_type="task.completed",
+        event_id="activity-event",
+        payload={"answer": "done"},
+    )[0]
+    session.commit()
+    http = _RecordingHTTPClient(WebhookHTTPResponse(status_code=202, body="ok", headers={}))
+    monkeypatch.setattr(
+        "opsmesh.orchestration.webhooks.delivery.HttpxWebhookHTTPClient", lambda: http
+    )
+    activities = WebhookDeliveryActivities(
+        ActivityDependencies(
+            sessions=sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+            settings=_settings(),
         )
     )
+    request = ExecutionRequest(
+        workspace_id=workspace.id, resource_id=attempt.id, kind=ExecutionKind.WEBHOOK_DELIVERY
+    )
+    assert activities.deliver(request) == -1
+    assert activities.deliver(request) == -1
+    session.refresh(attempt)
+    assert attempt.status == "succeeded"
+    assert len(http.calls) == 1
+    assert b"whsec-act" not in http.calls[0]["body"]
 
-    assert calls == [{"workspace_id": workspace_id, "delivery_attempt_id": attempt_id}]
 
-
-class _RecordingHttpClient:
-    def __init__(self, response: WebhookHttpResponse) -> None:
+class _RecordingHTTPClient:
+    def __init__(self, response: WebhookHTTPResponse) -> None:
         self._response = response
         self.calls: list[dict[str, object]] = []
 
@@ -558,7 +531,7 @@ class _RecordingHttpClient:
         body: bytes,
         headers: Mapping[str, str],
         timeout_seconds: int,
-    ) -> WebhookHttpResponse:
+    ) -> WebhookHTTPResponse:
         self.calls.append(
             {
                 "url": url,
@@ -571,49 +544,26 @@ class _RecordingHttpClient:
 
 
 def _client() -> tuple[TestClient, Session]:
-    client, session, _ = _client_with_queue()
-    return client, session
-
-
-def _client_with_queue() -> tuple[TestClient, Session, RedisQueue]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-    session = session_factory()
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    session = sessions()
     redis = fakeredis.FakeRedis(decode_responses=True)
-    settings = _settings(database_url="sqlite+pysqlite:///:memory:")
-    app = create_app(settings)
+    app = create_app(_settings(database_url=engine.url.render_as_string(hide_password=False)))
     app.state.rate_limiter = FixedWindowRateLimiter(MemoryStorage())
 
-    def override_db_session() -> Generator[Session, None, None]:
-        request_session = session_factory()
-        try:
+    def db_session() -> Generator[Session, None, None]:
+        with sessions() as request_session:
             yield request_session
-        finally:
-            request_session.close()
 
-    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_db_session] = db_session
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_redis_client] = lambda: redis
-    worker_queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder(app.state.settings.redis_key_prefix),
-        queue_name=app.state.settings.worker_queue_name,
-        blocking_timeout_seconds=0,
-    )
-    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
-    return TestClient(app), session, worker_queue
+    return TestClient(app), session
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -632,15 +582,6 @@ def _seed_workspace(
     return user, workspace
 
 
-def _queue() -> RedisQueue:
-    return RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-        blocking_timeout_seconds=0,
-    )
-
-
 def _headers(user_id: object) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {TOKEN}",
@@ -653,19 +594,10 @@ def _settings(database_url: str | None = None) -> Settings:
         environment="test",
         log_format="text",
         internal_api_token=TOKEN,
-        database_url=database_url or "sqlite+pysqlite:///:memory:",
+        **({"database_url": database_url} if database_url else {}),
         credential_encryption_secret=SECRET,
     )
 
 
 def _secret_service() -> SecretEncryptionService:
     return SecretEncryptionService(secret=SECRET, key_id="local")
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

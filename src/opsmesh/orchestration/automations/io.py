@@ -3,12 +3,12 @@
 import json
 from dataclasses import dataclass
 
+from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.references.schema import validate_json_value
 from opsmesh.orchestration.automations.contracts import (
     AutomationConfiguration,
-    AutomationMessage,
 )
 from opsmesh.orchestration.automations.models import AutomationEvent
 from opsmesh.orchestration.definitions.data import resolve_workflow_bindings
@@ -16,7 +16,7 @@ from opsmesh.orchestration.tasks.models import Task
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
-def model_message(config: AutomationConfiguration, message: AutomationMessage) -> dict[str, object]:
+def model_message(config: AutomationConfiguration, message: IncomingMessage) -> dict[str, object]:
     if message.contract_version != config.contract_version:
         raise ValueError("Message contract version does not match automation")
     if len(message.model_dump_json().encode()) > 64_000:
@@ -33,7 +33,7 @@ def model_message(config: AutomationConfiguration, message: AutomationMessage) -
     }
 
 
-def validate_follow_up(config: AutomationConfiguration, message: AutomationMessage) -> None:
+def validate_follow_up(config: AutomationConfiguration, message: IncomingMessage) -> None:
     projected = model_message(config, message)
     data = projected["data"]
     size = len(message.text) + (1 + len(json.dumps(data, ensure_ascii=False)) if data else 0)

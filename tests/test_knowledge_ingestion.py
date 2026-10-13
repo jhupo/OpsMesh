@@ -1,76 +1,56 @@
 from __future__ import annotations
 
 import hashlib
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
-import fakeredis
+import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 
-from opsmesh.bootstrap.job_handlers import WorkerJobHandler
 from opsmesh.capabilities.tools.contracts import ToolContext
 from opsmesh.capabilities.tools.memory import KnowledgeCitationAccessError
 from opsmesh.capabilities.tools.service import ProductToolService
 from opsmesh.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from opsmesh.identity.authorization.errors import PermissionDeniedError
 from opsmesh.resources.files.models import WorkspaceFile
+from opsmesh.resources.knowledge.activities import KnowledgeIngestionActivities
+from opsmesh.resources.knowledge.content import KnowledgeURLFetcher
 from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
 from opsmesh.resources.knowledge.models import (
     KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
 )
+from opsmesh.resources.knowledge.url_fetch import KnowledgeURLFetchError
 from opsmesh.resources.memory.authorization import AuthorizedMemoryScope
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry
-from opsmesh.resources.storage.storage import LocalStorage
-from opsmesh.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
-from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.instances.url_fetch import RuntimeUrlFetcher
-from opsmesh.runtime.queues.contracts import JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.resources.storage.backends import LocalObjectStorage
+from opsmesh.runtime.temporal.activities import ActivityDependencies
+from opsmesh.runtime.temporal.contracts import ExecutionKind, ExecutionRequest
+from opsmesh.runtime.temporal.models import TemporalOutboxEntry
 from opsmesh.shared.config import Settings
-from opsmesh.shared.redis.keys import RedisKeyBuilder
-from tests.fixtures.runtime_host import runtime_host
-from tests.test_workspace_api import _client, _headers, _seed_workspace
+from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.workspace_api import _client, _headers, _seed_workspace
 
 
-class _UrlFetchDockerClient:
-    def node_identity(self) -> str:
-        return "test-node"
-
-    def configure_execution(self, container_id, identity):
-        pass
-
-    def revoke_execution(self, container_id, identity):
-        pass
-
-    def __init__(self, content: bytes) -> None:
-        self.content = content
-        self.commands: list[list[str]] = []
-
-    def exec_command(
-        self,
-        container_id: str,
-        command: list[str],
-        timeout_seconds: int,
-        *,
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir: str | None = None,
-        identity=None,
-    ) -> RuntimeCommandResult:
-        _ = (container_id, timeout_seconds, input_file, working_dir)
-        self.commands.append(command)
-        return RuntimeCommandResult(exit_code=0, stdout="", stderr="")
-
-    def copy_file_from_container(
-        self,
-        container_id: str,
-        source_path: str,
-        max_bytes: int,
-        timeout_seconds: int,
-        *,
-        identity=None,
-    ) -> bytes:
-        _ = (container_id, source_path, max_bytes, timeout_seconds)
-        return self.content
+def _execute_ingestion(session, ingestion, *, storage_root=".opsmesh-storage", fetcher=None):
+    request = ExecutionRequest(
+        workspace_id=ingestion.workspace_id,
+        resource_id=ingestion.source_id,
+        requested_by_user_id=ingestion.requested_by_user_id,
+        kind=ExecutionKind.KNOWLEDGE_INGEST,
+        parameters={"source_version": ingestion.source_version},
+    )
+    KnowledgeIngestionActivities(
+        ActivityDependencies(
+            sessionmaker(session.get_bind(), expire_on_commit=False),
+            Settings(environment="test", storage_root=storage_root),
+        ),
+        fetcher or Mock(spec=KnowledgeURLFetcher),
+    ).ingest(request)
+    session.refresh(ingestion)
+    return ingestion
 
 
 def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path) -> None:
@@ -103,7 +83,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     assert source_response.status_code == 201
     source_id = source_response.json()["id"]
 
-    storage = LocalStorage(str(tmp_path))
+    storage = LocalObjectStorage(str(tmp_path))
     storage.write(storage_key, content)
     source = session.get(KnowledgeSource, UUID(source_id))
     assert source is not None
@@ -121,7 +101,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     )
     assert started is not None
     session.commit()
-    result = service.process(ingestion=started, storage=storage)
+    result = _execute_ingestion(session, started, storage_root=str(tmp_path))
     session.commit()
 
     assert result.status == "succeeded"
@@ -241,6 +221,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     )
     assert duplicate.id == ingestion.id
     assert duplicate.status == "succeeded"
+    session.commit()
     source_path = f"/api/v1/workspaces/{workspace.id}/knowledge/sources"
     archived = client.post(
         f"{source_path}/{source_id}/archive",
@@ -267,15 +248,8 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     )
 
 
-def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = RedisQueue(
-        redis=redis,
-        keys=RedisKeyBuilder("test"),
-        queue_name="worker",
-        blocking_timeout_seconds=0,
-    )
-    client, session = _client(queue)
+def test_ingestion_route_stages_one_native_execution_and_accepts_url(tmp_path) -> None:
+    client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
     content = b"Short knowledge source"
     storage_key = f"workspaces/{workspace.id}/files/{uuid4()}"
@@ -291,7 +265,7 @@ def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> No
     )
     session.add(workspace_file)
     session.commit()
-    storage = LocalStorage(str(tmp_path))
+    storage = LocalObjectStorage(str(tmp_path))
     storage.write(storage_key, content)
 
     base = f"/api/v1/workspaces/{workspace.id}/knowledge/sources"
@@ -312,26 +286,22 @@ def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> No
     assert first.status_code == 202
     assert second.status_code == 202
     assert first.json()["id"] == second.json()["id"]
-    job = queue.dequeue()
-    assert job is not None
-    assert job.job_type == JobType.KNOWLEDGE_INGEST
+    row = session.scalars(select(TemporalOutboxEntry)).one()
+    job = ExecutionRequest.model_validate(row.payload["execution"])
+    assert job.kind is ExecutionKind.KNOWLEDGE_INGEST
     assert job.resource_id == UUID(source_id)
-    assert job.routing == {"source_version": 1}
-    assert queue.dequeue() is None
-
-    worker = WorkerJobHandler(
-        session,
-        queue,
-        settings=Settings(
-            environment="test",
-            log_format="text",
-            internal_api_token="test-token",
-            database_url="sqlite+pysqlite:///:memory:",
-            storage_root=str(tmp_path),
+    assert job.parameters == {"source_version": 1}
+    fetcher = Mock(spec=KnowledgeURLFetcher)
+    activities = KnowledgeIngestionActivities(
+        ActivityDependencies(
+            sessionmaker(session.get_bind(), expire_on_commit=False),
+            Settings(environment="test", storage_root=str(tmp_path)),
         ),
+        fetcher,
     )
-    worker.handle(job)
-    queue.ack(job)
+    activities.ingest(job)
+    activities.ingest(job)
+    fetcher.fetch.assert_not_called()
     status_response = client.get(
         f"{base}/{source_id}/ingestions/{first.json()['id']}",
         headers=_headers(owner.id),
@@ -352,12 +322,11 @@ def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> No
         json={"name": "Remote", "source_type": "url", "uri": "https://example.com"},
     )
     assert url_source.status_code == 201
-    rejected = client.post(
+    accepted = client.post(
         f"{base}/{url_source.json()['id']}/ingest",
         headers=_headers(owner.id),
     )
-    assert rejected.status_code == 400
-    assert "fetch_runtime_id" in rejected.json()["error"]["message"]
+    assert accepted.status_code == 202
 
 
 def test_ingestion_failure_is_recorded_for_unsupported_file() -> None:
@@ -404,7 +373,7 @@ def test_ingestion_failure_is_recorded_for_unsupported_file() -> None:
     )
     assert started is not None
     session.commit()
-    result = service.process(ingestion=started, storage=LocalStorage("."))
+    result = _execute_ingestion(session, started)
     session.commit()
 
     assert result.status == "failed"
@@ -414,23 +383,11 @@ def test_ingestion_failure_is_recorded_for_unsupported_file() -> None:
     assert stored.status == "failed"
 
 
-def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> None:
+def test_url_ingestion_uses_scoped_fetcher_and_records_citations() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
-    docker = _UrlFetchDockerClient(b"Fetched remote knowledge")
-    runtime = WorkspaceRuntime(
-        workspace_id=workspace.id,
-        name="Knowledge fetch runtime",
-        status="running",
-        connection_status="online",
-        host=runtime_host(workspace.id, "fetch-container", capacity=16, node_id="test-node"),
-        execution_mode="isolated",
-        limits={"timeout_seconds": 60, "max_output_bytes": 256_000},
-        network_policy={"mode": "internet", "disabled": False},
-        capabilities={},
-    )
-    session.add(runtime)
-    session.commit()
+    fetcher = Mock(spec=KnowledgeURLFetcher)
+    fetcher.fetch.return_value = b"Fetched remote knowledge"
     base = f"/api/v1/workspaces/{workspace.id}/knowledge/sources"
     source_response = client.post(
         base,
@@ -439,7 +396,6 @@ def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> N
             "name": "Remote docs",
             "source_type": "url",
             "uri": "https://docs.example.com/guide",
-            "config": {"fetch_runtime_id": str(runtime.id)},
         },
     )
     assert source_response.status_code == 201
@@ -458,19 +414,77 @@ def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> N
     )
     assert started is not None
     session.commit()
-    result = service.process(
-        ingestion=started,
-        storage=None,
-        url_fetcher=RuntimeUrlFetcher(session, docker),
-    )
+    result = _execute_ingestion(session, started, fetcher=fetcher)
     session.commit()
 
     assert result.status == "succeeded"
     assert result.chunk_count == 1
-    assert len(docker.commands) == 1
+    fetcher.fetch.assert_called_once()
+    assert fetcher.fetch.call_args.kwargs["workspace_id"] == workspace.id
+    assert fetcher.fetch.call_args.kwargs["url"] == "https://docs.example.com/guide"
     citation = session.scalar(
         select(KnowledgeCitation).where(KnowledgeCitation.ingestion_id == ingestion.id)
     )
     assert citation is not None
     assert citation.locator == "https://docs.example.com/guide"
     assert citation.quote == "Fetched remote knowledge"
+
+
+@pytest.mark.parametrize("change", ["source_version", "actor_access", "fetch_failure"])
+def test_native_url_transfer_has_no_database_connection_and_rechecks_live_authorization(
+    tmp_path, change
+):
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    response = client.post(
+        f"/api/v1/workspaces/{workspace.id}/knowledge/sources",
+        headers=_headers(owner.id),
+        json={
+            "name": "Native URL",
+            "source_type": "url",
+            "uri": "https://docs.example.com/guide",
+        },
+    )
+    assert response.status_code == 201
+    source = session.get(KnowledgeSource, UUID(response.json()["id"]))
+    ingestion = KnowledgeSourceIngestionService(session).request(
+        workspace_id=workspace.id, source_id=source.id, requested_by_user_id=owner.id
+    )
+    session.commit()
+    row = session.scalars(select(TemporalOutboxEntry)).one()
+    request = ExecutionRequest.model_validate(row.payload["execution"])
+    engine = session.get_bind()
+    sessions = sessionmaker(engine, expire_on_commit=False)
+    member_id = workspace.members[0].id
+    session.commit()
+    fetcher = Mock(spec=KnowledgeURLFetcher)
+
+    def fetch(**kwargs):
+        assert engine.pool.checkedout() == 0
+        assert kwargs["workspace_id"] == workspace.id
+        if change == "fetch_failure":
+            raise KnowledgeURLFetchError("url_fetch_failed", "private-URL-canary")
+        with sessions() as current:
+            if change == "source_version":
+                current.get(KnowledgeSource, source.id).version += 1
+            else:
+                current.get(WorkspaceMember, member_id).role = "viewer"
+            current.commit()
+        return b"Remote knowledge evidence"
+
+    fetcher.fetch.side_effect = fetch
+    activities = KnowledgeIngestionActivities(
+        ActivityDependencies(sessions, Settings(environment="test", storage_root=str(tmp_path))),
+        fetcher,
+    )
+    if change == "actor_access":
+        with pytest.raises(PermissionDeniedError):
+            activities.ingest(request)
+    else:
+        activities.ingest(request)
+    session.expire_all()
+    assert session.get(KnowledgeSourceIngestion, ingestion.id).status == "failed"
+    assert not session.scalars(select(WorkspaceMemoryEntry)).all()
+    assert "private-URL-canary" not in str(
+        session.get(KnowledgeSourceIngestion, ingestion.id).error_code
+    )

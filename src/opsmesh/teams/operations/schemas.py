@@ -13,7 +13,7 @@ from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.teams.execution.schemas import AgentTeamExecutionOverviewResponse
 
 
-class AgentTeamOperationsConsoleTeamResponse(BaseModel):
+class TeamConsoleTeamResponse(BaseModel):
     id: UUID
     workspace_id: UUID
     name: str
@@ -30,7 +30,7 @@ class AgentTeamOperationsConsoleTeamResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class AgentTeamOperationsConsoleRuntimeResponse(BaseModel):
+class TeamConsoleOperationStateResponse(BaseModel):
     status: str
     workspace_runtime_id: UUID | None
     runtime_status: str | None
@@ -41,7 +41,7 @@ class AgentTeamOperationsConsoleRuntimeResponse(BaseModel):
     team_session_key: str | None
     member_session_count: int
     member_agent_ids: list[UUID]
-    last_iteration: dict[str, object] | None
+    last_advancement: dict[str, object] | None
     last_message_at: datetime | None
     operating_policy: dict[str, object]
     memory_summary: dict[str, object]
@@ -52,7 +52,7 @@ class AgentTeamOperationsConsoleRuntimeResponse(BaseModel):
     metadata: dict[str, object]
 
     @field_serializer(
-        "last_iteration",
+        "last_advancement",
         "operating_policy",
         "memory_summary",
         "scheduling",
@@ -67,7 +67,7 @@ class AgentTeamOperationsConsoleRuntimeResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class AgentTeamOperationsConsoleCommandRuntimeResponse(BaseModel):
+class TeamCommandCenterOperationStateResponse(BaseModel):
     status: str | None = None
     workspace_runtime_id: UUID | None = None
     runtime_status: str | None = None
@@ -84,7 +84,7 @@ class AgentTeamOperationsConsoleCommandRuntimeResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class AgentTeamOperationsConsoleActionPlanItem(BaseModel):
+class TeamConsoleActionPlanItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     source: str | None = None
@@ -98,25 +98,25 @@ class AgentTeamOperationsConsoleActionPlanItem(BaseModel):
     agent_profile_id: UUID | None = None
 
 
-class AgentTeamOperationsConsoleQueuesResponse(BaseModel):
+class TeamConsoleQueuesResponse(BaseModel):
     handoff: TaskHandoffQueueResponse
     manager: TaskManagerQueueResponse
 
 
-class AgentTeamOperationsConsoleCommandCenterResponse(BaseModel):
+class TeamConsoleCommandCenterResponse(BaseModel):
     workspace_id: UUID | None = None
     team_id: UUID | None = None
     generated_at: datetime | None = None
     summary: dict[str, object] = Field(default_factory=dict)
-    runtime: AgentTeamOperationsConsoleCommandRuntimeResponse = Field(
-        default_factory=AgentTeamOperationsConsoleCommandRuntimeResponse
+    runtime: TeamCommandCenterOperationStateResponse = Field(
+        default_factory=TeamCommandCenterOperationStateResponse
     )
     provider_readiness: dict[str, object] = Field(default_factory=dict)
     operating_policy: dict[str, object] = Field(default_factory=dict)
     memory_summary: dict[str, object] = Field(default_factory=dict)
     overview: AgentTeamExecutionOverviewResponse | None = None
-    queues: AgentTeamOperationsConsoleQueuesResponse | None = None
-    action_plan: list[AgentTeamOperationsConsoleActionPlanItem] = Field(default_factory=list)
+    queues: TeamConsoleQueuesResponse | None = None
+    action_plan: list[TeamConsoleActionPlanItem] = Field(default_factory=list)
 
     @field_serializer("summary", "provider_readiness", "operating_policy", "memory_summary")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
@@ -125,12 +125,12 @@ class AgentTeamOperationsConsoleCommandCenterResponse(BaseModel):
     @field_serializer("action_plan")
     def _serialize_action_plan(
         self,
-        value: list[AgentTeamOperationsConsoleActionPlanItem],
+        value: list[TeamConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
 
-class AgentTeamOperationsConsoleAgentSummary(BaseModel):
+class TeamConsoleAgentSummary(BaseModel):
     id: UUID
     name: str
     role: str
@@ -144,7 +144,7 @@ class AgentTeamOperationsConsoleAgentSummary(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class AgentTeamOperationsConsoleSessionResponse(BaseModel):
+class TeamConsoleSessionResponse(BaseModel):
     id: UUID
     session_key: str
     scope_type: str
@@ -164,15 +164,15 @@ class AgentTeamOperationsConsoleSessionResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class AgentTeamOperationsConsoleMemberMailboxResponse(BaseModel):
+class TeamConsoleMemberMailboxResponse(BaseModel):
     unread_count: int
     latest_message_at: datetime | None
 
 
-class AgentTeamOperationsConsoleMemberResponse(BaseModel):
+class TeamConsoleMemberResponse(BaseModel):
     team_member_id: UUID
     agent_profile_id: UUID
-    agent: AgentTeamOperationsConsoleAgentSummary | None
+    agent: TeamConsoleAgentSummary | None
     reports_to_member_id: UUID | None
     team_role: str
     department: str | None
@@ -181,18 +181,18 @@ class AgentTeamOperationsConsoleMemberResponse(BaseModel):
     accepts_tasks: bool
     max_concurrent_tasks: int
     status: str
-    session: AgentTeamOperationsConsoleSessionResponse | None
-    mailbox: AgentTeamOperationsConsoleMemberMailboxResponse
+    session: TeamConsoleSessionResponse | None
+    mailbox: TeamConsoleMemberMailboxResponse
 
 
-class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
+class TeamConsoleProviderManagementResponse(BaseModel):
     credential_count: int = 0
     active_credential_count: int = 0
     default_credential_id: UUID | None = None
     credentials: list[dict[str, object]] = Field(default_factory=list)
     agent_bindings: list[dict[str, object]] = Field(default_factory=list)
     run_diagnostics: dict[str, object] = Field(default_factory=dict)
-    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(default_factory=list)
+    suggested_actions: list[TeamConsoleActionPlanItem] = Field(default_factory=list)
 
     @field_serializer("credentials", "agent_bindings")
     def _serialize_provider_management_items(
@@ -208,7 +208,7 @@ class AgentTeamOperationsConsoleProviderManagementResponse(BaseModel):
     @field_serializer("suggested_actions")
     def _serialize_suggested_actions(
         self,
-        value: list[AgentTeamOperationsConsoleActionPlanItem],
+        value: list[TeamConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
@@ -220,13 +220,13 @@ class AgentTeamMemberModelProviderUpdateRequest(BaseModel):
     reset_session: bool = True
 
 
-class AgentTeamOperationsConsoleSessionsResponse(BaseModel):
-    team_session: AgentTeamOperationsConsoleSessionResponse | None
-    member_sessions: list[AgentTeamOperationsConsoleSessionResponse]
+class TeamConsoleSessionsResponse(BaseModel):
+    team_session: TeamConsoleSessionResponse | None
+    member_sessions: list[TeamConsoleSessionResponse]
     total: int
 
 
-class AgentTeamOperationsConsoleMessageResponse(BaseModel):
+class TeamConsoleMessageResponse(BaseModel):
     id: UUID
     thread_id: UUID
     task_id: UUID | None
@@ -245,35 +245,34 @@ class AgentTeamOperationsConsoleMessageResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
-class AgentTeamOperationsConsoleMailboxResponse(BaseModel):
+class TeamConsoleMailboxResponse(BaseModel):
     thread_id: UUID | None
     unread_count: int
-    latest_messages: list[AgentTeamOperationsConsoleMessageResponse]
+    latest_messages: list[TeamConsoleMessageResponse]
 
 
-class AgentTeamOperationsConsoleControlsResponse(BaseModel):
+class TeamConsoleControlsResponse(BaseModel):
     can_start: bool
     can_pause: bool
     can_resume: bool
     can_stop: bool
     can_ensure_workspace_runtime: bool
-    suggested_actions: list[AgentTeamOperationsConsoleActionPlanItem] = Field(default_factory=list)
+    suggested_actions: list[TeamConsoleActionPlanItem] = Field(default_factory=list)
 
     @field_serializer("suggested_actions")
     def _serialize_suggested_actions(
         self,
-        value: list[AgentTeamOperationsConsoleActionPlanItem],
+        value: list[TeamConsoleActionPlanItem],
     ) -> list[dict[str, object]]:
         return [redact_sensitive_payload(item.model_dump(mode="python")) for item in value]
 
 
-class AgentTeamOperationsConsoleReadinessResponse(BaseModel):
+class TeamConsoleReadinessResponse(BaseModel):
     status: str
     ready: bool
     runtime_health: str
     runtime_status: str
     workspace_runtime_status: str | None = None
-    stall: dict[str, object] = Field(default_factory=dict)
     mailbox_unread_count: int = 0
     queue_backlog: int = 0
     blocked_step_count: int = 0
@@ -281,7 +280,7 @@ class AgentTeamOperationsConsoleReadinessResponse(BaseModel):
     action_plan_count: int = 0
     next_operator_action: dict[str, object] | None = None
 
-    @field_serializer("stall", "next_operator_action")
+    @field_serializer("next_operator_action")
     def _serialize_metadata(
         self,
         value: dict[str, object] | None,
@@ -289,16 +288,16 @@ class AgentTeamOperationsConsoleReadinessResponse(BaseModel):
         return redact_sensitive_payload(value) if value is not None else None
 
 
-class AgentTeamOperationsConsoleResponse(BaseModel):
+class TeamOperationsConsoleResponse(BaseModel):
     workspace_id: UUID
     team_id: UUID
     generated_at: datetime
-    team: AgentTeamOperationsConsoleTeamResponse
-    runtime: AgentTeamOperationsConsoleRuntimeResponse
-    command_center: AgentTeamOperationsConsoleCommandCenterResponse
-    members: list[AgentTeamOperationsConsoleMemberResponse]
-    provider_management: AgentTeamOperationsConsoleProviderManagementResponse
-    sessions: AgentTeamOperationsConsoleSessionsResponse
-    mailbox: AgentTeamOperationsConsoleMailboxResponse
-    controls: AgentTeamOperationsConsoleControlsResponse
-    readiness: AgentTeamOperationsConsoleReadinessResponse
+    team: TeamConsoleTeamResponse
+    runtime: TeamConsoleOperationStateResponse
+    command_center: TeamConsoleCommandCenterResponse
+    members: list[TeamConsoleMemberResponse]
+    provider_management: TeamConsoleProviderManagementResponse
+    sessions: TeamConsoleSessionsResponse
+    mailbox: TeamConsoleMailboxResponse
+    controls: TeamConsoleControlsResponse
+    readiness: TeamConsoleReadinessResponse

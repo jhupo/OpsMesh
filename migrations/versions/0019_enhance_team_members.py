@@ -22,7 +22,9 @@ def upgrade() -> None:
         "agent_team_members",
         sa.Column("reports_to_member_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
-    op.add_column("agent_team_members", sa.Column("department", sa.String(length=120), nullable=True))
+    op.add_column(
+        "agent_team_members", sa.Column("department", sa.String(length=120), nullable=True)
+    )
     op.add_column(
         "agent_team_members",
         sa.Column("position_title", sa.String(length=160), nullable=True),
@@ -51,9 +53,15 @@ def upgrade() -> None:
         "agent_team_members",
         sa.Column("status", sa.String(length=32), server_default="active", nullable=False),
     )
-    op.execute("UPDATE agent_team_members SET responsibilities = '[]'::jsonb WHERE responsibilities IS NULL")
-    op.execute("UPDATE agent_team_members SET skill_weights = '{}'::jsonb WHERE skill_weights IS NULL")
-    op.execute("UPDATE agent_team_members SET availability = '{}'::jsonb WHERE availability IS NULL")
+    op.execute(
+        "UPDATE agent_team_members SET responsibilities = '[]'::jsonb WHERE responsibilities IS NULL"
+    )
+    op.execute(
+        "UPDATE agent_team_members SET skill_weights = '{}'::jsonb WHERE skill_weights IS NULL"
+    )
+    op.execute(
+        "UPDATE agent_team_members SET availability = '{}'::jsonb WHERE availability IS NULL"
+    )
     op.alter_column("agent_team_members", "responsibilities", nullable=False)
     op.alter_column("agent_team_members", "skill_weights", nullable=False)
     op.alter_column("agent_team_members", "availability", nullable=False)

@@ -12,7 +12,7 @@ from opsmesh.teams.management.models import TEAM_RUNTIME_THREAD_KEY, AgentTeam, 
 from opsmesh.teams.sessions.refs import _uuid_or_none
 
 
-class TeamRuntimeMailboxStore:
+class TeamMailboxStore:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -41,7 +41,6 @@ class TeamRuntimeMailboxStore:
         team.default_task_policy = policy
         return thread
 
-
     def _existing_thread(self, team: AgentTeam) -> AgentMessageThread | None:
         policy = dict(team.default_task_policy or {})
         thread_id = _uuid_or_none(policy.get(TEAM_RUNTIME_THREAD_KEY))
@@ -54,7 +53,6 @@ class TeamRuntimeMailboxStore:
                 AgentMessageThread.agent_team_id == team.id,
             )
         )
-
 
     def _append_runtime_message(
         self,
@@ -86,7 +84,6 @@ class TeamRuntimeMailboxStore:
         thread.updated_at = message.created_at
         return message
 
-
     def _first_agent_id(self, team: AgentTeam) -> UUID | None:
         return self._session.scalar(
             select(AgentProfile.id)
@@ -100,7 +97,6 @@ class TeamRuntimeMailboxStore:
             .limit(1)
         )
 
-
     def _last_message_at(self, team: AgentTeam, thread: AgentMessageThread) -> datetime | None:
         return self._session.scalar(
             select(AgentMessage.created_at)
@@ -113,8 +109,7 @@ class TeamRuntimeMailboxStore:
             .limit(1)
         )
 
-
-    def _last_iteration_message(
+    def _last_advancement_message(
         self,
         team: AgentTeam,
         thread: AgentMessageThread,
@@ -125,7 +120,7 @@ class TeamRuntimeMailboxStore:
                 AgentMessage.workspace_id == thread.workspace_id,
                 AgentMessage.thread_id == thread.id,
                 AgentMessage.agent_team_id == team.id,
-                AgentMessage.message_type == "runtime_iteration",
+                AgentMessage.message_type == "runtime_advancement",
             )
             .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
             .limit(1)

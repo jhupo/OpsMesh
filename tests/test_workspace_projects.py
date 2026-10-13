@@ -3,12 +3,8 @@ from uuid import UUID, uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.identity.users.models import User
@@ -22,8 +18,9 @@ from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 from opsmesh.workspaces.projects.policy import validate_project_configuration
+from tests.fixtures.agent_product import _seed_default_model_provider
+from tests.fixtures.database import product_engine
 from tests.fixtures.execution import test_agent_id
-from tests.test_worker_run_execution import _seed_default_model_provider
 
 TOKEN = "project-test-token"
 
@@ -345,13 +342,7 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
     session = session_factory()
@@ -360,7 +351,7 @@ def _client() -> tuple[TestClient, Session]:
         environment="test",
         log_format="text",
         internal_api_token=TOKEN,
-        database_url="sqlite+pysqlite:///:memory:",
+        database_url=engine.url.render_as_string(hide_password=False),
     )
     app = create_app_with_dependencies(
         settings=settings,
@@ -424,12 +415,3 @@ def _file(
 
 def _headers(user_id: object) -> dict[str, str]:
     return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

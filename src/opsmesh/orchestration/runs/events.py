@@ -5,19 +5,17 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRunResult
-from opsmesh.agents.execution.errors import AgentRuntimePolicyError, normalize_agent_error
+from opsmesh.agents.execution.contracts import AgentRunRequest
+from opsmesh.agents.execution.errors import normalize_agent_error
 from opsmesh.agents.messages.models import AgentMessage
-from opsmesh.orchestration.requests.request_reviewing import model_provider_request_snapshot
 from opsmesh.orchestration.runs.models import AgentRun, RunEvent
 from opsmesh.orchestration.tasks.models import Task
-from opsmesh.runtime.queues.contracts import JobPayload
+from opsmesh.runtime.temporal.contracts import ExecutionRequest
 from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from opsmesh.shared.telemetry.request_context import current_evidence_context
 from opsmesh.shared.telemetry.trace_context import with_current_trace_metadata
-from opsmesh.shared.utils import dict_or_empty, json_safe_payload
 from opsmesh.teams.management.models import AgentTeam
-from opsmesh.teams.sessions.service import TeamRuntimeService
+from opsmesh.teams.sessions.service import TeamOperationService
 
 
 class RunEventWriter:
@@ -34,6 +32,7 @@ class RunEventWriter:
         event_type: str,
         message: str,
         metadata: dict[str, object] | None = None,
+        event_id: UUID | None = None,
     ) -> RunEvent:
         with self._session.no_autoflush:
             run = self._session.scalar(
@@ -68,8 +67,29 @@ class RunEventWriter:
             event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             created_at=datetime.now(UTC),
         )
+        if event_id is not None:
+            event.id = event_id
         self._session.add(event)
         self._session.flush([event])
+        if event_type in {"run.completed", "run.failed", "run.cancelled"} and run.task_id:
+            from opsmesh.orchestration.automations.dispatch import stage_automation_task_progress
+            from opsmesh.orchestration.tasks.models import Task
+            from opsmesh.teams.execution.dispatch import stage_team_task_progress
+
+            task = self._session.scalar(
+                select(Task).where(
+                    Task.workspace_id == workspace_id,
+                    Task.id == run.task_id,
+                )
+            )
+            if task is not None:
+                stage_team_task_progress(self._session, task=task, event_id=event.id)
+                stage_automation_task_progress(
+                    self._session,
+                    workspace_id=workspace_id,
+                    task_id=task.id,
+                    event_id=event.id,
+                )
         return event
 
 
@@ -92,24 +112,22 @@ class RunEventRecorder:
             metadata=metadata,
         )
 
-    def append_run_claimed_event(self, run: AgentRun, job: JobPayload) -> None:
+    def append_run_claimed_event(self, run: AgentRun, job: ExecutionRequest) -> None:
         self.append_event(
             run,
             "run.claimed",
             "Worker claimed the run",
             {
-                "job": {
-                    "job_id": str(job.job_id),
-                    "attempt": job.attempt,
-                    "priority": job.priority,
-                    "created_at": job.created_at.isoformat(),
+                "execution": {
+                    "workflow_id": job.workflow_id,
+                    "kind": job.kind.value,
+                    "request_id": job.request_id,
                     "requested_by_user_id": str(job.requested_by_user_id)
                     if job.requested_by_user_id is not None
                     else None,
                     "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
                     if job.requested_by_agent_run_id is not None
                     else None,
-                    "routing": safe_routing_metadata(job.routing),
                 }
             },
         )
@@ -141,80 +159,8 @@ class RunEventRecorder:
                 "allowed_tool_count": len(request.context.allowed_tools),
                 "agent_tool_count": len(request.agent_tools),
                 "has_tool_executor": request.tool_executor is not None,
-                "context_budget": metadata.get("context_budget", {}),
+                "context_assembly": metadata.get("context_assembly", {}),
                 "memory_retrieval": metadata.get("memory_retrieval", {}),
-            },
-        )
-
-    def append_model_request_started_event(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        *,
-        fallback_selected: bool,
-    ) -> None:
-        self.append_event(
-            run,
-            "model.request_started",
-            "Model request started",
-            {
-                "model": request.model,
-                "model_provider_credential_id": str(request.model_provider_credential_id)
-                if request.model_provider_credential_id is not None
-                else None,
-                "fallback_selected": fallback_selected,
-                "allowed_tool_count": len(request.context.allowed_tools),
-                "agent_tool_count": len(request.agent_tools),
-            },
-        )
-
-    def append_model_response_received_event(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        result: AgentRunResult,
-    ) -> None:
-        self.append_event(
-            run,
-            "model.response_received",
-            "Model response received",
-            {
-                "model": request.model,
-                "model_provider_credential_id": str(request.model_provider_credential_id)
-                if request.model_provider_credential_id is not None
-                else None,
-                "runtime_event_count": len(result.events),
-                "guardrail_result_count": len(result.guardrail_results),
-                "has_structured_output": result.structured_output is not None,
-                "has_raw_output": result.raw_output is not None,
-                "final_output_length": len(result.final_output),
-            },
-        )
-
-    def append_model_request_failed_event(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        exc: Exception,
-    ) -> None:
-        error = normalize_agent_error(exc)
-        if isinstance(exc, AgentRuntimePolicyError):
-            self.append_event(
-                run,
-                exc.event_type,
-                exc.message,
-                exc.metadata,
-            )
-        self.append_event(
-            run,
-            "model.request_failed",
-            "Model request failed",
-            {
-                "model": request.model,
-                "model_provider_credential_id": str(request.model_provider_credential_id)
-                if request.model_provider_credential_id is not None
-                else None,
-                "reason": error.as_dict(),
             },
         )
 
@@ -253,47 +199,6 @@ class RunEventRecorder:
         )
         self.append_team_runtime_model_provider_event(run, event)
 
-    def append_model_provider_fallback_selected_event(
-        self,
-        run: AgentRun,
-        *,
-        failed_request: AgentRunRequest,
-        selected_request: AgentRunRequest,
-    ) -> None:
-        event = self.append_event(
-            run,
-            "model_provider.fallback_selected",
-            "Model provider fallback selected",
-            {
-                "failed_provider": model_provider_request_snapshot(failed_request),
-                "model_provider": model_provider_request_snapshot(selected_request)
-                | {
-                    "source": "workspace_model_provider_fallback",
-                    "selected_model": selected_request.model,
-                },
-            },
-        )
-        self.append_team_runtime_model_provider_event(run, event)
-
-    def append_model_provider_fallback_unavailable_event(
-        self,
-        run: AgentRun,
-        *,
-        failed_request: AgentRunRequest,
-        exc: Exception,
-    ) -> None:
-        error = normalize_agent_error(exc)
-        event = self.append_event(
-            run,
-            "model_provider.fallback_unavailable",
-            "Model provider fallback was unavailable",
-            {
-                "reason": error.as_dict(),
-                "failed_provider": model_provider_request_snapshot(failed_request),
-            },
-        )
-        self.append_team_runtime_model_provider_event(run, event)
-
     def append_team_runtime_model_provider_event(
         self,
         run: AgentRun,
@@ -304,7 +209,7 @@ class RunEventRecorder:
         task = self.session.get(Task, run.task_id)
         if task is None or task.workspace_id != run.workspace_id or task.agent_team_id is None:
             return
-        runtime_state = TeamRuntimeService(self.session).get_state(
+        runtime_state = TeamOperationService(self.session).get_or_initialize_state(
             workspace_id=run.workspace_id,
             team_id=task.agent_team_id,
             initialize=True,
@@ -344,21 +249,3 @@ class RunEventRecorder:
 def optional_string_from_metadata(metadata: dict[str, object], key: str) -> str | None:
     value = metadata.get(key)
     return value if isinstance(value, str) else None
-
-
-def safe_routing_metadata(value: object) -> dict[str, object]:
-    routing = dict_or_empty(value)
-    return {
-        key: json_safe_payload(item)
-        for key, item in routing.items()
-        if key
-        not in {
-            "api_key",
-            "authorization",
-            "base_url",
-            "container_id",
-            "headers",
-            "secret",
-            "token",
-        }
-    }

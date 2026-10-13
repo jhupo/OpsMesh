@@ -4,10 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.agents.messages.models import AgentMessage
@@ -28,11 +25,12 @@ from opsmesh.resources.memory.authorization import AuthorizedMemoryScope
 from opsmesh.resources.memory.indexing import WorkspaceMemoryIndexingService
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry
 from opsmesh.resources.memory.retrieval_search import MemorySearchHit, MemorySearchRequest
-from opsmesh.resources.storage.storage import LocalStorage
+from opsmesh.resources.storage.backends import LocalObjectStorage
 from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 
 def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -> None:
@@ -86,7 +84,7 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
             }
         ),
     )
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
     storage.write(file.storage_key, b"brief")
     service = ProductToolService(session, storage=storage)
 
@@ -693,7 +691,7 @@ def test_write_artifact_versions_are_bound_to_work_package(tmp_path: Path) -> No
         agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"write_artifact"}),
     )
-    storage = LocalStorage(str(tmp_path / "storage"))
+    storage = LocalObjectStorage(str(tmp_path / "storage"))
     service = ProductToolService(session, storage=storage)
 
     first = service.files.write_artifact(
@@ -735,7 +733,7 @@ def test_write_artifact_compensates_storage_when_database_commit_fails(
         allowed_tools=frozenset({"write_artifact"}),
     )
     storage_root = tmp_path / "storage"
-    storage = LocalStorage(str(storage_root))
+    storage = LocalObjectStorage(str(storage_root))
     service = ProductToolService(session, storage=storage)
 
     def fail_commit() -> None:
@@ -803,8 +801,7 @@ def test_product_tool_permission_denied() -> None:
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -859,16 +856,7 @@ class _EmptyMemoryBackend:
         return []
 
 
-class _PartialWriteFailureStorage(LocalStorage):
+class _PartialWriteFailureStorage(LocalObjectStorage):
     def write(self, storage_key: str, content: bytes) -> None:
         super().write(storage_key, content[:1])
         raise OSError("storage write failed")
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

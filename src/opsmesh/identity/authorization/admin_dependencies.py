@@ -3,7 +3,7 @@ from hmac import compare_digest
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.identity.auth.service import AuthenticationService
 from opsmesh.identity.authorization.errors import AuthenticationError
 from opsmesh.shared.config import Settings, get_settings
@@ -32,7 +32,7 @@ async def require_platform_admin(
         if user is not None and user.platform_admin and not user.uses_restricted_token:
             session.commit()
             return
-    SecurityAuditService(session).record_request_event(
+    SecurityEventRecorder(session).record_request_event(
         request_context=security_request_context(request),
         action="auth.platform_admin.rejected",
         outcome="denied",

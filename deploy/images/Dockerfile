@@ -5,7 +5,6 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY LICENSE COPYING LICENSE-MIT NOTICE ./
 COPY operator ./operator
-COPY runtime ./runtime
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable --package opsmesh
 
@@ -30,4 +29,8 @@ FROM base AS api
 CMD ["uvicorn", "opsmesh.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 
 FROM base AS worker
-CMD ["python", "-m", "opsmesh.runtime.workers.cli"]
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends docker-cli \
+    && rm -rf /var/lib/apt/lists/*
+USER opsmesh
+CMD ["python", "-m", "opsmesh.runtime.temporal.cli"]

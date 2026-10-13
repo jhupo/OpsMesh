@@ -20,8 +20,12 @@ def upgrade() -> None:
         sa.Column("reserved_value", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("unit", sa.String(32), nullable=False, server_default="count"),
         sa.Column("status", sa.String(32), nullable=False, server_default="active"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["project_id"], ["workspace_projects.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

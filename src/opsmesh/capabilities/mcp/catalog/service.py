@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from opsmesh.capabilities.mcp.catalog.catalog import (
-    McpCatalogServer,
-    McpCatalogTool,
-    McpCatalogUsage,
-    McpUsageState,
+    MCPCatalogServer,
+    MCPCatalogTool,
+    MCPCatalogUsage,
+    MCPUsageState,
     empty_mcp_usage,
     rollup_mcp_usage,
 )
@@ -25,10 +25,10 @@ from opsmesh.capabilities.mcp.catalog.rules import (
     selected_remote_credentials,
 )
 from opsmesh.capabilities.mcp.models import (
-    McpCredentialReference,
-    McpServer,
-    McpToolAllowlist,
-    McpToolCallLog,
+    MCPCredentialReference,
+    MCPServer,
+    MCPToolAllowlist,
+    MCPToolCallLog,
 )
 from opsmesh.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES, mcp_tool_policy_summary
 from opsmesh.shared.config import Settings
@@ -38,7 +38,7 @@ from opsmesh.shared.pagination import PageParams
 T = TypeVar("T")
 
 
-class McpCatalogService:
+class MCPCatalogService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
         self._settings = settings
@@ -48,7 +48,7 @@ class McpCatalogService:
         workspace_id: UUID,
         page: PageParams,
         agent_profile_id: UUID | None = None,
-    ) -> tuple[list[McpCatalogServer], int]:
+    ) -> tuple[list[MCPCatalogServer], int]:
         allowed_names = self._agent_allowed_tool_names(workspace_id, agent_profile_id)
         servers, total = self.list_mcp_servers(workspace_id, page)
         server_ids = [server.id for server in servers]
@@ -93,7 +93,7 @@ class McpCatalogService:
         self,
         workspace_id: UUID,
         agent_profile_id: UUID,
-    ) -> list[tuple[McpToolAllowlist, McpServer]]:
+    ) -> list[tuple[MCPToolAllowlist, MCPServer]]:
         allowed_names = self._agent_allowed_tool_names(workspace_id, agent_profile_id)
         tools = self.list_allowed_mcp_tools(workspace_id)
         if allowed_names is None:
@@ -104,29 +104,29 @@ class McpCatalogService:
         self,
         workspace_id: UUID,
         page: PageParams,
-    ) -> tuple[list[McpServer], int]:
+    ) -> tuple[list[MCPServer], int]:
         statement = (
-            select(McpServer)
-            .where(McpServer.workspace_id == workspace_id)
-            .order_by(McpServer.created_at.desc())
+            select(MCPServer)
+            .where(MCPServer.workspace_id == workspace_id)
+            .order_by(MCPServer.created_at.desc())
         )
         return self._page(statement, page)
 
     def list_allowed_mcp_tools(
         self,
         workspace_id: UUID,
-    ) -> list[tuple[McpToolAllowlist, McpServer]]:
+    ) -> list[tuple[MCPToolAllowlist, MCPServer]]:
         statement = (
-            select(McpToolAllowlist, McpServer)
-            .join(McpServer, McpServer.id == McpToolAllowlist.mcp_server_id)
+            select(MCPToolAllowlist, MCPServer)
+            .join(MCPServer, MCPServer.id == MCPToolAllowlist.mcp_server_id)
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.status == "active",
-                McpToolAllowlist.platform_blocked.is_(False),
-                McpServer.status == "active",
-                McpServer.platform_blocked.is_(False),
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.status == "active",
+                MCPToolAllowlist.platform_blocked.is_(False),
+                MCPServer.status == "active",
+                MCPServer.platform_blocked.is_(False),
             )
-            .order_by(McpServer.name.asc(), McpToolAllowlist.tool_name.asc())
+            .order_by(MCPServer.name.asc(), MCPToolAllowlist.tool_name.asc())
         )
         return [(row[0], row[1]) for row in self._session.execute(statement).all()]
 
@@ -148,40 +148,40 @@ class McpCatalogService:
         server_ids: list[UUID],
         *,
         allowed_names: set[str] | None,
-    ) -> list[McpToolAllowlist]:
+    ) -> list[MCPToolAllowlist]:
         statement = (
-            select(McpToolAllowlist)
+            select(MCPToolAllowlist)
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.mcp_server_id.in_(server_ids),
-                McpToolAllowlist.status == "active",
-                McpToolAllowlist.platform_blocked.is_(False),
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.mcp_server_id.in_(server_ids),
+                MCPToolAllowlist.status == "active",
+                MCPToolAllowlist.platform_blocked.is_(False),
             )
-            .order_by(McpToolAllowlist.tool_name.asc())
+            .order_by(MCPToolAllowlist.tool_name.asc())
         )
         if allowed_names is None:
             return list(self._session.scalars(statement))
         if not allowed_names:
             return []
         return list(
-            self._session.scalars(statement.where(McpToolAllowlist.tool_name.in_(allowed_names)))
+            self._session.scalars(statement.where(MCPToolAllowlist.tool_name.in_(allowed_names)))
         )
 
     def _catalog_tools_by_server(
         self,
         server_ids: list[UUID],
-        tool_rows: list[McpToolAllowlist],
+        tool_rows: list[MCPToolAllowlist],
         *,
-        usage_by_server_tool: dict[tuple[UUID, str], McpCatalogUsage],
+        usage_by_server_tool: dict[tuple[UUID, str], MCPCatalogUsage],
         hourly_limit_counts: dict[tuple[UUID, str], int],
-    ) -> dict[UUID, list[McpCatalogTool]]:
-        tools_by_server: dict[UUID, list[McpCatalogTool]] = {
+    ) -> dict[UUID, list[MCPCatalogTool]]:
+        tools_by_server: dict[UUID, list[MCPCatalogTool]] = {
             server_id: [] for server_id in server_ids
         }
         for allow in tool_rows:
             hourly_count = hourly_limit_counts.get((allow.mcp_server_id, allow.tool_name), 0)
             tools_by_server.setdefault(allow.mcp_server_id, []).append(
-                McpCatalogTool(
+                MCPCatalogTool(
                     allow,
                     usage_by_server_tool.get(
                         (allow.mcp_server_id, allow.tool_name),
@@ -196,14 +196,14 @@ class McpCatalogService:
         self,
         workspace_id: UUID,
         server_ids: list[UUID],
-    ) -> tuple[dict[UUID, int], int, list[McpCredentialReference]]:
+    ) -> tuple[dict[UUID, int], int, list[MCPCredentialReference]]:
         credentials = self._session.scalars(
-            select(McpCredentialReference).where(
-                McpCredentialReference.workspace_id == workspace_id,
-                McpCredentialReference.status == "active",
+            select(MCPCredentialReference).where(
+                MCPCredentialReference.workspace_id == workspace_id,
+                MCPCredentialReference.status == "active",
                 or_(
-                    McpCredentialReference.mcp_server_id.in_(server_ids),
-                    McpCredentialReference.mcp_server_id.is_(None),
+                    MCPCredentialReference.mcp_server_id.in_(server_ids),
+                    MCPCredentialReference.mcp_server_id.is_(None),
                 ),
             )
         ).all()
@@ -219,13 +219,13 @@ class McpCatalogService:
 
     def _catalog_entry(
         self,
-        server: McpServer,
-        tools: list[McpCatalogTool],
+        server: MCPServer,
+        tools: list[MCPCatalogTool],
         credential_count: int,
         workspace_credential_count: int,
-        credentials: list[McpCredentialReference],
-        usage: McpCatalogUsage,
-    ) -> McpCatalogServer:
+        credentials: list[MCPCredentialReference],
+        usage: MCPCatalogUsage,
+    ) -> MCPCatalogServer:
         if (
             server.server_type in {"streamable_http", "sse", "hosted"}
             or server.connection.get("runtime") == "managed"
@@ -248,7 +248,7 @@ class McpCatalogService:
             credential_status=status,
             stale_after=self._mcp_health_check_stale_after,
         )
-        return McpCatalogServer(
+        return MCPCatalogServer(
             server=server,
             tools=tools,
             credential_count=credential_count,
@@ -269,21 +269,21 @@ class McpCatalogService:
         self,
         workspace_id: UUID,
         server_ids: list[UUID],
-    ) -> dict[tuple[UUID, str], McpCatalogUsage]:
+    ) -> dict[tuple[UUID, str], MCPCatalogUsage]:
         logs = self._session.scalars(
-            select(McpToolCallLog)
+            select(MCPToolCallLog)
             .where(
-                McpToolCallLog.workspace_id == workspace_id,
-                McpToolCallLog.mcp_server_id.in_(server_ids),
+                MCPToolCallLog.workspace_id == workspace_id,
+                MCPToolCallLog.mcp_server_id.in_(server_ids),
             )
-            .order_by(McpToolCallLog.created_at.asc())
+            .order_by(MCPToolCallLog.created_at.asc())
         ).all()
-        states: dict[tuple[UUID, str], McpUsageState] = {}
+        states: dict[tuple[UUID, str], MCPUsageState] = {}
         for log in logs:
             if log.mcp_server_id is None:
                 continue
             key = (log.mcp_server_id, log.tool_name)
-            states.setdefault(key, McpUsageState()).add(log)
+            states.setdefault(key, MCPUsageState()).add(log)
         return {key: state.to_usage() for key, state in states.items()}
 
     def _mcp_call_limit_counts(
@@ -294,11 +294,11 @@ class McpCatalogService:
         since: datetime,
     ) -> dict[tuple[UUID, str], int]:
         logs = self._session.scalars(
-            select(McpToolCallLog).where(
-                McpToolCallLog.workspace_id == workspace_id,
-                McpToolCallLog.mcp_server_id.in_(server_ids),
-                McpToolCallLog.status.in_(MCP_LIMIT_COUNTED_STATUSES),
-                McpToolCallLog.created_at >= since,
+            select(MCPToolCallLog).where(
+                MCPToolCallLog.workspace_id == workspace_id,
+                MCPToolCallLog.mcp_server_id.in_(server_ids),
+                MCPToolCallLog.status.in_(MCP_LIMIT_COUNTED_STATUSES),
+                MCPToolCallLog.created_at >= since,
             )
         ).all()
         counts: Counter[tuple[UUID, str]] = Counter()

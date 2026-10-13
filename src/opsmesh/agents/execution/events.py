@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import overload
 from uuid import UUID
 
-from opsmesh.agents.execution.contracts import AgentRuntimeEvent
+from opsmesh.agents.execution.contracts import AgentLifecycleEvent
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import TaskStep
 from opsmesh.shared.security.redaction import redact_sensitive_text
@@ -30,34 +30,31 @@ class TaskMessageDraft:
     payload: dict[str, object]
 
 
-class RuntimeEventTaskMessageMapper:
-    def map_event(
-        self,
-        *,
-        event: AgentRuntimeEvent,
-        run: AgentRun,
-        step: TaskStep | None,
-    ) -> TaskMessageDraft | None:
-        message_type = _message_type(event.event_type)
-        if message_type is None:
-            return None
-        payload = _sanitize(
-            {
-                **event.payload,
-                "runtime_event_type": event.event_type,
-                "agent_run_id": str(run.id),
-                "task_step_id": str(step.id) if step is not None else None,
-                "work_package_id": step.work_package_id if step is not None else None,
-            }
-        )
-        return TaskMessageDraft(
-            message_type=message_type,
-            body=(
-                redact_sensitive_text(event.message)
-                if event.message else _default_body(message_type)
-            ),
-            payload=payload,
-        )
+def task_message_from_lifecycle_event(
+    *,
+    event: AgentLifecycleEvent,
+    run: AgentRun,
+    step: TaskStep | None,
+) -> TaskMessageDraft | None:
+    message_type = _message_type(event.event_type)
+    if message_type is None:
+        return None
+    payload = _sanitize(
+        {
+            **event.payload,
+            "runtime_event_type": event.event_type,
+            "agent_run_id": str(run.id),
+            "task_step_id": str(step.id) if step is not None else None,
+            "work_package_id": step.work_package_id if step is not None else None,
+        }
+    )
+    return TaskMessageDraft(
+        message_type=message_type,
+        body=(
+            redact_sensitive_text(event.message) if event.message else _default_body(message_type)
+        ),
+        payload=payload,
+    )
 
 
 def _message_type(event_type: str) -> str | None:
@@ -74,10 +71,6 @@ def _message_type(event_type: str) -> str | None:
         "tool.failed": "tool.failed",
         "tool.blocked": "tool.blocked",
         "approval.requested": "approval.requested",
-        "run.waiting.runtime": "runtime.waiting",
-        "runtime.waiting": "runtime.waiting",
-        "tool.waiting": "runtime.waiting",
-        "model_provider.fallback_selected": "model_provider.fallback_selected",
     }
     return mapping.get(normalized)
 
@@ -94,8 +87,6 @@ def _default_body(message_type: str) -> str:
         "tool.failed": "Tool failed.",
         "tool.blocked": "Tool blocked.",
         "approval.requested": "Approval requested.",
-        "runtime.waiting": "Runtime is waiting for external work.",
-        "model_provider.fallback_selected": "Model provider fallback selected.",
     }.get(message_type, "Runtime event.")
 
 

@@ -14,14 +14,19 @@ def test_existing_assets_are_verified_not_overwritten(tmp_path: Path) -> None:
     path.write_bytes(b"verified candidate")
     record = file_record(path)
     asset = {
-        "name": path.name, "state": "uploaded", "size": record.size,
+        "name": path.name,
+        "state": "uploaded",
+        "size": record.size,
         "digest": f"sha256:{record.sha256}",
     }
     assert verify_assets([asset], tmp_path) == {path.name}
     assert verify_assets([], tmp_path) == set()
     for field, value in (
-        ("name", "unexpected.whl"), ("state", "starter"), ("size", 0),
-        ("digest", "sha256:" + "0" * 64), ("digest", None),
+        ("name", "unexpected.whl"),
+        ("state", "starter"),
+        ("size", 0),
+        ("digest", "sha256:" + "0" * 64),
+        ("digest", None),
     ):
         with pytest.raises(ValueError, match="does not match"):
             verify_assets([{**asset, field: value}], tmp_path)
@@ -36,18 +41,26 @@ def test_release_is_staged_before_managed_acceptance_and_finalized_without_asset
     package = tmp_path / "package.whl"
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
-        tag="v0.1.0rc2", commit="b" * 40, repository="jhupo/OpsMesh",
+        tag="v0.1.0rc2",
+        commit="b" * 40,
+        repository="jhupo/OpsMesh",
         api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
         worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
         runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
-        database_revision="0071_platform_delivery", upgrade_from_revisions=[],
-        rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
+        database_revision="0071_platform_delivery",
+        upgrade_from_revisions=[],
+        rollback_database_revisions=[],
+        platforms=["linux/amd64"],
         files=[file_record(package)],
     )
     (tmp_path / "release-manifest.json").write_text(manifest.model_dump_json())
     assets = [
-        {"name": path.name, "size": path.stat().st_size, "state": "uploaded",
-         "digest": "sha256:" + file_record(path).sha256}
+        {
+            "name": path.name,
+            "size": path.stat().st_size,
+            "state": "uploaded",
+            "digest": "sha256:" + file_record(path).sha256,
+        }
         for path in tmp_path.iterdir()
     ]
     calls: list[tuple[str, ...]] = []
@@ -99,18 +112,22 @@ def test_public_download_verification_fails_closed(
     package = tmp_path / "package.whl"
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
-        tag="v0.1.0rc4", commit="b" * 40, repository="jhupo/OpsMesh",
+        tag="v0.1.0rc4",
+        commit="b" * 40,
+        repository="jhupo/OpsMesh",
         api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
         worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
         runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
-        database_revision="0072_release_schema", upgrade_from_revisions=[],
-        rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
+        database_revision="0072_release_schema",
+        upgrade_from_revisions=[],
+        rollback_database_revisions=[],
+        platforms=["linux/amd64"],
         files=[file_record(package)],
     )
     calls: list[list[str]] = []
     verified: list[tuple[str, str, str, str]] = []
-    monkeypatch.setattr(check_release.ReleaseSource, "fetch_manifest", lambda *args: manifest)
-    monkeypatch.setattr(check_release.ReleaseSource, "download_file", lambda *args: package)
+    monkeypatch.setattr(check_release.ReleaseDownloader, "fetch_manifest", lambda *args: manifest)
+    monkeypatch.setattr(check_release.ReleaseDownloader, "download_file", lambda *args: package)
 
     def verify(path: str, tag: str, commit: str, repository: str) -> None:
         if not path.startswith("oci://"):
@@ -130,16 +147,22 @@ def test_public_download_verification_fails_closed(
         assert verified == [
             (str(package), manifest.tag, manifest.commit, manifest.repository),
             (
-                f"oci://{manifest.image('api')}", manifest.tag,
-                manifest.commit, manifest.repository,
+                f"oci://{manifest.image('api')}",
+                manifest.tag,
+                manifest.commit,
+                manifest.repository,
             ),
             (
-                f"oci://{manifest.image('worker')}", manifest.tag,
-                manifest.commit, manifest.repository,
+                f"oci://{manifest.image('worker')}",
+                manifest.tag,
+                manifest.commit,
+                manifest.repository,
             ),
             (
-                f"oci://{manifest.image('runtime')}", manifest.tag,
-                manifest.commit, manifest.repository,
+                f"oci://{manifest.image('runtime')}",
+                manifest.tag,
+                manifest.commit,
+                manifest.repository,
             ),
         ]
         assert calls == []

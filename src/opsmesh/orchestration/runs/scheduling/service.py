@@ -36,13 +36,27 @@ class WorkspaceScheduler:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def select_runnable_steps(
+    def evaluate_and_mark_steps(
         self,
         *,
         workspace_id: UUID,
         candidate_steps: list[TaskStep],
         policy_override: dict[str, object] | None = None,
     ) -> SchedulingDecision:
+        """Evaluate capacity and update scheduling fields on candidate steps.
+
+        This changes the supplied ORM objects, including scheduling timestamps,
+        priorities and blocked reasons. It is not a read-only preview, does not
+        reserve capacity or start runs, and leaves commit/rollback to the caller.
+
+        Args:
+            workspace_id: Tenant scope for policies, active runs and quotas.
+            candidate_steps: Authorized steps belonging to this workspace.
+            policy_override: Optional per-evaluation scheduling policy values.
+
+        Returns:
+            Runnable and blocked steps, the blocking reason and available slots.
+        """
         if not candidate_steps:
             return SchedulingDecision((), (), None, None)
         policy = SchedulerPolicyResolver(self._session).policy_for(

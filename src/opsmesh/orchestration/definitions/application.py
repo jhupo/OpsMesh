@@ -27,8 +27,8 @@ from opsmesh.orchestration.definitions.validation import (
 )
 from opsmesh.orchestration.planning.attempt_models import TaskPlanningAttempt
 from opsmesh.orchestration.planning.feasibility import PlanFeasibilityService
-from opsmesh.orchestration.planning.member_matching import MemberMatchingService
-from opsmesh.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from opsmesh.orchestration.planning.member_matching import TeamMemberMatcher
+from opsmesh.orchestration.planning.task_plan_steps import TaskPlanStepMaterializer
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
 from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
@@ -136,7 +136,7 @@ class OrchestrationDefinitionApplicationService:
         except (ProjectPlanValidationError, WorkflowGraphError) as exc:
             raise OrchestrationDefinitionError(str(exc), code=exc.code) from exc
 
-        ProjectPlanStepMaterializer(self._session).materialize(task, plan)
+        TaskPlanStepMaterializer(self._session).materialize(task, plan)
         task.project_plan = plan
         task.orchestration_definition_id = definition.id
         task.orchestration_version = revision.version
@@ -209,7 +209,7 @@ class OrchestrationDefinitionApplicationService:
                 "Active team not found",
                 code="orchestration_team_unavailable",
             )
-        matcher = MemberMatchingService(self._session)
+        matcher = TeamMemberMatcher(self._session)
         packages: list[dict[str, object]] = []
         for node in raw_nodes:
             if node.node_type == "subworkflow":
@@ -257,7 +257,7 @@ class OrchestrationDefinitionApplicationService:
         self,
         task: Task,
         team: AgentTeam,
-        matcher: MemberMatchingService,
+        matcher: TeamMemberMatcher,
         node: WorkflowNode,
     ) -> UUID | None:
         assert isinstance(task.team_snapshot, dict)

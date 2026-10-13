@@ -6,17 +6,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.mcp.catalog.catalog import McpCatalogServer
+from opsmesh.capabilities.mcp.catalog.catalog import MCPCatalogServer
 from opsmesh.capabilities.mcp.catalog.contracts import (
-    McpServerCreateRequest,
-    McpServerHealthCheckRequest,
-    McpServerUpdateRequest,
-    McpToolAllowRequest,
-    McpToolAllowUpdateRequest,
+    MCPServerCreateRequest,
+    MCPServerHealthCheckRequest,
+    MCPServerUpdateRequest,
+    MCPToolAllowRequest,
+    MCPToolAllowUpdateRequest,
 )
 from opsmesh.capabilities.mcp.catalog.rules import connection_summary, normalize_connection
-from opsmesh.capabilities.mcp.catalog.service import McpCatalogService
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.catalog.service import MCPCatalogService
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.mcp.policy import mcp_health_error, require_mcp_server
 from opsmesh.capabilities.references.schema import (
     normalize_object_schema,
@@ -25,20 +25,20 @@ from opsmesh.capabilities.references.schema import (
 )
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.reviews.approval_service import ResourceReviewApprovalService
-from opsmesh.governance.reviews.policy import (
+from opsmesh.governance.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_SERVER,
     REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
 )
-from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
+from opsmesh.governance.reviews.service import ResourcePolicyReviewService
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from opsmesh.shared.errors import DomainError, PolicyDeniedError
 from opsmesh.shared.pagination import PageParams
 
 
-class McpServerService:
+class MCPServerService:
     def __init__(
         self,
         session: Session,
@@ -50,20 +50,20 @@ class McpServerService:
     def create_mcp_server(
         self,
         workspace_id: UUID,
-        data: McpServerCreateRequest,
+        data: MCPServerCreateRequest,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
-    ) -> McpServer:
+    ) -> MCPServer:
         normalized_connection = normalize_connection(data.server_type, data.connection)
         normalized_data = data.model_copy(update={"connection": normalized_connection})
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_mcp_server(
             workspace_id=workspace_id,
             server_type=normalized_data.server_type,
             connection=normalized_data.connection,
             visibility=normalized_data.visibility,
         )
-        server = McpServer(
+        server = MCPServer(
             workspace_id=workspace_id,
             status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
             **normalized_data.model_dump(),
@@ -116,9 +116,9 @@ class McpServerService:
         self,
         workspace_id: UUID,
         mcp_server_id: UUID,
-        data: McpServerUpdateRequest,
+        data: MCPServerUpdateRequest,
         actor_user_id: UUID | None = None,
-    ) -> McpServer:
+    ) -> MCPServer:
         server = require_mcp_server(
             self._session,
             workspace_id,
@@ -136,7 +136,7 @@ class McpServerService:
             else server.connection
         )
         next_visibility = data.visibility or server.visibility
-        review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
+        review = ResourcePolicyReviewService(self._session, self._settings).review_mcp_server(
             workspace_id=workspace_id,
             server_type=server.server_type,
             connection=next_connection,
@@ -158,10 +158,10 @@ class McpServerService:
                 server.discovery_status = "stale"
                 server.discovery_error = None
                 discovered_tools = self._session.scalars(
-                    select(McpToolAllowlist).where(
-                        McpToolAllowlist.workspace_id == workspace_id,
-                        McpToolAllowlist.mcp_server_id == server.id,
-                        McpToolAllowlist.discovery_source == "mcp",
+                    select(MCPToolAllowlist).where(
+                        MCPToolAllowlist.workspace_id == workspace_id,
+                        MCPToolAllowlist.mcp_server_id == server.id,
+                        MCPToolAllowlist.discovery_source == "mcp",
                     )
                 )
                 for tool in discovered_tools:
@@ -214,24 +214,24 @@ class McpServerService:
         self._session.refresh(server)
         return server
 
-    def list_mcp_servers(self, workspace_id: UUID, page: PageParams) -> tuple[list[McpServer], int]:
+    def list_mcp_servers(self, workspace_id: UUID, page: PageParams) -> tuple[list[MCPServer], int]:
         return self._catalog().list_mcp_servers(workspace_id, page)
 
     def discovered_mcp_tools(
         self,
         workspace_id: UUID,
         mcp_server_id: UUID,
-    ) -> list[McpToolAllowlist]:
+    ) -> list[MCPToolAllowlist]:
         require_mcp_server(self._session, workspace_id, mcp_server_id)
         return list(
             self._session.scalars(
-                select(McpToolAllowlist)
+                select(MCPToolAllowlist)
                 .where(
-                    McpToolAllowlist.workspace_id == workspace_id,
-                    McpToolAllowlist.mcp_server_id == mcp_server_id,
-                    McpToolAllowlist.discovery_source == "mcp",
+                    MCPToolAllowlist.workspace_id == workspace_id,
+                    MCPToolAllowlist.mcp_server_id == mcp_server_id,
+                    MCPToolAllowlist.discovery_source == "mcp",
                 )
-                .order_by(McpToolAllowlist.tool_name.asc())
+                .order_by(MCPToolAllowlist.tool_name.asc())
             )
         )
 
@@ -239,11 +239,11 @@ class McpServerService:
         self,
         workspace_id: UUID,
         mcp_server_id: UUID,
-        data: McpToolAllowRequest,
+        data: MCPToolAllowRequest,
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
-    ) -> McpToolAllowlist:
+    ) -> MCPToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         if server.platform_blocked:
             raise PolicyDeniedError("MCP server is blocked by the platform")
@@ -266,7 +266,7 @@ class McpServerService:
                 "output_schema": normalized_output_schema,
             }
         )
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_tool_allowlist(
@@ -277,7 +277,7 @@ class McpServerService:
             risk_level=normalized_data.risk_level,
             policy=normalized_data.policy,
         )
-        allow = McpToolAllowlist(
+        allow = MCPToolAllowlist(
             workspace_id=workspace_id,
             mcp_server_id=mcp_server_id,
             status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
@@ -337,17 +337,17 @@ class McpServerService:
         mcp_server_id: UUID,
         allowlist_id: UUID,
         actor_user_id: UUID | None = None,
-    ) -> McpToolAllowlist:
+    ) -> MCPToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         if server.platform_blocked:
             raise PolicyDeniedError("MCP server is blocked by the platform")
         allow = self._session.scalar(
-            select(McpToolAllowlist)
+            select(MCPToolAllowlist)
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.mcp_server_id == mcp_server_id,
-                McpToolAllowlist.id == allowlist_id,
-                McpToolAllowlist.discovery_source == "mcp",
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.mcp_server_id == mcp_server_id,
+                MCPToolAllowlist.id == allowlist_id,
+                MCPToolAllowlist.discovery_source == "mcp",
             )
             .with_for_update()
         )
@@ -369,7 +369,7 @@ class McpServerService:
             )
         if allow.status in {"active", "pending_approval"}:
             return allow
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_tool_allowlist(
@@ -430,18 +430,18 @@ class McpServerService:
         workspace_id: UUID,
         mcp_server_id: UUID,
         allowlist_id: UUID,
-        data: McpToolAllowUpdateRequest,
+        data: MCPToolAllowUpdateRequest,
         actor_user_id: UUID | None = None,
-    ) -> McpToolAllowlist:
+    ) -> MCPToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         if server.platform_blocked:
             raise PolicyDeniedError("MCP server is blocked by the platform")
         allow = self._session.scalar(
-            select(McpToolAllowlist)
+            select(MCPToolAllowlist)
             .where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.mcp_server_id == mcp_server_id,
-                McpToolAllowlist.id == allowlist_id,
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.mcp_server_id == mcp_server_id,
+                MCPToolAllowlist.id == allowlist_id,
             )
             .with_for_update()
         )
@@ -452,7 +452,8 @@ class McpServerService:
         changes = data.model_dump(exclude_unset=True)
         if allow.discovery_source == "mcp":
             if server.discovery_status != "succeeded" or allow.discovery_status in {
-                "stale", "removed"
+                "stale",
+                "removed",
             }:
                 raise DomainError(
                     "Rediscover the MCP server before editing this tool",
@@ -488,7 +489,7 @@ class McpServerService:
             else allow.requires_approval
         )
         next_risk_level = data.risk_level or allow.risk_level
-        review = ResourcePolicyReviewBuilder(
+        review = ResourcePolicyReviewService(
             self._session,
             self._settings,
         ).review_mcp_tool_allowlist(
@@ -571,7 +572,7 @@ class McpServerService:
         workspace_id: UUID,
         mcp_server_id: UUID,
         actor_user_id: UUID | None = None,
-    ) -> McpServer:
+    ) -> MCPServer:
         server = require_mcp_server(
             self._session,
             workspace_id,
@@ -603,8 +604,8 @@ class McpServerService:
         workspace_id: UUID,
         mcp_server_id: UUID,
         actor_user_id: UUID | None,
-        data: McpServerHealthCheckRequest,
-    ) -> McpServer:
+        data: MCPServerHealthCheckRequest,
+    ) -> MCPServer:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         previous = {
             "health_status": server.health_status,
@@ -641,14 +642,14 @@ class McpServerService:
         mcp_server_id: UUID,
         allowlist_id: UUID,
         actor_user_id: UUID | None = None,
-    ) -> McpToolAllowlist:
+    ) -> MCPToolAllowlist:
         require_mcp_server(self._session, workspace_id, mcp_server_id)
         allow = self._session.scalar(
-            select(McpToolAllowlist)
+            select(MCPToolAllowlist)
             .where(
-                McpToolAllowlist.id == allowlist_id,
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.mcp_server_id == mcp_server_id,
+                MCPToolAllowlist.id == allowlist_id,
+                MCPToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.mcp_server_id == mcp_server_id,
             )
             .with_for_update()
         )
@@ -678,7 +679,7 @@ class McpServerService:
     def list_allowed_mcp_tools(
         self,
         workspace_id: UUID,
-    ) -> list[tuple[McpToolAllowlist, McpServer]]:
+    ) -> list[tuple[MCPToolAllowlist, MCPServer]]:
         return self._catalog().list_allowed_mcp_tools(workspace_id)
 
     def list_mcp_catalog(
@@ -686,7 +687,7 @@ class McpServerService:
         workspace_id: UUID,
         page: PageParams,
         agent_profile_id: UUID | None = None,
-    ) -> tuple[list[McpCatalogServer], int]:
+    ) -> tuple[list[MCPCatalogServer], int]:
         return self._catalog().list_mcp_catalog(
             workspace_id,
             page,
@@ -697,8 +698,8 @@ class McpServerService:
         self,
         workspace_id: UUID,
         agent_profile_id: UUID,
-    ) -> list[tuple[McpToolAllowlist, McpServer]]:
+    ) -> list[tuple[MCPToolAllowlist, MCPServer]]:
         return self._catalog().mcp_tools_for_agent(workspace_id, agent_profile_id)
 
-    def _catalog(self) -> McpCatalogService:
-        return McpCatalogService(self._session, self._settings)
+    def _catalog(self) -> MCPCatalogService:
+        return MCPCatalogService(self._session, self._settings)

@@ -5,14 +5,14 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.shared.db.read_service import AdminSessionService
+from opsmesh.shared.db.read_service import PagedQuerySupport
 from opsmesh.shared.pagination import PageParams
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 from opsmesh.workspaces.projects.models import WorkspaceProject
 
 
-class AdminWorkspaceManagementService(AdminSessionService):
+class AdminWorkspaceManagementService(PagedQuerySupport):
     def list_workspaces(
         self,
         page: PageParams,
@@ -81,4 +81,3 @@ class AdminWorkspaceManagementService(AdminSessionService):
         self._session.commit()
         self._session.refresh(workspace)
         return workspace
-

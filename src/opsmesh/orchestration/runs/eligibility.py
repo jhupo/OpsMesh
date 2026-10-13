@@ -17,10 +17,10 @@ from opsmesh.orchestration.tasks.message_append import TaskMessageAppendService
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
-    TaskStateService,
     TaskStatus,
+    transition_task,
 )
-from opsmesh.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
+from opsmesh.orchestration.tasks.steps import TaskStepStatus, transition_task_step
 
 STEP_STATUS_QUEUED = "queued"
 STEP_STATUS_RUNNING = "running"
@@ -95,7 +95,8 @@ class RunEligibilityService:
             select(func.count(AgentRun.id)).where(
                 AgentRun.workspace_id == step.workspace_id,
                 AgentRun.task_step_id == step.id,
-                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
+                AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES)
+                | (AgentRun.started_at.is_not(None) & AgentRun.execution_released_at.is_(None)),
             )
         )
         return int(active_count or 0) > 0
@@ -153,11 +154,11 @@ class RunEligibilityService:
                 continue
             node_type = step.dependencies.get("node_type", "agent")
             if node_type in {"condition", "join", "start", "end"}:
-                TaskStepStateService().transition(
+                transition_task_step(
                     step,
                     TaskStepStatus.RUNNING,
                 )
-                TaskStepStateService().transition(
+                transition_task_step(
                     step,
                     TaskStepStatus.COMPLETED,
                     result_summary="Workflow control node completed.",
@@ -213,11 +214,10 @@ class RunEligibilityService:
             for step in task_steps
         ):
             return
-        states = TaskStateService()
         if task.status == TaskStatus.DRAFT:
-            states.transition(task, TaskStatus.QUEUED)
-        states.transition(task, TaskStatus.RUNNING)
-        states.transition(
+            transition_task(task, TaskStatus.QUEUED)
+        transition_task(task, TaskStatus.RUNNING)
+        transition_task(
             task,
             TaskStatus.COMPLETED,
             final_output={"summary": "No workflow branch selected.", "all_nodes_skipped": True},
@@ -246,7 +246,7 @@ class RunEligibilityService:
         dependencies["condition_result"] = "false"
         if reason:
             dependencies["condition_reason"] = reason[:500]
-        TaskStepStateService().transition(
+        transition_task_step(
             step,
             TaskStepStatus.SKIPPED,
             dependencies=dependencies,

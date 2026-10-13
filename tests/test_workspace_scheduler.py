@@ -1,12 +1,8 @@
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from threading import Barrier, Lock, Thread
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.agents.profiles.models import AgentProfile
@@ -43,9 +39,10 @@ from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
 from opsmesh.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
-from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaService
+from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaReservationService
+from tests.fixtures.agent_product import _seed_default_model_provider
+from tests.fixtures.database import product_engine
 from tests.fixtures.execution import test_agent_id
-from tests.test_worker_run_execution import _seed_default_model_provider
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:
@@ -57,7 +54,7 @@ def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> No
     low_task, low_step = _seed_task_step(session, workspace, title="Low", priority=1)
     high_task, high_step = _seed_task_step(session, workspace, title="High", priority=10)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[low_step, high_step],
     )
@@ -81,7 +78,7 @@ def test_workspace_scheduler_round_robins_between_tasks_before_extra_parallel_st
     second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
     third_task, third_step = _seed_task_step(session, workspace, title="Third", priority=7)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[first_step, first_extra_step, second_step, third_step],
     )
@@ -110,7 +107,7 @@ def test_workspace_scheduler_can_allow_multiple_steps_per_task_per_tick() -> Non
     _, first_extra_step = _seed_extra_step(session, first_task, title="First extra", order_index=1)
     second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[first_step, first_extra_step, second_step],
     )
@@ -133,7 +130,7 @@ def test_workspace_scheduler_policy_override_tightens_team_tick_limits() -> None
     _, first_extra_step = _seed_extra_step(session, first_task, title="First extra", order_index=1)
     second_task, second_step = _seed_task_step(session, workspace, title="Second", priority=8)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[first_step, first_extra_step, second_step],
         policy_override={"max_runs_to_start_per_tick": 1, "max_steps_per_task_per_tick": 1},
@@ -156,7 +153,7 @@ def test_workspace_scheduler_workspace_pause_overrides_team_policy() -> None:
     )
     _, step = _seed_task_step(session, workspace, title="Paused", priority=10)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[step],
         policy_override={"max_runs_to_start_per_tick": 1},
@@ -177,7 +174,7 @@ def test_workspace_scheduler_task_quota_allows_highest_priority_new_tasks() -> N
     low_task, low_step = _seed_task_step(session, workspace, title="Low", priority=1)
     high_task, high_step = _seed_task_step(session, workspace, title="High", priority=10)
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[low_step, high_step],
     )
@@ -209,7 +206,7 @@ def test_workspace_scheduler_task_quota_keeps_existing_active_task_eligible() ->
     session.add(active_run)
     session.flush()
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[active_next_step, high_step],
     )
@@ -237,7 +234,7 @@ def test_workspace_scheduler_boosts_long_waiting_lower_priority_work() -> None:
     low_task.created_at = old_created_at
     session.flush()
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[high_step, low_step],
     )
@@ -275,7 +272,7 @@ def test_workspace_scheduler_blocks_steps_exceeding_tick_resource_limits() -> No
         dependencies={"resource_requirements": {"memory_mb": 2048, "cpu": 2}},
     )
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[second_step, first_step],
     )
@@ -307,7 +304,7 @@ def test_workspace_scheduler_blocks_when_active_run_quota_is_full() -> None:
     )
     session.flush()
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[step],
     )
@@ -360,7 +357,7 @@ def test_workspace_scheduler_blocks_team_member_over_cross_project_capacity() ->
     )
     session.flush()
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[candidate_step],
     )
@@ -413,7 +410,7 @@ def test_workspace_scheduler_allows_more_steps_for_already_active_member_task() 
     )
     session.flush()
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[next_step],
     )
@@ -439,7 +436,7 @@ def test_workspace_scheduler_blocks_team_step_without_active_member() -> None:
         agent_team_id=team.id,
     )
 
-    decision = WorkspaceScheduler(session).select_runnable_steps(
+    decision = WorkspaceScheduler(session).evaluate_and_mark_steps(
         workspace_id=workspace.id,
         candidate_steps=[step],
     )
@@ -701,10 +698,8 @@ def test_runtime_space_reservation_rejects_same_key_with_different_usage() -> No
     assert len(_runtime_space_reservations(session, runtime_space.id)) == 1
 
 
-def test_runtime_space_reservations_do_not_oversell_across_concurrent_sessions(
-    tmp_path: Path,
-) -> None:
-    session_factory = _file_session_factory(tmp_path)
+def test_runtime_space_reservations_do_not_oversell_across_concurrent_sessions() -> None:
+    session_factory = _concurrent_session_factory()
     seed_session = session_factory()
     _, workspace = _seed_workspace(seed_session)
     runtime_space = _seed_runtime_space(seed_session, workspace, active_runs=1)
@@ -838,7 +833,7 @@ def test_workspace_quota_reservation_rejects_same_key_with_different_usage() -> 
     )
     session.flush()
 
-    service = WorkspaceQuotaService(session)
+    service = WorkspaceQuotaReservationService(session)
     first = service.reserve(
         workspace_id=workspace.id,
         task_id=None,
@@ -862,10 +857,8 @@ def test_workspace_quota_reservation_rejects_same_key_with_different_usage() -> 
     assert len(_workspace_reservations(session, workspace.id)) == 1
 
 
-def test_workspace_quota_reservations_do_not_oversell_across_concurrent_sessions(
-    tmp_path: Path,
-) -> None:
-    session_factory = _file_session_factory(tmp_path)
+def test_workspace_quota_reservations_do_not_oversell_across_concurrent_sessions() -> None:
+    session_factory = _concurrent_session_factory()
     seed_session = session_factory()
     _, workspace = _seed_workspace(seed_session)
     seed_session.add(
@@ -887,7 +880,7 @@ def test_workspace_quota_reservations_do_not_oversell_across_concurrent_sessions
         session = session_factory()
         try:
             barrier.wait()
-            result = WorkspaceQuotaService(session).reserve(
+            result = WorkspaceQuotaReservationService(session).reserve(
                 workspace_id=workspace_id,
                 task_id=None,
                 task_step_id=None,
@@ -933,12 +926,12 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
             ),
             WorkspaceQuota(
                 workspace_id=workspace.id,
-                quota_key="docker_runtimes",
+                quota_key="sandbox_sessions",
                 limit_value=1,
             ),
             WorkspaceQuota(
                 workspace_id=workspace.id,
-                quota_key="self_hosted_jobs",
+                quota_key="business_operations",
                 limit_value=1,
             ),
         ]
@@ -947,13 +940,13 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
         session,
         workspace,
         active_runs=10,
-        policy={"workspace_reservation_usage": {"docker_runtimes": 1}},
+        policy={"workspace_reservation_usage": {"sandbox_sessions": 1}},
     )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Builder",
         role="builder",
-        runtime_policy={"reservation_usage": {"self_hosted_jobs": 1}},
+        runtime_policy={"workspace_reservation_usage": {"business_operations": 1}},
     )
     session.add(agent)
     session.flush()
@@ -981,13 +974,13 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
     assert runs[0].task_id == first_task.id
     assert reservations[0].resource_usage == {
         "active_runs": 1,
-        "docker_runtimes": 1,
-        "self_hosted_jobs": 1,
+        "sandbox_sessions": 1,
+        "business_operations": 1,
     }
-    assert _workspace_quota(session, workspace.id, "docker_runtimes").reserved_value == 1
-    assert _workspace_quota(session, workspace.id, "self_hosted_jobs").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "sandbox_sessions").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "business_operations").reserved_value == 1
     assert second_step.dependencies["blocked_reason"] == (
-        "workspace_quota_exceeded:docker_runtimes"
+        "workspace_quota_exceeded:sandbox_sessions"
     )
 
     _run_lifecycle(session).mark_run_cancelled(
@@ -1004,8 +997,8 @@ def test_run_orchestration_enforces_workspace_runtime_slot_quotas() -> None:
         if reservation.task_id == first_task.id
     ][0]
     assert released.status == "released"
-    assert _workspace_quota(session, workspace.id, "docker_runtimes").reserved_value == 1
-    assert _workspace_quota(session, workspace.id, "self_hosted_jobs").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "sandbox_sessions").reserved_value == 1
+    assert _workspace_quota(session, workspace.id, "business_operations").reserved_value == 1
 
 
 def test_run_orchestration_reorders_released_quota_with_new_high_priority_task() -> None:
@@ -1279,8 +1272,7 @@ def _workspace_reservations(
 
 
 def _session() -> Session:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -1344,14 +1336,8 @@ def _run_reservations(session: Session) -> RunResourceReservationService:
     )
 
 
-def _file_session_factory(tmp_path: Path) -> sessionmaker[Session]:
-    _patch_portable_types_for_sqlite()
-    db_path = tmp_path / f"{uuid4()}.db"
-    engine = create_engine(
-        f"sqlite+pysqlite:///{db_path}",
-        future=True,
-        connect_args={"check_same_thread": False},
-    )
+def _concurrent_session_factory() -> sessionmaker[Session]:
+    engine = product_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -1373,12 +1359,3 @@ def _seed_workspace(
     session.commit()
     _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
     return user, workspace
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

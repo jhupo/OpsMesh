@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Literal
 
-import anthropic
 import openai
-from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
-from opsmesh.agents.providers.classification import canonical_model_provider
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.contracts import ProviderProbeName
 from opsmesh.agents.providers.model_api import (
-    ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
@@ -22,10 +18,8 @@ from opsmesh.agents.providers.model_api import (
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
 ProbeOperation = Callable[[], Awaitable[dict[str, object]]]
 OpenAIClientFactory = Callable[..., AsyncOpenAI]
-AnthropicClientFactory = Callable[..., AsyncAnthropic]
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 
 @dataclass(frozen=True)
@@ -87,9 +81,8 @@ async def probe_model_provider(
     probes: tuple[ProviderProbeName, ...] = ("models", "inference"),
     timeout_seconds: float = 15,
 ) -> ModelProviderHealthCheckResult:
-    adapter = ProviderHealthRegistry().resolve(target.provider)
     checks: tuple[ModelProviderHealthCheck, ...]
-    if adapter is None:
+    if not is_openai_compatible_provider(target.provider):
         checks = (
             ModelProviderHealthCheck(
                 name="models",
@@ -99,7 +92,7 @@ async def probe_model_provider(
             ),
         )
     else:
-        checks = await adapter.probe(
+        checks = await OpenAICompatibleHealthProbe().probe(
             target,
             probes=probes,
             timeout_seconds=timeout_seconds,
@@ -110,18 +103,7 @@ async def probe_model_provider(
     )
 
 
-class ProviderHealthProbe(ABC):
-    @abstractmethod
-    async def probe(
-        self,
-        target: ModelProviderHealthTarget,
-        *,
-        probes: tuple[ProviderProbeName, ...],
-        timeout_seconds: float,
-    ) -> tuple[ModelProviderHealthCheck, ...]: ...
-
-
-class OpenAICompatibleHealthProbe(ProviderHealthProbe):
+class OpenAICompatibleHealthProbe:
     def __init__(self, client_factory: OpenAIClientFactory | None = None) -> None:
         self._client_factory = client_factory or AsyncOpenAI
 
@@ -170,13 +152,14 @@ class OpenAICompatibleHealthProbe(ProviderHealthProbe):
         target: ModelProviderHealthTarget,
     ) -> dict[str, object]:
         model_api = canonical_model_api(target.model_api)
-        if model_api == OPENAI_RESPONSES_API:
+        if model_api != OPENAI_CHAT_COMPLETIONS_API:
             await client.responses.create(
                 model=target.model,
                 input="Reply with exactly: ok",
                 max_output_tokens=20,
                 store=False,
             )
+            model_api = OPENAI_RESPONSES_API
         else:
             await client.chat.completions.create(
                 model=target.model,
@@ -188,101 +171,29 @@ class OpenAICompatibleHealthProbe(ProviderHealthProbe):
         return {"model": target.model, "model_api": model_api}
 
 
-class AnthropicHealthProbe(ProviderHealthProbe):
-    def __init__(self, client_factory: AnthropicClientFactory | None = None) -> None:
-        self._client_factory = client_factory or AsyncAnthropic
-
-    async def probe(
-        self,
-        target: ModelProviderHealthTarget,
-        *,
-        probes: tuple[ProviderProbeName, ...],
-        timeout_seconds: float,
-    ) -> tuple[ModelProviderHealthCheck, ...]:
-        client = self._client_factory(
-            api_key=target.api_key,
-            base_url=target.base_url or DEFAULT_ANTHROPIC_BASE_URL,
-            max_retries=0,
-            timeout=timeout_seconds,
-        )
-        async with client:
-            checks: list[ModelProviderHealthCheck] = []
-            if "models" in probes:
-                checks.append(
-                    await _run_sdk_probe(
-                        "models",
-                        lambda: self._models_metadata(client, target.model),
-                    )
-                )
-            if "inference" in probes:
-                checks.append(
-                    await _run_sdk_probe(
-                        "inference",
-                        lambda: self._inference_metadata(client, target),
-                    )
-                )
-        return tuple(checks)
-
-    async def _models_metadata(
-        self,
-        client: AsyncAnthropic,
-        model: str,
-    ) -> dict[str, object]:
-        models = await client.models.list()
-        return _models_metadata(models.data, model)
-
-    async def _inference_metadata(
-        self,
-        client: AsyncAnthropic,
-        target: ModelProviderHealthTarget,
-    ) -> dict[str, object]:
-        await client.messages.create(
-            model=target.model,
-            max_tokens=20,
-            messages=[{"role": "user", "content": "Reply with exactly: ok"}],
-        )
-        return {"model": target.model, "model_api": ANTHROPIC_MESSAGES_API}
-
-
-class ProviderHealthRegistry:
-    def __init__(self, adapters: dict[str, ProviderHealthProbe] | None = None) -> None:
-        self._adapters = (
-            dict(adapters)
-            if adapters is not None
-            else {
-                "openai": OpenAICompatibleHealthProbe(),
-                "openai-compatible": OpenAICompatibleHealthProbe(),
-                "anthropic": AnthropicHealthProbe(),
-            }
-        )
-
-    def resolve(self, provider: str | None) -> ProviderHealthProbe | None:
-        return self._adapters.get(canonical_model_provider(provider))
-
-
 async def _run_sdk_probe(
     name: ProviderProbeName,
     operation: ProbeOperation,
 ) -> ModelProviderHealthCheck:
     try:
         metadata = await operation()
-    except (openai.APITimeoutError, anthropic.APITimeoutError):
+    except openai.APITimeoutError:
         return ModelProviderHealthCheck(
             name=name,
             status="failed",
             code="timeout",
             message="Provider health check timed out.",
         )
-    except (openai.APIStatusError, anthropic.APIStatusError) as exc:
+    except openai.APIStatusError as exc:
         return _status_failure(name, exc.status_code, str(exc)[:500])
-    except (openai.APIConnectionError, anthropic.APIConnectionError) as exc:
+    except openai.APIConnectionError as exc:
         return ModelProviderHealthCheck(
             name=name,
             status="failed",
             code="connection_error",
             message=str(exc)[:500],
         )
-    except (openai.OpenAIError, anthropic.AnthropicError) as exc:
+    except openai.OpenAIError as exc:
         return ModelProviderHealthCheck(
             name=name,
             status="failed",

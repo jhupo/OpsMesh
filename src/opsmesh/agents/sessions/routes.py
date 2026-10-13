@@ -5,13 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.profiles.schemas import (
+from opsmesh.agents.profiles.service import AgentProfileService
+from opsmesh.agents.sessions.schemas import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,
 )
-from opsmesh.agents.profiles.service import AgentManagementService
-from opsmesh.agents.sessions.management import PersistentAgentSessionManagementService
+from opsmesh.agents.sessions.service import AgentSessionService
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
@@ -35,9 +35,9 @@ def list_agent_sessions(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AgentSessionSummaryResponse]:
-    if AgentManagementService(session).get_agent(context.workspace.id, agent_id) is None:
+    if AgentProfileService(session).get_agent(context.workspace.id, agent_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
-    service = PersistentAgentSessionManagementService(session)
+    service = AgentSessionService(session)
     try:
         total = service.count_sessions(
             workspace_id=context.workspace.id,
@@ -69,9 +69,9 @@ def get_agent_session(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> AgentSessionDetailResponse:
-    if AgentManagementService(session).get_agent(context.workspace.id, agent_id) is None:
+    if AgentProfileService(session).get_agent(context.workspace.id, agent_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
-    detail = PersistentAgentSessionManagementService(session).get_session(
+    detail = AgentSessionService(session).get_session(
         workspace_id=context.workspace.id,
         session_id=session_id,
         item_limit=item_limit,
@@ -138,7 +138,7 @@ def clear_agent_session_items(
     session: Session = Depends(get_db_session),
 ) -> AgentSessionClearResponse:
     _require_agent_session(session, context.workspace.id, agent_id, session_id)
-    deleted = PersistentAgentSessionManagementService(session).clear_session_items(
+    deleted = AgentSessionService(session).clear_session_items(
         workspace_id=context.workspace.id,
         session_id=session_id,
     )
@@ -152,9 +152,9 @@ def _require_agent_session(
     agent_id: UUID,
     session_id: UUID,
 ) -> None:
-    if AgentManagementService(db_session).get_agent(workspace_id, agent_id) is None:
+    if AgentProfileService(db_session).get_agent(workspace_id, agent_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
-    detail = PersistentAgentSessionManagementService(db_session).get_session(
+    detail = AgentSessionService(db_session).get_session(
         workspace_id=workspace_id,
         session_id=session_id,
         item_limit=1,
@@ -172,7 +172,7 @@ def _set_agent_session_status_response(
     action: str,
 ) -> AgentSessionSummaryResponse:
     _require_agent_session(db_session, workspace_id, agent_id, session_id)
-    service = PersistentAgentSessionManagementService(db_session)
+    service = AgentSessionService(db_session)
     if action == "archive":
         summary = service.archive_session(workspace_id=workspace_id, session_id=session_id)
     elif action == "freeze":

@@ -24,9 +24,9 @@ from opsmesh.resources.lifecycle.settings import (
     _restore_drill_settings,
     _string_list,
 )
-from opsmesh.resources.storage.storage import ObjectStorage
+from opsmesh.resources.transfers.restore_operations import RestoreDrillOperationService
 from opsmesh.resources.transfers.service import WorkspaceExportService
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.resources.transfers.verification_operations import ArchiveVerificationOperationService
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -40,7 +40,6 @@ class RecoveryArchiveExportAction:
         *,
         workspace: Workspace,
         user_id: UUID,
-        queue: RedisQueue,
         dry_run: bool,
         reason: str | None,
         metadata_keys: list[str],
@@ -83,7 +82,6 @@ class RecoveryArchiveExportAction:
             workspace=workspace,
             user_id=user_id,
             request=request,
-            queue=queue,
         )
         export_job.job_metadata = {
             **export_job.job_metadata,
@@ -115,6 +113,7 @@ class RecoveryArchiveExportAction:
             metadata={"export_job_status": export_job.status, "request": request_payload},
         ), None
 
+
 class RecoveryArchiveIntegrityAction:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -125,7 +124,6 @@ class RecoveryArchiveIntegrityAction:
         *,
         workspace: Workspace,
         user_id: UUID,
-        storage: ObjectStorage | None,
         dry_run: bool,
         reason: str | None,
         metadata_keys: list[str],
@@ -159,15 +157,6 @@ class RecoveryArchiveIntegrityAction:
                 reason="archive_integrity_already_verified",
                 blocked_reasons=blocked_reasons,
             )
-        if storage is None:
-            return None, _recovery_action_skipped(
-                action=action,
-                resource_type="workspace_export_job",
-                resource_id=latest_success.id,
-                reason="storage_unavailable",
-                blocked_reasons=blocked_reasons,
-            )
-
         if dry_run:
             return _recovery_action_result(
                 action=action,
@@ -184,11 +173,8 @@ class RecoveryArchiveIntegrityAction:
             ), None
 
         try:
-            verification = WorkspaceExportService(self._session).verify_archive_export_job(
-                workspace_id=workspace.id,
-                job_id=latest_success.id,
-                user_id=user_id,
-                storage=storage,
+            verification = ArchiveVerificationOperationService(self._session).create(
+                workspace.id, latest_success.id, user_id, origin="recovery_readiness"
             )
         except (FileNotFoundError, ValueError):
             return None, _recovery_action_skipped(
@@ -202,7 +188,7 @@ class RecoveryArchiveIntegrityAction:
         AuditService(self._session).record_user_action(
             workspace_id=workspace.id,
             user_id=user_id,
-            action="workspace.recovery_readiness.archive_integrity_verified",
+            action="workspace.recovery_readiness.archive_integrity_queued",
             target_type="workspace_export_job",
             target_id=latest_success.id,
             metadata={
@@ -210,8 +196,7 @@ class RecoveryArchiveIntegrityAction:
                 "metadata_keys": metadata_keys,
                 "readiness_blocked_reasons": blocked_reasons,
                 "readiness_warnings": warnings,
-                "verified": verification["verified"],
-                "failed_checks": verification["failed_checks"],
+                "operation_id": str(verification.id),
             },
         )
         return _recovery_action_result(
@@ -221,11 +206,11 @@ class RecoveryArchiveIntegrityAction:
             status="applied",
             blocked_reasons=blocked_reasons,
             metadata={
-                "verified": verification["verified"],
-                "failed_checks": verification["failed_checks"],
-                "checks": verification["checks"],
+                "operation_id": str(verification.id),
+                "operation_status": verification.status,
             },
         ), None
+
 
 class RecoveryRestoreDrillAction:
     def __init__(self, session: Session) -> None:
@@ -237,7 +222,6 @@ class RecoveryRestoreDrillAction:
         *,
         workspace: Workspace,
         user_id: UUID,
-        storage: ObjectStorage | None,
         dry_run: bool,
         reason: str | None,
         metadata_keys: list[str],
@@ -263,14 +247,6 @@ class RecoveryRestoreDrillAction:
                 reason="archive_export_already_active",
                 blocked_reasons=blocked_reasons,
             )
-        if storage is None:
-            return None, _recovery_action_skipped(
-                action=action,
-                resource_type="workspace_export_job",
-                resource_id=latest_success.id,
-                reason="storage_unavailable",
-                blocked_reasons=blocked_reasons,
-            )
         try:
             request = scheduled_restore_drill_request(raw_restore_drill_policy)
         except ValidationError:
@@ -294,12 +270,8 @@ class RecoveryRestoreDrillAction:
             ), None
 
         try:
-            drill_result = WorkspaceExportService(self._session).run_archive_restore_drill(
-                workspace=workspace,
-                user_id=user_id,
-                job_id=latest_success.id,
-                request=request,
-                storage=storage,
+            drill_result = RestoreDrillOperationService(self._session).create(
+                workspace.id, latest_success.id, user_id, request, origin="recovery_readiness"
             )
         except (FileNotFoundError, ValueError):
             return None, _recovery_action_skipped(
@@ -312,7 +284,7 @@ class RecoveryRestoreDrillAction:
         AuditService(self._session).record_user_action(
             workspace_id=workspace.id,
             user_id=user_id,
-            action="workspace.recovery_readiness.restore_import_test_completed",
+            action="workspace.recovery_readiness.restore_import_test_queued",
             target_type="workspace_export_job",
             target_id=latest_success.id,
             metadata={
@@ -320,10 +292,7 @@ class RecoveryRestoreDrillAction:
                 "metadata_keys": metadata_keys,
                 "readiness_blocked_reasons": blocked_reasons,
                 "readiness_warnings": warnings,
-                "passed": drill_result["passed"],
-                "required_resolution_count": drill_result["required_resolution_count"],
-                "suggested_resolution_count": drill_result["suggested_resolution_count"],
-                "conflict_counts": drill_result["conflict_counts"],
+                "operation_id": str(drill_result.id),
             },
         )
         return _recovery_action_result(
@@ -333,13 +302,12 @@ class RecoveryRestoreDrillAction:
             status="applied",
             blocked_reasons=blocked_reasons,
             metadata={
-                "passed": drill_result["passed"],
-                "required_resolution_count": drill_result["required_resolution_count"],
-                "suggested_resolution_count": drill_result["suggested_resolution_count"],
-                "conflict_counts": drill_result["conflict_counts"],
+                "operation_id": str(drill_result.id),
+                "operation_status": drill_result.status,
                 "request": request_payload,
             },
         ), None
+
 
 class WorkspaceRecoveryActionService:
     def __init__(self, session: Session) -> None:
@@ -354,8 +322,6 @@ class WorkspaceRecoveryActionService:
         *,
         workspace_id: UUID,
         user_id: UUID,
-        queue: RedisQueue,
-        storage: ObjectStorage | None = None,
         dry_run: bool = True,
         actions: list[str] | None = None,
         reason: str | None = None,
@@ -391,7 +357,6 @@ class WorkspaceRecoveryActionService:
                 result, skipped_result = self._archive_export.apply(
                     workspace=workspace,
                     user_id=user_id,
-                    queue=queue,
                     dry_run=dry_run,
                     reason=reason,
                     metadata_keys=metadata_keys,
@@ -403,7 +368,6 @@ class WorkspaceRecoveryActionService:
                 result, skipped_result = self._restore_drill.apply(
                     workspace=workspace,
                     user_id=user_id,
-                    storage=storage,
                     dry_run=dry_run,
                     reason=reason,
                     metadata_keys=metadata_keys,
@@ -415,7 +379,6 @@ class WorkspaceRecoveryActionService:
                 result, skipped_result = self._archive_integrity.apply(
                     workspace=workspace,
                     user_id=user_id,
-                    storage=storage,
                     dry_run=dry_run,
                     reason=reason,
                     metadata_keys=metadata_keys,
@@ -435,12 +398,12 @@ class WorkspaceRecoveryActionService:
                 for item in results
                 if item["action"] == "run_archive_export" and item["status"] == "applied"
             ),
-            "restore_import_tests_completed": sum(
+            "restore_import_tests_queued": sum(
                 1
                 for item in results
                 if item["action"] == "run_restore_import_test" and item["status"] == "applied"
             ),
-            "archive_integrity_checks_completed": sum(
+            "archive_integrity_checks_queued": sum(
                 1
                 for item in results
                 if item["action"] == "verify_latest_archive_integrity"

@@ -2,16 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from opsmesh.governance.policies.dependencies import (
     admin_policy_service,
-    admin_worker_policy_service,
 )
 from opsmesh.governance.policies.schemas import (
     AdminPlatformPolicyEventResponse,
     AdminPlatformPolicyResponse,
     AdminRiskyExecutionPolicyUpdateRequest,
-    AdminWorkerControlPolicyUpdateRequest,
 )
 from opsmesh.governance.policies.service import AdminPolicyService
-from opsmesh.governance.policies.worker_control import AdminWorkerPolicyControlService
 from opsmesh.identity.authorization.admin_dependencies import require_platform_admin
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.http.responses import page_response
@@ -67,33 +64,6 @@ def update_admin_risky_execution_policy(
     service: AdminPolicyService = Depends(admin_policy_service),
 ) -> AdminPlatformPolicyResponse:
     policy = service.update_risky_execution_policy(
-        value=request.value,
-        updated_by=request.updated_by,
-        description=request.description,
-    )
-    return AdminPlatformPolicyResponse.model_validate(policy)
-
-
-@router.get(
-    "/platform-policies/worker-control",
-    response_model=AdminPlatformPolicyResponse,
-)
-def get_admin_worker_control_policy(
-    service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
-) -> AdminPlatformPolicyResponse:
-    policy = service.get_or_create_worker_control_policy()
-    return AdminPlatformPolicyResponse.model_validate(policy)
-
-
-@router.patch(
-    "/platform-policies/worker-control",
-    response_model=AdminPlatformPolicyResponse,
-)
-def update_admin_worker_control_policy(
-    request: AdminWorkerControlPolicyUpdateRequest,
-    service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
-) -> AdminPlatformPolicyResponse:
-    policy = service.update_worker_control_policy(
         value=request.value,
         updated_by=request.updated_by,
         description=request.description,

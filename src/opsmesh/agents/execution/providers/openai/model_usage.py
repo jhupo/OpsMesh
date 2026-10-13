@@ -5,15 +5,16 @@ from uuid import uuid4
 
 from agents.usage import Usage
 from pydantic import TypeAdapter
+from temporalio import workflow
 
 from opsmesh.agents.execution.contracts import (
+    AgentModelUsageRecord,
+    AgentReference,
     AgentRunRequest,
-    AgentRuntimeAgentRef,
-    AgentRuntimeModelUsage,
 )
 from opsmesh.agents.execution.usage import runtime_usage
 
-model_usages: ContextVar[list[AgentRuntimeModelUsage] | None] = ContextVar(
+model_usages: ContextVar[list[AgentModelUsageRecord] | None] = ContextVar(
     "opsmesh_model_usages", default=None
 )
 
@@ -27,9 +28,10 @@ def record_model_usage(request: AgentRunRequest, usage: Usage, response_id: str 
     if normalized is None:
         raise ValueError("SDK model response has no usage structure")
     ledger.append(
-        AgentRuntimeModelUsage(
-            request_id=response_id or uuid4().hex,
-            agent=AgentRuntimeAgentRef(profile.name, profile.id, profile.role),
+        AgentModelUsageRecord(
+            request_id=response_id
+            or (workflow.uuid4().hex if workflow.in_workflow() else uuid4().hex),
+            agent=AgentReference(profile.name, profile.id, profile.role),
             model=request.model or profile.model,
             provider=request.provider or "openai",
             model_api=request.model_api,

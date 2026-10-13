@@ -9,7 +9,7 @@ from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 
 
-class WorkspaceEmployeeLoadBuilder:
+class WorkspaceAgentWorkloadBuilder:
     def __init__(
         self,
         *,

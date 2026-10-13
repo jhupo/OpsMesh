@@ -96,24 +96,3 @@ class ModelProviderResolver:
     ) -> ModelProviderCredential | None:
         credential = self.get_active(workspace_id=workspace_id, credential_id=credential_id)
         return credential if credential_is_selectable(credential) else None
-
-
-class ModelProviderResolutionService:
-    def __init__(self, session: Session, secret_service: SecretEncryptionService) -> None:
-        self._resolver = ModelProviderResolver(session, secret_service)
-
-    def resolve_for_agent(
-        self, *, workspace_id: UUID, agent_credential_id: UUID | None, agent_model: str
-    ) -> ResolvedModelProvider:
-        return self._resolver.resolve_for_agent(
-            workspace_id=workspace_id,
-            agent_credential_id=agent_credential_id,
-            agent_model=agent_model,
-        )
-
-    def resolve_for_review(
-        self, *, workspace_id: UUID, credential_id: UUID | None, review_model: str
-    ) -> ResolvedModelProvider:
-        return self._resolver.resolve_for_review(
-            workspace_id=workspace_id, credential_id=credential_id, review_model=review_model
-        )

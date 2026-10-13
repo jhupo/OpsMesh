@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from opsmesh.agents.execution.contracts import AgentRuntimeUsage
+from opsmesh.agents.execution.contracts import AgentUsageTotals
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 
@@ -10,19 +10,17 @@ def runtime_usage(
     model_usage: object = None,
     total_cost_usd: object = None,
     request_count: int | None = None,
-) -> AgentRuntimeUsage | None:
+) -> AgentUsageTotals | None:
     payloads = _payloads(usage)
     if not payloads:
         payloads = _model_payloads(model_usage)
     if not payloads and total_cost_usd is None:
         return None
     input_tokens = sum(
-        _first_int(item, "input_tokens", "inputTokens", "prompt_tokens")
-        for item in payloads
+        _first_int(item, "input_tokens", "inputTokens", "prompt_tokens") for item in payloads
     )
     output_tokens = sum(
-        _first_int(item, "output_tokens", "outputTokens", "completion_tokens")
-        for item in payloads
+        _first_int(item, "output_tokens", "outputTokens", "completion_tokens") for item in payloads
     )
     cached_tokens = sum(
         max(
@@ -51,9 +49,7 @@ def runtime_usage(
     )
     requests = request_count
     if requests is None:
-        requests = sum(
-            _first_int(item, "requests", "request_count") or 1 for item in payloads
-        )
+        requests = sum(_first_int(item, "requests", "request_count") or 1 for item in payloads)
     cost = _nonnegative_float(total_cost_usd)
     raw: dict[str, object] = {}
     if len(payloads) == 1:
@@ -63,7 +59,7 @@ def runtime_usage(
     if cost is not None:
         raw = dict(raw)
         raw["total_cost_usd"] = cost
-    return AgentRuntimeUsage(
+    return AgentUsageTotals(
         request_count=max(1, requests or 0),
         input_tokens=input_tokens,
         output_tokens=output_tokens,

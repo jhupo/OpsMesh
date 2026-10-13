@@ -1,10 +1,8 @@
 """Real PostgreSQL regression; uses an isolated, disposable schema."""
 
-import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
-from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -17,7 +15,6 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from opsmesh.bootstrap.models import register_models
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.orchestration.requests.run_gateway import ModelRunGateway
 from opsmesh.workspaces.management.models import Workspace
 
 
@@ -74,70 +71,31 @@ def test_concurrent_audit_writers_with_existing_foreign_key_locks() -> None:
         engine.dispose()
 
 
-def test_database_failure_is_rolled_back_before_metering_and_does_not_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    url = os.environ.get("OPSMESH_TEST_POSTGRES_URL")
-    if not url:
-        pytest.skip("Set OPSMESH_TEST_POSTGRES_URL for the PostgreSQL recovery regression")
-    engine = create_engine(url)
-    with Session(engine) as session:
-        errors: list[ProgrammingError] = []
-        calls: list[str] = []
+def test_activity_database_failure_rolls_back_before_following_business_transaction() -> None:
+    from sqlalchemy.orm import sessionmaker
 
-        class FailingToolRunner:
-            async def run(self, request: object) -> None:
-                calls.append("runner")
-                try:
-                    session.execute(text("SELECT * FROM missing_test_table_" + uuid4().hex))
-                except ProgrammingError as exc:
-                    errors.append(exc)
-                    raise
+    from opsmesh.identity.users.models import User
+    from opsmesh.runtime.temporal.activities import ActivityDependencies
+    from opsmesh.shared.config import Settings
+    from tests.fixtures.database import product_session
 
-        costs = Mock(unsafe=True)
-
-        def meter_failure(**values: object) -> None:
-            assert session.scalar(text("SELECT 1")) == 1
-            assert values["error"] is errors[0]
-            calls.append("metered")
-
-        costs.record_attempt.side_effect = meter_failure
-        monkeypatch.setattr(
-            "opsmesh.orchestration.requests.run_gateway.CostAccountingService",
-            lambda _: costs,
+    session = product_session()
+    services = ActivityDependencies(
+        sessions=sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+        settings=Settings(environment="test"),
+    )
+    workspace_id = uuid4()
+    with pytest.raises(ProgrammingError), services.transaction() as transaction:
+        transaction.add(
+            Workspace(
+                id=workspace_id,
+                name="Rolled back",
+                slug=uuid4().hex,
+                owner=User(email=f"{uuid4()}@test.invalid", display_name="Owner"),
+            )
         )
-        routing = Mock()
-        approvals = Mock()
-        approvals.requires_approval.return_value = False
-
-        class Gateway(ModelRunGateway):
-            def routing(self):
-                return routing
-
-            def audit(self):
-                return Mock()
-
-            def approvals(self):
-                return approvals
-
-        def mark_failed(run: object, error: Exception) -> None:
-            assert session.scalar(text("SELECT 1")) == 1
-            assert error is errors[0]
-            calls.append("failed")
-
-        gateway = Gateway(
-            session=session,
-            settings=None,
-            agent_runner=FailingToolRunner(),
-            request_builder=Mock(),
-            events=Mock(),
-            mark_run_failed=mark_failed,
-        )
-        run = Mock(workspace_id=uuid4(), id=uuid4())
-        request = Mock(provider="openai", model="test-no-inference")
-        with pytest.raises(ProgrammingError) as captured:
-            asyncio.run(gateway.run_with_provider_fallback(run, request, Mock(attempt=0)))
-        assert captured.value is errors[0]
-        assert calls == ["runner", "metered", "failed"]
-        routing.fallback_request.assert_not_called()
-    engine.dispose()
+        transaction.flush()
+        transaction.execute(text("SELECT * FROM missing_test_table_" + uuid4().hex))
+    with services.transaction() as transaction:
+        assert transaction.get(Workspace, workspace_id) is None
+        assert transaction.scalar(text("SELECT 1")) == 1

@@ -7,7 +7,7 @@ from opsmesh.agents.providers.capabilities import ModelCapability, resolve_model
 from opsmesh.agents.providers.metadata import sanitize_budget_metadata
 from opsmesh.agents.providers.model_api import model_api_for_provider
 from opsmesh.agents.providers.policy import model_provider_base_url_host
-from opsmesh.shared.contracts import ORMModel
+from opsmesh.shared.contracts import FromAttributesContract
 from opsmesh.shared.security.secrets import hosted_secret_metadata
 
 
@@ -43,7 +43,7 @@ class ModelProviderHealthCheckRequest(BaseModel):
     timeout_seconds: float = Field(default=15, gt=0, le=60)
 
 
-class ModelProviderCredentialResponse(ORMModel):
+class ModelProviderCredentialResponse(FromAttributesContract):
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID | None

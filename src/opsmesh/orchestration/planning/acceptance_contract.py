@@ -4,10 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from opsmesh.agents.execution.contracts import AgentRuntimeOutputSchema
+from opsmesh.agents.execution.contracts import AgentOutputSchemaSpec
 
 
-class PmAcceptanceResult(BaseModel):
+class ManagerAcceptanceResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: Literal["approved", "request_revision", "add_missing_work"]
@@ -17,10 +17,10 @@ class PmAcceptanceResult(BaseModel):
     missing_work_packages: list[dict[str, object]] = Field(default_factory=list)
 
 
-def acceptance_output_schema() -> AgentRuntimeOutputSchema:
-    return AgentRuntimeOutputSchema(
+def acceptance_output_schema() -> AgentOutputSchemaSpec:
+    return AgentOutputSchemaSpec(
         name="pm_acceptance",
         version="1",
         strict=False,
-        schema=PmAcceptanceResult.model_json_schema(),
+        schema=ManagerAcceptanceResult.model_json_schema(),
     )

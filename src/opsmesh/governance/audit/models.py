@@ -46,7 +46,7 @@ class AuditEvent(UUIDPrimaryKeyMixin, Base):
     )
     previous_hash: Mapped[str | None] = mapped_column(String(80), nullable=True)
     current_hash: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 def _reject_audit_event_update(mapper: object, connection: object, target: AuditEvent) -> None:

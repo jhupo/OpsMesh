@@ -1,10 +1,13 @@
 name: opsmesh
+include:
+  - ../temporal/compose.yml
 x-api: &api
   image: ${OPSMESH_API_IMAGE:?Set an attested API image digest}
   env_file: ${OPSMESH_ROOT:?Set installation root}/.env
   environment: &environment
     OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:?Set database password}@postgres:5432/opsmesh
     OPSMESH_REDIS_URL: redis://redis:6379/0
+    OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
     OPSMESH_RUN_MIGRATIONS: 'false'
     OPSMESH_RUNTIME_ALLOWED_IMAGES: ${OPSMESH_RUNTIME_ALLOWED_IMAGES:?Set attested runtime images}
@@ -22,6 +25,8 @@ x-api: &api
 services:
   api:
     <<: *api
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-api
@@ -34,10 +39,12 @@ services:
   worker:
     <<: *api
     image: ${OPSMESH_WORKER_IMAGE:?Set an attested Worker image digest}
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-worker
-    # Only the runtime-management worker has daemon authority. Never expose this to API/runtimes.
+    # Only the SDK sandbox Worker has daemon authority. Never expose this to API/runtimes.
     group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
     volumes:
       - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage

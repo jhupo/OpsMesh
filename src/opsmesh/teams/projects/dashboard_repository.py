@@ -17,9 +17,7 @@ class TeamProjectDashboardRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def steps_by_task(
-        self, workspace_id: UUID, task_ids: list[UUID]
-    ) -> dict[UUID, list[TaskStep]]:
+    def steps_by_task(self, workspace_id: UUID, task_ids: list[UUID]) -> dict[UUID, list[TaskStep]]:
         if not task_ids:
             return {}
         steps = self._session.scalars(
@@ -32,9 +30,7 @@ class TeamProjectDashboardRepository:
             grouped[step.task_id].append(step)
         return grouped
 
-    def runs_by_task(
-        self, workspace_id: UUID, task_ids: list[UUID]
-    ) -> dict[UUID, list[AgentRun]]:
+    def runs_by_task(self, workspace_id: UUID, task_ids: list[UUID]) -> dict[UUID, list[AgentRun]]:
         if not task_ids:
             return {}
         runs = self._session.scalars(
@@ -64,9 +60,7 @@ class TeamProjectDashboardRepository:
                 grouped[artifact.task_id].append(artifact)
         return grouped
 
-    def latest_messages(
-        self, workspace_id: UUID, task_ids: list[UUID]
-    ) -> dict[UUID, TaskMessage]:
+    def latest_messages(self, workspace_id: UUID, task_ids: list[UUID]) -> dict[UUID, TaskMessage]:
         if not task_ids:
             return {}
         messages = self._session.scalars(

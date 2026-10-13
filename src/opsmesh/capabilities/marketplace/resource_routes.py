@@ -10,7 +10,7 @@ from opsmesh.capabilities.marketplace.contracts import (
     MarketplaceListingType,
     WorkspaceMarketplaceInstallResponse,
 )
-from opsmesh.capabilities.marketplace.resource_service import MarketplaceService
+from opsmesh.capabilities.marketplace.resource_service import ResourceMarketplaceService
 from opsmesh.capabilities.marketplace.responses import marketplace_install_response
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
@@ -31,7 +31,7 @@ def list_public_marketplace_listings(
     query: str | None = Query(default=None),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[MarketplaceListingResponse]:
-    items, total = MarketplaceService(session).list_public_listings(
+    items, total = ResourceMarketplaceService(session).list_public_listings(
         page,
         listing_type=listing_type,
         query=query,
@@ -51,7 +51,7 @@ def create_workspace_marketplace_listing(
     settings: Settings = Depends(get_settings),
 ) -> MarketplaceListingResponse:
     try:
-        listing = MarketplaceService(session, settings=settings).create_workspace_listing(
+        listing = ResourceMarketplaceService(session, settings=settings).create_workspace_listing(
             workspace_id=context.workspace.id,
             owner_user_id=context.user.user_id,
             data=request,
@@ -75,7 +75,7 @@ def install_marketplace_listing(
     session: Session = Depends(get_db_session),
 ) -> WorkspaceMarketplaceInstallResponse:
     try:
-        install = MarketplaceService(session).install_listing(
+        install = ResourceMarketplaceService(session).install_listing(
             workspace_id=context.workspace.id,
             user_id=context.user.user_id,
             listing_id=listing_id,
@@ -98,7 +98,7 @@ def list_workspace_marketplace_installs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[WorkspaceMarketplaceInstallResponse]:
-    items, total = MarketplaceService(session).list_workspace_installs(
+    items, total = ResourceMarketplaceService(session).list_workspace_installs(
         context.workspace.id,
         page,
         listing_type=listing_type,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from uuid import UUID
 
-from opsmesh.agents.execution.contracts import AgentRuntimeResourceGrant
+from opsmesh.agents.execution.contracts import AgentResourceGrant
 
 MEMORY_SCOPE_TYPES = frozenset({"workspace", "team", "agent", "task", "run"})
 MEMORY_READ_ACCESS_MODES = frozenset({"read", "read_write"})
@@ -31,9 +31,7 @@ class AuthorizedMemoryScope:
             return self
         requested_values = frozenset(requested)
         source_types = (
-            requested_values
-            if self.source_types is None
-            else self.source_types & requested_values
+            requested_values if self.source_types is None else self.source_types & requested_values
         )
         return replace(self, source_types=source_types) if source_types else None
 
@@ -79,7 +77,7 @@ class AuthorizedMemoryScope:
 
 
 def memory_access_scopes(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
+    grants: tuple[AgentResourceGrant, ...],
     *,
     access_modes: frozenset[str],
     requested_source_types: set[str] | None = None,
@@ -91,9 +89,7 @@ def memory_access_scopes(
         scope_types = _scope_types(grant)
         scope_ids = _locator_values(grant, "scope_ids")
         if scope_ids is not None and (scope_types is None or len(scope_types) != 1):
-            raise MemoryAuthorizationError(
-                "Memory scope IDs require exactly one memory scope type"
-            )
+            raise MemoryAuthorizationError("Memory scope IDs require exactly one memory scope type")
         scope = AuthorizedMemoryScope(
             resource_id=grant.resource_id,
             access_mode=grant.access_mode,
@@ -108,7 +104,7 @@ def memory_access_scopes(
 
 
 def memory_read_scopes(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
+    grants: tuple[AgentResourceGrant, ...],
     *,
     requested_source_types: set[str] | None = None,
 ) -> tuple[AuthorizedMemoryScope, ...]:
@@ -120,12 +116,12 @@ def memory_read_scopes(
 
 
 def memory_write_scopes(
-    grants: tuple[AgentRuntimeResourceGrant, ...],
+    grants: tuple[AgentResourceGrant, ...],
 ) -> tuple[AuthorizedMemoryScope, ...]:
     return memory_access_scopes(grants, access_modes=MEMORY_WRITE_ACCESS_MODES)
 
 
-def _scope_types(grant: AgentRuntimeResourceGrant) -> frozenset[str] | None:
+def _scope_types(grant: AgentResourceGrant) -> frozenset[str] | None:
     values = _locator_values(grant, "scope_types")
     if values is not None and not values.issubset(MEMORY_SCOPE_TYPES):
         raise MemoryAuthorizationError("Memory resource contains an unsupported scope type")
@@ -133,7 +129,7 @@ def _scope_types(grant: AgentRuntimeResourceGrant) -> frozenset[str] | None:
 
 
 def _locator_values(
-    grant: AgentRuntimeResourceGrant,
+    grant: AgentResourceGrant,
     key: str,
 ) -> frozenset[str] | None:
     if key not in grant.locator:

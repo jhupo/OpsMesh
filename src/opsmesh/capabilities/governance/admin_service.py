@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.catalog.models import Capability, ToolGroup
 from opsmesh.capabilities.marketplace.models import MarketplaceListing
-from opsmesh.capabilities.mcp.models import McpServer, McpToolAllowlist
+from opsmesh.capabilities.mcp.models import MCPServer, MCPToolAllowlist
 from opsmesh.capabilities.references.models import CapabilityResource
 from opsmesh.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.governance.security_events.service import SecurityAuditService
+from opsmesh.governance.security_events.service import SecurityEventRecorder
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.http.security_context import SecurityRequestContext
 from opsmesh.workspaces.management.models import Workspace
@@ -35,8 +35,8 @@ GovernedResource: TypeAlias = (
     | Skill
     | WorkspaceSkillInstall
     | CapabilityResource
-    | McpServer
-    | McpToolAllowlist
+    | MCPServer
+    | MCPToolAllowlist
     | MarketplaceListing
 )
 
@@ -91,7 +91,7 @@ class AdminCapabilityGovernanceService:
             "reason": reason,
         }
         if workspace_id is None:
-            SecurityAuditService(self._session).record_request_event(
+            SecurityEventRecorder(self._session).record_request_event(
                 request_context=request_context,
                 action=action,
                 outcome="allowed",
@@ -167,8 +167,8 @@ class AdminCapabilityGovernanceService:
             )
         if kind == AdminCapabilityKind.MCP_SERVER:
             return self._session.scalar(
-                select(McpServer)
-                .where(McpServer.id == resource_id, McpServer.workspace_id == workspace_id)
+                select(MCPServer)
+                .where(MCPServer.id == resource_id, MCPServer.workspace_id == workspace_id)
                 .with_for_update()
             )
         if kind == AdminCapabilityKind.MARKETPLACE_LISTING:
@@ -181,10 +181,10 @@ class AdminCapabilityGovernanceService:
                 .with_for_update()
             )
         return self._session.scalar(
-            select(McpToolAllowlist)
+            select(MCPToolAllowlist)
             .where(
-                McpToolAllowlist.id == resource_id,
-                McpToolAllowlist.workspace_id == workspace_id,
+                MCPToolAllowlist.id == resource_id,
+                MCPToolAllowlist.workspace_id == workspace_id,
             )
             .with_for_update()
         )

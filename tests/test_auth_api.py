@@ -6,12 +6,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
-from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.auth.models import UserAPIToken
@@ -25,6 +21,7 @@ from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.database import product_engine
 
 INTERNAL_TOKEN = "test-internal-token"
 
@@ -696,13 +693,7 @@ def test_internal_token_with_x_user_id_authenticates_user() -> None:
 
 
 def _client() -> tuple[TestClient, Session]:
-    _patch_portable_types_for_sqlite()
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = product_engine()
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     seed_session = session_factory()
@@ -714,7 +705,7 @@ def _client() -> tuple[TestClient, Session]:
             internal_api_token=INTERNAL_TOKEN,
             platform_admin_token="platform-admin",
             token_hash_pepper="api-test-pepper",
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=engine.url.render_as_string(hide_password=False),
         )
     )
 
@@ -739,12 +730,3 @@ def _internal_headers(user_id: object) -> dict[str, str]:
 
 def _user_token_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
-
-
-def _patch_portable_types_for_sqlite() -> None:
-    for table in Base.metadata.tables.values():
-        for column in table.columns:
-            if isinstance(column.type, PostgresUUID):
-                column.type = column.type.as_generic()
-            if isinstance(column.type, JSONB):
-                column.type = SqliteJSON()

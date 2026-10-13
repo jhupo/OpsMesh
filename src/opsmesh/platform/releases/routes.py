@@ -5,7 +5,7 @@ from opsmesh.platform.releases.schemas import (
     AdminReleaseUpdateCheckResponse,
     AdminReleaseVersionResponse,
 )
-from opsmesh.platform.releases.service import ReleaseUpdateService
+from opsmesh.platform.releases.service import ReleaseCheckService
 from opsmesh.shared.config import Settings, get_settings
 
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
@@ -15,7 +15,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 def admin_system_version(
     settings: Settings = Depends(get_settings),
 ) -> AdminReleaseVersionResponse:
-    return AdminReleaseVersionResponse(**ReleaseUpdateService(settings).current_version().__dict__)
+    return AdminReleaseVersionResponse(**ReleaseCheckService(settings).current_version().__dict__)
 
 
 @router.get("/system/check-updates", response_model=AdminReleaseUpdateCheckResponse)
@@ -24,7 +24,7 @@ def admin_check_updates(
     settings: Settings = Depends(get_settings),
 ) -> AdminReleaseUpdateCheckResponse:
     try:
-        result = ReleaseUpdateService(settings).check_updates(force=force)
+        result = ReleaseCheckService(settings).check_updates(force=force)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

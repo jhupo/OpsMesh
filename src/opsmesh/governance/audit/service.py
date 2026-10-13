@@ -7,7 +7,7 @@ from hashlib import sha256
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, delete, func, select, text
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.models import AuditEvent
@@ -25,18 +25,9 @@ class AuditHashChainVerification:
     reason: str | None = None
 
 
-@dataclass(frozen=True)
-class AuditRetentionCleanupResult:
-    retention_days: int | None
-    cutoff: datetime | None
-    worm_enabled: bool
-    eligible_count: int
-    deleted_count: int
-    retained_count: int
-    reason: str
-
-
 class AuditService:
+    """Append tenant audit evidence within the caller's transaction."""
+
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
         self._settings = settings or get_settings()
@@ -51,6 +42,26 @@ class AuditService:
         target_id: UUID | str,
         metadata: dict[str, object] | None = None,
     ) -> AuditEvent:
+        """Append a user action to the workspace hash chain and flush it.
+
+        Serializes audit writers with a workspace row lock, captures the current
+        request/trace evidence and redacts metadata before hashing. The borrowed
+        Session is flushed, not committed; the caller owns commit and rollback.
+
+        Args:
+            workspace_id: Tenant owning the audit chain.
+            user_id: User responsible for the action.
+            action: Stable product action name.
+            target_type: Resource kind; agent_run targets must use UUID IDs.
+            target_id: Identifier of the affected resource.
+            metadata: Additional evidence, redacted before persistence.
+
+        Returns:
+            The appended event with previous and current hashes.
+
+        Raises:
+            ValueError: The workspace is absent or an agent_run ID is invalid.
+        """
         evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
         created_at = datetime.now(UTC)
@@ -88,6 +99,26 @@ class AuditService:
         metadata: dict[str, object] | None = None,
         actor_id: str = "opsmesh.worker",
     ) -> AuditEvent:
+        """Append a system action to the workspace hash chain and flush it.
+
+        Uses the same workspace lock, trace evidence and redaction policy as
+        record_user_action. The caller owns commit/rollback of the borrowed
+        Session, so evidence is persisted atomically with the business change.
+
+        Args:
+            workspace_id: Tenant owning the audit chain.
+            action: Stable product action name.
+            target_type: Resource kind; agent_run targets must use UUID IDs.
+            target_id: Identifier of the affected resource.
+            metadata: Additional evidence, redacted before persistence.
+            actor_id: Identifier of the system component performing the action.
+
+        Returns:
+            The appended event with previous and current hashes.
+
+        Raises:
+            ValueError: The workspace is absent or an agent_run ID is invalid.
+        """
         evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
         created_at = datetime.now(UTC)
@@ -131,57 +162,6 @@ class AuditService:
         if retention_days is None:
             return None
         return (now or datetime.now(UTC)) - timedelta(days=retention_days)
-
-    def cleanup_expired_events(
-        self,
-        *,
-        workspace_id: UUID | None = None,
-        now: datetime | None = None,
-    ) -> AuditRetentionCleanupResult:
-        cutoff = self.retention_cutoff(now=now)
-        if cutoff is None:
-            return AuditRetentionCleanupResult(
-                retention_days=None,
-                cutoff=None,
-                worm_enabled=self._settings.audit_event_worm_enabled,
-                eligible_count=0,
-                deleted_count=0,
-                retained_count=0,
-                reason="retention_not_configured",
-            )
-
-        filters = [AuditEvent.created_at < cutoff]
-        if workspace_id is not None:
-            filters.append(AuditEvent.workspace_id == workspace_id)
-
-        eligible_count = int(
-            self._session.scalar(select(func.count()).select_from(AuditEvent).where(*filters)) or 0
-        )
-        if self._settings.audit_event_worm_enabled:
-            return AuditRetentionCleanupResult(
-                retention_days=self._settings.audit_event_retention_days,
-                cutoff=cutoff,
-                worm_enabled=True,
-                eligible_count=eligible_count,
-                deleted_count=0,
-                retained_count=eligible_count,
-                reason="worm_retained",
-            )
-
-        if self._session.get_bind().dialect.name == "postgresql":
-            self._session.execute(text("SET LOCAL opsmesh.audit_retention_delete = 'on'"))
-        result = self._session.execute(delete(AuditEvent).where(*filters))
-        deleted_count = int(getattr(result, "rowcount", 0) or 0)
-        self._session.flush()
-        return AuditRetentionCleanupResult(
-            retention_days=self._settings.audit_event_retention_days,
-            cutoff=cutoff,
-            worm_enabled=False,
-            eligible_count=eligible_count,
-            deleted_count=deleted_count,
-            retained_count=max(0, eligible_count - deleted_count),
-            reason="deleted_expired_events",
-        )
 
     def verify_workspace_hash_chain(self, workspace_id: UUID) -> AuditHashChainVerification:
         events = self._session.scalars(

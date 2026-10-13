@@ -1,25 +1,26 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
+from opsmesh.orchestration.runs.control import RunControlService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
-from opsmesh.orchestration.runs.state import RunStateService, RunStatus
+from opsmesh.orchestration.runs.state import RunStatus
+from opsmesh.orchestration.runs.temporal import run_execution_reference
+from opsmesh.orchestration.runs.terminal_state import RunCancellationScope
 from opsmesh.orchestration.tasks.contracts import TaskControlActionRequest
 from opsmesh.orchestration.tasks.models import Task, TaskStep
-from opsmesh.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
-from opsmesh.runtime.queues.service import RedisQueue
-from opsmesh.runtime.workers.leases import mark_agent_run_worker_cancel_requested
+from opsmesh.orchestration.tasks.steps import TaskStepStatus, transition_task_step
+from opsmesh.runtime.temporal.outbox import stage_cancellation
 
 PAUSABLE_RUN_STATUSES = {
     RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
-    RunStatus.WAITING_RUNTIME.value,
     RunStatus.WAITING_APPROVAL.value,
     RunStatus.WAITING_SUBWORKFLOW.value,
 }
@@ -28,9 +29,8 @@ TASK_PAUSED_REASON = "task_paused"
 
 
 class TaskControlExecutionService:
-    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
-        self._queue = queue
 
     def cancel_active_runs(
         self, task: Task, *, now: datetime, actor_user_id: UUID
@@ -42,26 +42,29 @@ class TaskControlExecutionService:
                 AgentRun.status.in_(PAUSABLE_RUN_STATUSES),
             )
         ).all()
-        worker_cancel_requests = 0
+        temporal_cancellations = 0
         for run in runs:
             AgentToolApprovalLifecycleService(self._session).cancel_for_run(
                 workspace_id=task.workspace_id,
                 run_id=run.id,
                 actor_user_id=actor_user_id,
             )
-            RunStateService().transition(
+            RunControlService(self._session).terminal_states().mark_run_cancelled(
                 run,
-                RunStatus.CANCELLED,
                 completed_at=now,
-                error={"code": TASK_PAUSED_REASON, "message": "Task paused by owner control"},
+                error_code=TASK_PAUSED_REASON,
+                error_message="Task paused by owner control",
+                scope=RunCancellationScope.EXECUTION,
+                actor_user_id=actor_user_id,
             )
-            worker_cancel_requests += mark_agent_run_worker_cancel_requested(
+            stage_cancellation(
                 self._session,
+                dispatch_id=uuid4(),
                 workspace_id=run.workspace_id,
-                run_id=run.id,
-                requested_at=now,
+                workflow_id=run_execution_reference(self._session, run).workflow_id,
             )
-        return len(runs), worker_cancel_requests
+            temporal_cancellations += 1
+        return len(runs), temporal_cancellations
 
     def block_schedulable_steps(
         self,
@@ -88,7 +91,7 @@ class TaskControlExecutionService:
                     "pause_reason": request.reason,
                 }
             )
-            TaskStepStateService().transition(
+            transition_task_step(
                 step,
                 TaskStepStatus.BLOCKED,
                 dependencies=dependencies,
@@ -116,7 +119,7 @@ class TaskControlExecutionService:
                 "pause_reason",
             ):
                 dependencies.pop(key, None)
-            TaskStepStateService().transition(
+            transition_task_step(
                 step,
                 TaskStepStatus.QUEUED,
                 dependencies=dependencies,
@@ -133,7 +136,7 @@ class TaskControlExecutionService:
     ) -> list[AgentRun]:
         if not enqueue:
             return []
-        orchestrator = RunOrchestrationService(self._session, queue=self._queue)
+        orchestrator = RunOrchestrationService(self._session)
         if task.agent_team_id is not None:
             return orchestrator.schedule_team_steps(
                 workspace_id=task.workspace_id,
@@ -143,5 +146,5 @@ class TaskControlExecutionService:
         run = orchestrator.create_queued_run_for_task(task)
         if run is None:
             return []
-        orchestrator.enqueue_run(run, actor_user_id)
+        orchestrator.request_run(run, actor_user_id)
         return [run]

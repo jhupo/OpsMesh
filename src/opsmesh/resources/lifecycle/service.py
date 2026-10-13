@@ -11,8 +11,6 @@ from opsmesh.resources.lifecycle.scheduling import (
     ScheduledLifecycleSummary,
     WorkspaceScheduledLifecycleService,
 )
-from opsmesh.resources.storage.storage import ObjectStorage
-from opsmesh.runtime.queues.service import RedisQueue
 
 
 class WorkspaceDataLifecycleService:
@@ -36,8 +34,6 @@ class WorkspaceDataLifecycleService:
         *,
         workspace_id: UUID,
         user_id: UUID,
-        queue: RedisQueue,
-        storage: ObjectStorage | None = None,
         dry_run: bool = True,
         actions: list[str] | None = None,
         reason: str | None = None,
@@ -47,8 +43,6 @@ class WorkspaceDataLifecycleService:
         return WorkspaceRecoveryActionService(self._session).apply_recovery_readiness_actions(
             workspace_id=workspace_id,
             user_id=user_id,
-            queue=queue,
-            storage=storage,
             dry_run=dry_run,
             actions=actions,
             reason=reason,
@@ -101,14 +95,10 @@ class WorkspaceDataLifecycleService:
     def run_scheduled_lifecycle(
         self,
         *,
-        queue: RedisQueue,
-        storage: ObjectStorage | None = None,
         workspace_id: UUID | None = None,
         limit: int = 100,
     ) -> ScheduledLifecycleSummary:
         return WorkspaceScheduledLifecycleService(self._session).run_scheduled_lifecycle(
-            queue=queue,
-            storage=storage,
             workspace_id=workspace_id,
             limit=limit,
         )

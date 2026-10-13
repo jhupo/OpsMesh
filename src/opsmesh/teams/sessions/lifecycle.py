@@ -6,10 +6,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.messages.models import AgentMessageThread
-from opsmesh.agents.sessions.models import PersistentAgentSession
+from opsmesh.agents.sessions.models import AgentSessionMetadata
 from opsmesh.governance.audit.service import AuditService
-from opsmesh.runtime.instances.contracts import RuntimeLifecycleControl
 from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.instances.service import RuntimeEnvironmentService
+from opsmesh.teams.execution.dispatch import submit_team_orchestration
 from opsmesh.teams.management.models import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
@@ -18,24 +19,25 @@ from opsmesh.teams.management.models import (
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
     AgentTeam,
 )
-from opsmesh.teams.sessions.mailbox import TeamRuntimeMailboxStore
+from opsmesh.teams.sessions.agent_sessions import TeamAgentSessionStore
+from opsmesh.teams.sessions.mailbox import TeamMailboxStore
 from opsmesh.teams.sessions.refs import _dict_or_none, team_runtime_metadata
-from opsmesh.teams.sessions.repository import TeamRuntimeRepository
-from opsmesh.teams.sessions.sessions import TeamRuntimeSessionStore
-from opsmesh.teams.sessions.state_builder import TeamRuntimeState, TeamRuntimeStateBuilder
+from opsmesh.teams.sessions.repository import TeamOperationRepository
+from opsmesh.teams.sessions.schemas import AgentTeamOrchestrationAdvanceRequest
+from opsmesh.teams.sessions.state_builder import TeamOperationSnapshot, TeamOperationSnapshotBuilder
 
 
-class TeamRuntimeLifecycleService:
+class TeamOperationLifecycleService:
     """Apply logical and bound workspace-runtime lifecycle transitions."""
 
     def __init__(
         self,
         *,
         session: Session,
-        repo: TeamRuntimeRepository,
-        mailbox: TeamRuntimeMailboxStore,
-        sessions: TeamRuntimeSessionStore,
-        state_builder: TeamRuntimeStateBuilder,
+        repo: TeamOperationRepository,
+        mailbox: TeamMailboxStore,
+        sessions: TeamAgentSessionStore,
+        state_builder: TeamOperationSnapshotBuilder,
     ) -> None:
         self._session = session
         self._repo = repo
@@ -51,10 +53,10 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object] | None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         team = self._repo.team(workspace_id, team_id)
         if team is None:
             return None
@@ -75,10 +77,10 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object] | None,
-    ) -> TeamRuntimeState | None:
+    ) -> TeamOperationSnapshot | None:
         runtime_metadata = self._transition_metadata(
             team=team,
             actor_user_id=actor_user_id,
@@ -90,7 +92,7 @@ class TeamRuntimeLifecycleService:
         )
         thread = self._mailbox._get_or_create_thread(team)
         team_session = self._sessions._get_or_create_team_session(team)
-        member_sessions = self._sessions.member_sessions(team)
+        member_sessions = self._sessions.ensure_member_sessions(team)
         self._record_transition(
             team=team,
             thread=thread,
@@ -99,6 +101,19 @@ class TeamRuntimeLifecycleService:
             reason=reason,
             runtime_metadata=runtime_metadata,
         )
+        if status == TEAM_RUNTIME_RUNNING:
+            submit_team_orchestration(
+                self._session,
+                workspace_id=team.workspace_id,
+                team_id=team.id,
+                user_id=actor_user_id,
+                configuration=AgentTeamOrchestrationAdvanceRequest(
+                    dry_run=False,
+                    sources=["handoff_queue", "manager_queue"],
+                    actions=["schedule_downstream_steps"],
+                    reason=event_type,
+                ),
+            )
         self._session.commit()
         self._session.refresh(team)
         return self._build_state(
@@ -115,7 +130,7 @@ class TeamRuntimeLifecycleService:
         actor_user_id: UUID,
         status: str,
         event_type: str,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         reason: str | None,
         metadata: dict[str, object] | None,
     ) -> dict[str, object]:
@@ -135,19 +150,13 @@ class TeamRuntimeLifecycleService:
                 "updated_by_user_id": str(actor_user_id),
             }
         )
-        self._clear_or_continue_failure_state(
-            runtime_metadata=runtime_metadata,
-            status=status,
-            event_type=event_type,
-            updated_at=updated_at,
-        )
         if workspace_runtime_control:
             runtime_metadata["workspace_runtime_control"] = workspace_runtime_control
         if event_type == "team.runtime.continued":
             runtime_metadata["continued_at"] = updated_at
-            last_iteration = _dict_or_none(runtime_metadata.get("last_iteration"))
-            if last_iteration is not None:
-                runtime_metadata["continued_from_iteration"] = last_iteration
+            last_advancement = _dict_or_none(runtime_metadata.get("last_advancement"))
+            if last_advancement is not None:
+                runtime_metadata["continued_from_advancement"] = last_advancement
         if reason:
             runtime_metadata["reason"] = reason
         if metadata:
@@ -156,28 +165,12 @@ class TeamRuntimeLifecycleService:
         team.default_task_policy = policy
         return runtime_metadata
 
-    def _clear_or_continue_failure_state(
-        self,
-        *,
-        runtime_metadata: dict[str, object],
-        status: str,
-        event_type: str,
-        updated_at: str,
-    ) -> None:
-        had_worker_failure = "last_worker_failure" in runtime_metadata
-        if status != TEAM_RUNTIME_RUNNING:
-            return
-        runtime_metadata.pop("last_worker_failure", None)
-        if had_worker_failure and event_type == "team.runtime.continued":
-            runtime_metadata["heartbeat_status"] = TEAM_RUNTIME_RUNNING
-            runtime_metadata["last_heartbeat_at"] = updated_at
-
     def _apply_bound_runtime_control(
         self,
         *,
         team: AgentTeam,
         desired_status: str,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         updated_at: str,
     ) -> dict[str, object]:
         runtime = self._repo.bound_runtime(team)
@@ -210,43 +203,27 @@ class TeamRuntimeLifecycleService:
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         runtime: WorkspaceRuntime,
         control: dict[str, object],
     ) -> dict[str, object]:
-        control["action"] = "start"
-        if runtime.status == "running":
-            control.update({"mode": "already_running", "runtime_status_after": runtime.status})
-            return control
-        if runtime_control is None:
-            control.update({"mode": "logical_only", "reason": "runtime_control_unavailable"})
-            return control
-        started_runtime = runtime_control.start_runtime(team.workspace_id, runtime.id)
-        if started_runtime is None:
-            raise ValueError("Workspace runtime not found")
-        control.update({"mode": "lifecycle", "runtime_status_after": started_runtime.status})
-        return control
+        if runtime.status != "active":
+            raise ValueError("The team's execution environment is disabled")
+        return {
+            **control,
+            "mode": "native_sandbox_binding",
+            "sandbox_backend_id": runtime.sandbox_backend_id,
+        }
 
     def _stop_bound_runtime(
         self,
         *,
         team: AgentTeam,
-        runtime_control: RuntimeLifecycleControl | None,
+        runtime_control: RuntimeEnvironmentService | None,
         runtime: WorkspaceRuntime,
         control: dict[str, object],
     ) -> dict[str, object]:
-        control["action"] = "stop"
-        if runtime.status != "running":
-            control.update({"mode": "already_stopped", "runtime_status_after": runtime.status})
-            return control
-        if runtime_control is None:
-            control.update({"mode": "logical_only", "reason": "runtime_control_unavailable"})
-            return control
-        stopped_runtime = runtime_control.stop_runtime(team.workspace_id, runtime.id)
-        if stopped_runtime is None:
-            raise ValueError("Workspace runtime not found")
-        control.update({"mode": "lifecycle", "runtime_status_after": stopped_runtime.status})
-        return control
+        return {**control, "mode": "team_progress_paused", "runtime_status_after": runtime.status}
 
     def _record_transition(
         self,
@@ -279,10 +256,10 @@ class TeamRuntimeLifecycleService:
         self,
         *,
         team: AgentTeam,
-        team_session: PersistentAgentSession | None,
+        team_session: AgentSessionMetadata | None,
         thread: AgentMessageThread | None,
-        member_sessions: list[PersistentAgentSession],
-    ) -> TeamRuntimeState:
+        member_sessions: list[AgentSessionMetadata],
+    ) -> TeamOperationSnapshot:
         return self._state_builder.build(
             team=team,
             team_session=team_session,

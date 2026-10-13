@@ -7,104 +7,61 @@ from opsmesh_plugin_sdk.services.storage import StoredValue, StoreWrite
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.plugins.authentication import PluginAuthenticationService
+from opsmesh.capabilities.plugins.configuration import PluginConfigurationService
 from opsmesh.capabilities.plugins.contracts import (
-    CandidateApproval,
-    CandidatePreviewRequest,
-    CandidatePreviewResponse,
-    CandidateResponse,
-    CredentialRequest,
-    CredentialResponse,
-    DownloadRequest,
-    DownloadResponse,
-    PluginAction,
+    PluginActionRequest,
+    PluginBindingReauthorizeRequest,
+    PluginBindingRequest,
     PluginBindingResponse,
+    PluginCandidateInstallRequest,
+    PluginCandidatePreviewRequest,
+    PluginCandidatePreviewResponse,
+    PluginCandidateResponse,
+    PluginCredentialResponse,
+    PluginCredentialRotateRequest,
+    PluginDownloadRequest,
+    PluginDownloadResponse,
     PluginInstallRequest,
     PluginInstallResponse,
     PluginReleaseResponse,
-    SourceResponse,
-    SourceSettings,
-    SourceUpdate,
-    TrustKeyCreate,
-    TrustKeyResponse,
-)
-from opsmesh.capabilities.plugins.deployments import (
-    DeploymentRequest,
-    DeploymentView,
-    PluginDeploymentService,
+    PluginSourceResponse,
+    PluginSourceSettings,
+    PluginSourceUpdateRequest,
+    PluginTrustKeyCreateRequest,
+    PluginTrustKeyResponse,
 )
 from opsmesh.capabilities.plugins.distribution import PluginDistributionService
+from opsmesh.capabilities.plugins.lifecycle import PluginLifecycleService
 from opsmesh.capabilities.plugins.models import (
     PluginBinding,
     PluginCandidate,
     PluginDownload,
-    PluginInstall,
+    PluginInstallation,
     PluginRelease,
     PluginSource,
     PluginTrustKey,
 )
-from opsmesh.capabilities.plugins.service import PluginService
-from opsmesh.capabilities.plugins.services import PluginServices
 from opsmesh.identity.auth.dependencies import workspace_dependency
 from opsmesh.identity.authorization.context import WorkspaceContext
 from opsmesh.identity.authorization.permissions import WorkspaceAction
-from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.secrets import SecretEncryptionService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/plugins", tags=["plugins"])
 
 
-@router.put("/{install_id}/deployment", response_model=DeploymentView, status_code=202)
-def configure_deployment(
-    install_id: UUID,
-    request: DeploymentRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> object:
-    secrets = SecretEncryptionService(
-        secret=settings.credential_encryption_secret,
-        key_id=settings.credential_encryption_key_id,
-        previous_secrets=settings.credential_encryption_previous_secrets,
-    )
-    try:
-        return PluginDeploymentService(session).configure(
-            context.workspace.id, install_id, context.user, request, secrets
-        )
-    except ValueError as exc:
-        raise HTTPException(422, "Invalid plugin deployment configuration") from exc
-
-
-@router.get("/{install_id}/deployment", response_model=DeploymentView)
-def deployment_status(
-    install_id: UUID,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
-    session: Session = Depends(get_db_session),
-) -> object:
-    return PluginDeploymentService(session).get(context.workspace.id, install_id)
-
-
-@router.post("/{install_id}/deployment/stop", response_model=DeploymentView, status_code=202)
-def stop_deployment(
-    install_id: UUID,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
-    session: Session = Depends(get_db_session),
-) -> object:
-    return PluginDeploymentService(session).stop(context.workspace.id, install_id, context.user)
-
-
-@router.post("/{install_id}/credentials", response_model=CredentialResponse, status_code=201)
+@router.post("/{install_id}/credentials", response_model=PluginCredentialResponse, status_code=201)
 def rotate_credential(
     install_id: UUID,
-    request: CredentialRequest,
+    request: PluginCredentialRotateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
-) -> CredentialResponse:
-    record, token = PluginServices(session).issue(
+) -> PluginCredentialResponse:
+    record, token = PluginAuthenticationService(session).rotate_credential(
         context.workspace.id,
         install_id,
         context.user,
@@ -112,7 +69,7 @@ def rotate_credential(
         request.lifetime_hours,
     )
     session.commit()
-    return CredentialResponse(
+    return PluginCredentialResponse(
         id=record.id, token=token, expires_at=record.expires_at, permissions=record.permissions
     )
 
@@ -123,7 +80,7 @@ def revoke_credentials(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> None:
-    PluginServices(session).revoke(context.workspace.id, install_id, context.user)
+    PluginAuthenticationService(session).revoke(context.workspace.id, install_id, context.user)
     session.commit()
 
 
@@ -135,7 +92,7 @@ def configure_plugin(
     session: Session = Depends(get_db_session),
 ) -> StoredValue:
     with distribution_errors():
-        value = PluginServices(session).configure(
+        value = PluginConfigurationService(session).configure(
             context.workspace.id, install_id, context.user, request
         )
         session.commit()
@@ -152,9 +109,9 @@ def distribution_errors() -> Iterator[None]:
         raise HTTPException(400, "Invalid plugin distribution request") from exc
 
 
-@router.post("/sources", response_model=SourceResponse, status_code=201)
+@router.post("/sources", response_model=PluginSourceResponse, status_code=201)
 def create_source(
-    request: SourceSettings,
+    request: PluginSourceSettings,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -164,10 +121,10 @@ def create_source(
         )
 
 
-@router.put("/sources/{source_id}", response_model=SourceResponse)
+@router.put("/sources/{source_id}", response_model=PluginSourceResponse)
 def update_source(
     source_id: UUID,
-    request: SourceUpdate,
+    request: PluginSourceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -177,7 +134,7 @@ def update_source(
         )
 
 
-@router.get("/sources", response_model=PageResponse[SourceResponse])
+@router.get("/sources", response_model=PageResponse[PluginSourceResponse])
 def sources(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -195,20 +152,20 @@ def sources(
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.post("/sources/{source_id}/sync", response_model=DownloadResponse, status_code=202)
+@router.post("/sources/{source_id}/sync", response_model=PluginDownloadResponse, status_code=202)
 def sync_source(
     source_id: UUID,
-    request: DownloadRequest,
+    request: PluginDownloadRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
     with distribution_errors():
         return PluginDistributionService(session).enqueue(
-            context.workspace.id, context.user.user_id, source_id, request.request_key
+            context.workspace.id, context.user, source_id, request.request_key
         )
 
 
-@router.get("/candidates", response_model=PageResponse[CandidateResponse])
+@router.get("/candidates", response_model=PageResponse[PluginCandidateResponse])
 def candidates(
     source_id: UUID | None = None,
     page: PageParams = Depends(pagination_params),
@@ -226,11 +183,11 @@ def candidates(
 
 
 @router.post(
-    "/candidates/{candidate_id}/download", response_model=DownloadResponse, status_code=202
+    "/candidates/{candidate_id}/download", response_model=PluginDownloadResponse, status_code=202
 )
 def download_candidate(
     candidate_id: UUID,
-    request: DownloadRequest,
+    request: PluginDownloadRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -239,14 +196,14 @@ def download_candidate(
         candidate = service.candidate(context.workspace.id, candidate_id)
         return service.enqueue(
             context.workspace.id,
-            context.user.user_id,
+            context.user,
             candidate.source_id,
             request.request_key,
             candidate_id,
         )
 
 
-@router.get("/downloads", response_model=PageResponse[DownloadResponse])
+@router.get("/downloads", response_model=PageResponse[PluginDownloadResponse])
 def downloads(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -264,7 +221,7 @@ def downloads(
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.get("/downloads/{job_id}", response_model=DownloadResponse)
+@router.get("/downloads/{job_id}", response_model=PluginDownloadResponse)
 def download_status(
     job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -273,21 +230,19 @@ def download_status(
     return PluginDistributionService(session).job(context.workspace.id, job_id)
 
 
-@router.post("/downloads/{job_id}/retry", response_model=DownloadResponse, status_code=202)
+@router.post("/downloads/{job_id}/retry", response_model=PluginDownloadResponse, status_code=202)
 def retry_download(
     job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
-    return PluginDistributionService(session).retry(
-        context.workspace.id, context.user.user_id, job_id
-    )
+    return PluginDistributionService(session).retry(context.workspace.id, context.user, job_id)
 
 
-@router.post("/candidates/{candidate_id}/preview", response_model=CandidatePreviewResponse)
+@router.post("/candidates/{candidate_id}/preview", response_model=PluginCandidatePreviewResponse)
 def preview_candidate(
     candidate_id: UUID,
-    request: CandidatePreviewRequest,
+    request: PluginCandidatePreviewRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -302,7 +257,7 @@ def preview_candidate(
 )
 def install_candidate(
     candidate_id: UUID,
-    request: CandidateApproval,
+    request: PluginCandidateInstallRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -320,31 +275,33 @@ def list_plugins(
 ) -> object:
     items, total = page_scalars(
         session,
-        select(PluginInstall)
+        select(PluginInstallation)
         .where(
-            PluginInstall.workspace_id == context.workspace.id,
+            PluginInstallation.workspace_id == context.workspace.id,
         )
-        .order_by(PluginInstall.created_at.desc(), PluginInstall.id),
+        .order_by(PluginInstallation.created_at.desc(), PluginInstallation.id),
         page,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.post("/trust-keys", response_model=TrustKeyResponse, status_code=201)
+@router.post("/trust-keys", response_model=PluginTrustKeyResponse, status_code=201)
 def trust_key(
-    request: TrustKeyCreate,
+    request: PluginTrustKeyCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
     try:
-        return PluginService(session).trust_key(context.workspace.id, context.user.user_id, request)
+        return PluginLifecycleService(session).trust_key(
+            context.workspace.id, context.user.user_id, request
+        )
     except DatabaseConflictError as exc:
         raise HTTPException(409, exc.message) from exc
     except ValueError as exc:
         raise HTTPException(400, "Invalid publisher key") from exc
 
 
-@router.get("/trust-keys", response_model=PageResponse[TrustKeyResponse])
+@router.get("/trust-keys", response_model=PageResponse[PluginTrustKeyResponse])
 def list_trust_keys(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -362,13 +319,15 @@ def list_trust_keys(
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
-@router.post("/trust-keys/{key_id}/revoke", response_model=TrustKeyResponse)
+@router.post("/trust-keys/{key_id}/revoke", response_model=PluginTrustKeyResponse)
 def revoke_key(
     key_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
-    return PluginService(session).revoke_key(context.workspace.id, context.user.user_id, key_id)
+    return PluginLifecycleService(session).revoke_key(
+        context.workspace.id, context.user.user_id, key_id
+    )
 
 
 @router.post("", response_model=PluginInstallResponse, status_code=201)
@@ -378,7 +337,9 @@ def install_plugin(
     session: Session = Depends(get_db_session),
 ) -> object:
     try:
-        return PluginService(session).install(context.workspace.id, context.user.user_id, request)
+        return PluginLifecycleService(session).install(
+            context.workspace.id, context.user.user_id, request
+        )
     except DatabaseConflictError as exc:
         raise HTTPException(409, exc.message) from exc
     except ValueError as exc:
@@ -388,12 +349,12 @@ def install_plugin(
 @router.post("/{install_id}/actions", response_model=PluginInstallResponse)
 def plugin_action(
     install_id: UUID,
-    request: PluginAction,
+    request: PluginActionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
     try:
-        return PluginService(session).action(
+        return PluginLifecycleService(session).action(
             context.workspace.id, context.user.user_id, install_id, request
         )
     except ValueError as exc:
@@ -407,13 +368,13 @@ def releases(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> object:
-    PluginService(session).require(context.workspace.id, install_id)
+    install = PluginLifecycleService(session).require(context.workspace.id, install_id)
     items, total = page_scalars(
         session,
         select(PluginRelease)
         .where(
             PluginRelease.workspace_id == context.workspace.id,
-            PluginRelease.install_id == install_id,
+            PluginRelease.plugin_key == install.plugin_key,
         )
         .order_by(PluginRelease.created_at.desc(), PluginRelease.id),
         page,
@@ -424,29 +385,51 @@ def releases(
 @router.get("/{install_id}/bindings", response_model=PageResponse[PluginBindingResponse])
 def bindings(
     install_id: UUID,
-    version: str | None = Query(default=None, max_length=64),
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> object:
-    install = PluginService(session).require(context.workspace.id, install_id)
+    PluginLifecycleService(session).require(context.workspace.id, install_id)
     items, total = page_scalars(
         session,
         select(PluginBinding)
-        .join(
-            PluginRelease,
-            PluginRelease.id == PluginBinding.release_id,
-        )
         .where(
             PluginBinding.workspace_id == context.workspace.id,
             PluginBinding.install_id == install_id,
-            PluginRelease.workspace_id == context.workspace.id,
-            PluginRelease.version == (version or install.current_version),
         )
         .order_by(PluginBinding.capability_key),
         page,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post("/{install_id}/bindings", response_model=PluginBindingResponse, status_code=201)
+def bind_plugin_resource(
+    install_id: UUID,
+    request: PluginBindingRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginLifecycleService(session).bind(
+            context.workspace.id, context.user.user_id, install_id, request
+        )
+
+
+@router.post(
+    "/{install_id}/bindings/{binding_id}/reauthorize", response_model=PluginBindingResponse
+)
+def reauthorize_plugin_resource(
+    install_id: UUID,
+    binding_id: UUID,
+    request: PluginBindingReauthorizeRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginLifecycleService(session).reauthorize(
+            context.workspace.id, context.user.user_id, install_id, binding_id, request
+        )
 
 
 @router.get("/{install_id}/dependencies")
@@ -455,4 +438,19 @@ def dependencies(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> dict[str, object]:
-    return {"dependents": PluginService(session).dependencies(context.workspace.id, install_id)}
+    return {
+        "dependents": PluginLifecycleService(session).dependencies(context.workspace.id, install_id)
+    }
+
+
+@router.delete("/{install_id}/bindings/{binding_id}", status_code=204)
+def unbind_plugin_resource(
+    install_id: UUID,
+    binding_id: UUID,
+    expected_generation: int = Query(ge=1),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> None:
+    PluginLifecycleService(session).unbind(
+        context.workspace.id, context.user.user_id, install_id, binding_id, expected_generation
+    )

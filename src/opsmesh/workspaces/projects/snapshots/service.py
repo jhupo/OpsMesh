@@ -16,7 +16,7 @@ from opsmesh.workspaces.projects.models import (
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from opsmesh.workspaces.projects.snapshots.format import sha256_json
+from opsmesh.workspaces.projects.snapshots.diff import sha256_json
 
 PROJECT_SNAPSHOT_SCHEMA_VERSION = 1
 
@@ -99,9 +99,7 @@ class RunProjectSnapshotService:
         self._bind_snapshot_to_run_input(retry_run, snapshot)
         return snapshot
 
-    def get_for_run(
-        self, workspace_id: UUID, run_id: UUID
-    ) -> AgentRunProjectSnapshot | None:
+    def get_for_run(self, workspace_id: UUID, run_id: UUID) -> AgentRunProjectSnapshot | None:
         return self._session.scalar(
             select(AgentRunProjectSnapshot).where(
                 AgentRunProjectSnapshot.workspace_id == workspace_id,
@@ -127,13 +125,16 @@ class RunProjectSnapshotService:
             .with_for_update()
             .order_by(WorkspaceProjectFile.project_path.asc())
         ).all()
-        active_binding_count = self._session.scalar(
-            select(func.count(WorkspaceProjectFile.id)).where(
-                WorkspaceProjectFile.workspace_id == project.workspace_id,
-                WorkspaceProjectFile.project_id == project.id,
-                WorkspaceProjectFile.status == "active",
+        active_binding_count = (
+            self._session.scalar(
+                select(func.count(WorkspaceProjectFile.id)).where(
+                    WorkspaceProjectFile.workspace_id == project.workspace_id,
+                    WorkspaceProjectFile.project_id == project.id,
+                    WorkspaceProjectFile.status == "active",
+                )
             )
-        ) or 0
+            or 0
+        )
         if len(file_rows) != active_binding_count:
             raise ValueError("Project contains an unavailable workspace input file")
         outputs = list(

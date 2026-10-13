@@ -1,5 +1,4 @@
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,10 +8,10 @@ from opsmesh_plugin_sdk.messaging.contracts import (
     AutomationReply,
     AutomationStreamEvent,
     EventState,
+    IncomingMessage,
 )
 from opsmesh_plugin_sdk.packaging.distribution import PluginCatalog, SignedPluginRelease
 from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
-from redis import Redis
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.auth.dependencies import workspace_dependency
@@ -21,24 +20,16 @@ from opsmesh.identity.authorization.errors import AuthorizationError
 from opsmesh.identity.authorization.permissions import WorkspaceAction
 from opsmesh.orchestration.automations.contracts import (
     AutomationConfiguration,
-    AutomationMessage,
     AutomationResponse,
-    AutomationUpdate,
+    AutomationUpdateRequest,
     ExternalIdentityRequest,
     ExternalIdentityResponse,
 )
-from opsmesh.orchestration.automations.identities import ExternalIdentityService
+from opsmesh.orchestration.automations.identities import AutomationSenderIdentityService
 from opsmesh.orchestration.automations.service import AutomationService
 from opsmesh.orchestration.automations.stream import AutomationStreamService
-from opsmesh.orchestration.tasks.events import RedisTaskEventBus
-from opsmesh.shared.config import Settings, get_settings
+from opsmesh.orchestration.tasks.events import PostgresTaskEventReader
 from opsmesh.shared.db.session import get_db_session
-from opsmesh.shared.redis.dependencies import get_redis_client
-
-if TYPE_CHECKING:
-    RedisClient = Redis[str]
-else:
-    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/automations", tags=["automations"])
 
@@ -49,7 +40,7 @@ def configuration_contracts(
 ) -> dict[str, object]:
     return {
         "automation": AutomationConfiguration.model_json_schema(),
-        "message": AutomationMessage.model_json_schema(),
+        "message": IncomingMessage.model_json_schema(),
         "reply": AutomationReply.model_json_schema(),
         "event_state": EventState.model_json_schema(),
         "stream_event": AutomationStreamEvent.model_json_schema(),
@@ -94,7 +85,7 @@ def create_automation(
 @router.put("/{automation_id}", response_model=AutomationResponse)
 def update_automation(
     automation_id: UUID,
-    request: AutomationUpdate,
+    request: AutomationUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -112,7 +103,7 @@ def update_automation(
 @router.post("/{automation_id}/events", response_model=AcceptedEvent, status_code=202)
 def receive_message(
     automation_id: UUID,
-    request: AutomationMessage,
+    request: IncomingMessage,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> object:
@@ -137,7 +128,7 @@ def set_external_identity(
 ) -> ExternalIdentityResponse:
     if not sender_id or len(sender_id) > 160:
         raise HTTPException(422, "Sender ID must contain between 1 and 160 characters")
-    binding = ExternalIdentityService(session).set_binding(
+    binding = AutomationSenderIdentityService(session).set_binding(
         workspace_id=context.workspace.id,
         automation_id=automation_id,
         sender_id=sender_id,
@@ -192,12 +183,10 @@ def event_state(
 async def stream_event(
     automation_id: UUID,
     event_id: UUID,
-    cursor: str = Query(default="0-0", pattern=r"^\d{1,20}-\d{1,20}$"),
+    cursor: str = Query(default="0", min_length=1, max_length=36),
     once: bool = False,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
-    redis: RedisClient = Depends(get_redis_client),
-    settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
     service = AutomationStreamService(session)
     try:
@@ -209,7 +198,7 @@ async def stream_event(
 
     async def frames() -> AsyncIterator[str]:
         async for frame in service.frames(
-            bus=RedisTaskEventBus(redis, settings.redis_key_prefix),
+            bus=PostgresTaskEventReader(session),
             workspace_id=workspace_id,
             automation_id=automation_id,
             event_id=event_id,
