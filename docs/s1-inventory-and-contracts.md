@@ -9,7 +9,7 @@
 
 | 项目 | 实际情况 | 结论 |
 | --- | --- | --- |
-| 分支 / HEAD | `codex/temporal-native-execution` @ `7ebaff04`（snapshot workspace before identity refactor） | 归档快照提交，与 V4 声明一致 |
+| 分支 / HEAD | 盘点基线分支 `codex/temporal-native-execution` @ `7ebaff04`（snapshot workspace before identity refactor）；S1 交付于新分支 `refactor/s1-inventory-and-contracts` | 归档快照提交，与 V4 声明一致 |
 | `src/opsmesh` | 不存在（仅剩 `src/opsmesh.egg-info`） | 参考源码已迁出，处于重新实施前状态 |
 | `backup/opsmesh` | 841 个源文件（排除 `__pycache__`/`.pyc`） | 与 V4 第 16.1 节声明一致 |
 | `backup_2/opsmesh` | 125 个源文件（排除 `__pycache__`/`.pyc`） | 与 V4 第 16.1 节声明一致 |
