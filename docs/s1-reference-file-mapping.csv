@@ -1,0 +1,967 @@
+source_tree,source_path,function,v4_target,decision,reason,duplicate_in_other_source
+backup,__init__.py,package marker,src/opsmesh/__init__.py,keep,package retained in V4 target tree,none
+backup,agents/__init__.py,package marker,delete,delete,agents package deleted per V4 mapping rules,none
+backup,agents/mcp.py,Discover remote MCP server tools via Agents SDK,src/opsmesh/execution/runtime/mcp.py,merge,MCP discovery folds into runtime MCP lifecycle,none
+backup,bootstrap/__init__.py,package marker,src/opsmesh/bootstrap/__init__.py,keep,empty package marker; V4 keeps bootstrap package,none
+backup,bootstrap/activity_context.py,Temporal interceptor binding activity log context,src/opsmesh/bootstrap/temporal.py,merge,activity log-context interceptor folds into Temporal client composition,none
+backup,bootstrap/api.py,FastAPI app assembly with middleware and lifespan,src/opsmesh/bootstrap/api.py,keep,same app assembly; absorbs gateway rate-limit policy,none
+backup,bootstrap/archive_worker.py,Bounded worker for archive ZIP and storage activities,src/opsmesh/bootstrap/worker.py,merge,archive activity worker folds into main worker assembly,none
+backup,bootstrap/events.py,Register owner transaction hooks after mapper registration,src/opsmesh/bootstrap/events.py,keep,same hook registration; registrations follow V4 owners,none
+backup,bootstrap/http_policy.py,Gateway rate-limit policy for feature routes,src/opsmesh/bootstrap/api.py,merge,gateway policy is API assembly concern; no V4 separate file,none
+backup,bootstrap/models.py,Explicit ORM registration for processes and Alembic,src/opsmesh/bootstrap/models.py,keep,same registration duty; module list replaced by V4 models,none
+backup,bootstrap/request_context.py,"HTTP correlation, request logs and API metrics middleware",src/opsmesh/bootstrap/request_context.py,keep,same middleware responsibility under V4 telemetry,none
+backup,bootstrap/resources.py,"Build database, Redis and rate-limiter resources",src/opsmesh/bootstrap/resources.py,keep,same resource construction for API and worker,none
+backup,bootstrap/routers.py,Assemble feature routers into one API router,src/opsmesh/bootstrap/routers.py,keep,same route assembly; imports follow V4 modules,none
+backup,bootstrap/sandbox.py,Build Docker sandbox clients for worker,src/opsmesh/bootstrap/sandbox.py,keep,same sandbox client construction,none
+backup,bootstrap/schedules.py,Ensure Temporal platform maintenance schedules,src/opsmesh/bootstrap/schedules.py,keep,same schedule ensurement for platform maintenance,none
+backup,bootstrap/storage.py,Build application-owned local object storage,src/opsmesh/bootstrap/storage.py,keep,same storage construction,none
+backup,bootstrap/telemetry.py,"Compose process tracing, logs and instrumentation",src/opsmesh/bootstrap/telemetry.py,keep,same telemetry composition; absorbs span attribute policy,none
+backup,bootstrap/telemetry_policy.py,Filter sensitive span attributes for export,src/opsmesh/bootstrap/telemetry.py,merge,attribute policy folds into telemetry composition,none
+backup,bootstrap/temporal.py,Connect Temporal client with codec and interceptors,src/opsmesh/bootstrap/temporal.py,keep,same client composition; absorbs provider and interceptor,none
+backup,bootstrap/temporal_dependencies.py,Lazy serialized Temporal client provider,src/opsmesh/bootstrap/temporal.py,merge,client provider folds into temporal connection module,none
+backup,bootstrap/update_cli.py,In-app host updater CLI with drain,delete,delete,host updates move to deploy server CLI per V4,none
+backup,bootstrap/worker.py,Build Temporal worker with workflows and activities,src/opsmesh/bootstrap/worker.py,keep,same worker assembly; registrations follow V4 modules,none
+backup,bootstrap/worker_cli.py,Run durable worker and dispatch publisher,src/opsmesh/bootstrap/worker_cli.py,keep,same worker entrypoint,none
+backup,capabilities/__init__.py,package marker,src/opsmesh/capabilities/__init__.py,keep,package marker retained under V4 capabilities,none
+backup,capabilities/channels/README.md,Design note for channel capability definitions and boundaries,src/opsmesh/capabilities/channels/README.md,keep,channel capability definitions stay under capabilities,none
+backup,capabilities/experts/__init__.py,package marker,src/opsmesh/capabilities/experts/__init__.py,keep,package marker retained,none
+backup,capabilities/experts/models.py,Expert definition and immutable expert version ORM tables,src/opsmesh/capabilities/models.py,merge,per-type ORM folds into root models.py,none
+backup,capabilities/experts/routes.py,HTTP routes for expert definition and version management,src/opsmesh/capabilities/experts/routes.py,rewrite,type routes kept; generic publish moves to root routes.py,none
+backup,capabilities/experts/schemas.py,"Expert response, version create and snapshot contracts",src/opsmesh/capabilities/experts/schemas.py,keep,expert instruction and version contracts retained,none
+backup,capabilities/experts/service.py,"Expert ownership, versions and definition snapshot validation",src/opsmesh/capabilities/experts/service.py,rewrite,type validation kept; version transactions move to lifecycle.py,none
+backup,capabilities/mcp/__init__.py,package marker,src/opsmesh/capabilities/mcp/__init__.py,keep,package marker retained,none
+backup,capabilities/mcp/models.py,MCP definition and immutable version ORM tables,src/opsmesh/capabilities/models.py,merge,per-type ORM folds into root models.py,none
+backup,capabilities/mcp/packages.py,Parse MCPB bundle manifest and remote content safely,src/opsmesh/capabilities/mcp/service.py,merge,MCPB manifest parsing folds into mcp service.py,none
+backup,capabilities/mcp/routes.py,"HTTP routes for MCP definitions, remote and bundle import",src/opsmesh/capabilities/mcp/routes.py,rewrite,type routes kept; generic publish moves to root routes.py,none
+backup,capabilities/mcp/schemas.py,"MCP version, remote create and connection contracts",src/opsmesh/capabilities/mcp/schemas.py,keep,MCP connection and tool list contracts retained,none
+backup,capabilities/mcp/service.py,MCP ownership and immutable version management,src/opsmesh/capabilities/mcp/service.py,rewrite,manifest validation kept; version transactions move to lifecycle.py,none
+backup,capabilities/metadata.py,Shared capability metadata columns and create/update/response contracts,src/opsmesh/capabilities/models.py,merge,shared fields split into root models and schemas,none
+backup,capabilities/packages.py,Read bounded ZIP archives and checksums without executing code,src/opsmesh/capabilities/packages.py,keep,safe ZIP read and checksums retained,none
+backup,capabilities/skills/__init__.py,package marker,src/opsmesh/capabilities/skills/__init__.py,keep,package marker retained,none
+backup,capabilities/skills/manifest.py,Extract declared MCP tool names from skill manifest,src/opsmesh/capabilities/skills/service.py,merge,manifest tool extraction folds into skills service.py,none
+backup,capabilities/skills/models.py,Skill definition and immutable version ORM tables,src/opsmesh/capabilities/models.py,merge,per-type ORM folds into root models.py,none
+backup,capabilities/skills/packages.py,Parse Agent Skill archives without running their scripts,src/opsmesh/capabilities/skills/service.py,merge,skill archive parsing folds into skills service.py,none
+backup,capabilities/skills/routes.py,HTTP routes for skill definition and package import,src/opsmesh/capabilities/skills/routes.py,rewrite,type routes kept; generic publish moves to root routes.py,none
+backup,capabilities/skills/schemas.py,Skill response and version manifest contracts,src/opsmesh/capabilities/skills/schemas.py,keep,skill manifest and version contracts retained,none
+backup,capabilities/skills/service.py,Skill ownership and immutable version management,src/opsmesh/capabilities/skills/service.py,rewrite,package parsing kept; version transactions move to lifecycle.py,none
+backup,capabilities/teams/__init__.py,package marker,src/opsmesh/capabilities/teams/__init__.py,keep,package marker retained,none
+backup,capabilities/teams/models.py,"Team definition, version and member ORM tables",src/opsmesh/capabilities/models.py,merge,per-type ORM folds into root models.py,none
+backup,capabilities/teams/routes.py,HTTP routes for team definition and version management,src/opsmesh/capabilities/teams/routes.py,rewrite,type routes kept; generic publish moves to root routes.py,none
+backup,capabilities/teams/schemas.py,"Team structure, member and version response contracts",src/opsmesh/capabilities/teams/schemas.py,keep,team structure and member contracts retained,none
+backup,capabilities/teams/service.py,"Team ownership, immutable versions and portable structure queries",src/opsmesh/capabilities/teams/service.py,rewrite,type validation kept; version transactions move to lifecycle.py,none
+backup,capabilities/tools/__init__.py,package marker,src/opsmesh/capabilities/tools/__init__.py,keep,package marker retained,none
+backup,capabilities/tools/models.py,Python tool definition and immutable version ORM tables,src/opsmesh/capabilities/models.py,merge,per-type ORM folds into root models.py,none
+backup,capabilities/tools/packages.py,Parse Python tool package metadata without importing code,src/opsmesh/capabilities/tools/service.py,merge,tool package parsing folds into tools service.py,none
+backup,capabilities/tools/routes.py,HTTP routes for tool definition and package import,src/opsmesh/capabilities/tools/routes.py,rewrite,type routes kept; generic publish moves to root routes.py,none
+backup,capabilities/tools/schemas.py,"Tool version, entrypoint and I/O schema contracts",src/opsmesh/capabilities/tools/schemas.py,keep,tool entrypoint and I/O schema contracts retained,none
+backup,capabilities/tools/service.py,Python tool ownership and immutable version management,src/opsmesh/capabilities/tools/service.py,rewrite,static parsing kept; version transactions move to lifecycle.py,none
+backup,capabilities/validation.py,Normalize and validate JSON object schemas for parameters,src/opsmesh/capabilities/validation.py,keep,"schema validation retained, gains manifest checks",none
+backup,config.py,Application settings with validated connection defaults,src/opsmesh/config.py,rewrite,host updater settings removed; contracts realigned per V4,none
+backup,delivery.py,"Self-contained server CLI for api, worker and admin tasks",deploy/server/opsmesh-server,rewrite,CLI relocates to deploy; updater command dropped,none
+backup,execution/__init__.py,package marker,src/opsmesh/execution/__init__.py,keep,Package marker retained for execution module,none
+backup,execution/runs/__init__.py,package marker,src/opsmesh/execution/runs/__init__.py,keep,Package marker retained for runs subpackage,none
+backup,execution/runs/assembly.py,Builds governed agents; run config and tool validation from run contracts,src/opsmesh/execution/runs/agents.py,merge,Agent assembly splits into agents.py and service.py,none
+backup,execution/runs/cancellation.py,Cancellation helpers: raise on cancel; stop active tools and watchers,src/opsmesh/execution/runs/service.py,merge,Cancellation helpers fold into run service,none
+backup,execution/runs/capabilities.py,Declares OpenAI Agents adapter feature capabilities and limits,src/opsmesh/execution/runs/contracts.py,merge,Adapter capability declaration belongs to run contracts,none
+backup,execution/runs/checkpoints.py,Stores encrypted agent resume-state snapshots for approval pauses,src/opsmesh/execution/runs/approvals.py,merge,Resume state store splits into approvals.py and models.py,none
+backup,execution/runs/contracts.py,Run requests; outcomes; agent specs and execution contracts,src/opsmesh/execution/runs/contracts.py,keep,Same responsibility; contracts updated for ExecutionBindings injection,none
+backup,execution/runs/controls.py,Validated guardrail and output-schema settings for agent runs,src/opsmesh/execution/runs/service.py,merge,Guardrail settings split into routes.py and service.py,none
+backup,execution/runs/errors.py,Agent execution error taxonomy and SDK failure normalization,src/opsmesh/execution/runs/contracts.py,merge,Failure contract in contracts.py; generic errors to shared/errors.py,none
+backup,execution/runs/events.py,Observes redacted lifecycle and stream events during runs,src/opsmesh/execution/runs/events.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runs/execution.py,Executes run requests through native OpenAI Agents SDK Runner,src/opsmesh/execution/runs/service.py,merge,Execution driver folds into run service,none
+backup,execution/runs/guardrails.py,Evaluates input/output guardrails and SDK output schema adapters,src/opsmesh/execution/runs/guardrails.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runs/hooks.py,SDK run hooks for checkpoints; usage and tool authorization,src/opsmesh/execution/runs/hooks.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runs/json_schema.py,Plain JSON schema output type extension for SDK agents,src/opsmesh/execution/runs/inference.py,merge,Output schema handling splits into inference.py and schemas.py,none
+backup,execution/runs/mcp_connections.py,Governed agents and Temporal MCP server wiring for runs,src/opsmesh/execution/runtime/mcp.py,merge,MCP server wiring moves to runtime MCP owner,none
+backup,execution/runs/memory.py,SDK sandbox memory capability policy model,delete,delete,Sandbox memory policy is bundled model-memory business,none
+backup,execution/runs/model_errors.py,Model provider attributing SDK failures to model references,src/opsmesh/execution/runs/inference.py,merge,Failure attribution splits into inference.py and schemas.py,none
+backup,execution/runs/model_settings.py,Validates configured model settings against installed SDK types,src/opsmesh/execution/runs/inference.py,merge,Model settings validation splits into inference.py and schemas.py,none
+backup,execution/runs/models.py,Agent run and run event ORM models,src/opsmesh/execution/runs/models.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runs/openai.py,Canonicalizes OpenAI model API selection for providers,src/opsmesh/execution/runs/inference.py,merge,Model API selection splits into inference.py and schemas.py,none
+backup,execution/runs/results.py,Extracts final output; raw output; resume state from SDK results,src/opsmesh/execution/runs/service.py,merge,Result extraction splits into service.py and events.py,none
+backup,execution/runs/sandbox.py,Builds sandbox run config and SDK sandbox capabilities,src/opsmesh/execution/runtime/sandbox.py,merge,Sandbox setup splits into runtime/sandbox.py and contracts.py,none
+backup,execution/runs/sandbox_contracts.py,Sandbox tool operation contract with approval state,src/opsmesh/execution/runtime/contracts.py,merge,Sandbox operation contract moves to runtime contracts,none
+backup,execution/runs/signals.py,Workflow signal model carrying resource identifiers,src/opsmesh/execution/runs/workflow.py,merge,Workflow signal folds into run workflow,none
+backup,execution/runs/stream_contracts.py,Stream relay request and live-text gating contracts,src/opsmesh/execution/runs/events.py,merge,Stream contracts fold into run events,none
+backup,execution/runs/streaming.py,Runs agents with SDK streaming and observer integration,src/opsmesh/execution/runs/events.py,merge,Streaming driver folds into run events,none
+backup,execution/runs/tool_activities.py,Temporal tool executor invoking authorize and cancel activities,src/opsmesh/execution/runs/tools.py,merge,Tool executor splits into tools.py and activities.py,none
+backup,execution/runs/tool_callbacks.py,Governed tool implementations; provenance guardrails and sandbox tools,src/opsmesh/execution/runs/tools.py,merge,Governed tools split into tools.py and activities.py,none
+backup,execution/runs/usage.py,Records normalized model usage into workflow ledger,src/opsmesh/execution/runs/usage.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runs/workflow.py,Durable Temporal workflow orchestrating agent run execution,src/opsmesh/execution/runs/workflow.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runtime/__init__.py,package marker,src/opsmesh/execution/runtime/__init__.py,keep,Package marker retained for runtime subpackage,none
+backup,execution/runtime/contracts.py,Runtime configuration; sandbox binding and file harvest contracts,src/opsmesh/execution/runtime/contracts.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runtime/entries.py,Sandbox entry staging authorized project input files,src/opsmesh/execution/runtime/service.py,merge,Project input entry folds into runtime service,none
+backup,execution/runtime/files.py,Project files capability staging inputs and harvesting outputs,src/opsmesh/execution/runtime/files.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runtime/identity.py,Identifies native sandbox resources including Docker containers,src/opsmesh/execution/runtime/access.py,merge,Native resource identity folds into runtime access,none
+backup,execution/runtime/mcp_stdio.py,Sandbox MCP stdio server over Docker exec transport,src/opsmesh/execution/runtime/mcp_stdio.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runtime/models.py,Sandbox reference ORM model for SDK session state,src/opsmesh/execution/runtime/models.py,keep,Same responsibility with minor contract updates,none
+backup,execution/runtime/service.py,Manages sandbox references; snapshots and lifecycle,src/opsmesh/execution/runtime/service.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/__init__.py,package marker,src/opsmesh/execution/sessions/__init__.py,keep,Package marker retained for sessions subpackage,none
+backup,execution/sessions/activities.py,Temporal activities bridging SDK session operations durably,src/opsmesh/execution/sessions/activities.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/contracts.py,Session reference; scope and operation contracts,src/opsmesh/execution/sessions/contracts.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/models.py,Persistent agent session metadata and message ORM models,src/opsmesh/execution/sessions/models.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/queries.py,Session listing; detail and item view queries,src/opsmesh/execution/sessions/history.py,merge,Session history queries move to history.py,none
+backup,execution/sessions/schemas.py,Session summary and item response schemas,src/opsmesh/execution/sessions/schemas.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/service.py,Session lifecycle service for list create archive and mutate,src/opsmesh/execution/sessions/service.py,keep,Same responsibility with minor contract updates,none
+backup,execution/sessions/temporal.py,Durable Temporal session proxy for SDK sessions,src/opsmesh/execution/sessions/temporal.py,keep,Same responsibility with minor contract updates,none
+backup,governance/__init__.py,package marker,src/opsmesh/governance/__init__.py,keep,empty package marker; V4 keeps governance package,none
+backup,governance/alerts/__init__.py,package marker,src/opsmesh/governance/alerts/__init__.py,keep,empty package marker; V4 keeps alerts package,none
+backup,governance/alerts/models.py,GovernanceAlert fact model,src/opsmesh/governance/alerts/models.py,keep,same alert fact ownership,none
+backup,governance/alerts/service.py,Deduplicated alert recording and summary,src/opsmesh/governance/alerts/service.py,rewrite,"keep dedup record; drop dispatch staging, add close/retain",none
+backup,governance/approvals/__init__.py,package marker,src/opsmesh/governance/approvals/__init__.py,keep,empty package marker; V4 keeps approvals package,none
+backup,governance/approvals/configuration.py,Validated workspace approval rules configuration,src/opsmesh/governance/approvals/targets.py,merge,static rule value types fold into targets contracts,none
+backup,governance/approvals/models.py,Approval and ReviewEvidence ORM models,src/opsmesh/governance/approvals/models.py,keep,Approval stays; ReviewEvidence splits to reviews models,none
+backup,governance/approvals/queries.py,Approval listing and task evidence queries,src/opsmesh/governance/approvals/service.py,merge,read queries fold into service; V4 has no queries file,none
+backup,governance/approvals/routes.py,Approval inbox and detail HTTP API,src/opsmesh/governance/approvals/routes.py,keep,same approval query API,none
+backup,governance/approvals/schemas.py,Approval request and response contracts,src/opsmesh/governance/approvals/schemas.py,keep,same approval HTTP contracts,none
+backup,governance/approvals/service.py,"Approval request, decision and status operations",src/opsmesh/governance/approvals/service.py,keep,same decision ownership; target notification added via callbacks,none
+backup,governance/audit/__init__.py,package marker,src/opsmesh/governance/audit/__init__.py,keep,empty package marker; V4 keeps audit package,none
+backup,governance/audit/activities.py,Audit integrity check Temporal activity,src/opsmesh/governance/audit/activities.py,keep,same batch verification I/O activity,none
+backup,governance/audit/contracts.py,Audit execution reference request contracts,src/opsmesh/governance/audit/workflow.py,merge,workflow/activity request types fold into workflow module,none
+backup,governance/audit/hashing.py,Audit hash chain pure functions,src/opsmesh/governance/audit/hashing.py,keep,same stable encoding and chain hashing,none
+backup,governance/audit/integrity.py,Verify workspace audit chain and persist check,src/opsmesh/governance/audit/service.py,merge,verification logic folds into service per V4 layout,none
+backup,governance/audit/models.py,AuditEvent and integrity check ORM models,src/opsmesh/governance/audit/models.py,keep,same append-event fact ownership,none
+backup,governance/audit/queries.py,Audit event listing queries,src/opsmesh/governance/audit/service.py,merge,authorized queries fold into service per V4 layout,none
+backup,governance/audit/retention.py,Audit retention window computation,src/opsmesh/governance/audit/service.py,merge,retention cleanup folds into service per V4 layout,none
+backup,governance/audit/routes.py,Audit query and verification HTTP API,src/opsmesh/governance/audit/routes.py,keep,same audit query and verification API,none
+backup,governance/audit/schemas.py,Audit event and verification response contracts,src/opsmesh/governance/audit/schemas.py,keep,same redacted audit response contracts,none
+backup,governance/audit/service.py,Append audit events to tenant hash chain,src/opsmesh/governance/audit/service.py,keep,"append retained; absorbs verification, queries and retention",none
+backup,governance/audit/verification.py,Audit verification admission and status,src/opsmesh/governance/audit/service.py,merge,verification admission folds into service per V4 layout,none
+backup,governance/audit/workflow.py,Durable audit integrity workflow,src/opsmesh/governance/audit/workflow.py,keep,same durable batch verification workflow,none
+backup,governance/costs/__init__.py,package marker,src/opsmesh/governance/costs/__init__.py,keep,empty package marker; V4 keeps costs package,none
+backup,governance/costs/models.py,"Pricing, usage and budget ORM models",src/opsmesh/governance/costs/models.py,keep,"same price, usage and budget ledger facts",none
+backup,governance/costs/pricing.py,Pricing rule management and cost calculation,src/opsmesh/governance/costs/pricing.py,keep,same pure pricing computation,none
+backup,governance/costs/queries.py,Usage listing and budget status queries,src/opsmesh/governance/costs/service.py,merge,read queries fold into service per V4 layout,none
+backup,governance/costs/routes.py,"Cost, pricing and budget management API",src/opsmesh/governance/costs/routes.py,keep,same cost management API,none
+backup,governance/costs/schemas.py,"Pricing, usage and budget contracts",src/opsmesh/governance/costs/schemas.py,keep,same contracts; absorbs normalized usage type,none
+backup,governance/costs/service.py,Budget evaluation and usage recording,src/opsmesh/governance/costs/service.py,keep,same budget and usage ledger ownership,none
+backup,governance/costs/usage.py,Normalize SDK model usage snapshots,src/opsmesh/governance/costs/schemas.py,merge,usage normalization value folds into schemas per V4,none
+backup,governance/policies/__init__.py,package marker,src/opsmesh/governance/policies/__init__.py,keep,empty package marker; V4 keeps policies package,none
+backup,governance/policies/models.py,PlatformPolicy and event ORM models,src/opsmesh/governance/policies/models.py,keep,same platform risk policy facts,none
+backup,governance/policies/risky_values.py,Risky execution policy value normalization,src/opsmesh/governance/policies/evaluation.py,merge,pure policy value computation folds into evaluation,none
+backup,governance/policies/routes.py,Platform policy admin HTTP API,src/opsmesh/governance/policies/routes.py,keep,same policy admin API,none
+backup,governance/policies/schemas.py,Platform policy response contracts,src/opsmesh/governance/policies/schemas.py,keep,same policy HTTP contracts,none
+backup,governance/policies/service.py,Platform policy versioned replacement and events,src/opsmesh/governance/policies/service.py,keep,same versioned policy replacement ownership,none
+backup,governance/reviews/__init__.py,package marker,src/opsmesh/governance/reviews/__init__.py,keep,empty package marker; V4 keeps reviews package,none
+backup,governance/reviews/contracts.py,Resource review result value contract,src/opsmesh/governance/reviews/schemas.py,merge,review result value folds into review schemas,none
+backup,governance/reviews/rules.py,Pure review rule evaluation,src/opsmesh/governance/policies/evaluation.py,merge,I/O-free rule computation folds into policy evaluation,none
+backup,governance/reviews/service.py,Seal and queue resource review evidence,src/opsmesh/governance/reviews/service.py,rewrite,record/query retained; model execution moves to extension,none
+backup,governance/security_events/__init__.py,package marker,src/opsmesh/governance/security_events/__init__.py,keep,empty package marker; V4 keeps security_events package,none
+backup,governance/security_events/models.py,SecurityEvent fact model,src/opsmesh/governance/security_events/models.py,keep,same security denial fact ownership,none
+backup,governance/security_events/routes.py,Admin security event query API,src/opsmesh/governance/security_events/routes.py,keep,same admin query API,none
+backup,governance/security_events/schemas.py,Security event response contracts,src/opsmesh/governance/security_events/schemas.py,keep,same redacted event contracts,none
+backup,governance/security_events/service.py,Record and list security events,src/opsmesh/governance/security_events/service.py,keep,same record/query; stays out of audit table,none
+backup,identity/__init__.py,package marker,src/opsmesh/identity/__init__.py,keep,empty package marker; V4 keeps identity package,none
+backup,identity/auth/__init__.py,package marker,src/opsmesh/identity/auth/__init__.py,keep,empty package marker; V4 keeps auth package,none
+backup,identity/auth/dependencies.py,Session header authentication dependency,src/opsmesh/identity/auth/dependencies.py,keep,same X-Session-ID CurrentUser resolution,none
+backup,identity/auth/models.py,UserSession ORM model,src/opsmesh/identity/auth/models.py,keep,same session fact ownership,none
+backup,identity/auth/passwords.py,Password hashing and verification,src/opsmesh/identity/auth/passwords.py,keep,same password hashing contract,none
+backup,identity/auth/routes.py,"Register, login, logout and session API",src/opsmesh/identity/auth/routes.py,keep,same auth HTTP surface,none
+backup,identity/auth/schemas.py,"Login, password and session contracts",src/opsmesh/identity/auth/schemas.py,keep,same auth HTTP contracts,none
+backup,identity/auth/service.py,"Registration, login and session lifecycle",src/opsmesh/identity/auth/service.py,keep,same session create/renew/revoke ownership,none
+backup,identity/context.py,CurrentUser identity value contract,src/opsmesh/identity/context.py,keep,same identity value contract,none
+backup,identity/errors.py,Authentication domain error,src/opsmesh/identity/errors.py,keep,same authentication error contract,none
+backup,identity/invitations/__init__.py,package marker,src/opsmesh/identity/invitations/__init__.py,keep,empty package marker; V4 keeps invitations package,none
+backup,identity/invitations/models.py,UserInvitation ORM model,src/opsmesh/identity/invitations/models.py,keep,same invitation facts; delivery link injected,none
+backup,identity/invitations/policy.py,"Invitation URL, expiry and resend policy",src/opsmesh/identity/invitations/service.py,merge,invitation content policy folds into service,none
+backup,identity/invitations/routes.py,"Invitation create, accept and resend API",src/opsmesh/identity/invitations/routes.py,keep,same invitation HTTP surface,none
+backup,identity/invitations/schemas.py,Invitation request and response contracts,src/opsmesh/identity/invitations/schemas.py,keep,same invitation HTTP contracts,none
+backup,identity/invitations/service.py,Invitation lifecycle transactions and content,src/opsmesh/identity/invitations/service.py,keep,transactions retained; mail queueing injected by bootstrap,none
+backup,identity/users/__init__.py,package marker,src/opsmesh/identity/users/__init__.py,keep,empty package marker; V4 keeps users package,none
+backup,identity/users/avatars.py,Normalize account avatar thumbnails,src/opsmesh/identity/users/avatars.py,keep,same bounded avatar normalization,none
+backup,identity/users/models.py,"User, role, status and avatar models",src/opsmesh/identity/users/models.py,keep,same user profile facts,none
+backup,identity/users/provisioning.py,First platform admin CLI provisioning,src/opsmesh/identity/provisioning.py,merge,first-admin setup folds into identity provisioning,none
+backup,identity/users/routes.py,"User CRUD, role and avatar API",src/opsmesh/identity/users/routes.py,keep,same user HTTP surface,none
+backup,identity/users/schemas.py,User profile and role contracts,src/opsmesh/identity/users/schemas.py,keep,same user HTTP contracts,none
+backup,identity/users/service.py,"User profile, role and status operations",src/opsmesh/identity/users/service.py,keep,profile ops kept; admin authorization splits to access.py,none
+backup,main.py,ASGI factory entrypoint delegating to bootstrap,src/opsmesh/main.py,keep,V4 tree keeps main entrypoint delegating bootstrap,none
+backup,orchestration/__init__.py,package marker,src/opsmesh/orchestration/__init__.py,keep,orchestration package retained in V4 tree,none
+backup,orchestration/agent_execution/__init__.py,package marker,delete,delete,empty marker; V4 dissolves orchestration agent_execution package,none
+backup,orchestration/agent_execution/activities.py,"Temporal activities for run prepare, complete, resume, cancel and tool calls",src/opsmesh/execution/runs/activities.py,rewrite,responsibility retained; rebuilt on official Agents/Temporal V4 contracts,none
+backup,orchestration/agent_execution/capabilities.py,"Resolve effective capability catalog of tools, resources and denials per agent",src/opsmesh/execution/runs/contracts.py,merge,catalog contracts split into runs contracts and schemas; resolution into service,none
+backup,orchestration/agent_execution/context.py,"Build prioritized memory, mailbox and knowledge context fragments for run prompts",src/opsmesh/execution/runs/contracts.py,merge,context types fold into runs contracts; builder logic moves to agents,none
+backup,orchestration/agent_execution/events.py,Project run lifecycle events into team task message drafts,src/opsmesh/execution/runs/events.py,merge,projection folds into runs events; team messages move to bundled extension,none
+backup,orchestration/agent_execution/model_authorization.py,"Resolve authorized model provider, credential and API compatibility for runs",src/opsmesh/execution/runs/inference.py,merge,model resolution merges into runs inference; budget checks stay governance costs,none
+backup,orchestration/agent_execution/openai.py,OpenAI model Activity streaming responses with sandbox tool execution,src/opsmesh/execution/runs/inference.py,rewrite,native model Activity retained; rebuilt on official OpenAI Agents interfaces,none
+backup,orchestration/agent_execution/persistence.py,"Persist run lifecycle transitions, results, approvals and cancellation evidence",src/opsmesh/execution/runs/service.py,merge,state persistence folds into runs service; resume checkpoints into runs models,none
+backup,orchestration/agent_execution/prompt.py,Render run input text and context fragments into agent prompt,src/opsmesh/execution/runs/agents.py,merge,prompt rendering folds into native agent assembly in runs agents,none
+backup,orchestration/agent_execution/request.py,"Build frozen execution request from run, session and authorization snapshot",src/opsmesh/execution/runs/schemas.py,merge,frozen request splits into runs contracts and schemas; assembly into service,none
+backup,orchestration/agent_execution/routes.py,HTTP route exposing effective agent capability catalog for workspace admins,src/opsmesh/execution/runs/routes.py,keep,same route responsibility; only contract and module path updates,none
+backup,orchestration/agent_execution/sandbox_activities.py,Authorize and execute sandbox tool operations for agent runs,src/opsmesh/execution/runtime/activities.py,merge,sandbox admission and tool I/O fold into runtime activities,none
+backup,orchestration/agent_execution/sandbox_interceptor.py,Worker interceptor blocking direct sandbox client creation by activities,src/opsmesh/execution/runtime/sandbox.py,merge,admission interception folds into runtime sandbox lifecycle guard,none
+backup,orchestration/agent_execution/session_access.py,Authorize session history access and reject modification while runs active,src/opsmesh/execution/sessions/access.py,keep,same responsibility; moves under execution sessions per V4 tree,none
+backup,orchestration/agent_execution/session_binding.py,Resolve persistent native session binding for a run,src/opsmesh/execution/runs/scheduling.py,merge,session resolution folds into runs scheduling; identity into runs models,none
+backup,orchestration/agent_execution/streaming.py,Relay agent and model stream events with replay-safe offsets,src/opsmesh/execution/runs/events.py,merge,stream relay folds into runs events; dedup via Postgres identities,none
+backup,orchestration/agent_execution/tracing.py,Build tracing config and metadata for agent runs,src/opsmesh/telemetry/context.py,merge,trace metadata construction belongs to telemetry context propagation,none
+backup,orchestration/agent_execution/usage.py,Convert execution evidence into governance usage and budget records,src/opsmesh/execution/runs/usage.py,keep,same responsibility; minor contract updates for V4 usage facts,none
+backup,orchestration/alerts/__init__.py,package marker,bundled/extensions/notification-delivery/notification_delivery/__init__.py,keep,Package marker for notification-delivery extension package,none
+backup,orchestration/alerts/activities.py,Activities resolving recipients and delivering governance alerts,bundled/extensions/notification-delivery/notification_delivery/recipients.py,merge,Recipient resolution and delivery split into extension modules,none
+backup,orchestration/alerts/contracts.py,"Alert delivery request, batch and progress contracts",bundled/extensions/notification-delivery/notification_delivery/schemas.py,merge,Delivery contracts fold into extension schemas,none
+backup,orchestration/alerts/workflow.py,Temporal workflow delivering alerts to recipients in batches,bundled/extensions/notification-delivery/flows/notification.json,rewrite,Batch delivery loop reimplemented as notification flow,none
+backup,orchestration/approvals/__init__.py,package marker,src/opsmesh/governance/approvals/__init__.py,keep,Package marker for governance approvals package,none
+backup,orchestration/approvals/decisions.py,Approve or reject approvals and apply decisions to targets,src/opsmesh/governance/approvals/service.py,rewrite,Decision application rebuilt; business targets via extensions,none
+backup,orchestration/approvals/interruptions.py,Persist SDK tool interruptions as approval requests,src/opsmesh/execution/runs/approvals.py,merge,SDK interruption persistence becomes execution approval bridge,none
+backup,orchestration/approvals/models.py,ORM model for pending tool invocations linked to approvals,src/opsmesh/execution/runs/approvals.py,merge,Pending invocation folds into execution approval bridge model,none
+backup,orchestration/approvals/pending_tools.py,Encrypted store of pending tool invocations awaiting approval,src/opsmesh/execution/runs/approvals.py,merge,Encrypted invocation store folds into execution approval bridge,none
+backup,orchestration/approvals/policy.py,"Evaluate allow, require-approval or deny outcomes for tool actions",src/opsmesh/governance/policies/service.py,merge,Tool approval policy engine folds into governance risk policy service,none
+backup,orchestration/approvals/queries.py,Scoped approval listing and lookup queries,src/opsmesh/governance/approvals/service.py,merge,Scoped listing folds into approvals service,none
+backup,orchestration/approvals/routes.py,HTTP routes for listing and deciding workspace approvals,src/opsmesh/governance/approvals/routes.py,rewrite,Approval routes move to governance with new authorization,none
+backup,orchestration/approvals/schemas.py,Pydantic models for approval decision and response API,src/opsmesh/governance/approvals/schemas.py,rewrite,Approval API contracts rebuilt with target references,none
+backup,orchestration/approvals/service.py,Agent tool approval lifecycle and rejected run failure handling,src/opsmesh/governance/approvals/service.py,rewrite,Approval lifecycle rebuilt; run effects via execution bridge,none
+backup,orchestration/approvals/waiting.py,Mark runs and tasks as waiting for approval decisions,src/opsmesh/execution/runs/approvals.py,merge,Wait-state application moves to execution run approval bridge,none
+backup,orchestration/automations/__init__.py,package marker,src/opsmesh/orchestration/triggers/__init__.py,keep,Package marker for merged trigger package,none
+backup,orchestration/automations/activities.py,Temporal activities for automation dispatch and reply preparation,src/opsmesh/orchestration/triggers/activities.py,rewrite,Dispatch activity rebuilt; reply delivery via extension operation,none
+backup,orchestration/automations/authorization.py,Automation principal capture and execution authorization checks,src/opsmesh/orchestration/triggers/service.py,rewrite,Principal checks rebuilt per V4 trigger authorization contracts,none
+backup,orchestration/automations/contracts.py,Automation configuration and external identity API contracts,src/opsmesh/orchestration/contracts.py,merge,Configuration splits into core contracts and trigger schemas,none
+backup,orchestration/automations/identities.py,External sender to user identity binding management,src/opsmesh/orchestration/triggers/service.py,merge,Sender binding folds into trigger principal resolution,none
+backup,orchestration/automations/io.py,Project and validate inbound messages against automation configuration,src/opsmesh/orchestration/triggers/service.py,merge,Inbound projection and size checks fold into trigger service,none
+backup,orchestration/automations/message_contracts.py,Transport-independent inbound message and event state contracts,src/opsmesh/orchestration/triggers/schemas.py,rewrite,Inbound message and dedup states become trigger consumption contracts,none
+backup,orchestration/automations/models.py,"ORM models for automations, events and identity bindings",src/opsmesh/orchestration/triggers/models.py,rewrite,Automation and event tables reworked as trigger subscription facts,none
+backup,orchestration/automations/progress.py,Wake pending automation events on task progress via outbox,src/opsmesh/orchestration/triggers/service.py,merge,Wake logic folds into trigger consumption; task events from extension,none
+backup,orchestration/automations/routes.py,"HTTP routes for automations, identities, messages and streams",src/opsmesh/orchestration/triggers/routes.py,rewrite,Automation routes rebuilt as trigger routes; streaming via run events,none
+backup,orchestration/automations/service.py,"Automation lifecycle, event dispatch and reply preparation",src/opsmesh/orchestration/triggers/service.py,rewrite,Dispatch rebuilt; task creation and replies move to extensions,none
+backup,orchestration/automations/stream.py,Authorize and stream automation event updates over SSE,src/opsmesh/orchestration/runs/events.py,merge,Streaming served by run events; access check in trigger routes,none
+backup,orchestration/automations/temporal.py,Automation event and reply delivery workflow request contracts,src/opsmesh/orchestration/contracts.py,merge,Event request folds into core contracts; reply request to extension,none
+backup,orchestration/automations/workflows.py,Temporal workflow looping automation event dispatch and replies,src/opsmesh/orchestration/runs/workflow.py,rewrite,Event loop replaced by generic flow workflow and extension flows,none
+backup,orchestration/conversations/__init__.py,package marker,bundled/extensions/conversation-app/conversation_app/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/conversations/activities.py,Temporal activity advancing a conversation turn,bundled/extensions/conversation-app/conversation_app/turns.py,merge,activity logic folds into turns module,none
+backup,orchestration/conversations/models.py,"Conversation, turn, event and execution ORM models",bundled/extensions/conversation-app/conversation_app/repository.py,merge,ORM models split into repository and schemas,none
+backup,orchestration/conversations/routes.py,"HTTP routes for conversations, turns and streaming",bundled/extensions/conversation-app/conversation_app/exports.py,merge,conversation routes fold into exports,none
+backup,orchestration/conversations/schemas.py,"Conversation create, turn and event schemas",bundled/extensions/conversation-app/conversation_app/schemas.py,merge,conversation schemas fold into extension schemas,none
+backup,orchestration/conversations/service.py,Conversation lifecycle and turn advancement service,bundled/extensions/conversation-app/conversation_app/conversations.py,merge,service splits into conversations and turns,none
+backup,orchestration/conversations/stream.py,Build turn stream snapshot for SSE streaming,bundled/extensions/conversation-app/conversation_app/events.py,merge,stream snapshot splits into events and core runs,none
+backup,orchestration/conversations/temporal.py,Conversation execution request and advance staging,bundled/extensions/conversation-app/conversation_app/turns.py,merge,request contract folds into turns module,none
+backup,orchestration/conversations/workflow.py,Temporal workflow definition for conversation turns,bundled/extensions/conversation-app/flows/conversation.json,rewrite,workflow becomes declarative flow definition,none
+backup,orchestration/definitions/__init__.py,package marker,src/opsmesh/orchestration/definitions/__init__.py,keep,Package marker retained for definitions subpackage,none
+backup,orchestration/definitions/access.py,Workspace orchestration authorization predicates and execution guards,src/opsmesh/orchestration/definitions/service.py,merge,Authorization folds into service.py with route guards,none
+backup,orchestration/definitions/activities.py,Node execution activities for agent; tool; approval and subworkflow nodes,src/opsmesh/orchestration/runs/activities.py,merge,Generic node activities move to orchestration runs activities,none
+backup,orchestration/definitions/application.py,Applies orchestration definitions onto tasks with plan materialization,src/opsmesh/orchestration/definitions/service.py,merge,Definition apply folds into service; task planning to bundled,none
+backup,orchestration/definitions/conditions.py,Validates and evaluates workflow node condition expressions,src/opsmesh/orchestration/definitions/graph.py,merge,Node condition semantics fold into definition graph,none
+backup,orchestration/definitions/contracts.py,Workflow node contract; node types and input resolution,src/opsmesh/orchestration/definitions/schemas.py,merge,Node contracts split into schemas.py and graph.py,none
+backup,orchestration/definitions/graph.py,Validates workflow graphs and project plan structure,src/opsmesh/orchestration/definitions/graph.py,keep,Graph validation stays; project-plan checks move to bundled,none
+backup,orchestration/definitions/models.py,Orchestration definition; revision and grant ORM models,src/opsmesh/orchestration/definitions/models.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/definitions/routes.py,HTTP routes for orchestration definition authoring and apply,src/opsmesh/orchestration/definitions/routes.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/definitions/schemas.py,Definition; revision and validation response schemas,src/opsmesh/orchestration/definitions/schemas.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/definitions/service.py,Definition authoring; versioning; publishing and authoring contract,src/opsmesh/orchestration/definitions/service.py,rewrite,Reimplemented without task/planning business per V4 contracts,none
+backup,orchestration/definitions/templates.py,Task work plan templates and initial plan construction,delete,delete,Work-plan templates are bundled planning business,none
+backup,orchestration/definitions/temporal.py,Node execution request; definition and outcome contracts,src/opsmesh/orchestration/runs/contracts.py,merge,Node execution contracts fold into orchestration run contracts,none
+backup,orchestration/definitions/validation.py,Definition document validation and blocked reason explanations,src/opsmesh/orchestration/definitions/service.py,merge,Definition validation folds into definition service,none
+backup,orchestration/definitions/workflow.py,Temporal workflow executing orchestration nodes with signals,src/opsmesh/orchestration/runs/workflow.py,merge,Generic node workflow moves to orchestration runs workflow,none
+backup,orchestration/environment_control/__init__.py,package marker,src/opsmesh/workspaces/projects/__init__.py,merge,empty marker superseded by workspaces projects package,none
+backup,orchestration/environment_control/activities.py,"Prepare environment cleanup, cancel active runs and delete sandbox references",src/opsmesh/workspaces/projects/activities.py,merge,cleanup and cancellation I/O into projects activities; deletion into runtime activities,none
+backup,orchestration/environment_control/workflow.py,Environment cleanup workflow waiting for executions before sandbox release,src/opsmesh/workspaces/projects/workflow.py,merge,cleanup orchestration folds into projects archive workflow,none
+backup,orchestration/planning/__init__.py,package marker,bundled/extensions/workflow-planning/workflow_planning/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/planning/activities.py,Temporal activity applying planning requests and staging runs,bundled/extensions/workflow-planning/workflow_planning/planning.py,merge,activity logic splits into planning and flow definition,none
+backup,orchestration/planning/agent_plan.py,Agent plan proposal schema and planning mode helpers,bundled/extensions/workflow-planning/workflow_planning/planning.py,merge,plan proposal contracts fold into planning module,none
+backup,orchestration/planning/attempt_models.py,Planning attempt ORM model,bundled/extensions/workflow-planning/workflow_planning/repository.py,merge,attempt model folds into repository,none
+backup,orchestration/planning/attempts.py,Create and track task planning attempts,bundled/extensions/workflow-planning/workflow_planning/repository.py,merge,attempt lifecycle folds into repository,none
+backup,orchestration/planning/contracts.py,Manager acceptance result contract and output schema,bundled/extensions/workflow-planning/workflow_planning/schemas.py,merge,acceptance contract folds into schemas,none
+backup,orchestration/planning/diagnostics.py,"Explain plan structure, matching and validation diagnostics",bundled/extensions/workflow-planning/workflow_planning/validation.py,merge,plan diagnostics fold into validation module,none
+backup,orchestration/planning/feasibility.py,Validate plan admission against live capacity and authorization,bundled/extensions/workflow-planning/workflow_planning/validation.py,merge,feasibility checks fold into validation,none
+backup,orchestration/planning/graph.py,Pure work package graph helpers,bundled/extensions/workflow-planning/workflow_planning/validation.py,merge,graph helpers fold into validation,none
+backup,orchestration/planning/lifecycle.py,Plan retry and regenerate lifecycle operations,bundled/extensions/workflow-planning/workflow_planning/repository.py,merge,lifecycle operations fold into repository,none
+backup,orchestration/planning/manager_acceptance.py,Validate and summarize manager acceptance outputs,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager acceptance moves to task-collaboration assignments,none
+backup,orchestration/planning/manager_final_output.py,Resolve final output from completed manager steps,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager final output moves to assignments,none
+backup,orchestration/planning/manager_follow_up.py,Materialize manager follow-up runs after revision requests,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager follow-up moves to assignments,none
+backup,orchestration/planning/materialization.py,Materialize approved work packages into task steps,bundled/extensions/workflow-planning/workflow_planning/planning.py,merge,step materialization splits into planning and core runs,none
+backup,orchestration/planning/member_matching.py,Rank team members against required role and skills,bundled/extensions/expert-matching/expert_matching/matching.py,merge,member matching moves to expert-matching extension,none
+backup,orchestration/planning/mutation.py,Apply validated plan mutations with revision checks,bundled/extensions/workflow-planning/workflow_planning/planning.py,merge,mutation splits into planning and core runs,none
+backup,orchestration/planning/ownership.py,Guard automatic regeneration of user-authored plans,bundled/extensions/workflow-planning/workflow_planning/validation.py,merge,ownership guard folds into validation,none
+backup,orchestration/planning/routes.py,"HTTP routes for plan diagnostics, retry and mutation",bundled/extensions/workflow-planning/workflow_planning/exports.py,merge,plan routes fold into extension exports,none
+backup,orchestration/planning/team_snapshot.py,Build team snapshot with members and model bindings,bundled/extensions/team-collaboration/team_collaboration/repository.py,merge,team snapshot moves to team-collaboration repository,none
+backup,orchestration/planning/team_structure.py,Build normalized org structure from team members,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,org structure moves to team-collaboration coordination,none
+backup,orchestration/planning/temporal.py,Planning execution request contract and outbox staging,bundled/extensions/workflow-planning/flows/planning.json,merge,request contract folds into flow definition,none
+backup,orchestration/planning/workflow.py,Temporal workflow definition for task planning,bundled/extensions/workflow-planning/flows/planning.json,rewrite,workflow becomes declarative flow definition,none
+backup,orchestration/project_io/__init__.py,package marker,delete,delete,empty marker; V4 dissolves orchestration project_io package,none
+backup,orchestration/project_io/access.py,Validate run file IO stays within project boundary and grants,src/opsmesh/workspaces/projects/files.py,merge,boundary validation folds into projects files policy,none
+backup,orchestration/project_io/activities.py,Stage project inputs and harvest run outputs through sandbox,src/opsmesh/execution/runtime/activities.py,merge,sandbox staging and harvest I/O into runtime activities; declarations to projects,none
+backup,orchestration/project_io/artifacts.py,Write run project outputs as artifacts with compensating storage writes,src/opsmesh/resources/artifacts/service.py,merge,artifact writing folds into resources artifacts service,none
+backup,orchestration/project_io/manifest.py,Project IO manifest contracts for run inputs and declared outputs,src/opsmesh/workspaces/projects/files.py,merge,manifest contracts fold into projects files declarations,none
+backup,orchestration/project_io/models.py,Run project snapshot and IO state ORM models,src/opsmesh/workspaces/projects/models.py,merge,snapshot and IO state fold into projects models as execution associations,none
+backup,orchestration/project_io/snapshots.py,Freeze immutable project file and output snapshot for a run,src/opsmesh/workspaces/projects/versions.py,merge,frozen run snapshots fold into projects versions,none
+backup,orchestration/project_io/state.py,Project IO state store tracking staged and harvested lifecycle,src/opsmesh/workspaces/projects/service.py,merge,IO state store folds into projects service,none
+backup,orchestration/review_execution/__init__.py,package marker,bundled/extensions/review-process/review_process/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/review_execution/activities.py,Temporal activities preparing and completing resource reviews,bundled/extensions/review-process/review_process/reviewing.py,merge,review activities fold into reviewing module,none
+backup,orchestration/review_execution/contracts.py,Resource review execution request contract,bundled/extensions/review-process/review_process/schemas.py,merge,review contract folds into schemas,none
+backup,orchestration/review_execution/openai.py,Authorized review model resolving credentials in activity,bundled/extensions/review-process/review_process/reviewing.py,merge,review model integration folds into reviewing,none
+backup,orchestration/review_execution/workflow.py,Temporal workflow definition for resource review,bundled/extensions/review-process/flows/review.json,rewrite,workflow becomes declarative flow definition,none
+backup,orchestration/runs/__init__.py,package marker,src/opsmesh/orchestration/runs/__init__.py,keep,Package marker retained for runs subpackage,none
+backup,orchestration/runs/access.py,Run authorization predicates and workspace-scoped run guards,src/opsmesh/orchestration/runs/access.py,rewrite,Reimplemented on workspace/project scopes absorbing authorization subpackage,none
+backup,orchestration/runs/activities.py,Temporal activities for execution release and rescheduling,src/opsmesh/orchestration/runs/activities.py,keep,Release activity stays; release logic moves to definitions service,none
+backup,orchestration/runs/artifacts.py,Validates run artifact associations and grants artifact readers,src/opsmesh/resources/artifacts/service.py,merge,Artifact association validation moves to artifact owner,none
+backup,orchestration/runs/authorization/__init__.py,package marker,delete,delete,Subpackage absorbed into orchestration runs access.py,none
+backup,orchestration/runs/authorization/actor.py,Restores execution actors for tasks and runs,src/opsmesh/orchestration/runs/access.py,merge,Actor resolution folds into run access,none
+backup,orchestration/runs/authorization/facts.py,Extracts authorization facts: catalogs; runtime grants; file scopes,src/opsmesh/orchestration/runs/access.py,merge,Authorization fact extraction folds into run access,none
+backup,orchestration/runs/authorization/memory.py,Derives authorized memory access scopes from grants,delete,delete,Memory access scopes are bundled model-memory business,none
+backup,orchestration/runs/authorization/policy.py,Authorizes agent profiles and capabilities for runs,src/opsmesh/orchestration/runs/access.py,merge,Run authorization policy folds into run access,none
+backup,orchestration/runs/authorization/runtime.py,Authorizes and resolves run runtime environment bindings,src/opsmesh/orchestration/runs/access.py,merge,Runtime authorization folds into run access,none
+backup,orchestration/runs/authorization/snapshot.py,Builds frozen authorization snapshots for run execution,src/opsmesh/orchestration/runs/access.py,merge,Authorization snapshot building folds into run access,none
+backup,orchestration/runs/contracts.py,Agent run response and event response contracts,src/opsmesh/orchestration/runs/schemas.py,merge,Response contracts move to run schemas,none
+backup,orchestration/runs/control.py,Run and task cancellation control operations,src/opsmesh/orchestration/runs/service.py,merge,Run control operations fold into run service,none
+backup,orchestration/runs/eligibility.py,Computes next eligible task steps for execution,src/opsmesh/orchestration/runs/steps.py,merge,Step readiness folds into steps.py; task specifics to bundled,none
+backup,orchestration/runs/events.py,Durable sequence-safe run event evidence writer,src/opsmesh/orchestration/runs/events.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/runs/evidence.py,Redacts run event metadata for public evidence,src/opsmesh/resources/artifacts/service.py,merge,Evidence redaction moves to artifact resource owner,none
+backup,orchestration/runs/lifecycle.py,Applies run lifecycle transitions and terminal states,src/opsmesh/orchestration/runs/service.py,merge,Lifecycle application folds into service; transitions into state.py,none
+backup,orchestration/runs/memory.py,Captures model memory episodes from run outcomes,delete,delete,Model memory capture is bundled business,none
+backup,orchestration/runs/memory_index.py,Durable task memory index workflow and staging,delete,delete,Task memory indexing is bundled document-knowledge business,none
+backup,orchestration/runs/models.py,Agent run ORM extending execution run record,src/opsmesh/orchestration/runs/models.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/runs/queries.py,Run queries; summaries and authorization snapshot reads,src/opsmesh/orchestration/runs/service.py,merge,Run queries fold into run service,none
+backup,orchestration/runs/release.py,Releases run execution slots and reschedules workspace steps,src/opsmesh/orchestration/definitions/service.py,merge,Execution release folds into definition service,none
+backup,orchestration/runs/reservation_models.py,Runtime space reservation ORM model,src/opsmesh/workspaces/capacity/models.py,merge,Capacity reservation model moves to capacity owner,none
+backup,orchestration/runs/reservations.py,Reserves; attaches and releases run capacity reservations,src/opsmesh/orchestration/runs/service.py,merge,Reservation bookkeeping folds into run service,none
+backup,orchestration/runs/resources.py,Step resource requirements and run reservation management,src/opsmesh/orchestration/runs/service.py,merge,Reservation management folds into service; limits to scheduling,none
+backup,orchestration/runs/result_payloads.py,Builds JSON-safe run output payloads from outcomes,src/opsmesh/orchestration/runs/contracts.py,merge,Output payload builder folds into run contracts,none
+backup,orchestration/runs/routes.py,HTTP routes for run listing; detail and control,src/opsmesh/orchestration/runs/routes.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/runs/runtime_bindings.py,Builds run runtime metadata from authorization bindings,src/opsmesh/execution/contracts.py,merge,Runtime binding metadata folds into execution contracts,none
+backup,orchestration/runs/scheduling/__init__.py,package marker,delete,delete,Subpackage folds into execution runs scheduling.py,none
+backup,orchestration/runs/scheduling/capacity.py,Resolves team member capacity and execution limits,src/opsmesh/workspaces/capacity/service.py,merge,Team capacity to capacity owner; limiter to scheduling,none
+backup,orchestration/runs/scheduling/control.py,Unblocks scheduling-blocked steps by reason filters,src/opsmesh/execution/runs/scheduling.py,merge,Blocked-step control folds into run scheduling,none
+backup,orchestration/runs/scheduling/events.py,Stages scheduling workflows on runtime capacity changes,src/opsmesh/execution/runs/scheduling.py,merge,Capacity-change reevaluation folds into run scheduling,none
+backup,orchestration/runs/scheduling/policy.py,Scheduler policy resolution and step ordering,src/opsmesh/execution/runs/scheduling.py,merge,Scheduler policy and ordering fold into run scheduling,none
+backup,orchestration/runs/scheduling/service.py,Evaluates and marks runnable or blocked steps,src/opsmesh/execution/runs/scheduling.py,merge,Workspace scheduler folds into run scheduling,none
+backup,orchestration/runs/scheduling/temporal.py,Durable workspace scheduling workflow and activities,src/opsmesh/execution/runs/scheduling.py,merge,Scheduling workflow folds into scheduling; activities to activities.py,none
+backup,orchestration/runs/service.py,Orchestrates queued runs; steps; scheduling and launches,src/opsmesh/orchestration/runs/service.py,rewrite,Reimplemented on generic flows without task/planning business,none
+backup,orchestration/runs/state.py,Run status enum and allowed transition rules,src/opsmesh/orchestration/runs/state.py,keep,Same responsibility with minor contract updates,none
+backup,orchestration/runs/steps/__init__.py,package marker,delete,delete,Subpackage folds into orchestration runs steps.py,none
+backup,orchestration/runs/steps/completion.py,Marks task steps completed with result payloads,src/opsmesh/orchestration/runs/steps.py,merge,Step completion folds into generic steps logic,none
+backup,orchestration/runs/steps/dependencies.py,Evaluates step dependency readiness decisions,src/opsmesh/orchestration/runs/steps.py,merge,Dependency evaluation folds into generic steps logic,none
+backup,orchestration/runs/steps/launcher.py,Launches runs for eligible steps with authorization,src/opsmesh/orchestration/runs/steps.py,merge,Step launching folds into generic steps logic,none
+backup,orchestration/runs/steps/scheduling_state.py,Marks step scheduling blocked or runnable state,src/opsmesh/orchestration/runs/steps.py,merge,Step scheduling state folds into generic steps logic,none
+backup,orchestration/runs/subworkflow_models.py,Subworkflow invocation ORM model for parent/child runs,src/opsmesh/orchestration/runs/models.py,merge,Subworkflow model folds into run models,none
+backup,orchestration/runs/task_progress.py,Projects structured output into task progress updates,delete,delete,Task progress projection is bundled task-collaboration business,none
+backup,orchestration/runs/temporal.py,Builds execution references dispatching runs to workflows,src/opsmesh/orchestration/runs/service.py,merge,Execution reference builder folds into run service,none
+backup,orchestration/runs/tree_lock.py,Advisory locks serializing task and run execution trees,src/opsmesh/orchestration/runs/service.py,merge,Execution tree locks fold into run service,none
+backup,orchestration/scheduling/__init__.py,package marker,src/opsmesh/orchestration/triggers/__init__.py,keep,Package marker for merged trigger package,none
+backup,orchestration/scheduling/activities.py,Synchronize and materialize Temporal schedules for scheduled jobs,src/opsmesh/orchestration/triggers/activities.py,rewrite,Temporal Schedule sync retained under V4 trigger contracts,none
+backup,orchestration/scheduling/contracts.py,Schedule occurrence receipt contract for tick workflows,src/opsmesh/orchestration/triggers/schemas.py,merge,Occurrence receipt folds into trigger schemas,none
+backup,orchestration/scheduling/execution_requests.py,Frozen schedule control and tick workflow request contracts,src/opsmesh/orchestration/contracts.py,merge,Control and tick requests fold into generic trigger contracts,none
+backup,orchestration/scheduling/models.py,ORM model for workspace scheduled jobs and job events,src/opsmesh/orchestration/triggers/models.py,rewrite,Scheduled job table reworked into trigger and subscription facts,none
+backup,orchestration/scheduling/operation_routes.py,HTTP routes for workspace scheduler operations and blocked steps,src/opsmesh/platform/operations/routes.py,merge,Scheduler operations endpoints fold into platform operations routes,none
+backup,orchestration/scheduling/operations.py,Registry mapping scheduled execution kinds to workflow request types,src/opsmesh/orchestration/triggers/service.py,merge,Dispatch registry folds into trigger service; business targets via extensions,none
+backup,orchestration/scheduling/routes.py,HTTP routes for scheduled job CRUD and control actions,src/opsmesh/orchestration/triggers/routes.py,rewrite,Scheduled job routes rebuilt as trigger routes with new authorization,none
+backup,orchestration/scheduling/schemas.py,Pydantic request and response models for scheduled job API,src/opsmesh/orchestration/triggers/schemas.py,rewrite,Schedule API contracts rebuilt as trigger schemas with owner refs,none
+backup,orchestration/scheduling/service.py,"Create, pause, resume and validate workspace scheduled jobs",src/opsmesh/orchestration/triggers/service.py,rewrite,Job lifecycle reimplemented as trigger facts with outbox dispatch,none
+backup,orchestration/scheduling/specs.py,Build Temporal ScheduleSpec from schedule type and config,src/opsmesh/orchestration/triggers/service.py,merge,Calendar spec building kept inside trigger service for Temporal Schedule,none
+backup,orchestration/scheduling/types.py,Scheduled job status constants and create command dataclass,src/opsmesh/orchestration/triggers/service.py,merge,Constants and create command fold into trigger service module,none
+backup,orchestration/scheduling/workflows.py,Temporal workflows for schedule control and due-tick materialization,src/opsmesh/orchestration/triggers/activities.py,merge,Tick loop replaced by Temporal Schedule; control sync into activities,none
+backup,orchestration/staffing/__init__.py,package marker,bundled/extensions/expert-matching/expert_matching/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/staffing/contracts.py,Hiring and recommendation request and response contracts,bundled/extensions/expert-matching/expert_matching/schemas.py,merge,staffing contracts fold into schemas,none
+backup,orchestration/staffing/hiring.py,Hire marketplace talent into team for staffing gap,bundled/extensions/expert-matching/expert_matching/matching.py,merge,hiring flow folds into matching module,none
+backup,orchestration/staffing/recommendations.py,Recommend marketplace talent for required team roles,bundled/extensions/expert-matching/expert_matching/matching.py,merge,recommendation logic folds into matching module,none
+backup,orchestration/staffing/routes.py,HTTP routes for talent hire and recommendations,bundled/extensions/expert-matching/expert_matching/exports.py,merge,staffing routes fold into extension exports,none
+backup,orchestration/tasks/__init__.py,package marker,bundled/extensions/task-collaboration/task_collaboration/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/tasks/access.py,Task workspace authorization predicates and requirement helpers,bundled/extensions/task-collaboration/task_collaboration/access.py,rewrite,moves to extension with V4 authorization contracts,none
+backup,orchestration/tasks/collaboration/__init__.py,package marker,delete,delete,subpackage flattened into single extension modules,none
+backup,orchestration/tasks/collaboration/contracts.py,Typed contracts for manager steps and operator results,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager contracts fold into assignment module,none
+backup,orchestration/tasks/collaboration/handoff.py,Build handoff queue items and summaries,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,handoff queue views fold into assignments,none
+backup,orchestration/tasks/collaboration/manager_diagnostics.py,"Explain manager planning, handoff and acceptance diagnostics",bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager diagnostics fold into assignments,none
+backup,orchestration/tasks/collaboration/manager_queue.py,Assemble manager handoff chains and review requests,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,manager queue folds into assignments,none
+backup,orchestration/tasks/collaboration/observation.py,Assemble multi-agent collaboration protocol state,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,collaboration state splits into assignments and tasks,none
+backup,orchestration/tasks/collaboration/recovery.py,Turn collaboration diagnostics into executable recovery actions,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,recovery service splits into assignments and tasks,none
+backup,orchestration/tasks/collaboration/recovery_plan.py,Build prioritized recovery plan items from diagnostics,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,recovery planning folds into assignments,none
+backup,orchestration/tasks/collaboration/transfer_package.py,Build bounded handoff transfer snapshot from task context,bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,transfer package building folds into assignments,none
+backup,orchestration/tasks/collaboration/transfers.py,"Task transfer request, decision and reassignment service",bundled/extensions/task-collaboration/task_collaboration/assignments.py,merge,transfer lifecycle folds into assignments,none
+backup,orchestration/tasks/contracts.py,"Request DTOs for task control, correction and delivery decisions",bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,request contracts fold into extension schemas,none
+backup,orchestration/tasks/control/__init__.py,package marker,delete,delete,subpackage flattened into single extension modules,none
+backup,orchestration/tasks/control/authorization.py,Platform-owned step and task owner execution checks,bundled/extensions/task-collaboration/task_collaboration/access.py,merge,ownership checks fold into access module,none
+backup,orchestration/tasks/control/commands.py,Execute task control and operator actions,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,command execution splits into tasks and exports,none
+backup,orchestration/tasks/control/dependencies.py,Step dependency resolution helpers for control actions,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,dependency helpers fold into task module,none
+backup,orchestration/tasks/control/diagnostics.py,"Explain task interruption, correction and resume state",bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,control diagnostics fold into task module,none
+backup,orchestration/tasks/control/service.py,Apply task control actions and write control messages,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,control service splits into tasks and messages,none
+backup,orchestration/tasks/delivery/__init__.py,package marker,delete,delete,subpackage flattened into single extension modules,none
+backup,orchestration/tasks/delivery/corrections.py,Create corrections and correction diagnostics for tasks,bundled/extensions/task-collaboration/task_collaboration/delivery.py,merge,correction flow folds into delivery module,none
+backup,orchestration/tasks/delivery/review.py,Apply delivery acceptance decisions and build reviews,bundled/extensions/task-collaboration/task_collaboration/delivery.py,merge,delivery decisions fold into delivery module,none
+backup,orchestration/tasks/events.py,Durable task event store and PostgreSQL stream reader,bundled/extensions/task-collaboration/task_collaboration/events.py,rewrite,event ownership moves to extension with PG notice delivery,none
+backup,orchestration/tasks/feedback.py,Record human feedback as task messages,bundled/extensions/task-collaboration/task_collaboration/messages.py,merge,feedback is task message append behavior,none
+backup,orchestration/tasks/messages.py,Append task messages with per-task sequence allocation,bundled/extensions/task-collaboration/task_collaboration/messages.py,rewrite,message writer retained with V4 transaction contracts,none
+backup,orchestration/tasks/models.py,"Task, step, message and grant ORM models",bundled/extensions/task-collaboration/task_collaboration/repository.py,merge,ORM models split into repository and schemas,none
+backup,orchestration/tasks/notifications.py,In-process subscriber hints for task event wakeups,bundled/extensions/task-collaboration/task_collaboration/events.py,merge,short-lived fan-out folds into extension events,none
+backup,orchestration/tasks/observation/__init__.py,package marker,delete,delete,subpackage flattened into single extension modules,none
+backup,orchestration/tasks/observation/cards.py,Build task observation overview cards,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,observation cards fold into task queries,none
+backup,orchestration/tasks/observation/execution_views.py,Build execution step payloads and dependency maps,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,step view builders fold into task queries,none
+backup,orchestration/tasks/observation/models.py,Observation record aggregates and domain metric types,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,observation read models fold into task queries,none
+backup,orchestration/tasks/observation/queries.py,Execution diagnostics and observation record queries,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,diagnostics queries fold into task module,none
+backup,orchestration/tasks/observation/service.py,Assemble task observation views by domain type,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,observation service folds into task module,none
+backup,orchestration/tasks/observation/status.py,Read live task status and execution overview,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,live status splits into tasks and events,none
+backup,orchestration/tasks/observation/timeline.py,Build workspace-scoped task execution timeline,bundled/extensions/task-collaboration/task_collaboration/events.py,merge,timeline projection folds into events module,none
+backup,orchestration/tasks/observation/transcript.py,Build task-scoped interaction transcript for consoles,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,transcript query folds into task queries,none
+backup,orchestration/tasks/queries.py,Paginated queries for task messages and planning attempts,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,queries split; message listing folds into messages.py,none
+backup,orchestration/tasks/routes/__init__.py,package marker,delete,delete,subpackage flattened into exports module,none
+backup,orchestration/tasks/routes/control.py,HTTP routes for task control and operator actions,bundled/extensions/task-collaboration/task_collaboration/exports.py,merge,control routes fold into extension exports,none
+backup,orchestration/tasks/routes/router.py,Main task HTTP router for workspace resources,bundled/extensions/task-collaboration/task_collaboration/exports.py,merge,task routes fold into extension exports,none
+backup,orchestration/tasks/routes/streaming.py,SSE streaming routes for task events,bundled/extensions/task-collaboration/task_collaboration/exports.py,merge,streaming routes fold into extension exports,none
+backup,orchestration/tasks/routes/transfers.py,HTTP routes for task transfer requests,bundled/extensions/task-collaboration/task_collaboration/exports.py,merge,transfer routes fold into extension exports,none
+backup,orchestration/tasks/runtime_spaces.py,Task-scoped runtime space creation route and service,bundled/extensions/task-collaboration/task_collaboration/exports.py,merge,route delegates to workspace-owned runtime spaces,none
+backup,orchestration/tasks/schemas/__init__.py,package marker,delete,delete,subpackage flattened into schemas module,none
+backup,orchestration/tasks/schemas/control.py,Response schemas for control and operator actions,bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,control schemas fold into extension schemas,none
+backup,orchestration/tasks/schemas/core.py,"Core task create, response and message schemas",bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,core schemas fold into extension schemas,none
+backup,orchestration/tasks/schemas/management.py,"Management schemas for queues, transfers and plan mutations",bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,management schemas fold into extension schemas,none
+backup,orchestration/tasks/schemas/status.py,Live status and execution status response schemas,bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,status schemas fold into extension schemas,none
+backup,orchestration/tasks/schemas/timeline.py,Timeline event and response schemas,bundled/extensions/task-collaboration/task_collaboration/schemas.py,merge,timeline schemas fold into extension schemas,none
+backup,orchestration/tasks/service.py,"Task creation, listing and detail application service",bundled/extensions/task-collaboration/task_collaboration/tasks.py,rewrite,run staging part moves to core runs service,none
+backup,orchestration/tasks/state.py,"Task status enum, transition table and draft reset",bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,status machine folds into task module,none
+backup,orchestration/tasks/steps.py,Task step status enum and allowed transitions,bundled/extensions/task-collaboration/task_collaboration/tasks.py,merge,step status machine folds into task module,none
+backup,orchestration/team_execution/__init__.py,package marker,bundled/extensions/team-collaboration/team_collaboration/__init__.py,rewrite,new extension package replaces core subpackage,none
+backup,orchestration/team_execution/activities.py,Temporal activities advancing and recording team orchestration,bundled/extensions/team-collaboration/team_collaboration/exports.py,merge,activity registration folds into exports,none
+backup,orchestration/team_execution/commands.py,Team reconciliation and operator command actions,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,commands fold into coordination module,none
+backup,orchestration/team_execution/context.py,Team memory visibility and task policy context,bundled/extensions/team-collaboration/team_collaboration/schemas.py,merge,context builders fold into schemas,none
+backup,orchestration/team_execution/finalization.py,Finalize completed team tasks with dry-run support,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,finalization folds into coordination,none
+backup,orchestration/team_execution/lifecycle_messages.py,Map run lifecycle events into team messages,bundled/extensions/team-collaboration/team_collaboration/mailbox.py,merge,lifecycle messages fold into mailbox module,none
+backup,orchestration/team_execution/mailbox/__init__.py,package marker,delete,delete,subpackage flattened into team_collaboration modules,none
+backup,orchestration/team_execution/mailbox/contracts.py,Agent message thread and inbox contracts,bundled/extensions/team-collaboration/team_collaboration/schemas.py,merge,mailbox contracts fold into schemas,none
+backup,orchestration/team_execution/mailbox/models.py,Agent message thread and message ORM models,bundled/extensions/team-collaboration/team_collaboration/repository.py,merge,mailbox models fold into repository,none
+backup,orchestration/team_execution/mailbox/routes.py,HTTP routes for agent message threads and inbox,bundled/extensions/team-collaboration/team_collaboration/exports.py,merge,mailbox routes fold into exports,none
+backup,orchestration/team_execution/mailbox/service.py,"Agent mailbox threads, messages and inbox service",bundled/extensions/team-collaboration/team_collaboration/mailbox.py,merge,mailbox service folds into mailbox module,none
+backup,orchestration/team_execution/models.py,Team execution state and request ORM models,bundled/extensions/team-collaboration/team_collaboration/repository.py,merge,ORM models split into repository and schemas,none
+backup,orchestration/team_execution/persistence.py,Locked team execution state read and create,bundled/extensions/team-collaboration/team_collaboration/repository.py,merge,persistence helpers fold into repository,none
+backup,orchestration/team_execution/planning.py,Build operator intervention plan from team summary,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,intervention planning folds into coordination,none
+backup,orchestration/team_execution/policy.py,Team manager capacity policy record and access,bundled/extensions/team-collaboration/team_collaboration/access.py,merge,capacity policy folds into access module,none
+backup,orchestration/team_execution/queries.py,Team execution overview and command center queries,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,overview queries fold into coordination,none
+backup,orchestration/team_execution/readiness.py,Evaluate model provider and runtime readiness for team,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,readiness checks fold into coordination,none
+backup,orchestration/team_execution/requests.py,Team execution request contract and authority checks,bundled/extensions/team-collaboration/team_collaboration/schemas.py,merge,request contract folds into schemas,none
+backup,orchestration/team_execution/routes.py,HTTP routes for team orchestration and operations,bundled/extensions/team-collaboration/team_collaboration/exports.py,merge,team routes fold into extension exports,none
+backup,orchestration/team_execution/schemas.py,Team orchestration request and response schemas,bundled/extensions/team-collaboration/team_collaboration/schemas.py,merge,team schemas fold into extension schemas,none
+backup,orchestration/team_execution/service.py,Advance team tasks when execution and acceptance complete,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,orchestrator service folds into coordination,none
+backup,orchestration/team_execution/sessions.py,Ensure team member sessions and execution context,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,session setup folds into coordination,none
+backup,orchestration/team_execution/staffing.py,Compute specialist reassignments and staffing gaps,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,staffing analysis folds into coordination,none
+backup,orchestration/team_execution/state.py,Team runtime metadata and advancement state records,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,runtime state folds into coordination,none
+backup,orchestration/team_execution/timeline.py,Build unified team timeline from runs and messages,bundled/extensions/team-collaboration/team_collaboration/events.py,merge,team timeline folds into events module,none
+backup,orchestration/team_execution/workflow.py,Temporal workflow definition for team orchestration,bundled/extensions/team-collaboration/flows/team.json,rewrite,workflow becomes declarative flow definition,none
+backup,orchestration/team_execution/workload.py,Compute per-member workload from steps and runs,bundled/extensions/team-collaboration/team_collaboration/coordination.py,merge,workload computation folds into coordination,none
+backup,orchestration/tool_execution/__init__.py,package marker,delete,delete,empty marker; V4 dissolves orchestration tool_execution package,none
+backup,orchestration/tool_execution/arguments.py,Typed argument extraction helpers for tool call payloads,src/opsmesh/execution/runs/tools.py,merge,argument parsing folds into runs tools,none
+backup,orchestration/tool_execution/authorization.py,"Authorize each tool call against catalog, grants and approval policy",src/opsmesh/execution/runs/tools.py,merge,tool authorization folds into runs tools; extension checks into extensions access,none
+backup,orchestration/tool_execution/cancellation.py,Persist tool cancellation evidence as run and audit events,src/opsmesh/execution/runs/tools.py,merge,cancellation evidence folds into runs tools and service cancel path,none
+backup,orchestration/tool_execution/catalog.py,"Static product tool definitions with schemas, approval and risk metadata",src/opsmesh/capabilities/tools/service.py,merge,static catalog moves to capabilities tools; executor names to runs tools,none
+backup,orchestration/tool_execution/contracts.py,"Tool context, permission and resource-not-found error contracts",src/opsmesh/execution/runs/contracts.py,merge,tool contracts fold into runs contracts,none
+backup,orchestration/tool_execution/files.py,Governed workspace file read and write tools for agents,src/opsmesh/resources/files/service.py,merge,file tool policy bridges resources files service and runs tools,none
+backup,orchestration/tool_execution/knowledge.py,Governed knowledge source operations exposed as agent tools,bundled/extensions/document-knowledge/document_knowledge/exports.py,rewrite,knowledge tools reimplemented as bundled extension exports via host,none
+backup,orchestration/tool_execution/mailbox.py,Agent mailbox tools for team message threads and delivery,bundled/extensions/team-collaboration/team_collaboration/mailbox.py,rewrite,mailbox tools reimplemented as bundled team-collaboration extension exports,none
+backup,orchestration/tool_execution/mcp/__init__.py,package marker,delete,delete,empty marker; V4 dissolves orchestration tool_execution mcp package,none
+backup,orchestration/tool_execution/mcp/activities.py,"Managed MCP start, stop, restart and refresh control activities",src/opsmesh/execution/runtime/activities.py,merge,MCP control activities fold into runtime activities,none
+backup,orchestration/tool_execution/mcp/authorization.py,Validate per-call MCP execution policy and authorization snapshot,src/opsmesh/extensions/access.py,merge,per-invocation authorization folds into extensions access; runtime checks split,none
+backup,orchestration/tool_execution/mcp/blocking.py,Record blocked MCP executions as security and run events,src/opsmesh/execution/runtime/mcp.py,merge,blocking evidence folds into runtime mcp connection handling,none
+backup,orchestration/tool_execution/mcp/catalog.py,"List workspace MCP servers with connection, credential and usage summaries",src/opsmesh/capabilities/mcp/service.py,merge,workspace MCP catalog queries fold into capabilities mcp service,none
+backup,orchestration/tool_execution/mcp/contracts.py,"MCP execution request, call log and diagnostic contracts",src/opsmesh/execution/runtime/contracts.py,merge,MCP contracts fold into runtime contracts,none
+backup,orchestration/tool_execution/mcp/discovery_activities.py,Discover and persist runtime tools from MCP servers,src/opsmesh/execution/runtime/activities.py,merge,discovery runs in approved isolation via runtime activities,none
+backup,orchestration/tool_execution/mcp/events.py,"Record MCP tool call logs, notifications and audit evidence",src/opsmesh/execution/runtime/models.py,merge,call log model into runtime models; recorder and queries split,none
+backup,orchestration/tool_execution/mcp/factories.py,"Build SSE, HTTP and stdio MCP server connections with tool filters",src/opsmesh/execution/runtime/mcp.py,merge,connection factories fold into runtime mcp,none
+backup,orchestration/tool_execution/mcp/invocations.py,Authorized MCP server wrapper enforcing per-call policy and receipts,src/opsmesh/extensions/invocation.py,merge,per-call invocation host folds into extensions invocation; runtime split,none
+backup,orchestration/tool_execution/mcp/models.py,MCP tool call log ORM model,src/opsmesh/execution/runtime/models.py,merge,call log ORM folds into runtime models,none
+backup,orchestration/tool_execution/mcp/queries.py,Normalize MCP failures into bounded public diagnostics,src/opsmesh/execution/runtime/routes.py,merge,diagnostics and public projection fold into runtime routes and contracts,none
+backup,orchestration/tool_execution/mcp/routes.py,Managed MCP deployment control and environment binding routes,src/opsmesh/execution/runtime/routes.py,merge,MCP lifecycle routes fold into runtime routes,none
+backup,orchestration/tool_execution/mcp/runtime.py,Validate execution environment for managed MCP deployment,src/opsmesh/execution/runtime/mcp.py,merge,environment validation folds into runtime mcp,none
+backup,orchestration/tool_execution/mcp/schemas.py,"Managed MCP action, environment and status contracts",src/opsmesh/execution/runtime/schemas.py,merge,managed MCP schemas fold into runtime schemas,none
+backup,orchestration/tool_execution/mcp/service.py,Manage MCP deployment lifecycle and control dispatch,src/opsmesh/execution/runtime/service.py,merge,deployment management folds into runtime service,none
+backup,orchestration/tool_execution/mcp/stdio.py,Create sandbox stdio MCP server for workspace packages,src/opsmesh/execution/runtime/mcp_stdio.py,merge,sandbox stdio server folds into runtime mcp_stdio,none
+backup,orchestration/tool_execution/mcp/temporal.py,MCP control request contract for Temporal workflows,src/opsmesh/execution/runtime/workflow.py,merge,control request contract folds into runtime workflow,none
+backup,orchestration/tool_execution/mcp/workflow.py,MCP control and discovery Temporal workflow definitions,src/opsmesh/execution/runtime/workflow.py,merge,MCP workflows fold into runtime workflow,none
+backup,orchestration/tool_execution/memory.py,Semantic memory search and knowledge citation tools for agents,bundled/extensions/model-memory/model_memory/exports.py,rewrite,memory tools reimplemented as bundled model-memory extension exports,none
+backup,orchestration/tool_execution/metadata.py,Build tool execution metadata with provenance and trace context,src/opsmesh/execution/runs/tools.py,merge,metadata construction folds into runs tools,none
+backup,orchestration/tool_execution/payloads.py,"Serialize memory, file and artifact payloads for tool results",src/opsmesh/execution/runs/tools.py,merge,payload builders fold into runs tools,none
+backup,orchestration/tool_execution/resource_tools.py,Dispatch resource tool names to knowledge and memory owners,src/opsmesh/execution/runs/tools.py,merge,dispatch bridges runs tools and bundled extension exports,none
+backup,orchestration/tool_execution/resources.py,Compose frozen execution grants from typed owner bindings,src/opsmesh/resources/files/access.py,merge,grant composition folds into resources authorization; bindings injected from workspaces,none
+backup,orchestration/tool_execution/schemas.py,"Capability catalog, resource and effective tool response schemas",src/opsmesh/execution/runs/schemas.py,merge,catalog response schemas fold into runs schemas with resolver,none
+backup,orchestration/tool_execution/service.py,Execute product-owned tool catalog from an Activity,src/opsmesh/execution/runs/tools.py,merge,product tool execution folds into runs tools; Activity I/O to activities,none
+backup,orchestration/webhooks/__init__.py,package marker,bundled/extensions/notification-delivery/notification_delivery/__init__.py,keep,Package marker for notification-delivery extension package,none
+backup,orchestration/webhooks/activities.py,Temporal activities performing webhook delivery and interruption,bundled/extensions/notification-delivery/notification_delivery/delivery.py,rewrite,Delivery activities rebuilt as extension delivery operations,none
+backup,orchestration/webhooks/delivery.py,"Outbound webhook delivery with retry, dead-letter and replay",bundled/extensions/notification-delivery/notification_delivery/delivery.py,rewrite,"Outbound dispatch, retry and dead-letter rebuilt as extension delivery",none
+backup,orchestration/webhooks/http_client.py,Egress-validated HTTP client for webhook posts,bundled/extensions/notification-delivery/notification_delivery/delivery.py,merge,Egress HTTP transport folds into extension delivery,none
+backup,orchestration/webhooks/models.py,ORM models for webhook subscriptions and delivery attempts,bundled/extensions/notification-delivery/notification_delivery/schemas.py,merge,Subscription and attempt tables split into schemas and repository,none
+backup,orchestration/webhooks/routes.py,"HTTP routes for webhook subscriptions, replay and rotation",bundled/extensions/notification-delivery/notification_delivery/exports.py,rewrite,"Subscription routes become extension exports, not core routes",none
+backup,orchestration/webhooks/schemas.py,Pydantic models for subscription and delivery attempt API,bundled/extensions/notification-delivery/notification_delivery/schemas.py,rewrite,Subscription API contracts rebuilt as extension schemas,none
+backup,orchestration/webhooks/signing.py,HMAC signing of outbound webhook bodies and headers,bundled/extensions/notification-delivery/notification_delivery/delivery.py,rewrite,Outbound signing rebuilt in extension; inbound checks new in triggers,none
+backup,orchestration/webhooks/subscriptions.py,Webhook subscription store with egress and delivery policies,bundled/extensions/notification-delivery/notification_delivery/repository.py,merge,Subscription store and policy split into repository and delivery,none
+backup,orchestration/webhooks/temporal.py,Webhook delivery workflow request contract,bundled/extensions/notification-delivery/notification_delivery/schemas.py,merge,Delivery request folds into extension delivery schemas,none
+backup,orchestration/webhooks/workflow.py,Temporal workflow retrying webhook delivery with interruption handling,bundled/extensions/notification-delivery/flows/notification.json,rewrite,Retry loop reimplemented as notification flow definition,none
+backup,platform/__init__.py,package marker,src/opsmesh/platform/__init__.py,keep,platform base management module retained in V4,none
+backup,platform/announcements/__init__.py,package marker,delete,delete,package replaced by bundled extension package init,none
+backup,platform/announcements/activities.py,Deliver announcement batches to workspace notifications,bundled/extensions/announcement-center/announcement_center/delivery.py,merge,delivery activity splits into audience and delivery modules,none
+backup,platform/announcements/contracts.py,Define announcement delivery execution reference contracts,bundled/extensions/announcement-center/announcement_center/schemas.py,merge,delivery contracts fold into extension schemas,none
+backup,platform/announcements/models.py,Define announcement and recipient persistence models,bundled/extensions/announcement-center/announcement_center/repository.py,merge,announcement models split into repository and schemas,none
+backup,platform/announcements/queries.py,Query announcement lists and delivery statistics,bundled/extensions/announcement-center/announcement_center/repository.py,merge,announcement queries fold into extension repository,none
+backup,platform/announcements/routes.py,"Expose admin announcement publish, list and retract routes",bundled/extensions/announcement-center/announcement_center/exports.py,merge,admin routes become extension exports,none
+backup,platform/announcements/schemas.py,Define announcement request and response contracts,bundled/extensions/announcement-center/announcement_center/schemas.py,rewrite,contracts re-homed to extension with SDK boundaries,none
+backup,platform/announcements/service.py,"Publish and retract announcements, stage delivery executions",bundled/extensions/announcement-center/announcement_center/announcements.py,merge,publish and retract split into announcements and access,none
+backup,platform/announcements/workflow.py,Orchestrate paginated announcement delivery workflow,bundled/extensions/announcement-center/flows/announcement.json,rewrite,delivery workflow becomes extension flow definition,none
+backup,platform/backups/__init__.py,package marker,src/opsmesh/platform/backups/__init__.py,keep,backups package retained in V4 platform,none
+backup,platform/backups/access.py,Authorize archive identity for export and reconciliation,src/opsmesh/platform/backups/service.py,merge,archive identity authorization folds into backup service,none
+backup,platform/backups/activities.py,Run archive control and execution Temporal activities,src/opsmesh/platform/backups/activities.py,keep,Temporal activities retained with owner contract updates,none
+backup,platform/backups/archive.py,Build and bounded-read workspace archive zip files,src/opsmesh/platform/backups/archive.py,keep,archive builder retained under V4 contracts,none
+backup,platform/backups/configuration.py,Compose lifecycle policy and readiness diagnostics payloads,src/opsmesh/platform/backups/service.py,merge,lifecycle policy diagnostics fold into backup service,none
+backup,platform/backups/diagnostics.py,Project workspace data lifecycle and recovery readiness,src/opsmesh/platform/backups/service.py,merge,workspace lifecycle diagnostics fold into backup service,none
+backup,platform/backups/import_routes.py,Expose workspace archive upload and preview routes,src/opsmesh/platform/backups/routes.py,merge,archive import routes fold into backup routes,none
+backup,platform/backups/importers/__init__.py,package marker,delete,delete,importers package folds into single importers module,none
+backup,platform/backups/importers/agents.py,Import agent profiles as owner callback,src/opsmesh/workspaces (owner import callback),merge,agent import becomes workspace owner callback,none
+backup,platform/backups/importers/archive.py,Import workspace archive zip with compensating writes,src/opsmesh/platform/backups/importers.py,merge,archive import logic folds into importers module,none
+backup,platform/backups/importers/artifacts.py,Import artifact records and bytes as owner callback,src/opsmesh/resources (owner import callback),merge,artifact import becomes resources owner callback,none
+backup,platform/backups/importers/context.py,Share import context and field resolution helpers,src/opsmesh/platform/backups/importers.py,merge,import helpers fold into importers module,none
+backup,platform/backups/importers/files.py,Import file records and bytes as owner callback,src/opsmesh/resources (owner import callback),merge,file import becomes resources owner callback,none
+backup,platform/backups/importers/memory.py,Import memory entries as owner callback,bundled/extensions/model-memory (owner import callback),merge,memory import becomes bundled memory owner callback,none
+backup,platform/backups/importers/metadata.py,Import workspace metadata collections with conflicts,src/opsmesh/platform/backups/importers.py,merge,metadata import logic folds into importers module,none
+backup,platform/backups/importers/preview.py,Build import conflict preview and resolutions,src/opsmesh/platform/backups/importers.py,merge,conflict preview logic folds into importers module,none
+backup,platform/backups/importers/projects.py,Import project records as owner callback,src/opsmesh/workspaces/projects (owner import callback),merge,project import becomes workspaces owner callback,none
+backup,platform/backups/importers/runtime.py,Import runtime spaces as owner callback,src/opsmesh/execution (owner import callback),merge,runtime space import becomes execution owner callback,none
+backup,platform/backups/importers/skills.py,Import skill configurations as owner callback,src/opsmesh/workspaces (owner import callback),merge,skill binding import becomes workspaces owner callback,none
+backup,platform/backups/importers/tasks.py,Import task records as owner callback,bundled/extensions/task-collaboration (owner import callback),merge,task import becomes bundled collaboration owner callback,none
+backup,platform/backups/importers/teams.py,Import team records as owner callback,bundled/extensions/team-collaboration (owner import callback),merge,team import becomes bundled collaboration owner callback,none
+backup,platform/backups/integrity.py,Verify archive integrity and manage verification operations,src/opsmesh/platform/backups/service.py,merge,archive verification folds into backup service,none
+backup,platform/backups/jobs.py,"Create, execute and settle archive export jobs",src/opsmesh/platform/backups/export.py,merge,export job lifecycle folds into export module,none
+backup,platform/backups/metadata.py,Build workspace metadata export payload with manifest,src/opsmesh/platform/backups/export.py,merge,metadata export builder folds into export module,none
+backup,platform/backups/metadata_routes.py,Expose metadata export and import routes,src/opsmesh/platform/backups/routes.py,merge,metadata routes fold into backup routes,none
+backup,platform/backups/models.py,"Define export job, drill and verification models",src/opsmesh/platform/backups/models.py,keep,export job and operation models retained,none
+backup,platform/backups/reconciliation.py,Settle uncertain archive exports via operator reconciliation,src/opsmesh/platform/backups/service.py,merge,operator settlement folds into backup service,none
+backup,platform/backups/recovery.py,Apply recovery readiness actions for workspaces,src/opsmesh/platform/backups/service.py,merge,recovery readiness actions fold into backup service,none
+backup,platform/backups/requests.py,Define archive execution reference contracts,src/opsmesh/platform/backups/schemas.py,merge,execution reference contracts fold into schemas,none
+backup,platform/backups/restore.py,Run and manage workspace restore drill operations,src/opsmesh/platform/backups/restore.py,keep,restore drill module retained under V4 contracts,none
+backup,platform/backups/restore_storage.py,Track and clean temporary drill storage objects,src/opsmesh/platform/backups/restore.py,merge,drill storage tracking folds into restore module,none
+backup,platform/backups/retention.py,Preview and apply workspace data retention,src/opsmesh/platform/backups/retention.py,keep,retention module retained under V4 contracts,none
+backup,platform/backups/retention_routes.py,Expose retention and recovery readiness routes,src/opsmesh/platform/backups/routes.py,merge,retention routes fold into backup routes,none
+backup,platform/backups/retention_schemas.py,Define retention and lifecycle response schemas,src/opsmesh/platform/backups/schemas.py,merge,retention schemas fold into backup schemas,none
+backup,platform/backups/routes.py,"Expose archive export job, verify and drill routes",src/opsmesh/platform/backups/routes.py,keep,backup routes retained with consolidated endpoints,none
+backup,platform/backups/schedules.py,Run scheduled workspace backup lifecycle driver,src/opsmesh/platform/backups/service.py,merge,scheduled backup driver folds into backup service,none
+backup,platform/backups/schemas.py,"Define export, import and archive request schemas",src/opsmesh/platform/backups/schemas.py,keep,export and import schemas retained,none
+backup,platform/backups/workflow.py,"Orchestrate archive export, verify and drill workflows",src/opsmesh/platform/backups/workflow.py,keep,archive workflows retained under V4 contracts,none
+backup,platform/credentials/__init__.py,package marker,src/opsmesh/platform/credentials/__init__.py,keep,credentials package retained in V4 platform,none
+backup,platform/credentials/activities.py,Reencrypt stored secrets in Temporal activity,src/opsmesh/platform/credentials/activities.py,keep,reencryption activity retained with scope contract updates,none
+backup,platform/credentials/contracts.py,Define credential reencryption execution reference contract,src/opsmesh/platform/credentials/schemas.py,merge,execution reference contracts fold into schemas,none
+backup,platform/credentials/queries.py,Describe hosted secret metadata for API responses,src/opsmesh/platform/credentials/schemas.py,merge,secret metadata descriptions fold into schemas,none
+backup,platform/credentials/service.py,"Reencrypt model, MCP and webhook secrets",src/opsmesh/platform/credentials/service.py,keep,secret reencryption retained under V4 contracts,none
+backup,platform/credentials/workflow.py,Orchestrate credential reencryption workflow,src/opsmesh/platform/credentials/workflow.py,keep,reencryption workflow retained under V4 contracts,none
+backup,platform/dependencies.py,Provide platform admin HTTP dependency guard,src/opsmesh/bootstrap,merge,admin guard assembled during bootstrap dependency wiring,none
+backup,platform/health/__init__.py,package marker,src/opsmesh/platform/health/__init__.py,keep,health package retained in V4 platform,none
+backup,platform/health/metrics_routes.py,Serve Prometheus metrics endpoint with domain gauges,src/opsmesh/platform/health/routes.py,merge,prometheus endpoint folds into health routes; collector deleted,none
+backup,platform/health/probes.py,"Probe database, Redis, storage and Temporal health",src/opsmesh/platform/health/probes.py,keep,dependency probes retained; add build info reads,none
+backup,platform/health/routes.py,"Expose health, liveness and startup routes",src/opsmesh/platform/health/routes.py,keep,health routes retained under V4 contracts,none
+backup,platform/health/schemas.py,Define health and readiness response schemas,src/opsmesh/platform/health/schemas.py,keep,health schemas retained under V4 contracts,none
+backup,platform/mail/__init__.py,package marker,src/opsmesh/platform/mail/__init__.py,keep,mail package retained in V4 platform,none
+backup,platform/mail/activities.py,Deliver queued mail via SMTP activity,src/opsmesh/platform/mail/activities.py,keep,SMTP delivery activity retained,none
+backup,platform/mail/contracts.py,Define mail delivery execution reference contracts,src/opsmesh/platform/mail/schemas.py,merge,delivery contracts fold into mail schemas,none
+backup,platform/mail/models.py,Define mail settings and delivery persistence models,src/opsmesh/platform/mail/models.py,keep,mail settings and delivery models retained,none
+backup,platform/mail/routes.py,Expose admin SMTP configuration routes,src/opsmesh/platform/mail/routes.py,keep,admin mail routes retained,none
+backup,platform/mail/schemas.py,Define SMTP and mail delivery schemas,src/opsmesh/platform/mail/schemas.py,keep,mail schemas retained with contract updates,none
+backup,platform/mail/service.py,Manage SMTP settings and queue sealed mail,src/opsmesh/platform/mail/service.py,keep,mail settings and queueing retained,none
+backup,platform/mail/workflow.py,Orchestrate mail delivery workflow with reconciliation,src/opsmesh/platform/mail/workflow.py,keep,mail delivery workflow retained,none
+backup,platform/maintenance/__init__.py,package marker,src/opsmesh/platform/maintenance/__init__.py,keep,maintenance package retained in V4 platform,none
+backup,platform/maintenance/activities.py,Run platform and workspace maintenance activities,src/opsmesh/platform/maintenance/activities.py,keep,activities retained; history and updates dependencies removed,none
+backup,platform/maintenance/contracts.py,Define maintenance operation and page contracts,src/opsmesh/platform/maintenance/workflow.py,merge,maintenance contracts fold into workflow module,none
+backup,platform/maintenance/workflow.py,Orchestrate platform and workspace maintenance workflows,src/opsmesh/platform/maintenance/workflow.py,keep,maintenance workflows retained under V4 contracts,none
+backup,platform/marketplace/__init__.py,package marker,delete,delete,package replaced by bundled extension package init,none
+backup,platform/marketplace/models.py,Define talent listing and review models,bundled/extensions/capability-marketplace/capability_marketplace/repository.py,merge,listing models split into repository and schemas,none
+backup,platform/marketplace/queries.py,Query public listings and reviews,bundled/extensions/capability-marketplace/capability_marketplace/repository.py,merge,listing queries fold into extension repository,none
+backup,platform/marketplace/routes.py,Expose talent marketplace listing and admin routes,bundled/extensions/capability-marketplace/capability_marketplace/exports.py,merge,marketplace routes become extension exports,none
+backup,platform/marketplace/schemas.py,"Define listing, review and decision schemas",bundled/extensions/capability-marketplace/capability_marketplace/schemas.py,rewrite,listing contracts re-homed to extension,none
+backup,platform/marketplace/service.py,"Publish, decide, block and update listings",bundled/extensions/capability-marketplace/capability_marketplace/listings.py,merge,"service split into listings, reviews and search modules",none
+backup,platform/marketplace/snapshots.py,Validate published snapshots reject private bindings,bundled/extensions/capability-marketplace/capability_marketplace/listings.py,merge,snapshot validation rides with listing publish path,none
+backup,platform/observability/__init__.py,package marker,src/opsmesh/platform/observability/__init__.py,keep,observability package retained in V4 platform,none
+backup,platform/observability/queries.py,Query run outcomes and evidence correlation,src/opsmesh/platform/observability/queries.py,keep,raw outcome and correlation queries retained,none
+backup,platform/observability/routes.py,Expose workspace observability query routes,src/opsmesh/platform/observability/routes.py,keep,observability routes retained under V4 contracts,none
+backup,platform/observability/schemas.py,Define observability response schemas,src/opsmesh/platform/observability/schemas.py,keep,observability schemas retained under V4 contracts,none
+backup,platform/operations/__init__.py,package marker,src/opsmesh/platform/operations/__init__.py,keep,operations package retained in V4 platform,none
+backup,platform/operations/activities.py,Execute administrator operations in Temporal activity,src/opsmesh/platform/operations/activities.py,keep,operation activity retained; handlers extracted to handlers module,none
+backup,platform/operations/contracts.py,Define platform operation execution reference contract,src/opsmesh/platform/operations/schemas.py,merge,execution reference contracts fold into schemas,none
+backup,platform/operations/diagnostics.py,Summarize platform execution and security failures,src/opsmesh/platform/operations/service.py,merge,summary queries fold into operations service,none
+backup,platform/operations/history.py,Capture periodic platform metric snapshot samples,delete,delete,metric snapshot aggregation removed; raw queries only,none
+backup,platform/operations/metrics/__init__.py,package marker,delete,delete,metrics package deleted with page aggregation,none
+backup,platform/operations/metrics/collector.py,Collect domain Prometheus gauge metrics,delete,delete,domain gauge collection deleted with metrics package,none
+backup,platform/operations/metrics/dispatch.py,Expose Temporal outbox pressure gauges,delete,delete,outbox gauges deleted with metrics package,none
+backup,platform/operations/metrics/governance.py,Expose audit integrity and cost gauges,delete,delete,audit and cost gauges deleted with metrics package,none
+backup,platform/operations/metrics/runtime.py,Expose runtime capacity and quota gauges,delete,delete,runtime gauges deleted with metrics package,none
+backup,platform/operations/metrics/team_execution.py,Expose team runtime health gauges,delete,delete,team gauges deleted with metrics package,none
+backup,platform/operations/model_providers.py,Project workspace model provider diagnostics read-only,src/opsmesh/platform/operations/service.py,merge,provider diagnostics folds into operations service,none
+backup,platform/operations/models.py,Define operation record and snapshot models,src/opsmesh/platform/operations/models.py,keep,operation records retained; snapshot table dropped with history,none
+backup,platform/operations/routes.py,Expose platform and workspace operations routes,src/opsmesh/platform/operations/routes.py,keep,operations routes retained with consolidated endpoints,none
+backup,platform/operations/runtime.py,Compose runtime space execution diagnostics,src/opsmesh/platform/operations/service.py,merge,runtime diagnostics folds into operations service,none
+backup,platform/operations/scheduler.py,"Query scheduler policy, backlog and blocked reasons",src/opsmesh/platform/operations/service.py,merge,scheduler overview folds into operations service,none
+backup,platform/operations/schemas.py,Define operations request and response schemas,src/opsmesh/platform/operations/schemas.py,keep,operations schemas retained with contract updates,none
+backup,platform/operations/service.py,Persist idempotent administrator operation intents,src/opsmesh/platform/operations/service.py,keep,operation persistence retained; handlers extracted to handlers module,none
+backup,platform/operations/workflow.py,Orchestrate administrator operation workflow,src/opsmesh/platform/operations/workflow.py,keep,operation workflow retained under V4 contracts,none
+backup,platform/releases/__init__.py,package marker,delete,delete,package replaced by bundled extension package init,none
+backup,platform/releases/cache.py,Cache latest release check results in memory,bundled/extensions/release-catalog/release_catalog/cache.py,rewrite,release check cache re-homed to extension,none
+backup,platform/releases/github.py,Fetch latest GitHub release metadata,bundled/extensions/release-catalog/release_catalog/github.py,rewrite,GitHub client re-homed to extension,none
+backup,platform/releases/routes.py,Expose system version and update check routes,bundled/extensions/release-catalog/release_catalog/exports.py,merge,admin routes become extension exports,none
+backup,platform/releases/schemas.py,Define release version and check schemas,bundled/extensions/release-catalog/release_catalog/schemas.py,rewrite,release contracts re-homed to extension,none
+backup,platform/releases/service.py,Check current version and available updates,bundled/extensions/release-catalog/release_catalog/catalog.py,merge,"checker split into catalog, versions and cache modules",none
+backup,platform/releases/versioning.py,Parse and normalize release version tags,bundled/extensions/release-catalog/release_catalog/versions.py,merge,version parsing folds into versions module,none
+backup,platform/resource_control/__init__.py,package marker,delete,delete,package dissolved into operations module,none
+backup,platform/resource_control/routes.py,Expose platform capability block and release routes,src/opsmesh/platform/operations/routes.py,merge,ban and unban routes fold into operations routes,none
+backup,platform/resource_control/schemas.py,Define capability block request and response schemas,src/opsmesh/platform/operations/schemas.py,merge,block schemas fold into operations schemas,none
+backup,platform/resource_control/service.py,Block or release capabilities via owner commands,src/opsmesh/platform/operations/resources.py,merge,ban and unban commands unified via owner contracts,none
+backup,platform/settings/__init__.py,package marker,src/opsmesh/platform/settings/__init__.py,keep,settings package retained in V4 platform,none
+backup,platform/settings/routes.py,Expose system configuration routes,src/opsmesh/platform/settings/routes.py,keep,system configuration routes retained,none
+backup,platform/settings/schemas.py,Define system configuration response schema,src/opsmesh/platform/settings/schemas.py,keep,configuration response schema retained,none
+backup,platform/settings/service.py,Compose and replace operational configuration policies,src/opsmesh/platform/settings/service.py,keep,operational policy composition retained via owner contracts,none
+backup,platform/updates/__init__.py,package marker,delete,delete,updates package deleted from app,none
+backup,platform/updates/admission.py,Fence new execution during platform maintenance,src/opsmesh/platform/operations/service.py,merge,maintenance admission fence retained by operations,none
+backup,platform/updates/daemon.py,Run host update daemon with file lock,delete,delete,host updater moves to deploy server CLI,none
+backup,platform/updates/models.py,"Define installation, update job and event models",delete,delete,installation and update tables removed from app,none
+backup,platform/updates/routes.py,Expose host update plan and job routes,delete,delete,host update routes move to deploy CLI,none
+backup,platform/updates/schemas.py,"Define update plan, job and event schemas",delete,delete,update schemas removed with host updates,none
+backup,platform/updates/service.py,Manage update jobs and maintenance flag,delete,delete,update service moves to deploy; flag read retained,none
+backup,resources/__init__.py,package marker,src/opsmesh/resources/__init__.py,keep,package marker retained,none
+backup,resources/artifacts/__init__.py,package marker,src/opsmesh/resources/artifacts/__init__.py,keep,package marker retained,none
+backup,resources/artifacts/models.py,Artifact metadata and reader ORM tables,src/opsmesh/resources/artifacts/models.py,keep,artifact metadata and source references retained,none
+backup,resources/artifacts/routes.py,"HTTP routes for artifact listing, metadata and download",src/opsmesh/resources/artifacts/routes.py,keep,artifact listing and download routes retained,none
+backup,resources/artifacts/schemas.py,Artifact response and access contracts,src/opsmesh/resources/artifacts/schemas.py,keep,artifact response contracts retained,none
+backup,resources/artifacts/service.py,"Artifact persistence, ownership checks and content reads",src/opsmesh/resources/artifacts/service.py,keep,artifact persistence and content reads retained,none
+backup,resources/files/__init__.py,package marker,src/opsmesh/resources/files/__init__.py,keep,package marker retained,none
+backup,resources/files/access.py,Workspace file read/write authorization predicates and requirements,src/opsmesh/resources/files/access.py,keep,file authorization retained; external admission injectable,none
+backup,resources/files/content.py,Bounded file content reader and download response helpers,src/opsmesh/resources/files/content.py,keep,bounded content read and download retained,none
+backup,resources/files/models.py,"Workspace file, grant and access event ORM tables",src/opsmesh/resources/files/models.py,keep,"file, grant and access models retained",none
+backup,resources/files/policy.py,File I/O limits and runtime policy record,src/opsmesh/resources/files/schemas.py,merge,I/O limits split into schemas and models,none
+backup,resources/files/routes.py,"HTTP routes for workspace files, grants and runtime policy",src/opsmesh/resources/files/routes.py,keep,"file CRUD, grants and policy routes retained",none
+backup,resources/files/schemas.py,Workspace file response and runtime policy request contracts,src/opsmesh/resources/files/schemas.py,keep,file response and policy contracts retained,none
+backup,resources/files/service.py,"File permissions, persistence and storage compensation",src/opsmesh/resources/files/service.py,keep,file persistence and storage compensation retained,none
+backup,resources/knowledge/__init__.py,package marker,bundled/extensions/document-knowledge/document_knowledge/__init__.py,keep,package marker moves to bundled extension,none
+backup,resources/knowledge/access.py,Knowledge source permission predicates and requirements,bundled/extensions/document-knowledge/document_knowledge/access.py,keep,source permissions retained in package,none
+backup,resources/knowledge/activities.py,Temporal activities for knowledge ingestion execution,bundled/extensions/document-knowledge/document_knowledge/fetching.py,merge,"ingestion activities split into fetching, parsing, chunking, indexing",none
+backup,resources/knowledge/content.py,Resolve and read knowledge source content plans,bundled/extensions/document-knowledge/document_knowledge/parsing.py,merge,content resolution splits into parsing and fetching,none
+backup,resources/knowledge/grants.py,Knowledge grant listing and replacement management,bundled/extensions/document-knowledge/document_knowledge/access.py,merge,grant management folds into package access,none
+backup,resources/knowledge/ingestion.py,"Ingestion lifecycle, chunk archiving and citation queries",bundled/extensions/document-knowledge/document_knowledge/jobs.py,merge,ingestion orchestration folds into jobs and flows,none
+backup,resources/knowledge/models.py,"Knowledge source, revision, ingestion and citation ORM tables",bundled/extensions/document-knowledge/document_knowledge/schemas.py,rewrite,ORM becomes package schemas plus repository,none
+backup,resources/knowledge/requests.py,Knowledge ingestion execution reference contracts,bundled/extensions/document-knowledge/document_knowledge/schemas.py,merge,execution reference contracts fold into schemas,none
+backup,resources/knowledge/routes.py,"HTTP routes for knowledge sources, ingestions and citations",bundled/extensions/document-knowledge/document_knowledge/exports.py,rewrite,HTTP routes become package exports for invocation API,none
+backup,resources/knowledge/schemas.py,"Knowledge source create, update and response contracts",bundled/extensions/document-knowledge/document_knowledge/schemas.py,keep,source request and response contracts retained,none
+backup,resources/knowledge/service.py,"Knowledge source CRUD, revisions and archive management",bundled/extensions/document-knowledge/document_knowledge/libraries.py,merge,"source service splits into libraries, sources, lifecycle",none
+backup,resources/knowledge/url_fetch.py,Egress-validated HTTP fetcher for knowledge URLs,bundled/extensions/document-knowledge/document_knowledge/fetching.py,keep,egress-validated URL fetcher retained,none
+backup,resources/knowledge/workflow.py,Durable Temporal workflow for knowledge ingestion,bundled/extensions/document-knowledge/document_knowledge/jobs.py,merge,workflow becomes declared flow job with ingestion flow,none
+backup,resources/memory/__init__.py,package marker,bundled/extensions/model-memory/model_memory/__init__.py,keep,package marker moves to bundled extension,none
+backup,resources/memory/access.py,Memory entry permission checks for users and executions,bundled/extensions/model-memory/model_memory/access.py,keep,memory permissions retained in package,none
+backup,resources/memory/activities.py,Temporal activities for memory indexing and embedding,bundled/extensions/model-memory/model_memory/extraction.py,merge,"index and embed activities split into extraction, indexing, embeddings",none
+backup,resources/memory/configuration.py,Workspace memory settings and embedding retry management,bundled/extensions/model-memory/model_memory/configuration.py,keep,workspace memory settings retained,none
+backup,resources/memory/documents.py,"Assemble searchable documents from files, artifacts and memories",bundled/extensions/model-memory/model_memory/search.py,merge,search document assembly folds into search,none
+backup,resources/memory/embeddings.py,Embedding provider resolution and vector generation jobs,bundled/extensions/model-memory/model_memory/embeddings.py,keep,embedding provider jobs retained,none
+backup,resources/memory/episodes.py,Record redacted episodic memory entries with provenance,bundled/extensions/model-memory/model_memory/events.py,merge,episode capture splits into events and extraction,none
+backup,resources/memory/evidence.py,"Retrieval, lifecycle and embedding event queries",bundled/extensions/model-memory/model_memory/evidence.py,keep,memory event evidence queries retained,none
+backup,resources/memory/indexing.py,Chunk text and index workspace files and artifacts,bundled/extensions/model-memory/model_memory/indexing.py,keep,chunking and indexing retained,none
+backup,resources/memory/lifecycle.py,"Run memory retention, archiving and episode promotion",bundled/extensions/model-memory/model_memory/lifecycle.py,keep,retention and promotion lifecycle retained,none
+backup,resources/memory/models.py,"Memory entry, version, configuration and event ORM tables",bundled/extensions/model-memory/model_memory/schemas.py,rewrite,ORM becomes package schemas plus repository,none
+backup,resources/memory/policy.py,"Episodic, semantic, retrieval and lifecycle policy contracts",bundled/extensions/model-memory/model_memory/schemas.py,merge,policy contracts fold into schemas,none
+backup,resources/memory/requests.py,Memory index and embedding execution reference contracts,bundled/extensions/model-memory/model_memory/schemas.py,merge,execution reference contracts fold into schemas and jobs,none
+backup,resources/memory/routes.py,"HTTP routes for memories, configuration and evidence",bundled/extensions/model-memory/model_memory/exports.py,rewrite,HTTP routes become package exports for invocation API,none
+backup,resources/memory/schemas.py,"Semantic memory upsert, archive and response contracts",bundled/extensions/model-memory/model_memory/schemas.py,keep,memory request and response contracts retained,none
+backup,resources/memory/search.py,Workspace-scoped hybrid memory search with pluggable backends,bundled/extensions/model-memory/model_memory/search.py,keep,hybrid memory search retained,none
+backup,resources/memory/search_backends.py,"Lexical, full-text and vector search backend implementations",bundled/extensions/model-memory/model_memory/search.py,merge,lexical and vector backends fold into search,none
+backup,resources/memory/semantic.py,"Semantic memory upsert, archive, version and query operations",bundled/extensions/model-memory/model_memory/memories.py,merge,semantic memory record CRUD folds into memories,none
+backup,resources/memory/validation.py,"Semantic memory text, tag and importance validation helpers",bundled/extensions/model-memory/model_memory/schemas.py,merge,input validation helpers fold into schemas,none
+backup,resources/memory/workflow.py,Durable Temporal workflows for memory index and embed,bundled/extensions/model-memory/model_memory/jobs.py,merge,workflows become declared flow jobs,none
+backup,resources/memory/working.py,Agent working memory entries scoped to a run,delete,delete,V4 cancels working memory concept,none
+backup,resources/storage/__init__.py,package marker,src/opsmesh/resources/storage/__init__.py,keep,package marker retained,none
+backup,resources/storage/object_store.py,"Object storage primitives, key validation and cancellation-safe reads",src/opsmesh/resources/storage/filesystem.py,rewrite,storage primitives reimplemented over shared.files,none
+backup,resources/storage/transactions.py,Compensating deletion of object writes after failed transactions,src/opsmesh/resources/storage/transactions.py,keep,write compensation after failed transactions retained,none
+backup,shared/__init__.py,package marker,src/opsmesh/shared/__init__.py,keep,shared retained with contract updates,none
+backup,shared/contracts.py,Base pydantic contracts for persisted objects,src/opsmesh/shared/contracts.py,keep,V4 shared tree retains contracts module,none
+backup,shared/db/__init__.py,package marker,src/opsmesh/shared/db/__init__.py,keep,db package retained in V4 tree,none
+backup,shared/db/base.py,ORM base with UUID keys and timestamps,src/opsmesh/shared/db/base.py,keep,ORM base retained per V4 tree,none
+backup,shared/db/errors.py,Translate database integrity errors to conflicts,src/opsmesh/shared/db/errors.py,keep,constraint error mapping retained per V4 tree,none
+backup,shared/db/idempotency.py,Durable idempotency receipts for creation requests,src/opsmesh/shared/db/idempotency.py,keep,neutral idempotency mechanism retained per V4 tree,none
+backup,shared/db/pagination.py,Paginate SQLAlchemy queries with total count,src/opsmesh/shared/db/pagination.py,keep,SQL pagination retained per V4 tree,none
+backup,shared/db/session.py,Database session factories and transaction boundaries,src/opsmesh/shared/db/session.py,keep,session factory and transactions retained per V4 tree,none
+backup,shared/errors.py,Domain error types with HTTP status mapping,src/opsmesh/shared/errors.py,keep,V4 shared tree retains errors module,none
+backup,shared/http/__init__.py,package marker,src/opsmesh/shared/http/__init__.py,keep,http package retained in V4 tree,none
+backup,shared/http/client_ip.py,Resolve client IP via trusted proxies,src/opsmesh/shared/http/client_ip.py,keep,trusted proxy IP resolution retained per V4 tree,none
+backup,shared/http/dependencies.py,"Provide assembled database, Redis and Temporal connections",src/opsmesh/shared/http/dependencies.py,keep,connection dependencies retained per V4 tree,none
+backup,shared/http/errors.py,Map domain and HTTP errors to JSON responses,src/opsmesh/shared/http/errors.py,keep,error response mapping retained per V4 tree,none
+backup,shared/http/middleware.py,"Security headers, correlation and injectable rate limiting",src/opsmesh/shared/http/middleware.py,keep,middleware responsibilities retained per V4 tree,none
+backup,shared/http/pagination.py,Parse HTTP pagination query parameters,src/opsmesh/shared/http/pagination.py,keep,HTTP pagination parsing retained per V4 tree,none
+backup,shared/http/responses.py,Build paginated HTTP responses from domain items,src/opsmesh/shared/http/responses.py,keep,stable paginated response format retained per V4 tree,none
+backup,shared/http/sse.py,Encode SSE event frames with redacted payloads,src/opsmesh/shared/http/sse.py,keep,SSE framing retained per V4 tree,none
+backup,shared/mail.py,Send mail over SMTP with delivery certainty,src/opsmesh/shared/mail.py,keep,V4 shared tree retains mail module,none
+backup,shared/pagination.py,Transport-independent pagination parameters,src/opsmesh/shared/pagination.py,keep,V4 shared tree retains pagination module,none
+backup,shared/redis/__init__.py,package marker,src/opsmesh/shared/redis/__init__.py,keep,redis package retained in V4 tree,none
+backup,shared/redis/cache.py,"Redis JSON cache with TTL, locks and invalidation",src/opsmesh/shared/redis/cache.py,keep,disposable cache with TTL retained per V4 tree,none
+backup,shared/redis/client.py,Create Redis client and report pool snapshot,src/opsmesh/shared/redis/client.py,keep,client creation and closing retained per V4 tree,none
+backup,shared/redis/keys.py,Build namespaced Redis cache and lock keys,src/opsmesh/shared/redis/keys.py,keep,scoped key construction retained per V4 tree,none
+backup,shared/security/__init__.py,package marker,src/opsmesh/shared/security/__init__.py,keep,security package retained in V4 tree,none
+backup,shared/security/context.py,Immutable request evidence for security-sensitive operations,src/opsmesh/shared/http/context.py,merge,request evidence folds into new http context module,none
+backup,shared/security/egress.py,Validate outbound URLs against caller egress policy,src/opsmesh/shared/security/egress.py,keep,egress URL validation retained per V4 tree,none
+backup,shared/security/rate_limits.py,Fixed-window rate limiting over Redis storage,src/opsmesh/shared/security/rate_limits.py,keep,atomic Redis rate limiting retained per V4 tree,none
+backup,shared/security/redaction.py,Detect and redact sensitive keys and values,src/opsmesh/shared/security/redaction.py,keep,redaction primitives retained per V4 tree,none
+backup,shared/security/secrets.py,Encrypt and decrypt secrets with Fernet keys,src/opsmesh/shared/security/secrets.py,keep,secret cipher retained per V4 tree,none
+backup,shared/security/validation.py,Reject embedded secrets in configuration payloads,src/opsmesh/shared/security/redaction.py,merge,embedded secret rejection folds into redaction primitives,none
+backup,shared/utils.py,"Canonical JSON, digests and value coercion helpers",src/opsmesh/shared/serialization.py,merge,payload and digest helpers fold into serialization; coercion may split to contracts,none
+backup,shared/version.py,Read installed distribution version metadata,src/opsmesh/shared/version.py,keep,V4 shared tree retains version module,none
+backup,telemetry/__init__.py,package marker,src/opsmesh/telemetry/__init__.py,keep,telemetry package retained in V4 tree,none
+backup,telemetry/context.py,Bind and restore trace and log context fields,src/opsmesh/telemetry/context.py,keep,log context binding retained per V4 tree,none
+backup,telemetry/exporters.py,Configure redacted OTLP trace and log exporters,src/opsmesh/telemetry/exporters.py,keep,exporter lifecycle retained per V4 tree,none
+backup,telemetry/instrumentation.py,"Enable native FastAPI, DB, Redis and HTTPX instrumentation",src/opsmesh/telemetry/instrumentation.py,keep,native instrumentation retained per V4 tree,none
+backup,telemetry/logging.py,Structured logging with bounded queue and draining,src/opsmesh/telemetry/logging.py,keep,structured logging retained per V4 tree,none
+backup,telemetry/metrics.py,"Counter, histogram and gauge metrics with export",src/opsmesh/telemetry/metrics.py,keep,metrics registry retained per V4 tree,none
+backup,telemetry/tracing.py,"Native spans, attributes and trace identifiers",src/opsmesh/telemetry/tracing.py,keep,tracing helpers retained per V4 tree,none
+backup,temporal/__init__.py,package marker,src/opsmesh/temporal/__init__.py,keep,temporal package retained in V4 tree,none
+backup,temporal/codec.py,Encrypt Temporal payloads via public codec,src/opsmesh/temporal/codec.py,keep,payload codec retained per V4 tree,none
+backup,temporal/dispatch/__init__.py,package marker,src/opsmesh/temporal/dispatch/__init__.py,keep,dispatch package retained in V4 tree,none
+backup,temporal/dispatch/contracts.py,Neutral dispatch operation contracts and references,src/opsmesh/temporal/dispatch/contracts.py,keep,dispatch contracts retained; schedule operation added,none
+backup,temporal/dispatch/delivery.py,Deliver committed workflow commands via Temporal client,src/opsmesh/temporal/dispatch/delivery.py,keep,delivery retained per V4 tree,none
+backup,temporal/dispatch/dispatcher.py,Listen and deliver pending outbox commands,src/opsmesh/temporal/dispatch/dispatcher.py,keep,dispatcher retained per V4 tree,none
+backup,temporal/dispatch/models.py,Temporal outbox entry ORM model,src/opsmesh/temporal/dispatch/models.py,keep,outbox model retained per V4 tree,none
+backup,temporal/dispatch/outbox.py,Stage and publish transactional dispatch commands,src/opsmesh/temporal/dispatch/outbox.py,keep,transactional outbox staging retained per V4 tree,none
+backup,workspaces/__init__.py,package marker,src/opsmesh/workspaces/__init__.py,keep,workspaces package survives in V4 tree,none
+backup,workspaces/access.py,Workspace membership and role authorization checks with row locks,src/opsmesh/workspaces/members/access.py,merge,membership access owned by members module,none
+backup,workspaces/agents/__init__.py,package marker,delete,delete,agents package removed as workspace concept,none
+backup,workspaces/agents/access.py,Agent profile permissions bounded by workspace membership,src/opsmesh/workspaces/capabilities/access.py,merge,profile access becomes capability access,none
+backup,workspaces/agents/bindings.py,"Bind agent profiles to files, memory, MCP, tools, runtimes",src/opsmesh/workspaces/capabilities/service.py,merge,resource binding owned by capabilities service,none
+backup,workspaces/agents/contracts.py,"Agent profile API contracts, snapshots and validation",src/opsmesh/workspaces/capabilities/schemas.py,merge,profile contracts become capability schemas,none
+backup,workspaces/agents/diagnostics.py,Compute skill and tool availability diagnostics for profiles,src/opsmesh/workspaces/capabilities/service.py,merge,diagnostics folded into capability service,none
+backup,workspaces/agents/installations.py,Install marketplace talent listings as agent profiles,src/opsmesh/workspaces/capabilities/service.py,merge,installation becomes capability binding,none
+backup,workspaces/agents/models.py,"Agent profile, grant, install, version and binding ORM models",src/opsmesh/workspaces/capabilities/models.py,merge,definitions to capabilities/experts; bindings stay here,none
+backup,workspaces/agents/policy.py,Validate agent model provider credentials and model APIs,src/opsmesh/workspaces/capabilities/access.py,merge,credential validation joins capability access,none
+backup,workspaces/agents/reviews.py,Request human approval reviews for agent profile changes,src/opsmesh/governance/reviews,merge,approval decisions owned by governance,none
+backup,workspaces/agents/routes.py,"HTTP routes for agent profiles, bindings and installations",src/opsmesh/workspaces/capabilities/routes.py,merge,profile routes become capability routes,none
+backup,workspaces/agents/routing.py,Agent-to-agent tool graph policy and admission budgets,src/opsmesh/orchestration/triggers,merge,agent routing becomes orchestration triggers,none
+backup,workspaces/agents/schemas.py,"Agent profile create, update and clone request schemas",src/opsmesh/workspaces/capabilities/schemas.py,merge,profile schemas become capability schemas,none
+backup,workspaces/agents/service.py,"Agent profile CRUD, versioning and model binding services",src/opsmesh/workspaces/capabilities/service.py,merge,profile service becomes capability service,none
+backup,workspaces/agents/session_routes.py,HTTP routes listing native agent sessions,src/opsmesh/execution/sessions/routes.py,merge,sessions owned by execution module,none
+backup,workspaces/agents/skills.py,Validate skill configuration IDs bound to agent profiles,src/opsmesh/capabilities/skills,merge,skill configuration validation owned by capabilities,none
+backup,workspaces/agents/versions.py,Bump and record agent profile version history with audit,src/opsmesh/capabilities,merge,profile version lifecycle owned by capabilities,none
+backup,workspaces/capabilities/__init__.py,package marker,src/opsmesh/workspaces/capabilities/__init__.py,keep,package survives in V4 tree,none
+backup,workspaces/capabilities/access.py,Capability permissions bounded by workspace membership,src/opsmesh/workspaces/capabilities/access.py,keep,same access responsibility,none
+backup,workspaces/capabilities/grants.py,List and replace capability resource access grants,src/opsmesh/workspaces/capabilities/access.py,merge,grants folded into capability access,none
+backup,workspaces/capabilities/mcp/__init__.py,package marker,delete,delete,mcp subpackage flattened into capabilities,none
+backup,workspaces/capabilities/mcp/access.py,Load MCP servers and report credential execution mode,src/opsmesh/workspaces/capabilities/connections.py,merge,server loading becomes connection lifecycle,none
+backup,workspaces/capabilities/mcp/configuration.py,Redact MCP connection configuration for responses,src/opsmesh/workspaces/capabilities/configuration.py,merge,connection redaction becomes configuration concern,none
+backup,workspaces/capabilities/mcp/credentials.py,"Create, rotate and review MCP credential references",src/opsmesh/workspaces/capabilities/service.py,merge,credential references folded into service,none
+backup,workspaces/capabilities/mcp/discovery.py,Queue MCP tool discovery jobs via Temporal,src/opsmesh/workspaces/capabilities/service.py,merge,discovery queuing folded into service,none
+backup,workspaces/capabilities/mcp/models.py,"MCP deployment, server, allowlist and credential ORM models",src/opsmesh/workspaces/capabilities/models.py,merge,MCP binding models owned by capabilities,none
+backup,workspaces/capabilities/mcp/requests.py,MCP discovery dispatch request contract,src/opsmesh/workspaces/capabilities/schemas.py,merge,dispatch request becomes capability schema,none
+backup,workspaces/capabilities/mcp/routes.py,"HTTP routes for MCP servers, tools and credentials",src/opsmesh/workspaces/capabilities/routes.py,merge,MCP routes become capability routes,none
+backup,workspaces/capabilities/mcp/schemas.py,MCP tool descriptor and credential response contracts,src/opsmesh/workspaces/capabilities/schemas.py,merge,MCP contracts become capability schemas,none
+backup,workspaces/capabilities/mcp/service.py,Manage MCP server configuration and tool allowlists,src/opsmesh/workspaces/capabilities/service.py,merge,MCP service folded into capability service,none
+backup,workspaces/capabilities/mcp/validation.py,Validate MCP URLs and auth headers before connection,src/opsmesh/execution/runtime/mcp.py,merge,connection validation owned by runtime MCP,none
+backup,workspaces/capabilities/models.py,Workspace tool instance and grant ORM models,src/opsmesh/workspaces/capabilities/models.py,keep,same binding model responsibility,none
+backup,workspaces/capabilities/routes.py,HTTP routes for workspace capability configurations,src/opsmesh/workspaces/capabilities/routes.py,keep,same route responsibility,none
+backup,workspaces/capabilities/schemas.py,Capability configuration and status request contracts,src/opsmesh/workspaces/capabilities/schemas.py,keep,same contract responsibility,none
+backup,workspaces/capabilities/service.py,Manage authorized workspace capability configurations,src/opsmesh/workspaces/capabilities/service.py,keep,same binding service responsibility,none
+backup,workspaces/capabilities/skills/__init__.py,package marker,delete,delete,skills subpackage flattened into capabilities,none
+backup,workspaces/capabilities/skills/models.py,Workspace skill configuration and grant ORM models,src/opsmesh/workspaces/capabilities/models.py,merge,skill binding models owned by capabilities,none
+backup,workspaces/capabilities/skills/schemas.py,Workspace skill configuration response contract,src/opsmesh/workspaces/capabilities/schemas.py,merge,skill contract becomes capability schema,none
+backup,workspaces/capabilities/skills/service.py,Load workspace skill configurations and platform blocks,src/opsmesh/workspaces/capabilities/service.py,merge,skill service folded into capability service,none
+backup,workspaces/dependencies.py,FastAPI dependencies resolving live workspace member access,src/opsmesh/bootstrap,merge,route dependency wiring moves to bootstrap,none
+backup,workspaces/execution.py,Authorize workspace-scoped execution actors and service operations,src/opsmesh/workspaces/projects/execution.py,merge,execution authorization folded into project execution,none
+backup,workspaces/members/__init__.py,package marker,src/opsmesh/workspaces/members/__init__.py,keep,package survives in V4 tree,none
+backup,workspaces/members/invitations.py,"Create, accept and expire workspace invitations",src/opsmesh/workspaces/members/service.py,merge,invitations folded into member service,none
+backup,workspaces/members/models.py,"Workspace member, role and invite ORM models",src/opsmesh/workspaces/members/models.py,keep,same model responsibility,none
+backup,workspaces/members/routes.py,HTTP routes for members and invitations,src/opsmesh/workspaces/members/routes.py,keep,same route responsibility,none
+backup,workspaces/members/schemas.py,Member and invite request/response contracts,src/opsmesh/workspaces/members/schemas.py,keep,same contract responsibility,none
+backup,workspaces/members/service.py,"Workspace membership listing, role and status services",src/opsmesh/workspaces/members/service.py,keep,same service responsibility,none
+backup,workspaces/model_providers/__init__.py,package marker,src/opsmesh/workspaces/model_providers/__init__.py,keep,package survives in V4 tree,none
+backup,workspaces/model_providers/access.py,Provider credential permissions bounded by workspace membership,src/opsmesh/workspaces/model_providers/service.py,merge,provider access folded into service,none
+backup,workspaces/model_providers/activities.py,Temporal activities checking model provider health,src/opsmesh/workspaces/model_providers/activities.py,keep,same activity responsibility,none
+backup,workspaces/model_providers/capabilities.py,Model capability metadata and budget exhaustion checks,src/opsmesh/workspaces/model_providers/service.py,merge,capability metadata folded into service,none
+backup,workspaces/model_providers/contracts.py,Resolved provider and health probe request contracts,src/opsmesh/workspaces/model_providers/schemas.py,merge,contracts become provider schemas,none
+backup,workspaces/model_providers/credentials.py,"Create, rotate and update provider credentials",src/opsmesh/workspaces/model_providers/service.py,merge,credential operations folded into service,none
+backup,workspaces/model_providers/health.py,Model provider health snapshots and readiness checks,src/opsmesh/workspaces/model_providers/service.py,merge,health logic folded into service,none
+backup,workspaces/model_providers/models.py,Model provider credential and grant ORM models,src/opsmesh/workspaces/model_providers/models.py,keep,same model responsibility,none
+backup,workspaces/model_providers/policy.py,Provider selectability and base URL policies,src/opsmesh/workspaces/model_providers/service.py,merge,selectability policy folded into service,none
+backup,workspaces/model_providers/probes.py,Execute OpenAI-compatible provider health probes,src/opsmesh/workspaces/model_providers/activities.py,merge,probe execution used by health activity,none
+backup,workspaces/model_providers/queries.py,Paginated provider credential and audit queries,src/opsmesh/workspaces/model_providers/service.py,merge,queries folded into service,none
+backup,workspaces/model_providers/resolution.py,Resolve selectable provider credentials for execution,src/opsmesh/workspaces/model_providers/service.py,merge,resolution folded into service,none
+backup,workspaces/model_providers/routes.py,HTTP routes for provider credentials and health,src/opsmesh/workspaces/model_providers/routes.py,keep,same route responsibility,none
+backup,workspaces/model_providers/schemas.py,Provider credential request and response contracts,src/opsmesh/workspaces/model_providers/schemas.py,keep,same contract responsibility,none
+backup,workspaces/model_providers/service.py,Provider credential lifecycle and usage audit services,src/opsmesh/workspaces/model_providers/service.py,keep,same service responsibility,none
+backup,workspaces/model_providers/views.py,Agent model provider health view models,src/opsmesh/workspaces/model_providers/schemas.py,merge,view models become provider schemas,none
+backup,workspaces/model_providers/workflow.py,Temporal model provider health workflow definition,src/opsmesh/workspaces/model_providers/workflow.py,keep,same workflow responsibility,none
+backup,workspaces/models.py,Workspace tenant ORM model and status enum,src/opsmesh/workspaces/models.py,keep,same tenant model responsibility,none
+backup,workspaces/notifications/__init__.py,package marker,src/opsmesh/workspaces/notifications/__init__.py,keep,package survives in V4 tree,none
+backup,workspaces/notifications/models.py,Workspace notification and preference ORM models,src/opsmesh/workspaces/notifications/models.py,keep,same model responsibility,none
+backup,workspaces/notifications/routes.py,HTTP routes for notifications and preferences,src/opsmesh/workspaces/notifications/routes.py,keep,same route responsibility,none
+backup,workspaces/notifications/schemas.py,Notification request and response contracts,src/opsmesh/workspaces/notifications/schemas.py,keep,same contract responsibility,none
+backup,workspaces/notifications/service.py,"Notification listing, counting, read and preference services",src/opsmesh/workspaces/notifications/service.py,keep,same service responsibility,none
+backup,workspaces/projects/__init__.py,package marker,src/opsmesh/workspaces/projects/__init__.py,keep,package survives in V4 tree,none
+backup,workspaces/projects/access.py,Project access checks bounded by workspace membership,src/opsmesh/workspaces/projects/members/access.py,merge,project access owned by members package,none
+backup,workspaces/projects/capability_links.py,Link projects to workspace capability instances,src/opsmesh/workspaces/projects/configuration.py,merge,capability linking becomes project configuration,none
+backup,workspaces/projects/capability_models.py,"Project MCP, skill and tool link ORM models",src/opsmesh/workspaces/projects/models.py,merge,link models owned by project models,none
+backup,workspaces/projects/capability_routes.py,HTTP routes for project capability links,src/opsmesh/workspaces/projects/routes.py,merge,link routes become project routes,none
+backup,workspaces/projects/diff.py,Canonical JSON diff and hashing for configurations,src/opsmesh/workspaces/projects/versions.py,merge,diffing supports configuration versions,none
+backup,workspaces/projects/members.py,"Project membership listing, role and status services",src/opsmesh/workspaces/projects/members/service.py,merge,split across new members package,none
+backup,workspaces/projects/models.py,"Project, member, file, output and quota ORM models",src/opsmesh/workspaces/projects/models.py,keep,same model responsibility,none
+backup,workspaces/projects/policy.py,"Project name, path and configuration validation invariants",src/opsmesh/workspaces/projects/service.py,merge,invariants enforced in project service,none
+backup,workspaces/projects/quotas.py,List project quota ledgers with access checks,src/opsmesh/workspaces/capacity/service.py,merge,project quotas owned by capacity module,none
+backup,workspaces/projects/routes.py,"HTTP routes for projects, members, files and versions",src/opsmesh/workspaces/projects/routes.py,keep,same route responsibility,none
+backup,workspaces/projects/schemas.py,"Project, member, file and version request contracts",src/opsmesh/workspaces/projects/schemas.py,keep,same contract responsibility,none
+backup,workspaces/projects/service.py,"Project CRUD, configuration versioning, files and outputs",src/opsmesh/workspaces/projects/service.py,rewrite,files and versions split to dedicated modules,none
+backup,workspaces/projects/versioning.py,Project file and configuration version views,src/opsmesh/workspaces/projects/versions.py,merge,version views become versions module,none
+backup,workspaces/quotas/__init__.py,package marker,delete,delete,package split to identity/quotas and capacity,none
+backup,workspaces/quotas/models.py,Workspace quota and reservation ledger ORM models,src/opsmesh/workspaces/capacity/models.py,merge,space capacity ledger; user quota to identity,none
+backup,workspaces/quotas/reservations.py,Reserve workspace and project run capacity idempotently,src/opsmesh/workspaces/capacity/service.py,merge,concurrency reservations owned by capacity,none
+backup,workspaces/quotas/routes.py,HTTP routes for workspace quotas and execution summary,src/opsmesh/workspaces/capacity/routes.py,merge,quota routes become capacity routes,none
+backup,workspaces/quotas/schemas.py,Workspace quota upsert and response contracts,src/opsmesh/workspaces/capacity/schemas.py,merge,quota contracts become capacity schemas,none
+backup,workspaces/quotas/service.py,"Workspace quota upsert, listing and execution slot summary",src/opsmesh/workspaces/capacity/service.py,merge,quota service becomes capacity service,none
+backup,workspaces/routes.py,"HTTP routes for workspace CRUD, status and ownership",src/opsmesh/workspaces/routes.py,keep,same route responsibility,none
+backup,workspaces/runtime/__init__.py,package marker,delete,delete,package relocated to execution/runtime,none
+backup,workspaces/runtime/admission.py,Recheck workspace and environment authorization before sandbox runs,src/opsmesh/execution/runs/scheduling.py,merge,admission moves to run scheduling,none
+backup,workspaces/runtime/commands/__init__.py,package marker,delete,delete,commands package flattened into execution/runtime,none
+backup,workspaces/runtime/commands/activities.py,Temporal activities executing sandbox control commands,src/opsmesh/execution/runtime/activities.py,merge,command activities become runtime activities,none
+backup,workspaces/runtime/commands/approvals.py,Check governance approvals for runtime commands,src/opsmesh/execution/runtime/service.py,merge,execution applies governance decisions only,none
+backup,workspaces/runtime/commands/contracts.py,Command policy decision types and outcomes,src/opsmesh/execution/runtime/contracts.py,merge,policy contracts become runtime contracts,none
+backup,workspaces/runtime/commands/models.py,Runtime command ORM model and status fields,src/opsmesh/execution/runtime/models.py,merge,command model owned by runtime,none
+backup,workspaces/runtime/commands/service.py,"Queue, validate and policy-check runtime commands",src/opsmesh/execution/runtime/service.py,merge,command service becomes runtime service,none
+backup,workspaces/runtime/commands/temporal.py,Sandbox control dispatch request contract,src/opsmesh/execution/runtime/contracts.py,merge,dispatch contract becomes runtime contract,none
+backup,workspaces/runtime/commands/workflow.py,Temporal sandbox control workflow definition,src/opsmesh/execution/runtime/workflow.py,merge,workflow owned by execution runtime,none
+backup,workspaces/runtime/environments/__init__.py,package marker,delete,delete,environments package flattened into execution/runtime,none
+backup,workspaces/runtime/environments/access.py,Runtime environment permissions bounded by workspace membership,src/opsmesh/execution/runtime/access.py,merge,environment access becomes runtime access,none
+backup,workspaces/runtime/environments/contracts.py,Environment cleanup dispatch request contract,src/opsmesh/execution/runtime/contracts.py,merge,cleanup contract becomes runtime contract,none
+backup,workspaces/runtime/environments/events.py,Build redacted runtime events with telemetry context,src/opsmesh/execution/runtime/service.py,merge,event construction folded into runtime service,none
+backup,workspaces/runtime/environments/models.py,"Runtime template, environment, grant and event ORM models",src/opsmesh/execution/runtime/models.py,merge,environment models owned by runtime,none
+backup,workspaces/runtime/environments/operations.py,Platform admin listing and force-stop of environments,src/opsmesh/execution/runtime/service.py,merge,admin operations folded into runtime service,none
+backup,workspaces/runtime/environments/queries.py,Paginated runtime environment query helpers,src/opsmesh/execution/runtime/service.py,merge,queries folded into runtime service,none
+backup,workspaces/runtime/environments/routes.py,"HTTP routes for environments, templates, grants and commands",src/opsmesh/execution/runtime/routes.py,merge,environment routes become runtime routes,none
+backup,workspaces/runtime/environments/schemas.py,"Environment, template, grant and command request contracts",src/opsmesh/execution/runtime/schemas.py,merge,environment contracts become runtime schemas,none
+backup,workspaces/runtime/environments/service.py,"Environment lifecycle, templates, grants and interventions",src/opsmesh/execution/runtime/service.py,merge,environment service becomes runtime service,none
+backup,workspaces/runtime/sessions/__init__.py,package marker,delete,delete,sessions owned by execution/sessions,none
+backup,workspaces/runtime/snapshots.py,Store native sandbox session snapshots in object storage,src/opsmesh/execution/runtime/sandbox.py,merge,snapshot storage owned by runtime sandbox,none
+backup,workspaces/runtime/spaces/__init__.py,package marker,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/access.py,Runtime space member and owner access predicates,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/bindings.py,"Bind runtime spaces to workspace, team and task targets",delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/capacity.py,Reserve and release runtime space capacity with locks,delete,delete,space capacity removed; concurrency to capacity module,none
+backup,workspaces/runtime/spaces/contracts.py,Runtime space request and response contracts,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/diagnostics.py,Runtime space quota and reservation diagnostics,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/events.py,Append audited runtime space lifecycle events,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/models.py,"Runtime space, member, quota, reservation ORM models",delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/operations.py,Platform admin listing and quarantine of runtime spaces,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/quotas.py,Replace and increment runtime space quota ledgers,delete,delete,space quotas removed with runtime spaces,none
+backup,workspaces/runtime/spaces/routes.py,HTTP routes for runtime space lifecycle and members,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/runtime/spaces/service.py,"Runtime space create, pause, resume, reset services",delete,delete,runtime spaces removed in V4,none
+backup,workspaces/schemas.py,Request and response contracts for workspace APIs,src/opsmesh/workspaces/schemas.py,keep,same contract responsibility,none
+backup,workspaces/service.py,"Workspace lifecycle, settings and membership-aware operations",src/opsmesh/workspaces/service.py,rewrite,CRUD retained; resource assembly coupling removed,none
+backup,workspaces/snapshots.py,"Audit snapshot builders for quotas, members and invites",delete,delete,audit payloads built at governance call sites,none
+backup,workspaces/teams/__init__.py,package marker,delete,delete,teams package split to capabilities and bundled,none
+backup,workspaces/teams/access.py,Team resource permissions bounded by workspace membership,src/opsmesh/capabilities/teams/service.py,merge,team access folded into definition service,none
+backup,workspaces/teams/bindings.py,"Bind teams to files, memory, knowledge, MCP, tools, runtimes",bundled/extensions/team-collaboration,merge,team resource binding is collaboration business,none
+backup,workspaces/teams/capability_policy.py,Validate per-team capability parameter policies,src/opsmesh/workspaces/capabilities,merge,capability policy owned by capabilities binding,none
+backup,workspaces/teams/composition.py,Compose workspace teams from published team versions,src/opsmesh/capabilities/teams/service.py,merge,composition folded into team definition service,none
+backup,workspaces/teams/grants.py,List and replace team resource access grants,src/opsmesh/workspaces/capabilities/access.py,merge,grants handled by capability access,none
+backup,workspaces/teams/members.py,"Manage team membership, reporting lines and availability",src/opsmesh/capabilities/teams/service.py,merge,member slots to definitions; attributes to bundled,none
+backup,workspaces/teams/models.py,"Agent team, member, grant and binding ORM models",src/opsmesh/capabilities/teams/models.py,merge,team definition models owned by capabilities,none
+backup,workspaces/teams/organization.py,Build team organization chart with reporting hierarchy,bundled/extensions/team-collaboration,merge,org chart is collaboration business,none
+backup,workspaces/teams/policy.py,Validate team configuration and reporting graph invariants,src/opsmesh/capabilities/teams/service.py,merge,invariants enforced in team definition service,none
+backup,workspaces/teams/roles.py,List distinct active team member roles,src/opsmesh/capabilities/teams/schemas.py,merge,role vocabulary belongs to team contracts,none
+backup,workspaces/teams/routes.py,"HTTP routes for teams, members, bindings and policies",src/opsmesh/capabilities/teams/routes.py,merge,team routes become definition routes,none
+backup,workspaces/teams/runtime_spaces.py,Create runtime spaces scoped to teams,delete,delete,runtime spaces removed in V4,none
+backup,workspaces/teams/schemas.py,"Team, member, policy and composition request contracts",src/opsmesh/capabilities/teams/schemas.py,merge,team contracts become definition schemas,none
+backup,workspaces/teams/service.py,Team CRUD commands and organization-aware services,src/opsmesh/capabilities/teams/service.py,merge,team service becomes definition service,none
+backup_2,__init__.py,package marker,src/opsmesh/__init__.py,keep,server root package marker,backup/opsmesh/__init__.py
+backup_2,bootstrap/__init__.py,package marker,src/opsmesh/bootstrap/__init__.py,keep,package marker for bootstrap,backup/opsmesh/bootstrap/__init__.py
+backup_2,bootstrap/api.py,build FastAPI app with ordered lifespan,src/opsmesh/bootstrap/api.py,keep,same app creation and lifespan ordering,backup/opsmesh/bootstrap/api.py
+backup_2,bootstrap/cli.py,initialize platform administrator from CLI,src/opsmesh/bootstrap/cli.py,keep,same administrator bootstrap entrypoint,backup/opsmesh/identity/users/provisioning.py
+backup_2,bootstrap/execution.py,"wire execution Temporal client, codec and session activities",src/opsmesh/bootstrap/execution.py,rewrite,codec and client move to temporal; bindings assembly added,backup/opsmesh/bootstrap/temporal.py
+backup_2,bootstrap/models.py,register all owned ORM models explicitly,src/opsmesh/bootstrap/models.py,keep,same explicit model registration duty,backup/opsmesh/bootstrap/models.py
+backup_2,bootstrap/routers.py,register module routers under API prefix,src/opsmesh/bootstrap/routers.py,keep,same route registry responsibility,backup/opsmesh/bootstrap/routers.py
+backup_2,bootstrap/worker.py,assemble Temporal worker with activities and workflows,src/opsmesh/bootstrap/worker.py,keep,same worker assembly responsibility,backup/opsmesh/bootstrap/worker.py
+backup_2,capabilities/__init__.py,package marker,src/opsmesh/capabilities/__init__.py,keep,package marker for capabilities,backup/opsmesh/capabilities/__init__.py
+backup_2,capabilities/models.py,capability definition and immutable version tables,src/opsmesh/capabilities/models.py,keep,same definition and version tables,none
+backup_2,capabilities/packages.py,read bounded ZIP packages without extracting,src/opsmesh/capabilities/packages.py,keep,same safe archive reading duty,backup/opsmesh/capabilities/packages.py
+backup_2,capabilities/routes.py,definition and version HTTP routes,src/opsmesh/capabilities/routes.py,keep,same catalog and publishing routes,none
+backup_2,capabilities/schemas.py,typed per-kind capability configuration contracts,src/opsmesh/capabilities/schemas.py,rewrite,kind configurations split to type schema modules,none
+backup_2,capabilities/service.py,"definition ownership, versions and package ingestion",src/opsmesh/capabilities/lifecycle.py,merge,definition and version transactions move to lifecycle,none
+backup_2,config.py,process settings loaded from environment,src/opsmesh/config.py,rewrite,settings expanded for V4 infrastructure wiring,backup/opsmesh/config.py
+backup_2,execution/__init__.py,package marker,src/opsmesh/execution/__init__.py,keep,package marker for execution,backup/opsmesh/execution/__init__.py
+backup_2,execution/contracts.py,neutral execution context and bindings contracts,src/opsmesh/execution/contracts.py,keep,same neutral execution contract home,none
+backup_2,execution/runs/__init__.py,package marker,src/opsmesh/execution/runs/__init__.py,keep,package marker for runs,backup/opsmesh/execution/runs/__init__.py
+backup_2,execution/runs/activities.py,Temporal activity entrypoints for runs,src/opsmesh/execution/runs/activities.py,rewrite,activities reorganized with re-authorization on dequeue,none
+backup_2,execution/runs/agents.py,build native agents from frozen configuration,src/opsmesh/execution/runs/agents.py,rewrite,agent assembly reworked for frozen configs and handoffs,none
+backup_2,execution/runs/delivery.py,dispatch pending run commands to Temporal,src/opsmesh/execution/runs/service.py,merge,command dispatch folds into run service,backup/opsmesh/temporal/dispatch/dispatcher.py
+backup_2,execution/runs/events.py,append and read encrypted run events,src/opsmesh/execution/runs/events.py,keep,same run event fact responsibility,backup/opsmesh/execution/runs/events.py
+backup_2,execution/runs/inference.py,execute model calls as activity with usage,src/opsmesh/execution/runs/inference.py,rewrite,model provider reworked per V4 hooks and usage,backup/opsmesh/orchestration/agent_execution/openai.py
+backup_2,execution/runs/mcp.py,wire approved MCP tools into SDK runs,src/opsmesh/execution/runs/mcp.py,rewrite,MCP wiring reworked; lifecycle stays in runtime,backup/opsmesh/execution/runs/mcp_connections.py
+backup_2,execution/runs/models.py,"run, event, approval and receipt tables",src/opsmesh/execution/runs/models.py,keep,same run persistence tables,backup/opsmesh/execution/runs/models.py
+backup_2,execution/runs/scheduling.py,serialize runs per session workflow,src/opsmesh/execution/runs/scheduling.py,rewrite,session serial coordination reworked per V4,none
+backup_2,execution/runs/schemas.py,"run request, result and configuration contracts",src/opsmesh/execution/runs/schemas.py,rewrite,internal contracts split to runs contracts module,backup/opsmesh/execution/runs/contracts.py
+backup_2,execution/runs/service.py,"run lifecycle, idempotency and reconciliation",src/opsmesh/execution/runs/service.py,rewrite,run service reworked with same-transaction dispatch intents,none
+backup_2,execution/runs/tools.py,expose authorized tools as SDK FunctionTools,src/opsmesh/execution/runs/tools.py,rewrite,tool bridging reworked with extension delegation,backup/opsmesh/execution/runs/tool_activities.py
+backup_2,execution/runs/workflow.py,durable run workflow inside official plugin,src/opsmesh/execution/runs/workflow.py,rewrite,run workflow reworked for V4 approvals and hooks,backup/opsmesh/execution/runs/workflow.py
+backup_2,execution/runtime/__init__.py,package marker,src/opsmesh/execution/runtime/__init__.py,keep,package marker for runtime,backup/opsmesh/execution/runtime/__init__.py
+backup_2,execution/runtime/mcp_stdio.py,sandbox local MCP over docker exec stdio,src/opsmesh/execution/runtime/mcp_stdio.py,keep,same stdio transport responsibility,backup/opsmesh/execution/runtime/mcp_stdio.py
+backup_2,execution/runtime/models.py,"environment, command and receipt tables",src/opsmesh/execution/runtime/models.py,keep,same environment persistence tables,backup/opsmesh/execution/runtime/models.py
+backup_2,execution/runtime/sandbox.py,manage native sandbox lifecycle and files,src/opsmesh/execution/runtime/sandbox.py,rewrite,sandbox retained; files and activities split out,none
+backup_2,execution/runtime/schemas.py,environment configuration and operation contracts,src/opsmesh/execution/runtime/schemas.py,rewrite,internal operation contracts split to contracts module,backup/opsmesh/execution/runtime/contracts.py
+backup_2,execution/runtime/service.py,environment lifecycle and operation reconciliation,src/opsmesh/execution/runtime/service.py,rewrite,environment service reworked; no per-run creation,backup/opsmesh/execution/runtime/service.py
+backup_2,execution/runtime/workflow.py,durable environment operation workflow,src/opsmesh/execution/runtime/workflow.py,keep,same environment workflow responsibility,none
+backup_2,execution/sessions/__init__.py,package marker,src/opsmesh/execution/sessions/__init__.py,keep,package marker for sessions,backup/opsmesh/execution/sessions/__init__.py
+backup_2,execution/sessions/activities.py,native history activities with receipts,src/opsmesh/execution/sessions/activities.py,keep,same history activity responsibility,backup/opsmesh/execution/sessions/activities.py
+backup_2,execution/sessions/models.py,session record and native history tables,src/opsmesh/execution/sessions/models.py,rewrite,native history tables move to history module,backup/opsmesh/execution/sessions/models.py
+backup_2,execution/sessions/schemas.py,session read and history operation contracts,src/opsmesh/execution/sessions/schemas.py,rewrite,history operation contracts split to contracts module,backup/opsmesh/execution/sessions/schemas.py
+backup_2,execution/sessions/service.py,"create, close and lookup sessions",src/opsmesh/execution/sessions/service.py,keep,same session lifecycle responsibility,backup/opsmesh/execution/sessions/service.py
+backup_2,execution/sessions/temporal.py,bridge SDK Session to history activities,src/opsmesh/execution/sessions/temporal.py,keep,same SDK session bridge responsibility,backup/opsmesh/execution/sessions/temporal.py
+backup_2,identity/__init__.py,package marker,src/opsmesh/identity/__init__.py,keep,package marker for identity,backup/opsmesh/identity/__init__.py
+backup_2,identity/access.py,platform role and user management authorization,src/opsmesh/identity/access.py,keep,same platform authorization contract,none
+backup_2,identity/auth/__init__.py,package marker,src/opsmesh/identity/auth/__init__.py,keep,package marker for auth,backup/opsmesh/identity/auth/__init__.py
+backup_2,identity/auth/dependencies.py,resolve CurrentUser from session header,src/opsmesh/identity/auth/dependencies.py,keep,same session dependency responsibility,backup/opsmesh/identity/auth/dependencies.py
+backup_2,identity/auth/models.py,user session credential and expiry table,src/opsmesh/identity/auth/models.py,keep,same session persistence table,backup/opsmesh/identity/auth/models.py
+backup_2,identity/auth/routes.py,"login, logout and session management routes",src/opsmesh/identity/auth/routes.py,rewrite,absorbs registration and password routes,backup/opsmesh/identity/auth/routes.py
+backup_2,identity/auth/schemas.py,"login, password and session HTTP contracts",src/opsmesh/identity/auth/schemas.py,keep,same auth HTTP contracts,backup/opsmesh/identity/auth/schemas.py
+backup_2,identity/auth/service.py,password verification and session lifecycle,src/opsmesh/identity/auth/service.py,keep,same session issuance and revocation duty,backup/opsmesh/identity/auth/service.py
+backup_2,identity/context.py,CurrentUser identity value contract,src/opsmesh/identity/context.py,keep,same identity value contract,backup/opsmesh/identity/context.py
+backup_2,identity/errors.py,authentication and session failure errors,src/opsmesh/identity/errors.py,keep,same identity error types,backup/opsmesh/identity/errors.py
+backup_2,identity/provisioning.py,provision first administrator and user defaults,src/opsmesh/identity/provisioning.py,rewrite,provisioning reworked with quota and invitation defaults,backup/opsmesh/identity/users/provisioning.py
+backup_2,identity/quotas/__init__.py,package marker,src/opsmesh/identity/quotas/__init__.py,keep,package marker for quotas,none
+backup_2,identity/quotas/models.py,user token and storage quota ledger tables,src/opsmesh/identity/quotas/models.py,keep,same quota ledger tables,none
+backup_2,identity/quotas/routes.py,user quota query and admin update routes,src/opsmesh/identity/quotas/routes.py,keep,same quota API responsibility,none
+backup_2,identity/quotas/schemas.py,quota limits and usage response contracts,src/opsmesh/identity/quotas/schemas.py,keep,same quota HTTP contracts,none
+backup_2,identity/quotas/service.py,"atomic quota reserve, settle and release",src/opsmesh/identity/quotas/service.py,keep,same quota ledger operations,none
+backup_2,identity/users/__init__.py,package marker,src/opsmesh/identity/users/__init__.py,keep,package marker for users,backup/opsmesh/identity/users/__init__.py
+backup_2,identity/users/models.py,"user profile, role and status table",src/opsmesh/identity/users/models.py,keep,same user persistence table,backup/opsmesh/identity/users/models.py
+backup_2,identity/users/passwords.py,hash and verify user passwords,src/opsmesh/identity/auth/passwords.py,merge,password hashing moves under auth module,backup/opsmesh/identity/auth/passwords.py
+backup_2,identity/users/routes.py,"user CRUD, profile and password routes",src/opsmesh/identity/users/routes.py,rewrite,password routes move to auth; avatar routes added,backup/opsmesh/identity/users/routes.py
+backup_2,identity/users/schemas.py,"user create, update and response contracts",src/opsmesh/identity/users/schemas.py,keep,same user HTTP contracts,backup/opsmesh/identity/users/schemas.py
+backup_2,identity/users/service.py,"user profile, role and status operations",src/opsmesh/identity/users/service.py,rewrite,password operations move to auth service,backup/opsmesh/identity/users/service.py
+backup_2,main.py,application entry delegating to bootstrap,src/opsmesh/main.py,keep,same process entry responsibility,backup/opsmesh/main.py
+backup_2,shared/__init__.py,package marker,src/opsmesh/shared/__init__.py,keep,package marker for shared,backup/opsmesh/shared/__init__.py
+backup_2,shared/contracts.py,pydantic response base contracts,src/opsmesh/shared/contracts.py,rewrite,"reduced to neutral JSON, time and identifier types",backup/opsmesh/shared/contracts.py
+backup_2,shared/db/__init__.py,package marker,src/opsmesh/shared/db/__init__.py,keep,package marker for db,backup/opsmesh/shared/db/__init__.py
+backup_2,shared/db/base.py,ORM base with UUID and timestamp mixins,src/opsmesh/shared/db/base.py,keep,same ORM base responsibility,backup/opsmesh/shared/db/base.py
+backup_2,shared/db/errors.py,map constraint failures to neutral errors,src/opsmesh/shared/db/errors.py,keep,same database error mapping,backup/opsmesh/shared/db/errors.py
+backup_2,shared/db/idempotency.py,durable creation receipts for idempotent writes,src/opsmesh/shared/db/idempotency.py,keep,same idempotency receipt mechanism,backup/opsmesh/shared/db/idempotency.py
+backup_2,shared/db/pagination.py,offset pagination with total count,src/opsmesh/shared/db/pagination.py,keep,same SQL pagination helper,backup/opsmesh/shared/db/pagination.py
+backup_2,shared/db/session.py,"engine, session factory and transaction contexts",src/opsmesh/shared/db/session.py,keep,same session and transaction duties,backup/opsmesh/shared/db/session.py
+backup_2,shared/errors.py,shared domain error hierarchy,src/opsmesh/shared/errors.py,keep,same error hierarchy,backup/opsmesh/shared/errors.py
+backup_2,shared/http/__init__.py,package marker,src/opsmesh/shared/http/__init__.py,keep,package marker for http,backup/opsmesh/shared/http/__init__.py
+backup_2,shared/http/client.py,pinned async HTTP transport with egress checks,src/opsmesh/shared/http/client.py,keep,same bounded outbound HTTP client,none
+backup_2,shared/http/client_ip.py,resolve client IP behind trusted proxies,src/opsmesh/shared/http/client_ip.py,keep,same client IP resolution,backup/opsmesh/shared/http/client_ip.py
+backup_2,shared/http/context.py,immutable request evidence context,src/opsmesh/shared/http/context.py,keep,same neutral request context,backup/opsmesh/shared/security/context.py
+backup_2,shared/http/dependencies.py,database and Redis FastAPI dependencies,src/opsmesh/shared/http/dependencies.py,keep,same connection dependencies,backup/opsmesh/shared/http/dependencies.py
+backup_2,shared/http/errors.py,register common error response handlers,src/opsmesh/shared/http/errors.py,keep,same error response mapping,backup/opsmesh/shared/http/errors.py
+backup_2,shared/http/middleware.py,security headers and rate limit middleware,src/opsmesh/shared/http/middleware.py,keep,same HTTP middleware duties,backup/opsmesh/shared/http/middleware.py
+backup_2,shared/http/pagination.py,HTTP pagination query parameters,src/opsmesh/shared/http/pagination.py,keep,same pagination parameter parsing,backup/opsmesh/shared/http/pagination.py
+backup_2,shared/http/responses.py,build stable paginated responses,src/opsmesh/shared/http/responses.py,keep,same paginated response format,backup/opsmesh/shared/http/responses.py
+backup_2,shared/http/sse.py,frame SSE events with redaction,src/opsmesh/shared/http/sse.py,keep,same SSE framing duty,backup/opsmesh/shared/http/sse.py
+backup_2,shared/mail.py,stateless SMTP sending function,src/opsmesh/shared/mail.py,keep,same SMTP transport function,backup/opsmesh/shared/mail.py
+backup_2,shared/pagination.py,transport-independent pagination input,src/opsmesh/shared/pagination.py,keep,same neutral pagination input,backup/opsmesh/shared/pagination.py
+backup_2,shared/redis/__init__.py,package marker,src/opsmesh/shared/redis/__init__.py,keep,package marker for redis,backup/opsmesh/shared/redis/__init__.py
+backup_2,shared/redis/cache.py,discardable Redis JSON cache with locking,src/opsmesh/shared/redis/cache.py,keep,same cache responsibility,backup/opsmesh/shared/redis/cache.py
+backup_2,shared/redis/client.py,create and close Redis clients,src/opsmesh/shared/redis/client.py,keep,same Redis client factory,backup/opsmesh/shared/redis/client.py
+backup_2,shared/redis/keys.py,scoped Redis key construction,src/opsmesh/shared/redis/keys.py,keep,same key builder,backup/opsmesh/shared/redis/keys.py
+backup_2,shared/security/__init__.py,package marker,src/opsmesh/shared/security/__init__.py,keep,package marker for security,backup/opsmesh/shared/security/__init__.py
+backup_2,shared/security/egress.py,validate outbound URLs against policy,src/opsmesh/shared/security/egress.py,keep,same egress validation,backup/opsmesh/shared/security/egress.py
+backup_2,shared/security/rate_limits.py,Redis fixed-window rate limiter,src/opsmesh/shared/security/rate_limits.py,keep,same rate limiting primitive,backup/opsmesh/shared/security/rate_limits.py
+backup_2,shared/security/redaction.py,redact sensitive values from payloads,src/opsmesh/shared/security/redaction.py,keep,same redaction primitive,backup/opsmesh/shared/security/redaction.py
+backup_2,shared/security/secrets.py,authenticated encryption for secrets,src/opsmesh/shared/security/secrets.py,keep,same cipher responsibility,backup/opsmesh/shared/security/secrets.py
+backup_2,shared/utils.py,"canonical JSON, digests and safe coercions",src/opsmesh/shared/serialization.py,merge,serialization helpers move to serialization module,backup/opsmesh/shared/utils.py
+backup_2,shared/version.py,read installed distribution version,src/opsmesh/shared/version.py,keep,same version reader,backup/opsmesh/shared/version.py
+backup_2,workspaces/__init__.py,package marker,src/opsmesh/workspaces/__init__.py,keep,package marker for workspaces,backup/opsmesh/workspaces/__init__.py
+backup_2,workspaces/capabilities/__init__.py,package marker,src/opsmesh/workspaces/capabilities/__init__.py,keep,package marker for bindings,backup/opsmesh/workspaces/capabilities/__init__.py
+backup_2,workspaces/capabilities/models.py,capability binding and model connection tables,src/opsmesh/workspaces/capabilities/models.py,rewrite,bindings stay; connections move to model providers,backup/opsmesh/workspaces/capabilities/models.py
+backup_2,workspaces/capabilities/routes.py,binding and model connection routes,src/opsmesh/workspaces/capabilities/routes.py,rewrite,connection routes move to model providers,backup/opsmesh/workspaces/capabilities/routes.py
+backup_2,workspaces/capabilities/schemas.py,binding and connection request contracts,src/opsmesh/workspaces/capabilities/schemas.py,rewrite,connection schemas move to model providers,backup/opsmesh/workspaces/capabilities/schemas.py
+backup_2,workspaces/capabilities/service.py,manage bindings and encrypted connections,src/opsmesh/workspaces/capabilities/service.py,rewrite,connections and credentials split to new owners,backup/opsmesh/workspaces/capabilities/service.py
+backup_2,workspaces/members/__init__.py,package marker,src/opsmesh/workspaces/members/__init__.py,keep,package marker for members,backup/opsmesh/workspaces/members/__init__.py
+backup_2,workspaces/members/models.py,workspace member and invitation tables,src/opsmesh/workspaces/members/models.py,keep,same membership tables,backup/opsmesh/workspaces/members/models.py
+backup_2,workspaces/members/routes.py,workspace member and invitation routes,src/opsmesh/workspaces/members/routes.py,keep,same membership API,backup/opsmesh/workspaces/members/routes.py
+backup_2,workspaces/members/schemas.py,member role and invitation contracts,src/opsmesh/workspaces/members/schemas.py,keep,same membership contracts,backup/opsmesh/workspaces/members/schemas.py
+backup_2,workspaces/members/service.py,member roles and invitation handling,src/opsmesh/workspaces/members/service.py,keep,same membership operations,backup/opsmesh/workspaces/members/service.py
+backup_2,workspaces/models.py,workspace tenant table,src/opsmesh/workspaces/models.py,keep,same workspace table,backup/opsmesh/workspaces/models.py
+backup_2,workspaces/projects/__init__.py,package marker,src/opsmesh/workspaces/projects/__init__.py,keep,package marker for projects,backup/opsmesh/workspaces/projects/__init__.py
+backup_2,workspaces/projects/execution.py,assemble project configuration and authorize runs,src/opsmesh/workspaces/projects/execution.py,rewrite,kept and rewritten per V4 assembly contract,none
+backup_2,workspaces/projects/members/__init__.py,package marker,src/opsmesh/workspaces/projects/members/__init__.py,keep,package marker for project members,none
+backup_2,workspaces/projects/members/models.py,project member and invitation tables,src/opsmesh/workspaces/projects/members/models.py,keep,same project membership tables,backup/opsmesh/workspaces/projects/members.py
+backup_2,workspaces/projects/members/routes.py,project member and invitation routes,src/opsmesh/workspaces/projects/members/routes.py,keep,same project membership API,backup/opsmesh/workspaces/projects/members.py
+backup_2,workspaces/projects/members/schemas.py,project member role and invitation contracts,src/opsmesh/workspaces/projects/members/schemas.py,keep,same project membership contracts,backup/opsmesh/workspaces/projects/members.py
+backup_2,workspaces/projects/members/service.py,project role authorization and invitations,src/opsmesh/workspaces/projects/members/service.py,keep,same project membership operations,backup/opsmesh/workspaces/projects/members.py
+backup_2,workspaces/projects/models.py,project and execution association tables,src/opsmesh/workspaces/projects/models.py,keep,same project persistence tables,backup/opsmesh/workspaces/projects/models.py
+backup_2,workspaces/projects/routes.py,project CRUD plus run and session routes,src/opsmesh/workspaces/projects/routes.py,rewrite,"run, session and environment routes move to execution",backup/opsmesh/workspaces/projects/routes.py
+backup_2,workspaces/projects/schemas.py,project and execution request contracts,src/opsmesh/workspaces/projects/schemas.py,rewrite,execution command contracts move to execution runs,backup/opsmesh/workspaces/projects/schemas.py
+backup_2,workspaces/projects/service.py,project lifecycle and role resolution,src/opsmesh/workspaces/projects/service.py,rewrite,project authorization moves to members access module,backup/opsmesh/workspaces/projects/service.py
+backup_2,workspaces/routes.py,workspace CRUD routes,src/opsmesh/workspaces/routes.py,keep,same workspace API,backup/opsmesh/workspaces/routes.py
+backup_2,workspaces/schemas.py,workspace request and response contracts,src/opsmesh/workspaces/schemas.py,keep,same workspace contracts,backup/opsmesh/workspaces/schemas.py
+backup_2,workspaces/service.py,workspace lifecycle and permission checks,src/opsmesh/workspaces/service.py,rewrite,workspace authorization moves to members access module,backup/opsmesh/workspaces/service.py
+backup_2,workspaces/storage.py,prepare authorized project storage directories,src/opsmesh/resources/storage/filesystem.py,merge,project storage layout moves to resources storage,none
