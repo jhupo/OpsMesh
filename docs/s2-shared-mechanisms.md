@@ -270,3 +270,19 @@
 | 服务器（评审场景复验） | `python /verify/s2_round4_scenarios.py` | 正向：取消意图使在途 staged 的 START 被 SUPERSEDED；反向：仅确认准入复现评审故障；反向：旧空 token 行为回填旧值 |
 
 2 项问题状态：implemented + verified。
+
+## 13. 第五轮评审修复（提交 `872c7f48` 的 1 项测试问题）
+
+来源：对 `872c7f48` 的代码评审：新增的 `test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded` 只启动一个 publisher，其 TaskGroup 会阻塞领取循环，START 的决策实际发生在取消确认之后，无法证明“取消尚未确认时 START 已被阻止”；模拟恢复“只检查已确认取消”逻辑后该测试仍通过。源码功能未发现新缺陷。
+
+- **修复**：[`test_dispatch_outbox_postgres.py`](tests/temporal/test_dispatch_outbox_postgres.py) 按评审建议重写交错：publisher A 领取取消并阻塞在 `describe`（`entered_describe` 事件确认 RPC 已进入，替代固定 sleep）；主流程在取消在途期间提交 START；**第二个 publisher B** 在取消 RPC 释放前决策 START；在 `release.set()` 之前断言——取消行 `decided_at` 已置位、`published_at` 仍为 None、`client.calls == []`（START 已被阻止），然后再释放取消 RPC 并断言终态（取消幂等完成、START 记为 SUPERSEDED、workflow 从未启动）。
+- **验证**：服务器真实 PG 正向运行通过；**反向实证**：把 START 准入换回“仅 confirmed 取消”（评审的缺陷逻辑）后，重写后的测试失败于 `the start must be blocked before the cancel is confirmed`——证明该测试现在真正覆盖并发窗口，能抓住被评审的缺陷逻辑。
+
+| 环境 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地 Windows | `uv run ruff check tests src/opsmesh migrations scripts` | All checks passed |
+| 本地 Windows | `uv run pytest tests -q` | 65 passed, 20 skipped（PG 测试本地无连接跳过） |
+| 服务器（真实 PG 16 + Redis + Temporal 1.29.1） | `python -m pytest tests` | **85 passed, 0 failed, 0 skipped** |
+| 服务器（正/反向复验） | 直接调用重写后的测试函数 | 正向通过；缺陷逻辑下失败于预期断言 |
+
+1 项问题状态：implemented + verified。S2 至此经历五轮评审：8 + 5 + 3 + 2 + 1 项问题全部关闭，每轮均以真实 PostgreSQL/Redis/Temporal 复验并附必要的反向实证。

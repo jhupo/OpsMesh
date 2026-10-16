@@ -517,20 +517,21 @@ def test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded(
     database_sessions, async_database_sessions, database_engine
 ) -> None:
     """The cancel intent is durable before its delivery is attempted. A start
-    that commits while the cancel delivery is still in flight must be
-    superseded even though the cancel itself completes against a Workflow that
-    does not exist yet."""
+    that commits while the cancel delivery is still in flight must be blocked
+    before the cancel is confirmed, even though the cancel itself completes
+    against a Workflow that does not exist yet."""
     workflow_id = "cancel-in-flight-then-staged-run"
     with database_sessions() as session:
         stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
         session.commit()
 
     class BlockingDescribeClient:
-        """The cancel delivery blocks in describe; the workflow never exists."""
+        """The cancel delivery signals entry into describe, then blocks."""
 
         def __init__(self) -> None:
             self.calls: list[str] = []
             self.running: set[str] = set()
+            self.entered_describe = asyncio.Event()
             self.release = asyncio.Event()
 
         async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
@@ -542,6 +543,8 @@ def test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded(
 
             class Handle:
                 async def describe(self, **kwargs):  # noqa: ANN003, ANN201
+                    # The cancel decision is durable and its RPC is in flight.
+                    client.entered_describe.set()
                     await client.release.wait()
 
                     class Description:
@@ -556,23 +559,42 @@ def test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded(
 
     client = BlockingDescribeClient()
 
-    async def run_cancel_then_stage_start() -> int:
-        task = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
-        await asyncio.sleep(0.3)
-        # The cancel decision is durable; its delivery is still in flight.
+    async def run_interleaved() -> tuple[int, int]:
+        # Publisher A claims the cancel and blocks inside its RPC.
+        cancel_task = asyncio.create_task(
+            publisher(async_database_sessions, client).publish_pending()
+        )
+        await client.entered_describe.wait()
+        # The start commits while the cancel delivery is still in flight.
         with database_sessions() as session:
             stage_dispatch(session, start_request(workflow_id))
             session.commit()
+        # Publisher B decides the start before the cancel RPC is released.
+        start_task = asyncio.create_task(
+            publisher(async_database_sessions, client).publish_pending()
+        )
+        delivered_start = await start_task
+        # Assert before releasing the cancel RPC: the start must already be
+        # blocked by the durable cancel intent while the cancel is unconfirmed.
+        with Session(database_engine) as session:
+            cancel_row = session.scalar(
+                select(TemporalOutboxEntry).where(
+                    TemporalOutboxEntry.workflow_id == workflow_id,
+                    TemporalOutboxEntry.operation == DispatchOperation.CANCEL.value,
+                )
+            )
+        assert cancel_row is not None
+        assert cancel_row.decided_at is not None, "the cancel intent must be durable"
+        assert cancel_row.published_at is None, "the cancel must still be unconfirmed"
+        assert client.calls == [], "the start must be blocked before the cancel is confirmed"
         client.release.set()
-        return await task
+        return await cancel_task, delivered_start
 
-    delivered = asyncio.run(run_cancel_then_stage_start())
-    assert delivered == 2, "the cancel completes and the late start is superseded"
+    delivered_cancel, delivered_start = asyncio.run(run_interleaved())
+    assert delivered_cancel == 1, "the cancel completes against the absent workflow"
+    assert delivered_start == 1, "the late start is recorded as superseded"
     assert client.calls == [], "a workflow with a cancel intent must never be started"
-    cancel_row = load_cancel_row(database_engine, workflow_id)
-    assert cancel_row is not None
-    assert cancel_row.decided_at is not None, "the cancel intent must be durable"
-    assert cancel_row.published_at is not None
+    assert client.running == set()
 
 
 def test_signal_delivery_carries_the_stable_dispatch_identity(
