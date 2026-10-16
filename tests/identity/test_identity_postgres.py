@@ -9,17 +9,19 @@ opening.
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.governance.audit.service import AuditActor
 from opsmesh.governance.security_events.service import SecurityEventLog
 from opsmesh.identity.access import PlatformRole
-from opsmesh.identity.auth.service import AuthService
+from opsmesh.identity.auth.models import LoginSession
+from opsmesh.identity.auth.service import AuthService, token_digest
 from opsmesh.identity.errors import (
     AuthenticationError,
     InvalidCredentialsError,
@@ -35,9 +37,12 @@ from opsmesh.identity.provisioning import (
     UserIdentityDirectory,
 )
 from opsmesh.identity.quotas import service as quotas
+from opsmesh.identity.quotas.models import TokenReservation, UserTokenAccount
 from opsmesh.identity.users import service as users
+from opsmesh.identity.users.models import UserProfile
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.shared.pagination import PageParams
+from opsmesh.shared.security.secrets import SecretCipher
 
 ADMIN_EMAIL = "admin@example.com"
 MEMBER_EMAIL = "member@example.com"
@@ -61,7 +66,7 @@ def open_account(
     password: str,
     roles: frozenset[str] = MEMBER_ROLES,
 ) -> tuple[UUID, UUID]:
-    """Register one account; returns the user id and its first session id."""
+    """Register one account; returns the user id and its session token."""
     service = auth_service()
     with sessions() as session, session.begin():
         result = service.register(
@@ -75,7 +80,7 @@ def open_account(
                 roles=roles,
                 actor=AuditActor(actor_type="platform"),
             )
-    return result.user.user_id, result.session_id
+    return result.user.user_id, result.token
 
 
 def test_registration_login_and_authentication(database_sessions) -> None:
@@ -85,10 +90,31 @@ def test_registration_login_and_authentication(database_sessions) -> None:
             result = service.register(
                 session, email=MEMBER_EMAIL, display_name="Member", password="correct-horse"
             )
-            token = result.session_id
+            token = result.token
         identity = service.authenticate(session, token=token)
         assert identity.email == MEMBER_EMAIL
         assert identity.has_platform_role("member")
+
+
+def test_the_stored_session_never_equals_the_public_id_or_the_token(database_sessions) -> None:
+    """A read-only database leak must not yield a usable session token."""
+    service = auth_service()
+    user_id, token = open_account(
+        database_sessions, email=MEMBER_EMAIL, display_name="Member", password="correct-horse"
+    )
+    with database_sessions() as session:
+        rows = list(session.scalars(select(LoginSession)))
+        assert len(rows) == 1
+        stored = rows[0]
+        assert stored.id != token
+        assert stored.token_hash != str(token)
+        assert stored.token_hash == token_digest(token)
+        listed = service.list_sessions(session, user_id=user_id)
+        assert [row[0] for row in listed] == [stored.id]
+        # The public id alone cannot authenticate; only the token can.
+        with pytest.raises(AuthenticationError):
+            service.authenticate(session, token=stored.id)
+        assert service.authenticate(session, token=token).user_id == user_id
 
 
 def test_a_wrong_password_records_its_security_fact(database_sessions) -> None:
@@ -114,17 +140,18 @@ def test_a_wrong_password_records_its_security_fact(database_sessions) -> None:
 
 def test_an_expired_session_is_rejected_immediately(database_sessions) -> None:
     service = auth_service()
-    _user_id, session_id = open_account(
+    user_id, token = open_account(
         database_sessions, email=MEMBER_EMAIL, display_name="Member", password="correct-horse"
     )
-    from opsmesh.identity.auth.models import LoginSession
-
     with database_sessions() as session, session.begin():
-        login_session = session.get(LoginSession, session_id)
+        listed = service.list_sessions(session, user_id=user_id)
+        assert len(listed) == 1
+        public_id = listed[0][0]
+        login_session = session.get(LoginSession, public_id)
         assert login_session is not None
         login_session.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     with database_sessions() as session, pytest.raises(AuthenticationError):
-        service.authenticate(session, token=session_id)
+        service.authenticate(session, token=token)
 
 
 def test_a_revoked_session_is_rejected_immediately(database_sessions) -> None:
@@ -311,7 +338,7 @@ class RecordingOpening:
     ) -> OpenedInvitationAccount:
         self.calls.append({"email": email, "display_name": display_name})
         return OpenedInvitationAccount(
-            user_id=uuid4(), session_id=uuid4(), expires_at=datetime.now(UTC)
+            user_id=uuid4(), session_token=uuid4(), expires_at=datetime.now(UTC)
         )
 
 
@@ -419,3 +446,218 @@ def test_the_invitation_page_reports_its_total(database_sessions) -> None:
         )
     assert total == 3
     assert len(rows) == 2
+
+
+def test_an_accepted_invitation_is_never_revoked_or_resent(database_sessions) -> None:
+    """The accept terminal state wins: later transitions are refused, not merged."""
+    admin = AuditActor(actor_type="platform")
+    with database_sessions() as session, session.begin():
+        invitation, token = invitations.create_invitation(
+            session,
+            email="invitee@example.com",
+            invited_by=admin,
+            sender=RecordingSender(),
+        )
+        invitations.accept_invitation(
+            session,
+            token=token,
+            display_name="Invitee",
+            password="correct-horse",
+            account_opening=RecordingOpening(),
+        )
+    with database_sessions() as session, pytest.raises(InvitationStateError), session.begin():
+        invitations.revoke_invitation(session, invitation_id=invitation.id, actor=admin)
+    with database_sessions() as session, pytest.raises(InvitationStateError), session.begin():
+        invitations.resend_invitation(
+            session,
+            invitation_id=invitation.id,
+            invited_by=admin,
+            sender=RecordingSender(),
+        )
+    with database_sessions() as session:
+        refreshed = invitations.get_invitation(session, invitation.id)
+        assert invitations.effective_status(refreshed) == "accepted"
+        assert refreshed.send_count == 1
+
+
+TEST_CIPHER_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
+
+CONCURRENCY_TABLES = (
+    "temporal_dispatches",
+    "http_creation_receipts",
+    "audit_append_receipts",
+    "audit_chain_head",
+    "audit_events",
+    "audit_verifications",
+    "account_invitations",
+    "approval_requests",
+    "login_sessions",
+    "mail_intents",
+    "security_events",
+    "smtp_configurations",
+    "storage_reservations",
+    "token_reservations",
+    "user_credentials",
+    "user_quota_limits",
+    "user_storage_accounts",
+    "user_token_accounts",
+    "users",
+)
+
+
+def reset_tables(engine) -> None:
+    """Start one concurrency test from a known-empty database."""
+    with engine.begin() as connection:
+        connection.execute(text("TRUNCATE " + ", ".join(CONCURRENCY_TABLES)))
+
+
+@pytest.fixture
+def clean_concurrency_tables(database_engine):
+    """Empty the database around a concurrency test, before and after it."""
+    reset_tables(database_engine)
+    yield
+    reset_tables(database_engine)
+
+
+def concurrent_sessions(engine) -> sessionmaker[Session]:
+    """One sessionmaker per worker thread over the shared test engine."""
+    return sessionmaker(
+        bind=engine,
+        autoflush=False,
+        expire_on_commit=False,
+        info={
+            "dispatch_cipher": SecretCipher(key=TEST_CIPHER_KEY, key_id="test"),
+            "dispatch_trace_context": lambda: {},
+        },
+    )
+
+
+def race_demotions(
+    sessions: sessionmaker[Session], first_id: UUID, second_id: UUID
+) -> dict[str, str]:
+    """Demote both administrators at once; return each attempt's outcome."""
+    start = threading.Event()
+    outcomes: dict[str, str] = {}
+
+    def demote(user_id: UUID, name: str) -> None:
+        start.wait(timeout=10)
+        try:
+            with sessions() as session, session.begin():
+                users.set_platform_roles(
+                    session,
+                    user_id=user_id,
+                    roles=MEMBER_ROLES,
+                    actor=AuditActor(actor_type="platform"),
+                )
+            outcomes[name] = "demoted"
+        except ConflictError:
+            outcomes[name] = "refused"
+
+    threads = [
+        threading.Thread(target=demote, args=(first_id, "first")),
+        threading.Thread(target=demote, args=(second_id, "second")),
+    ]
+    for thread in threads:
+        thread.start()
+    start.set()
+    for thread in threads:
+        thread.join(timeout=30)
+    return outcomes
+
+
+def test_concurrent_demotion_cannot_empty_the_platform(
+    database_engine, clean_concurrency_tables
+) -> None:
+    """Two administrators demoting each other must not both be allowed.
+
+    The last-admin guard decides inside the locked administrator set, so the
+    second transaction sees the first one's committed change and is refused;
+    a per-target lock alone lets both pass and removes every administrator.
+    The race repeats because one round can serialize by timing alone and hide
+    the write-skew window the guard exists for.
+    """
+    sessions = concurrent_sessions(database_engine)
+    first_id, _token = open_account(
+        sessions, email=ADMIN_EMAIL, display_name="First", password="correct-horse",
+        roles=ADMIN_ROLES,
+    )
+    second_id, _token = open_account(
+        sessions, email="second-admin@example.com", display_name="Second",
+        password="correct-horse", roles=ADMIN_ROLES,
+    )
+    for round_index in range(3):
+        if round_index:
+            with sessions() as session, session.begin():
+                for user_id in (first_id, second_id):
+                    users.set_platform_roles(
+                        session,
+                        user_id=user_id,
+                        roles=ADMIN_ROLES,
+                        actor=AuditActor(actor_type="platform"),
+                    )
+        assert sorted(race_demotions(sessions, first_id, second_id).values()) == [
+            "demoted",
+            "refused",
+        ]
+    with sessions() as session:
+        active_admins = session.scalar(
+            select(func.count())
+            .select_from(UserProfile)
+            .where(
+                UserProfile.status == "active",
+                UserProfile.platform_roles.contains([users.PLATFORM_ADMINISTRATOR]),
+            )
+        )
+    assert active_admins == 1
+
+
+def test_concurrent_reservations_of_one_key_replay_one_reservation(
+    database_engine, clean_concurrency_tables
+) -> None:
+    """The same idempotency key reserves once, however many callers race."""
+    sessions = concurrent_sessions(database_engine)
+    user_id, _token = open_account(
+        sessions, email=MEMBER_EMAIL, display_name="Member", password="correct-horse"
+    )
+    start = threading.Event()
+    reservations: dict[str, object] = {}
+    errors: dict[str, str] = {}
+
+    def reserve(name: str) -> None:
+        start.wait(timeout=10)
+        try:
+            with sessions() as session, session.begin():
+                reservation = quotas.reserve_tokens(
+                    session,
+                    user_id=user_id,
+                    amount=400,
+                    idempotency_scope="run:race",
+                    idempotency_key="reserve-race-1",
+                )
+            reservations[name] = reservation.id
+        except Exception as exc:  # noqa: BLE001 - the race must not surface one
+            errors[name] = type(exc).__name__
+
+    threads = [
+        threading.Thread(target=reserve, args=("first",)),
+        threading.Thread(target=reserve, args=("second",)),
+    ]
+    for thread in threads:
+        thread.start()
+    start.set()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert errors == {}
+    assert reservations["first"] == reservations["second"]
+    with sessions() as session:
+        rows = list(
+            session.scalars(
+                select(TokenReservation).where(
+                    TokenReservation.idempotency_scope == "run:race"
+                )
+            )
+        )
+        account = session.get(UserTokenAccount, user_id)
+    assert len(rows) == 1
+    assert account is not None
+    assert account.reserved_tokens == 400

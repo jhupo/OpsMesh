@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.contracts import AuditVerificationExecution
@@ -112,8 +112,13 @@ def record_extension_event(
         "evidence_refs": list(evidence_refs),
     }
     scope = f"installation:{actor.installation_id}:invocation:{actor.invocation_id}"
-    # Sessions run with autoflush=False: flush so an earlier append in this
-    # same transaction is visible to the receipt lookup below.
+    input_digest = payload_digest(declared)
+    # The chain head lock is the serialization boundary of one append: the
+    # receipt is read under it so two concurrent appends of one key cannot
+    # both pass the lookup and race toward the unique constraint. The flush
+    # first makes an earlier append in this same transaction visible to the
+    # lookup, because sessions run with autoflush=False.
+    head = _chain_head(session)
     session.flush()
     existing = session.scalar(
         select(AuditAppendReceipt).where(
@@ -121,7 +126,6 @@ def record_extension_event(
             AuditAppendReceipt.idempotency_key == idempotency_key,
         )
     )
-    input_digest = payload_digest(declared)
     if existing is not None:
         if existing.input_digest != input_digest:
             raise ConflictError(
@@ -130,6 +134,7 @@ def record_extension_event(
         return existing, True
     event = _append_event(
         session,
+        head=head,
         actor=actor,
         action=action,
         target_type=target_type,
@@ -262,9 +267,20 @@ def _chain_head(session: Session) -> AuditChainHead:
     """Lock the singleton head, creating it on a chain that never started.
 
     The migration seeds the row; a database built by ``create_all`` (tests)
-    gets it here. Two concurrent first appends serialize on the primary key:
-    the loser sees the conflict and its caller retries.
+    gets it here. Creation runs under a transaction-scoped advisory lock:
+    without it two concurrent first appends both miss the row and race toward
+    the primary key, and the loser surfaces an IntegrityError instead of the
+    winner's receipt.
     """
+    head = session.scalar(
+        select(AuditChainHead).where(AuditChainHead.id == CHAIN_HEAD_ID).with_for_update()
+    )
+    if head is not None:
+        return head
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"audit-chain-head:{CHAIN_HEAD_ID}"},
+    )
     head = session.scalar(
         select(AuditChainHead).where(AuditChainHead.id == CHAIN_HEAD_ID).with_for_update()
     )
@@ -287,11 +303,16 @@ def _append_event(
     details: dict[str, object],
     evidence_refs: list[str],
     source: AuditSource,
+    head: AuditChainHead | None = None,
 ) -> AuditEvent:
-    """Advance the chain under the head row lock and append one event."""
-    head = _chain_head(session)
+    """Advance the chain under the head row lock and append one event.
+
+    ``head`` lets a caller that already holds the lock (the extension append
+    path) reuse it instead of taking it a second time.
+    """
+    locked_head = head if head is not None else _chain_head(session)
     event = AuditEvent(
-        sequence=head.last_sequence + 1,
+        sequence=locked_head.last_sequence + 1,
         occurred_at=datetime.now(UTC),
         actor_type=actor.actor_type,
         actor_id=actor.actor_id,
@@ -309,12 +330,12 @@ def _append_event(
         details=details,
         evidence_refs=list(evidence_refs),
         source=source,
-        previous_hash=head.last_hash,
+        previous_hash=locked_head.last_hash,
         event_hash="",
     )
-    event.event_hash = chain_digest(head.last_hash, event.payload_bytes())
+    event.event_hash = chain_digest(locked_head.last_hash, event.payload_bytes())
     session.add(event)
-    head.last_sequence = event.sequence
-    head.last_hash = event.event_hash
-    head.updated_at = datetime.now(UTC)
+    locked_head.last_sequence = event.sequence
+    locked_head.last_hash = event.event_hash
+    locked_head.updated_at = datetime.now(UTC)
     return event

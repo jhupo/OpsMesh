@@ -28,9 +28,15 @@ LAST_SEEN_REFRESH_SECONDS = 60
 
 @dataclass(frozen=True)
 class LoginResult:
-    """A freshly created session and the identity it authenticates."""
+    """A freshly created session and the identity it authenticates.
+
+    ``session_id`` is the public row identifier used by listings and
+    revocation; ``token`` is the secret the client presents as
+    ``X-Session-ID`` and is never stored, only its digest.
+    """
 
     session_id: UUID
+    token: UUID
     user: CurrentUser
     expires_at: datetime
 
@@ -189,17 +195,23 @@ class AuthService:
             login_session.revoked_at = now
 
     def _start_session(self, session: Session, *, user: CurrentUser) -> LoginResult:
+        # The public row id and the authentication token are distinct values:
+        # a read-only database leak must not yield a usable X-Session-ID, and
+        # listings and revocation address the public id only.
+        session_id = uuid4()
         token = uuid4()
         expires_at = datetime.now(UTC) + timedelta(seconds=self._session_ttl_seconds)
         session.add(
             LoginSession(
-                id=token,
+                id=session_id,
                 user_id=user.user_id,
                 token_hash=token_digest(token),
                 expires_at=expires_at,
             )
         )
-        return LoginResult(session_id=token, user=user, expires_at=expires_at)
+        return LoginResult(
+            session_id=session_id, token=token, user=user, expires_at=expires_at
+        )
 
     def _touch(self, session: Session, *, login_session: LoginSession, now: datetime) -> None:
         if (

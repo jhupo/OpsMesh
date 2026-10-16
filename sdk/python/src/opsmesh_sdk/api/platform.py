@@ -121,7 +121,11 @@ class PlatformMailIntentsClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/platform/mail/intents", query=query),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/platform/mail/intents",
+                query=query,
+            ),
             self._channel.context(),
         )
         return MailIntentPage.model_validate(response.body)
@@ -131,7 +135,7 @@ class PlatformMailIntentsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/platform/mail/intents",
+                path=f"{self._channel.api_root}/platform/mail/intents",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -140,7 +144,10 @@ class PlatformMailIntentsClient:
 
     async def read(self, intent_id: UUID) -> MailIntentView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/platform/mail/intents/{intent_id}"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/platform/mail/intents/{intent_id}",
+            ),
             self._channel.context(),
         )
         return MailIntentView.model_validate(response.body)
@@ -149,7 +156,7 @@ class PlatformMailIntentsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"/api/v1/platform/mail/intents/{intent_id}/cancel",
+                path=f"{self._channel.api_root}/platform/mail/intents/{intent_id}/cancel",
             ),
             self._channel.context(),
         )
@@ -160,7 +167,7 @@ class PlatformMailIntentsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"/api/v1/platform/mail/intents/{intent_id}/reconcile",
+                path=f"{self._channel.api_root}/platform/mail/intents/{intent_id}/reconcile",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -176,7 +183,7 @@ class PlatformMailSmtpClient:
 
     async def read(self) -> SmtpConfigurationView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/platform/mail/smtp"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/platform/mail/smtp"),
             self._channel.context(),
         )
         return SmtpConfigurationView.model_validate(response.body)
@@ -185,7 +192,7 @@ class PlatformMailSmtpClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PUT",
-                path="/api/v1/platform/mail/smtp",
+                path=f"{self._channel.api_root}/platform/mail/smtp",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -193,11 +200,16 @@ class PlatformMailSmtpClient:
         return SmtpConfigurationView.model_validate(response.body)
 
     async def test(self, request: TestMailRequest) -> MailIntentView:
-        """Register one administrator-triggered test mail for durable delivery."""
+        """Register one administrator-triggered test mail for durable delivery.
+
+The idempotency key carries the configuration revision: a retry of the
+same test replays its intent, while a test after the server or the
+credentials changed is a new operation instead of a stale replay of an
+older configuration."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/platform/mail/smtp/test",
+                path=f"{self._channel.api_root}/platform/mail/smtp/test",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),

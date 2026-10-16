@@ -53,10 +53,13 @@ class AcceptInvitationRequest(BaseModel):
 
 
 class AcceptInvitationResponse(BaseModel):
-    """The account and first session one accepted invitation produced."""
+    """The account and first session one accepted invitation produced.
+
+``session_token`` is the secret the new account presents as
+``X-Session-ID``; it is never stored, only its digest."""
 
     expires_at: datetime
-    session_id: UUID
+    session_token: UUID
     user_id: UUID
 
 
@@ -167,10 +170,14 @@ class InvitationPage(BaseModel):
 
 
 class SessionGrant(BaseModel):
-    """A session grant returned by registration and login."""
+    """A session grant returned by registration and login.
+
+``session_token`` is the secret the client presents as ``X-Session-ID``;
+it is shown once here and never stored, so a database leak alone cannot
+authenticate. The public row id appears in the session listings."""
 
     expires_at: datetime
-    session_id: UUID
+    session_token: UUID
     user: AuthenticatedUser
 
 
@@ -187,14 +194,17 @@ class IdentityAuthSessionsClient:
 
     async def list(self) -> list[SessionInfo]:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/auth/sessions"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/auth/sessions"),
             self._channel.context(),
         )
         return [SessionInfo.model_validate(item) for item in decode_array(response)]
 
     async def revoke(self, session_id: UUID) -> None:
         await self._channel.transport.send(
-            TransportRequest(method="DELETE", path=f"/api/v1/auth/sessions/{session_id}"),
+            TransportRequest(
+                method="DELETE",
+                path=f"{self._channel.api_root}/auth/sessions/{session_id}",
+            ),
             self._channel.context(),
         )
 
@@ -210,7 +220,7 @@ class IdentityAuthClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/auth/login",
+                path=f"{self._channel.api_root}/auth/login",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
@@ -220,7 +230,7 @@ class IdentityAuthClient:
     async def logout(self) -> None:
         """Revoke the presenting session; the identity channel stays available."""
         await self._channel.transport.send(
-            TransportRequest(method="POST", path="/api/v1/auth/logout"),
+            TransportRequest(method="POST", path=f"{self._channel.api_root}/auth/logout"),
             self._channel.context(),
         )
 
@@ -228,7 +238,7 @@ class IdentityAuthClient:
         await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/auth/password",
+                path=f"{self._channel.api_root}/auth/password",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
@@ -239,7 +249,7 @@ class IdentityAuthClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/auth/register",
+                path=f"{self._channel.api_root}/auth/register",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
@@ -270,7 +280,11 @@ class IdentityInvitationsClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/invitations", query=query),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/invitations",
+                query=query,
+            ),
             self._channel.context(),
         )
         return InvitationPage.model_validate(response.body)
@@ -280,7 +294,7 @@ class IdentityInvitationsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/invitations",
+                path=f"{self._channel.api_root}/invitations",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -292,7 +306,7 @@ class IdentityInvitationsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/invitations/accept",
+                path=f"{self._channel.api_root}/invitations/accept",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
@@ -301,7 +315,10 @@ class IdentityInvitationsClient:
 
     async def read(self, invitation_id: UUID) -> InvitationView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/invitations/{invitation_id}"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/invitations/{invitation_id}",
+            ),
             self._channel.context(),
         )
         return InvitationView.model_validate(response.body)
@@ -309,14 +326,20 @@ class IdentityInvitationsClient:
     async def resend(self, invitation_id: UUID) -> InvitationView:
         """Resend with a freshly rotated token; the delivered code stops working."""
         response = await self._channel.transport.send(
-            TransportRequest(method="POST", path=f"/api/v1/invitations/{invitation_id}/resend"),
+            TransportRequest(
+                method="POST",
+                path=f"{self._channel.api_root}/invitations/{invitation_id}/resend",
+            ),
             self._channel.context(),
         )
         return InvitationView.model_validate(response.body)
 
     async def revoke(self, invitation_id: UUID) -> InvitationView:
         response = await self._channel.transport.send(
-            TransportRequest(method="POST", path=f"/api/v1/invitations/{invitation_id}/revoke"),
+            TransportRequest(
+                method="POST",
+                path=f"{self._channel.api_root}/invitations/{invitation_id}/revoke",
+            ),
             self._channel.context(),
         )
         return InvitationView.model_validate(response.body)
@@ -330,14 +353,14 @@ class IdentityQuotasClient:
 
     async def read_current(self) -> QuotaView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/users/me/quotas"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/me/quotas"),
             self._channel.context(),
         )
         return QuotaView.model_validate(response.body)
 
     async def read(self, user_id: UUID) -> QuotaView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/users/{user_id}/quotas"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/{user_id}/quotas"),
             self._channel.context(),
         )
         return QuotaView.model_validate(response.body)
@@ -346,7 +369,7 @@ class IdentityQuotasClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PUT",
-                path=f"/api/v1/users/{user_id}/quotas",
+                path=f"{self._channel.api_root}/users/{user_id}/quotas",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -362,13 +385,13 @@ class IdentityUsersAvatarClient:
 
     async def delete(self) -> None:
         await self._channel.transport.send(
-            TransportRequest(method="DELETE", path="/api/v1/users/me/avatar"),
+            TransportRequest(method="DELETE", path=f"{self._channel.api_root}/users/me/avatar"),
             self._channel.context(),
         )
 
     async def read(self) -> bytes:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/users/me/avatar"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/me/avatar"),
             self._channel.context(),
         )
         return decode_binary(response)
@@ -377,7 +400,7 @@ class IdentityUsersAvatarClient:
         await self._channel.transport.send(
             TransportRequest(
                 method="PUT",
-                path="/api/v1/users/me/avatar",
+                path=f"{self._channel.api_root}/users/me/avatar",
                 headers={"content-type": content_type},
                 content=content,
             ),
@@ -411,14 +434,14 @@ class IdentityUsersClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/users", query=query),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users", query=query),
             self._channel.context(),
         )
         return UserPage.model_validate(response.body)
 
     async def read_current(self) -> UserProfileView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/users/me"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/me"),
             self._channel.context(),
         )
         return UserProfileView.model_validate(response.body)
@@ -427,7 +450,7 @@ class IdentityUsersClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PATCH",
-                path="/api/v1/users/me",
+                path=f"{self._channel.api_root}/users/me",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -436,7 +459,7 @@ class IdentityUsersClient:
 
     async def read(self, user_id: UUID) -> UserProfileView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/users/{user_id}"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/{user_id}"),
             self._channel.context(),
         )
         return UserProfileView.model_validate(response.body)
@@ -445,7 +468,7 @@ class IdentityUsersClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PATCH",
-                path=f"/api/v1/users/{user_id}",
+                path=f"{self._channel.api_root}/users/{user_id}",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),

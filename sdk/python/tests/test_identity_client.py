@@ -74,7 +74,7 @@ def test_login_posts_credentials_and_parses_the_grant() -> None:
         return httpx.Response(
             200,
             json={
-                "session_id": str(SESSION_ID),
+                "session_token": str(SESSION_ID),
                 "expires_at": "2026-11-15T00:00:00Z",
                 "user": {
                     "user_id": str(USER_ID),
@@ -95,7 +95,7 @@ def test_login_posts_credentials_and_parses_the_grant() -> None:
     assert captured["path"] == "/api/v1/auth/login"
     assert captured["session"] == "session-1"
     assert captured["body"] == {"email": "user@example.com", "password": "correct-horse"}
-    assert grant.session_id == SESSION_ID
+    assert grant.session_token == SESSION_ID
     assert grant.user.user_id == USER_ID
     assert grant.user.platform_roles == ["member"]
 

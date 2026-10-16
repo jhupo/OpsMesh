@@ -98,7 +98,7 @@ class InvitationAccountService:
         )
         return OpenedInvitationAccount(
             user_id=result.user.user_id,
-            session_id=result.session_id,
+            session_token=result.token,
             expires_at=result.expires_at,
         )
 

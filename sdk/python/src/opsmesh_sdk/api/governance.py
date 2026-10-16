@@ -173,14 +173,21 @@ class GovernanceApprovalsClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/governance/approvals", query=query),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/approvals",
+                query=query,
+            ),
             self._channel.context(),
         )
         return ApprovalPage.model_validate(response.body)
 
     async def read(self, approval_id: UUID) -> ApprovalRequestView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/governance/approvals/{approval_id}"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/approvals/{approval_id}",
+            ),
             self._channel.context(),
         )
         return ApprovalRequestView.model_validate(response.body)
@@ -193,7 +200,7 @@ class GovernanceApprovalsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"/api/v1/governance/approvals/{approval_id}/approve",
+                path=f"{self._channel.api_root}/governance/approvals/{approval_id}/approve",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -208,7 +215,7 @@ class GovernanceApprovalsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"/api/v1/governance/approvals/{approval_id}/reject",
+                path=f"{self._channel.api_root}/governance/approvals/{approval_id}/reject",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -250,7 +257,11 @@ class GovernanceAuditEventsClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/governance/audit/events", query=query),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/audit/events",
+                query=query,
+            ),
             self._channel.context(),
         )
         return AuditEventPage.model_validate(response.body)
@@ -260,7 +271,7 @@ class GovernanceAuditEventsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/governance/audit/events",
+                path=f"{self._channel.api_root}/governance/audit/events",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -269,7 +280,10 @@ class GovernanceAuditEventsClient:
 
     async def read(self, event_id: UUID) -> AuditEventView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/governance/audit/events/{event_id}"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/audit/events/{event_id}",
+            ),
             self._channel.context(),
         )
         return AuditEventView.model_validate(response.body)
@@ -286,7 +300,7 @@ class GovernanceAuditVerificationsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path="/api/v1/governance/audit/verifications",
+                path=f"{self._channel.api_root}/governance/audit/verifications",
                 body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
@@ -297,7 +311,7 @@ class GovernanceAuditVerificationsClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
-                path=f"/api/v1/governance/audit/verifications/{verification_id}",
+                path=f"{self._channel.api_root}/governance/audit/verifications/{verification_id}",
             ),
             self._channel.context(),
         )
@@ -341,14 +355,21 @@ class GovernanceSecurityEventsClient:
             if value is not None
         }
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path="/api/v1/governance/security-events", query=query),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/security-events",
+                query=query,
+            ),
             self._channel.context(),
         )
         return SecurityEventPage.model_validate(response.body)
 
     async def read(self, event_id: UUID) -> SecurityEventView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"/api/v1/governance/security-events/{event_id}"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/security-events/{event_id}",
+            ),
             self._channel.context(),
         )
         return SecurityEventView.model_validate(response.body)

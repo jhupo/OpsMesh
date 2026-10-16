@@ -324,12 +324,17 @@ class GroupChannel(Protocol):
     """The composing-client surface a generated group client calls through.
 
     The generated ``api`` groups never import the composing client: they
-    receive this channel, read its transport and ask for a fresh per-call
-    context that carries the caller's identity and cancellation scope.
+    receive this channel, read its transport, its runtime API root and ask
+    for a fresh per-call context that carries the caller's identity and
+    cancellation scope. ``api_root`` is the server's configured API prefix
+    (``OPSMESH_API_PREFIX``); generated resource paths are relative to it.
     """
 
     @property
     def transport(self) -> Transport: ...
+
+    @property
+    def api_root(self) -> str: ...
 
     def context(self) -> TransportContext: ...
 

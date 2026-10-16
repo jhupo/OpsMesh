@@ -78,6 +78,29 @@ def first_broken_sequence(
     return None
 
 
+def verify_segment(
+    events: Sequence[HashedEvent],
+    *,
+    from_sequence: int,
+    to_sequence: int,
+    previous_hash: str = GENESIS_HASH,
+    previous_sequence: int = 0,
+) -> tuple[int, int | None]:
+    """Verify one requested range and report its checked count and first break.
+
+    An intact prefix that stops before ``to_sequence`` is a break, not a
+    success: the first missing sequence is reported so a deleted tail can
+    never pass as a complete verification. The checked count never exceeds
+    the number of events actually recomputed.
+    """
+    broken = first_broken_sequence(
+        events, previous_hash=previous_hash, previous_sequence=previous_sequence
+    )
+    if broken is None and len(events) < to_sequence - from_sequence + 1:
+        broken = from_sequence + len(events)
+    return len(events), broken
+
+
 def _event_payload(event: HashedEvent) -> bytes:
     """The payload bytes one event's digest was computed over.
 

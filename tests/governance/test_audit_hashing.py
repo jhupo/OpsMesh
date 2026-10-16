@@ -12,6 +12,7 @@ from opsmesh.governance.audit.hashing import (
     chain_digest,
     first_broken_sequence,
     payload_digest,
+    verify_segment,
 )
 
 
@@ -126,6 +127,35 @@ def test_a_segment_continues_from_its_anchor() -> None:
 
 def test_an_empty_segment_is_intact() -> None:
     assert first_broken_sequence([]) is None
+
+
+def test_a_complete_requested_range_verifies() -> None:
+    events = build_chain(3)
+    assert verify_segment(events, from_sequence=1, to_sequence=3) == (3, None)
+
+
+def test_a_deleted_tail_breaks_the_segment_at_the_first_missing_sequence() -> None:
+    """An intact prefix shorter than the requested range is never a success."""
+    events = build_chain(3)
+    checked, broken = verify_segment(events[:1], from_sequence=1, to_sequence=3)
+    assert checked == 1
+    assert broken == 2
+    # An empty first batch breaks at the first requested sequence.
+    assert verify_segment([], from_sequence=1, to_sequence=3) == (0, 1)
+
+
+def test_a_missing_tail_after_an_anchor_breaks_at_the_first_missing_sequence() -> None:
+    events = build_chain(5)
+    anchor = events[2]
+    checked, broken = verify_segment(
+        events[3:4],
+        from_sequence=4,
+        to_sequence=5,
+        previous_hash=anchor.event_hash,
+        previous_sequence=anchor.sequence,
+    )
+    assert checked == 1
+    assert broken == 5
 
 
 def test_payload_digest_distinguishes_inputs() -> None:

@@ -115,11 +115,11 @@ def resend_invitation(
 
     The stored form is a one-way digest, so a resend rotates the code: the
     previously delivered token stops working the moment the new one is sent.
-    A closed or expired invitation is never resent.
+    A closed or expired invitation is never resent. The row is locked for the
+    whole transition, exactly like acceptance, so a resend can never register
+    a send for a state that changed while it waited.
     """
-    invitation = session.get(AccountInvitation, invitation_id)
-    if invitation is None:
-        raise NotFoundError("The invitation does not exist")
+    invitation = _locked_invitation(session, invitation_id)
     if invitation.status != INVITATION_PENDING:
         raise InvitationStateError(details={"status": invitation.status})
     if invitation.expires_at <= datetime.now(UTC):
@@ -157,10 +157,13 @@ def resend_invitation(
 def revoke_invitation(
     session: Session, *, invitation_id: UUID, actor: AuditActor
 ) -> AccountInvitation:
-    """Revoke one pending invitation; its token stops working immediately."""
-    invitation = session.get(AccountInvitation, invitation_id)
-    if invitation is None:
-        raise NotFoundError("The invitation does not exist")
+    """Revoke one pending invitation; its token stops working immediately.
+
+    The row is locked for the whole transition: a revoke that read a stale
+    pending snapshot could otherwise overwrite an acceptance that committed
+    while it waited, reporting a revocation of a consumed invitation.
+    """
+    invitation = _locked_invitation(session, invitation_id)
     if invitation.status != INVITATION_PENDING:
         raise InvitationStateError(details={"status": invitation.status})
     invitation.status = INVITATION_REVOKED
@@ -218,6 +221,23 @@ def accept_invitation(
 
 def get_invitation(session: Session, invitation_id: UUID) -> AccountInvitation:
     invitation = session.get(AccountInvitation, invitation_id)
+    if invitation is None:
+        raise NotFoundError("The invitation does not exist")
+    return invitation
+
+
+def _locked_invitation(session: Session, invitation_id: UUID) -> AccountInvitation:
+    """Read one invitation for a state transition under its row lock.
+
+    Acceptance, revocation and rotation all decide under this lock: a plain
+    read would let a later transition overwrite a state that committed while
+    the earlier transaction was still working from its own snapshot.
+    """
+    invitation = session.scalar(
+        select(AccountInvitation)
+        .where(AccountInvitation.id == invitation_id)
+        .with_for_update()
+    )
     if invitation is None:
         raise NotFoundError("The invitation does not exist")
     return invitation

@@ -156,12 +156,17 @@ def set_platform_roles(
 ) -> UserProfile:
     """Replace one account's platform roles; the last admin is protected."""
     validated = _validated_roles(roles)
+    # The administrator set is the serialization boundary of the last-admin
+    # guard: every role or status change locks it first, in one global order,
+    # so two transactions cannot each see the other administrator and both
+    # remove the last ones.
+    administrators = _lock_active_administrators(session)
     profile = _locked_profile(session, user_id)
     previous = frozenset(profile.platform_roles)
     if previous == validated:
         return profile
     _guard_last_administrator(
-        session, profile=profile, keeps_admin=PLATFORM_ADMINISTRATOR in validated
+        administrators, profile=profile, keeps_admin=PLATFORM_ADMINISTRATOR in validated
     )
     profile.platform_roles = sorted(validated)
     append_platform_event(
@@ -189,12 +194,13 @@ def set_status(
     """Enable or disable one account; a disabled account cannot authenticate."""
     if status not in USER_STATUSES:
         raise InvalidArgumentError("The user status is unknown")
+    administrators = _lock_active_administrators(session)
     profile = _locked_profile(session, user_id)
     if profile.status == status:
         return profile
     previous_status = profile.status
     if status == USER_STATUS_DISABLED:
-        _guard_last_administrator(session, profile=profile, keeps_admin=False)
+        _guard_last_administrator(administrators, profile=profile, keeps_admin=False)
     profile.status = status
     append_platform_event(
         session,
@@ -281,6 +287,36 @@ def _locked_profile(session: Session, user_id: UUID) -> UserProfile:
     return profile
 
 
+def _lock_active_administrators(session: Session) -> list[UserProfile]:
+    """Lock every active administrator, one row at a time in id order.
+
+    The per-id acquisition order is deliberate: a single ``FOR UPDATE``
+    query with ``ORDER BY`` locks rows in plan order, which two transactions
+    could traverse in opposite directions and deadlock. Locking the ids in
+    ascending order gives every role or status change the same boundary, and
+    PostgreSQL re-reads each row after a lock wait, so the guard below sees
+    the committed state of every administrator.
+    """
+    admin_ids = list(
+        session.scalars(
+            select(UserProfile.id)
+            .where(
+                UserProfile.status == USER_STATUS_ACTIVE,
+                UserProfile.platform_roles.contains([PLATFORM_ADMINISTRATOR]),
+            )
+            .order_by(UserProfile.id)
+        )
+    )
+    locked: list[UserProfile] = []
+    for admin_id in admin_ids:
+        row = session.scalar(
+            select(UserProfile).where(UserProfile.id == admin_id).with_for_update()
+        )
+        if row is not None:
+            locked.append(row)
+    return locked
+
+
 def _validated_roles(roles: frozenset[str]) -> frozenset[str]:
     allowed = {str(role) for role in PlatformRole}
     unknown = sorted(roles - allowed)
@@ -292,24 +328,29 @@ def _validated_roles(roles: frozenset[str]) -> frozenset[str]:
 
 
 def _guard_last_administrator(
-    session: Session, *, profile: UserProfile, keeps_admin: bool
+    administrators: list[UserProfile], *, profile: UserProfile, keeps_admin: bool
 ) -> None:
-    """Refuse a change that would leave the platform without an administrator."""
+    """Refuse a change that would leave the platform without an administrator.
+
+    ``administrators`` is the locked set, and every row in it was re-read
+    after any lock wait, so the decision uses each row's current values
+    instead of its identity: another administrator that a concurrent
+    transaction already demoted or disabled no longer counts, and two
+    transactions cannot both observe each other and both pass.
+    """
     if keeps_admin or PLATFORM_ADMINISTRATOR not in profile.platform_roles:
         return
     if profile.status != USER_STATUS_ACTIVE:
         return
-    other_admins = session.scalar(
-        select(func.count())
-        .select_from(UserProfile)
-        .where(
-            UserProfile.id != profile.id,
-            UserProfile.status == USER_STATUS_ACTIVE,
-            UserProfile.platform_roles.contains([PLATFORM_ADMINISTRATOR]),
-        )
+    for admin in administrators:
+        if admin.id == profile.id:
+            continue
+        if (
+            admin.status == USER_STATUS_ACTIVE
+            and PLATFORM_ADMINISTRATOR in admin.platform_roles
+        ):
+            return
+    raise ConflictError(
+        "The platform keeps at least one active administrator",
+        details={"user_id": str(profile.id)},
     )
-    if not other_admins:
-        raise ConflictError(
-            "The platform keeps at least one active administrator",
-            details={"user_id": str(profile.id)},
-        )

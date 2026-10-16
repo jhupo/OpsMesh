@@ -131,6 +131,14 @@ def decide(
     )
     if request is None:
         raise NotFoundError("The approval request does not exist")
+    if not may_read(request, decided_by):
+        # Authorization precedes every return branch: an idempotency key is
+        # not a read credential, so a replay by anyone else is refused
+        # exactly like a first decision would be.
+        raise ForbiddenError(
+            "Only the assigned approver may decide this request",
+            details={"approval_id": str(request.id)},
+        )
     if request.status != APPROVAL_PENDING:
         if (
             request.decision_idempotency_key == idempotency_key

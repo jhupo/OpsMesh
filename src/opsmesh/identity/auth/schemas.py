@@ -43,11 +43,16 @@ class AuthenticatedUser(BaseModel):
 
 
 class SessionGrant(BaseModel):
-    """A session grant returned by registration and login."""
+    """A session grant returned by registration and login.
+
+    ``session_token`` is the secret the client presents as ``X-Session-ID``;
+    it is shown once here and never stored, so a database leak alone cannot
+    authenticate. The public row id appears in the session listings.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    session_id: UUID
+    session_token: UUID
     expires_at: datetime
     user: AuthenticatedUser
 

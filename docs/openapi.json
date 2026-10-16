@@ -33,16 +33,16 @@
       },
       "AcceptInvitationResponse": {
         "additionalProperties": false,
-        "description": "The account and first session one accepted invitation produced.",
+        "description": "The account and first session one accepted invitation produced.\n\n``session_token`` is the secret the new account presents as\n``X-Session-ID``; it is never stored, only its digest.",
         "properties": {
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
           },
-          "session_id": {
+          "session_token": {
             "format": "uuid",
-            "title": "Session Id",
+            "title": "Session Token",
             "type": "string"
           },
           "user_id": {
@@ -53,7 +53,7 @@
         },
         "required": [
           "user_id",
-          "session_id",
+          "session_token",
           "expires_at"
         ],
         "title": "AcceptInvitationResponse",
@@ -1405,16 +1405,16 @@
       },
       "SessionGrant": {
         "additionalProperties": false,
-        "description": "A session grant returned by registration and login.",
+        "description": "A session grant returned by registration and login.\n\n``session_token`` is the secret the client presents as ``X-Session-ID``;\nit is shown once here and never stored, so a database leak alone cannot\nauthenticate. The public row id appears in the session listings.",
         "properties": {
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
           },
-          "session_id": {
+          "session_token": {
             "format": "uuid",
-            "title": "Session Id",
+            "title": "Session Token",
             "type": "string"
           },
           "user": {
@@ -1422,7 +1422,7 @@
           }
         },
         "required": [
-          "session_id",
+          "session_token",
           "expires_at",
           "user"
         ],
@@ -6022,7 +6022,7 @@
     },
     "/api/v1/platform/mail/smtp/test": {
       "post": {
-        "description": "Register one administrator-triggered test mail for durable delivery.",
+        "description": "Register one administrator-triggered test mail for durable delivery.\n\nThe idempotency key carries the configuration revision: a retry of the\nsame test replays its intent, while a test after the server or the\ncredentials changed is a new operation instead of a stale replay of an\nolder configuration.",
         "operationId": "platform.mail.smtp.test",
         "parameters": [
           {

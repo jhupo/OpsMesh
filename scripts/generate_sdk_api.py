@@ -91,7 +91,6 @@ class Operation:
     def method_name(self) -> str:
         return self.segments[-1]
 
-
 @dataclass
 class SubClient:
     name: str
@@ -145,6 +144,23 @@ def load_document(config: CodegenConfig) -> dict[str, Any]:
 
 def ref_name(reference: str) -> str:
     return reference.rsplit("/", 1)[-1]
+
+
+def _relative_path(path: str, prefix: str, *, where: str) -> str:
+    """Strip the exported API prefix so the path stays relative.
+
+    The generated clients prepend the runtime API root of their channel, so a
+    server that serves another ``OPSMESH_API_PREFIX`` is reachable without
+    regenerating. A path outside the declared prefix means the export and the
+    codegen configuration disagree, which is a generation error rather than a
+    silently wrong URL.
+    """
+    if not path.startswith(prefix):
+        raise GenerationError(
+            f"{where}: {path!r} is outside the declared API prefix {prefix!r}"
+        )
+    relative = path[len(prefix) :]
+    return relative if relative.startswith("/") else f"/{relative}"
 
 
 def python_type(schema: Mapping[str, Any], shared: Mapping[str, str], *, where: str) -> str:
@@ -298,6 +314,7 @@ def collect_operations(document: Mapping[str, Any], config: CodegenConfig) -> li
             binary_direction = config.binary.get(operation_id)
             if binary_direction not in (None, "request", "response"):
                 raise GenerationError(f"{where}: unknown binary direction {binary_direction!r}")
+            relative_path = _relative_path(path, config.default_prefix, where=where)
             body_model = None
             body_dump = ""
             if "requestBody" in operation and binary_direction != "request":
@@ -317,7 +334,7 @@ def collect_operations(document: Mapping[str, Any], config: CodegenConfig) -> li
                 Operation(
                     operation_id=operation_id,
                     method=method.upper(),
-                    path=path,
+                    path=relative_path,
                     description=operation.get("description", ""),
                     path_params=tuple(
                         build_parameter(item, shared, where=where)
@@ -478,8 +495,10 @@ def render_models(
 
 
 def render_request_call(operation: Operation, indent: int) -> list[str]:
-    path = operation.path
-    path_literal = f'f"{path}"' if operation.path_params else f'"{path}"'
+    # The resource path is relative; the channel supplies the runtime API root
+    # so one generated client serves any configured OPSMESH_API_PREFIX. Path
+    # parameters stay inside the same f-string.
+    path_literal = f'f"{{self._channel.api_root}}{operation.path}"'
     arguments = [("method", f'"{operation.method}"'), ("path", path_literal)]
     if operation.query_params:
         arguments.append(("query", "query"))

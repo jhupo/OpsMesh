@@ -133,16 +133,22 @@ def reserve_tokens(
     idempotency_scope: str,
     idempotency_key: str,
 ) -> TokenReservation:
-    """Hold one token upper bound; the same key replays the same reservation."""
+    """Hold one token upper bound; the same key replays the same reservation.
+
+    The key is re-checked under the account row lock: two concurrent
+    reservations of one key both see no receipt before either lock, so the
+    waiters must read the winner's committed reservation instead of creating
+    a duplicate that only the unique constraint would stop.
+    """
     if amount <= 0:
         raise InvalidArgumentError("A token reservation must be positive")
+    account = _locked_token_account(session, user_id)
     existing = _reservation_by_key(
         session, TokenReservation, scope=idempotency_scope, key=idempotency_key
     )
     if existing is not None:
         _require_same_input(existing.input_digest, {"amount": amount})
         return existing
-    account = _locked_token_account(session, user_id)
     limits = session.get(UserQuotaLimit, user_id)
     if limits is None:
         raise InvalidArgumentError("The user quota ledger is not initialized")
@@ -209,16 +215,21 @@ def reserve_storage(
     idempotency_scope: str,
     idempotency_key: str,
 ) -> StorageReservation:
-    """Hold one storage upper bound in bytes; the same key replays it."""
+    """Hold one storage upper bound in bytes; the same key replays it.
+
+    Like the token ledger, the key is re-checked under the account row lock
+    so a concurrent same-key reservation replays the committed reservation
+    instead of racing toward the unique constraint.
+    """
     if amount <= 0:
         raise InvalidArgumentError("A storage reservation must be positive")
+    account = _locked_storage_account(session, user_id)
     existing = _reservation_by_key(
         session, StorageReservation, scope=idempotency_scope, key=idempotency_key
     )
     if existing is not None:
         _require_same_input(existing.input_digest, {"amount": amount})
         return existing
-    account = _locked_storage_account(session, user_id)
     limits = session.get(UserQuotaLimit, user_id)
     if limits is None:
         raise InvalidArgumentError("The user quota ledger is not initialized")

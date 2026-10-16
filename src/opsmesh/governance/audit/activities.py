@@ -13,7 +13,7 @@ from opsmesh.governance.audit.contracts import (
     AuditVerificationProgress,
     VerifyAuditSegment,
 )
-from opsmesh.governance.audit.hashing import first_broken_sequence
+from opsmesh.governance.audit.hashing import verify_segment
 from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.governance.audit.service import (
     complete_verification,
@@ -43,8 +43,10 @@ class AuditActivities:
                 )
             )
             if command.from_sequence == 1:
-                broken = first_broken_sequence(events)
-                return AuditSegmentResult(checked_count=len(events), first_broken_sequence=broken)
+                checked, broken = verify_segment(
+                    events, from_sequence=command.from_sequence, to_sequence=command.to_sequence
+                )
+                return AuditSegmentResult(checked_count=checked, first_broken_sequence=broken)
             anchor = session.scalar(
                 select(AuditEvent).where(AuditEvent.sequence == command.from_sequence - 1)
             )
@@ -53,10 +55,14 @@ class AuditActivities:
                 return AuditSegmentResult(
                     checked_count=0, first_broken_sequence=command.from_sequence
                 )
-            broken = first_broken_sequence(
-                events, previous_hash=anchor.event_hash, previous_sequence=anchor.sequence
+            checked, broken = verify_segment(
+                events,
+                from_sequence=command.from_sequence,
+                to_sequence=command.to_sequence,
+                previous_hash=anchor.event_hash,
+                previous_sequence=anchor.sequence,
             )
-            return AuditSegmentResult(checked_count=len(events), first_broken_sequence=broken)
+            return AuditSegmentResult(checked_count=checked, first_broken_sequence=broken)
 
         async with self._sessions.begin() as session:
             return await session.run_sync(verify)

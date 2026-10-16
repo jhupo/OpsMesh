@@ -141,16 +141,28 @@ def test_smtp(
     user: CurrentUserDep,
     cipher: CipherDep,
 ) -> MailIntentView:
-    """Register one administrator-triggered test mail for durable delivery."""
+    """Register one administrator-triggered test mail for durable delivery.
+
+    The idempotency key carries the configuration revision: a retry of the
+    same test replays its intent, while a test after the server or the
+    credentials changed is a new operation instead of a stale replay of an
+    older configuration.
+    """
     require_platform_admin(user)
     with session_transaction(session):
+        configuration = service.get_smtp_configuration(session)
+        revision = (
+            configuration.updated_at.isoformat()
+            if configuration is not None
+            else "unconfigured"
+        )
         intent, _replayed = service.register_mail(
             session,
             source=PLATFORM_TEST_SOURCE,
             recipient=payload.recipient,
             subject=PLATFORM_TEST_SUBJECT,
             body=PLATFORM_TEST_BODY,
-            idempotency_key=f"smtp-test:{payload.recipient}",
+            idempotency_key=f"smtp-test:{payload.recipient}:{revision}",
             authorization=PlatformTestAuthorization(),
             cipher=cipher,
         )

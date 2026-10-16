@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from temporalio.client import Client
 from temporalio.worker import Worker
 
+from opsmesh.bootstrap.mail import mail_source_authorizations
 from opsmesh.bootstrap.resources import secret_cipher, temporal_database
 from opsmesh.bootstrap.temporal import connect_temporal
 from opsmesh.config import Settings
@@ -64,7 +65,7 @@ def build_feature_worker(
 ) -> Worker:
     """Register the feature Workflows and Activities of the current step."""
     audit_activities = AuditActivities(sessions)
-    mail_activities = MailActivities(cipher, sessions)
+    mail_activities = MailActivities(cipher, sessions, mail_source_authorizations())
     return Worker(
         client,
         task_queue=settings.temporal_task_queue,

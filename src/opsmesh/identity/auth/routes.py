@@ -62,7 +62,7 @@ def register(
             password=payload.password,
         )
     return SessionGrant(
-        session_id=result.session_id,
+        session_token=result.token,
         expires_at=result.expires_at,
         user=_grant_user(result.user),
     )
@@ -84,7 +84,7 @@ def login(
             auth_service.record_login_failure(session, email=payload.email)
         raise
     return SessionGrant(
-        session_id=result.session_id,
+        session_token=result.token,
         expires_at=result.expires_at,
         user=_grant_user(result.user),
     )

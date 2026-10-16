@@ -54,12 +54,16 @@ class AcceptInvitationRequest(BaseModel):
 
 
 class AcceptInvitationResponse(BaseModel):
-    """The account and first session one accepted invitation produced."""
+    """The account and first session one accepted invitation produced.
+
+    ``session_token`` is the secret the new account presents as
+    ``X-Session-ID``; it is never stored, only its digest.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     user_id: UUID
-    session_id: UUID
+    session_token: UUID
     expires_at: datetime
 
 

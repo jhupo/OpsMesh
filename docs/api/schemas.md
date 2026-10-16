@@ -55,25 +55,28 @@ The invitation token is the credential that opens the account.
 
 The account and first session one accepted invitation produced.
 
+``session_token`` is the secret the new account presents as
+``X-Session-ID``; it is never stored, only its digest.
+
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `user_id` | string (uuid) | 是 | `format="uuid"` |
-| `session_id` | string (uuid) | 是 | `format="uuid"` |
+| `session_token` | string (uuid) | 是 | `format="uuid"` |
 | `expires_at` | string (date-time) | 是 | `format="date-time"` |
 
 ```json
 {
   "additionalProperties": false,
-  "description": "The account and first session one accepted invitation produced.",
+  "description": "The account and first session one accepted invitation produced.\n\n``session_token`` is the secret the new account presents as\n``X-Session-ID``; it is never stored, only its digest.",
   "properties": {
     "expires_at": {
       "format": "date-time",
       "title": "Expires At",
       "type": "string"
     },
-    "session_id": {
+    "session_token": {
       "format": "uuid",
-      "title": "Session Id",
+      "title": "Session Token",
       "type": "string"
     },
     "user_id": {
@@ -84,7 +87,7 @@ The account and first session one accepted invitation produced.
   },
   "required": [
     "user_id",
-    "session_id",
+    "session_token",
     "expires_at"
   ],
   "title": "AcceptInvitationResponse",
@@ -1878,25 +1881,29 @@ One delegated send; the source comes from the verified invocation.
 
 A session grant returned by registration and login.
 
+``session_token`` is the secret the client presents as ``X-Session-ID``;
+it is shown once here and never stored, so a database leak alone cannot
+authenticate. The public row id appears in the session listings.
+
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
-| `session_id` | string (uuid) | 是 | `format="uuid"` |
+| `session_token` | string (uuid) | 是 | `format="uuid"` |
 | `expires_at` | string (date-time) | 是 | `format="date-time"` |
 | `user` | [AuthenticatedUser](schemas.md#schema-AuthenticatedUser) | 是 | — |
 
 ```json
 {
   "additionalProperties": false,
-  "description": "A session grant returned by registration and login.",
+  "description": "A session grant returned by registration and login.\n\n``session_token`` is the secret the client presents as ``X-Session-ID``;\nit is shown once here and never stored, so a database leak alone cannot\nauthenticate. The public row id appears in the session listings.",
   "properties": {
     "expires_at": {
       "format": "date-time",
       "title": "Expires At",
       "type": "string"
     },
-    "session_id": {
+    "session_token": {
       "format": "uuid",
-      "title": "Session Id",
+      "title": "Session Token",
       "type": "string"
     },
     "user": {
@@ -1904,7 +1911,7 @@ A session grant returned by registration and login.
     }
   },
   "required": [
-    "session_id",
+    "session_token",
     "expires_at",
     "user"
   ],

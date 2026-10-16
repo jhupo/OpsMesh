@@ -17,10 +17,14 @@ from sqlalchemy.orm import Session
 
 @dataclass(frozen=True)
 class OpenedInvitationAccount:
-    """The account and first session one accepted invitation produced."""
+    """The account and first session one accepted invitation produced.
+
+    ``session_token`` is the secret the new account presents; the public
+    session id never leaves the server.
+    """
 
     user_id: UUID
-    session_id: UUID
+    session_token: UUID
     expires_at: datetime
 
 

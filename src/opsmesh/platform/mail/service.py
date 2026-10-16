@@ -14,7 +14,7 @@ from typing import Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.service import AuditActor, append_platform_event
@@ -213,6 +213,11 @@ def register_mail(
 
     Returns the intent and whether this call replayed an earlier registration.
     A reused key with different content is a conflict, never a second mail.
+
+    Registration for one source on one day is serialized by a
+    transaction-scoped advisory lock: the same-key replay and the daily
+    admission both read their facts inside that boundary, so concurrent
+    registrations cannot oversubscribe the source or lose a replay.
     """
     if len(source) > MAX_SOURCE_LENGTH or not source:
         raise InvalidArgumentError("The mail source is unknown")
@@ -228,6 +233,7 @@ def register_mail(
     content_digest = payload_digest(
         {"subject": subject, "body": body, "recipient": recipient, "source_ref": source_ref}
     )
+    _lock_source_day(session, source=source)
     idempotency_scope = f"mail-source:{source}"
     existing = session.scalar(
         select(MailIntent).where(
@@ -313,26 +319,42 @@ def list_intents(
 
 
 def cancel_intent(session: Session, *, intent_id: UUID, actor: AuditActor) -> MailIntent:
-    """Cancel one intent that has not been sent; a sent mail cannot be recalled."""
-    intent = session.get(MailIntent, intent_id)
+    """Cancel one intent that has not been sent; a sent mail cannot be recalled.
+
+    The row is locked for the whole decision, exactly like a claim: a cancel
+    that read a stale ``pending`` snapshot could otherwise overwrite an
+    intent the worker already claimed, reporting a cancellation that never
+    stopped the send. An in-flight intent is refused; its outcome is settled
+    by the workflow cancellation path or by reconciliation, never by a
+    cancelled flag written over a live send.
+    """
+    intent = session.scalar(
+        select(MailIntent).where(MailIntent.id == intent_id).with_for_update()
+    )
     if intent is None:
         raise NotFoundError("The mail intent does not exist")
-    if intent.status != MAIL_PENDING:
-        raise ConflictError(
-            "The mail intent is no longer pending", details={"status": intent.status}
+    if intent.status == MAIL_PENDING:
+        intent.status = MAIL_CANCELLED
+        intent.cancelled_by_user_id = UUID(actor.actor_id) if actor.actor_id else None
+        append_platform_event(
+            session,
+            actor=actor,
+            action="platform.mail_cancelled",
+            target_type="mail_intent",
+            target_id=str(intent.id),
+            summary="Mail intent cancelled",
+            details={"source": intent.source, "recipient": intent.recipient},
         )
-    intent.status = MAIL_CANCELLED
-    intent.cancelled_by_user_id = UUID(actor.actor_id) if actor.actor_id else None
-    append_platform_event(
-        session,
-        actor=actor,
-        action="platform.mail_cancelled",
-        target_type="mail_intent",
-        target_id=str(intent.id),
-        summary="Mail intent cancelled",
-        details={"source": intent.source, "recipient": intent.recipient},
+        return intent
+    if intent.status == MAIL_SENDING:
+        raise ConflictError(
+            "The mail is being sent; its outcome must be reconciled, not cancelled",
+            code="mail_in_flight",
+            details={"status": intent.status},
+        )
+    raise ConflictError(
+        "The mail intent is no longer pending", details={"status": intent.status}
     )
-    return intent
 
 
 def reconcile_intent(
@@ -373,12 +395,14 @@ def reconcile_intent(
     return intent
 
 
-def mark_sending(session: Session, *, intent_id: UUID) -> MailIntent:
-    """Claim one intent for delivery.
+def claim_intent(session: Session, *, intent_id: UUID) -> MailIntent:
+    """Claim one intent for delivery under its row lock.
 
     A pending intent is claimed outright. An intent already claimed is only
-    re-claimed once its lease expired, which bounds the window in which a
-    crashed attempt could deliver twice; any other state is not claimable.
+    re-claimed once its lease expired; because a crash between the external
+    send and the outcome write leaves the outcome unknown, an expired claim
+    is withdrawn to ``needs_attention`` for the operator instead of being
+    delivered a second time. Any other state is not claimable.
     """
     intent = session.scalar(
         select(MailIntent).where(MailIntent.id == intent_id).with_for_update()
@@ -386,26 +410,31 @@ def mark_sending(session: Session, *, intent_id: UUID) -> MailIntent:
     if intent is None:
         raise NotFoundError("The mail intent does not exist")
     now = datetime.now(UTC)
-    if intent.status == MAIL_PENDING or (
-        intent.status == MAIL_SENDING
-        and intent.claimed_at is not None
-        and (now - intent.claimed_at).total_seconds() >= MAIL_CLAIM_LEASE_SECONDS
-    ):
-        pass
-    elif intent.status == MAIL_SENDING:
+    if intent.status == MAIL_PENDING:
+        intent.status = MAIL_SENDING
+        intent.attempts += 1
+        intent.claimed_at = now
+        return intent
+    if intent.status == MAIL_SENDING:
+        if (
+            intent.claimed_at is not None
+            and (now - intent.claimed_at).total_seconds() >= MAIL_CLAIM_LEASE_SECONDS
+        ):
+            # The previous attempt may already have delivered; a resend could
+            # duplicate the mail, so the outcome becomes the operator's to
+            # confirm and this claim records no new attempt.
+            intent.status = MAIL_NEEDS_ATTENTION
+            intent.outcome_unknown = True
+            intent.failure_reason = "attempt_uncertain"
+            return intent
         raise ConflictError(
             "The mail claim lease is still held", code="mail_claim_held"
         )
-    else:
-        raise ConflictError(
-            "The mail intent is not claimable",
-            code="mail_not_claimable",
-            details={"status": intent.status},
-        )
-    intent.status = MAIL_SENDING
-    intent.attempts += 1
-    intent.claimed_at = now
-    return intent
+    raise ConflictError(
+        "The mail intent is not claimable",
+        code="mail_not_claimable",
+        details={"status": intent.status},
+    )
 
 
 def decrypt_intent_body(intent: MailIntent, cipher: SecretCipher) -> str:
@@ -465,3 +494,18 @@ def mark_cancelled(session: Session, *, intent_id: UUID) -> MailIntent:
         intent.outcome_unknown = True
         intent.failure_reason = "cancelled_during_send"
     return intent
+
+
+def _lock_source_day(session: Session, *, source: str) -> None:
+    """Serialize one source's registrations for the current UTC day.
+
+    A transaction-scoped advisory lock needs no extra table and is released
+    by commit or rollback. The same-key replay check and the daily admission
+    count both run inside it, so concurrent registrations of one source see
+    each other's committed rows instead of racing on independent snapshots.
+    """
+    day = datetime.now(UTC).date().isoformat()
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"mail-source-day:{source}:{day}"},
+    )

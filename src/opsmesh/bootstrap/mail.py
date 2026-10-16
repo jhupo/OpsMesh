@@ -3,7 +3,9 @@
 The invitation check is invitation business; the durable mail registration is
 mail business. This assembly point is the only place both owners meet, so the
 server - not the caller - verifies that one mail really belongs to one
-pending invitation.
+pending invitation. The same admission contracts are re-checked by the
+delivery worker: registration-time admission alone cannot survive a revoked
+invitation or a rotated token while a mail waits in the queue.
 """
 
 from __future__ import annotations
@@ -15,7 +17,12 @@ from sqlalchemy.orm import Session
 from opsmesh.identity.invitations import service as invitations
 from opsmesh.identity.invitations.models import INVITATION_PENDING
 from opsmesh.platform.mail import service as mail
-from opsmesh.platform.mail.service import MailAuthorization, SourceScope
+from opsmesh.platform.mail.service import (
+    PLATFORM_TEST_SOURCE,
+    MailAuthorization,
+    PlatformTestAuthorization,
+    SourceScope,
+)
 from opsmesh.shared.errors import ConflictError, ForbiddenError
 from opsmesh.shared.security.secrets import SecretCipher
 
@@ -44,6 +51,18 @@ class InvitationMailAuthorization:
                 "The invitation is no longer pending",
                 details={"status": invitations.effective_status(invitation)},
             )
+
+
+def mail_source_authorizations() -> dict[str, MailAuthorization]:
+    """The admission contract of every registered mail source.
+
+    The delivery worker admits a source through the same contract that
+    registered it; a source without an entry here is never delivered.
+    """
+    return {
+        INVITATION_MAIL_SOURCE: InvitationMailAuthorization(),
+        PLATFORM_TEST_SOURCE: PlatformTestAuthorization(),
+    }
 
 
 class InvitationMailRegistrar:

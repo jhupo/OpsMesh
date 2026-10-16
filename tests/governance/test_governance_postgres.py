@@ -9,12 +9,13 @@ approval contract.
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.governance.approvals import service as approvals
 from opsmesh.governance.approvals.targets import (
@@ -22,7 +23,11 @@ from opsmesh.governance.approvals.targets import (
 )
 from opsmesh.governance.audit import service as audit
 from opsmesh.governance.audit.hashing import first_broken_sequence
-from opsmesh.governance.audit.models import AuditEvent, AuditVerification
+from opsmesh.governance.audit.models import (
+    AuditAppendReceipt,
+    AuditEvent,
+    AuditVerification,
+)
 from opsmesh.shared.errors import (
     ConflictError,
     ForbiddenError,
@@ -227,6 +232,94 @@ def test_a_verification_range_beyond_the_head_is_refused(database_sessions) -> N
         )
 
 
+GOVERNANCE_CONCURRENCY_TABLES = (
+    "temporal_dispatches",
+    "http_creation_receipts",
+    "audit_append_receipts",
+    "audit_chain_head",
+    "audit_events",
+    "audit_verifications",
+)
+
+
+def reset_governance_tables(engine) -> None:
+    """Start one concurrency test from a known-empty audit state."""
+    with engine.begin() as connection:
+        connection.execute(text("TRUNCATE " + ", ".join(GOVERNANCE_CONCURRENCY_TABLES)))
+
+
+@pytest.fixture
+def clean_concurrency_tables(database_engine):
+    """Empty the database around a concurrency test, before and after it."""
+    reset_governance_tables(database_engine)
+    yield
+    reset_governance_tables(database_engine)
+
+
+def test_concurrent_extension_appends_of_one_key_replay_one_event(
+    database_engine, clean_concurrency_tables
+) -> None:
+    """The receipt is decided under the chain head lock, never after it.
+
+    Two concurrent appends of one idempotency key both find no receipt before
+    either lock; the loser must read the winner's committed receipt instead of
+    appending a second event that only the unique constraint would stop.
+    """
+    sessions = sessionmaker(bind=database_engine, autoflush=False, expire_on_commit=False)
+    race_key = f"audit-key-race-{uuid4()}"
+    race_target = f"target-race-{uuid4()}"
+    start = threading.Event()
+    receipts: dict[str, object] = {}
+    replays: dict[str, bool] = {}
+    errors: dict[str, str] = {}
+
+    def append(name: str) -> None:
+        start.wait(timeout=10)
+        try:
+            with sessions() as session, session.begin():
+                receipt, replayed = audit.record_extension_event(
+                    session,
+                    actor=extension_actor(),
+                    action="invocation.completed",
+                    target_type="invocation",
+                    target_id=race_target,
+                    summary="Invocation finished",
+                    details={},
+                    evidence_refs=[],
+                    idempotency_key=race_key,
+                )
+            receipts[name] = receipt.id
+            replays[name] = replayed
+        except Exception as exc:  # noqa: BLE001 - the race must not surface one
+            errors[name] = type(exc).__name__
+
+    threads = [
+        threading.Thread(target=append, args=("first",)),
+        threading.Thread(target=append, args=("second",)),
+    ]
+    for thread in threads:
+        thread.start()
+    start.set()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert errors == {}
+    assert receipts["first"] == receipts["second"]
+    assert sorted(replays.values()) == [False, True]
+    with sessions() as session:
+        events = list(
+            session.scalars(
+                select(AuditEvent).where(AuditEvent.target_id == race_target)
+            )
+        )
+        receipt_rows = list(
+            session.scalars(
+                select(AuditAppendReceipt).where(AuditAppendReceipt.idempotency_key == race_key)
+            )
+        )
+    assert len(events) == 1
+    assert len(receipt_rows) == 1
+
+
 def test_only_the_assigned_approver_decides_once(database_sessions) -> None:
     approver = Subject(USER_ID)
     other = Subject(OTHER_USER_ID)
@@ -286,6 +379,46 @@ def test_only_the_assigned_approver_decides_once(database_sessions) -> None:
                 notifier=notifier,
             )
     assert notifier.calls == [{"approval_id": approval_id, "decision": "approved"}]
+
+
+def test_an_unrelated_replay_of_a_decision_is_refused(database_sessions) -> None:
+    """The idempotency key is not a read credential for another subject."""
+    approver = Subject(USER_ID)
+    stranger = Subject(OTHER_USER_ID)
+    notifier = RecordingNotifier()
+    with database_sessions() as session, session.begin():
+        request = approvals.create_request(
+            session,
+            kind="capability.publish",
+            target=ApprovalTarget(
+                target_type="capability_version", target_id="target-1"
+            ),
+            title="Publish expert",
+            summary="Publish one expert version",
+            details={"version": "1.0.0"},
+            approver_user_id=USER_ID,
+        )
+        approval_id = request.id
+    with database_sessions() as session, session.begin():
+        approvals.decide(
+            session,
+            approval_id=approval_id,
+            decision="approved",
+            decided_by=approver,
+            reason="looks good",
+            idempotency_key="decision-key-01",
+            notifier=notifier,
+        )
+    with database_sessions() as session, session.begin(), pytest.raises(ForbiddenError):
+        approvals.decide(
+            session,
+            approval_id=approval_id,
+            decision="approved",
+            decided_by=stranger,
+            reason="not mine",
+            idempotency_key="decision-key-01",
+            notifier=notifier,
+        )
 
 
 def test_the_same_approval_target_replays_its_request(database_sessions) -> None:

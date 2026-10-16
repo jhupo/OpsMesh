@@ -198,6 +198,6 @@ def accept_invitation(
         )
     return AcceptInvitationResponse(
         user_id=opened.user_id,
-        session_id=opened.session_id,
+        session_token=opened.session_token,
         expires_at=opened.expires_at,
     )
