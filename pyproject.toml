@@ -69,7 +69,7 @@ dev = [
 package = true
 
 [tool.uv.workspace]
-members = ["operator"]
+members = ["operator", "sdk/python"]
 
 [tool.uv.sources]
 opsmesh-operator = { workspace = true }
@@ -121,12 +121,12 @@ extra-standard-library = ["operator"]
 [tool.mypy]
 python_version = "3.11"
 platform = "linux"
-mypy_path = ["src", "operator"]
+mypy_path = ["src", "operator", "sdk/python/src"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-files = ["src/opsmesh"]
+files = ["src/opsmesh", "sdk/python/src/opsmesh_sdk"]
 
 [tool.importlinter]
 root_package = "opsmesh"
@@ -220,6 +220,13 @@ source_modules = [
     "opsmesh.shared", "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
 ]
 forbidden_modules = ["opsmesh.bootstrap"]
+
+[[tool.importlinter.contracts]]
+id = "v4-server-does-not-import-sdk"
+name = "The server never imports the independent SDK"
+type = "forbidden"
+source_modules = ["opsmesh"]
+forbidden_modules = ["opsmesh_sdk"]
 
 [[tool.importlinter.contracts]]
 id = "production-no-test-framework"

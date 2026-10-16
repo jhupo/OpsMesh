@@ -1,0 +1,81 @@
+# OpsMesh SDK 分组与代码生成映射
+
+平台 routes/schema 导出稳定 `operation_id` 的 OpenAPI 后，按本配置生成
+`src/opsmesh_sdk/api/*.py` 业务客户端与 DTO。本文件是生成的唯一输入约定；
+S3 只交付映射规则与传输合同，业务分组随对应服务端步骤生成，不在本步宣称
+未实现的业务 API 可用。
+
+## 生成边界
+
+- 生成物只放 `src/opsmesh_sdk/api/`，手写稳定合同不改：`values.py`、
+  `errors.py`、`manifest.py`、`transport/`、`extensions/`、`host/`。
+- 生成客户端可导入 `transport.contracts`、`errors`、`values`；不得反向导入
+  `client`、`context`、`development`。
+- 纯值类型经 `[shared_values]` 映射复用，不复制手写 DTO。
+- API 变更须重新导出平台 OpenAPI 并做一致性检查后才允许提交生成物。
+
+## [openapi]
+
+source = "docs/openapi.json" # 由 scripts/export_api_docs.py 生成
+default_prefix = "/api/v1"
+error_model = "ErrorResponse"
+
+## [[clients]]
+
+每个分组对应一个资源族；`operation_id` 前缀决定归属，方法名取前缀之后的
+稳定动作（list/get/create/update/delete 等）。
+
+| 分组 | operation_id 前缀 | 目标文件 |
+| --- | --- | --- |
+| identity | identity | api/identity.py |
+| workspaces | workspaces | api/workspaces.py |
+| capabilities | capabilities | api/capabilities.py |
+| resources | resources | api/resources.py |
+| execution | execution | api/execution.py |
+| orchestration | orchestration | api/orchestration.py |
+| extensions | extensions | api/extensions.py |
+| channels | channels | api/channels.py |
+| governance | governance | api/governance.py |
+| platform | platform | api/platform.py |
+
+## [[pagination]]
+
+cursor_parameter = "cursor"
+cursor_field = "next_cursor"
+page_field = "items"
+
+## [[streaming]]
+
+event_cursor_header = "Last-Event-ID"
+sse_content_type = "text/event-stream"
+max_idle_seconds = 300
+
+## [[shared_values]]
+
+纯值映射：生成 DTO 中同名同义字段直接复用 SDK 手写类型，不生成副本。
+
+| 类型 | 来源 |
+| --- | --- |
+| ResourceRef | opsmesh_sdk.values |
+| ScopeRef | opsmesh_sdk.values |
+| Cursor | opsmesh_sdk.values |
+| Page | opsmesh_sdk.values |
+| Usage | opsmesh_sdk.values |
+| IdempotencyKey | opsmesh_sdk.values |
+| TraceContext | opsmesh_sdk.values |
+| FlowRunRef | opsmesh_sdk.values |
+
+## [[errors]]
+
+统一错误响应体映射到 `opsmesh_sdk.errors` 的类型化错误：
+
+| error.code | SDK 错误 |
+| --- | --- |
+| unauthenticated | AuthenticationError |
+| permission_denied | AuthorizationError |
+| not_found | NotFoundError |
+| validation_failed | ValidationError |
+| conflict | ConflictError |
+| rate_limited | RateLimitError |
+| needs_attention | UnknownEffectError |
+| unavailable | TransportError |
