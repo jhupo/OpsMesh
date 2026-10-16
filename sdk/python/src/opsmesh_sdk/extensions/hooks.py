@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from opsmesh_sdk.manifest import HookFailurePolicy, HookStage
 
@@ -33,9 +33,12 @@ class Patch(BaseModel):
     decision: Literal["patch"] = "patch"
     fields: dict[str, JsonValue] = Field(min_length=1)
 
-    def __post_init__(self) -> None:
-        if len(self.fields) > MAX_PATCH_FIELDS:
+    @field_validator("fields")
+    @classmethod
+    def enforce_field_bound(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if len(value) > MAX_PATCH_FIELDS:
             raise ValueError(f"a hook patches at most {MAX_PATCH_FIELDS} fields")
+        return value
 
 
 class Block(BaseModel):

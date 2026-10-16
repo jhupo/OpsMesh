@@ -7,9 +7,11 @@ import json
 import sys
 from pathlib import Path
 
+from pydantic import JsonValue
+
 from opsmesh_sdk.development.build import build_package
 from opsmesh_sdk.development.runner import ContractRunner
-from opsmesh_sdk.extensions.operations import Operation, declare_operation
+from opsmesh_sdk.extensions.operations import Operation, OperationResult, declare_operation
 from opsmesh_sdk.manifest import PackageManifest, validate_manifest
 
 
@@ -61,8 +63,8 @@ def _fixture_operations(manifest: PackageManifest) -> dict[str, Operation]:
             permissions=operation.permissions,
         )
 
-        async def handler(arguments: dict[str, object]) -> dict[str, object]:
-            return {"checked": True, "arguments": arguments}
+        async def handler(arguments: dict[str, JsonValue]) -> OperationResult:
+            return OperationResult(value={"checked": True, "arguments": arguments}, effects=())
 
         operations[operation.export_id] = declared(handler)
     return operations

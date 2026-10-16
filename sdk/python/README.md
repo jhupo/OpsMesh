@@ -59,11 +59,13 @@ manifest = validate_manifest(
 ## 开发工具
 
 ```bash
-opsmesh-sdk validate ./my-package   # 校验 manifest 与声明
-opsmesh-sdk build ./my-package      # 导出 schema、计算摘要并打包
+opsmesh-sdk validate ./my-package/manifest.json   # 校验 manifest 与声明
+opsmesh-sdk build ./my-package --target ./my-package.zip
+opsmesh-sdk test ./my-package/manifest.json       # 运行声明的合同检查
 ```
 
-构建只打包声明与源码，不执行包代码。
+`validate` 和 `test` 接收 manifest 文件路径，`build` 接收包源码目录并需要
+`--target` 指定产物路径。构建只打包声明与源码，不执行包代码。
 
 ## 依赖合同
 

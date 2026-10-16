@@ -103,6 +103,9 @@ class JsonSchema(BaseModel):
         return schema
 
     def validate_instance(self, instance: JsonValue) -> None:
+        """Validate one instance; an empty declaration constrains nothing."""
+        if not self.properties and not self.required:
+            return
         Draft202012Validator(self.model_dump_schema()).validate(instance)
 
 

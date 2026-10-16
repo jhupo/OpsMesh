@@ -38,9 +38,7 @@ class ContractRunner:
         if operation is None:
             raise KeyError(f"no declared operation {export_id!r}")
         result = await operation.invoke(arguments)
-        if result is None or isinstance(result, dict | list | str | int | float | bool):
-            return result
-        return str(result)
+        return result.value
 
 
 __all__ = ["MAX_RUN_SECONDS", "ContractRunner"]

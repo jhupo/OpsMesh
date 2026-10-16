@@ -17,12 +17,12 @@ flow 纯值、HTTP/宿主传输合同、包构建与代码生成工具。服务�
 | `src/opsmesh_sdk/values.py` | 中性值类型 | `ResourceRef`/`ScopeRef`/`Cursor`/`Page`/`ContentBlock`/`Usage`/`IdempotencyKey`/`TraceContext`/`FlowRunRef` |
 | `src/opsmesh_sdk/errors.py` | 类型化错误与稳定 code | `OpsMeshError` 及 11 个子类、`error_for_code()` |
 | `src/opsmesh_sdk/manifest.py` | 包声明合同 | `PackageManifest`、`validate_manifest()`、`JsonSchema`、`HookStage`、`EffectKind`、`Permission` |
-| `src/opsmesh_sdk/extensions/operations.py` | operation 声明与结果封套 | `declare_operation()`、`Operation`、`OperationResult`、`cancelled_outcome()` |
+| `src/opsmesh_sdk/extensions/operations.py` | operation 声明与结果封套 | `declare_operation()`、`Operation`（invoke 强制封套 + 输出 schema 校验）、`OperationResult`、`cancelled_outcome()` |
 | `src/opsmesh_sdk/extensions/hooks.py` | 钩子链决策合同 | `Continue`/`Patch`/`Block`、`HookInput`、`HookBinding`、`validate_decision()` |
 | `src/opsmesh_sdk/extensions/events.py` | 事件封套与订阅需求 | `EventEnvelope`（`deduplication_key()`）、`EventFilter`、`EventSubscriptionNeed` |
 | `src/opsmesh_sdk/extensions/tools.py` | operation→工具 schema 适配 | `tool_schema_for_operation()`、`ToolSchema`/`ToolContent` |
-| `src/opsmesh_sdk/extensions/channels.py` | 厂商验签与规范消息 | `SignatureVerifier`（重放窗口）、`NormalizedMessage` |
-| `src/opsmesh_sdk/transport/contracts.py` | 请求/响应/流/取消合同 | `TransportRequest`/`TransportResponse`/`StreamChunk`/`CancellationScope`/`TransportContext`/`Transport`、`require_session()` |
+| `src/opsmesh_sdk/extensions/channels.py` | 厂商验签与规范消息 | `SignatureVerifier`（HMAC-SHA256 验签 + 重放窗口）、`InboundMessage`、`NormalizedMessage` |
+| `src/opsmesh_sdk/transport/contracts.py` | 请求/响应/流/取消合同 | `TransportRequest`/`TransportResponse`/`StreamChunk`/`CancellationScope`/`TransportContext`/`Transport`、`require_session()`、`build_call_headers()`、`resolve_timeout()`、`send_cancellable()` |
 | `src/opsmesh_sdk/transport/http.py` | HTTP 传输 | `HttpTransport`（X-Session-ID、幂等头、超时/错误映射）、`parse_error_payload()` |
 | `src/opsmesh_sdk/transport/host.py` | 宿主委托传输 | `DelegationIdentity`、`HostTransport`（拒绝调用方伪造委托头） |
 | `src/opsmesh_sdk/transport/streams.py` | 有界 SSE 读取 | `EventStreamReader`（游标续读、空闲上界）、`parse_sse_event()` |
@@ -39,9 +39,9 @@ flow 纯值、HTTP/宿主传输合同、包构建与代码生成工具。服务�
 | `src/opsmesh_sdk/development/testing.py` | 合同 fixture 与可记录宿主替身 | `RecordingHostClient`、`ContractFixtures`、`hook_input()`、`invocation_context()` |
 | `src/opsmesh_sdk/development/cli.py` | 作者 CLI | `main()`：validate/build/test |
 | `src/opsmesh_sdk/api/__init__.py` | 生成包标记（业务分组随 S4+ 生成） | — |
-| `tests/test_client_contracts.py` | 传输合同测试（httpx MockTransport） | 12 项 |
-| `tests/test_extension_contracts.py` | 扩展声明测试 | 15 项 |
-| `tests/test_host_delegation.py` | 宿主委托测试 | 9 项 |
+| `tests/test_client_contracts.py` | 传输合同测试（httpx MockTransport/异步替身） | 21 项 |
+| `tests/test_extension_contracts.py` | 扩展声明测试 | 23 项 |
+| `tests/test_host_delegation.py` | 宿主委托测试 | 14 项 |
 
 工程合同同步修改（AGENTS.md：实施时核对受影响工程文件）：
 
@@ -144,3 +144,111 @@ JsonSchema 导出/再入往返稳定。
     流程引擎一起实现，S10 前不得宣称可用。
   - 真实 HTTP/宿主传输的产品行为（真实服务端、Session、取消、游标续读）
     随 S7 集成验收。
+
+## 5. 评审修复（提交 `c4123305` 的 8 项问题 + README 不一致）
+
+对 `c4123305` 的正式评审指出 3 项 P1 与 5 项 P2 安全/合同缺口，全部在本轮
+关闭；每项修复均以“恢复缺陷逻辑→对应测试必须失败”反向实证。
+
+### 5.1 [P1] 流式委托绕过身份伪造检查
+
+`HostTransport.stream()` 原先直接进入 `EventStreamReader`，后者让
+`context.identity_headers` 覆盖宿主身份，伪造 `INVOCATION_HEADER` 的流请求
+可以成功。修复：新增 `transport/contracts.py::build_call_headers()` 统一
+send/stream 的头装配——调用方 `request.headers` 与 `context.identity_headers`
+均不得覆盖传输声明的受保护头（http：`X-Session-ID`，可由 context 替换；
+host：全部 7 个委托头，一律不可覆盖），违规抛 `SecurityError`；
+`EventStreamReader` 增加 `protected_headers`/`overridable_headers` 参数，
+由所属传输注入。反向实证：移除 host reader 的 protected 后
+`test_delegation_stream_rejects_a_forged_invocation_header` 失败
+（DID NOT RAISE SecurityError）。
+
+### 5.2 [P1] `SignatureVerifier` 实际没有验证签名
+
+`InboundMessage` 无签名字段，`verify()` 丢弃 secret 只查时间窗，任意新鲜
+未签名消息返回 True。修复：`InboundMessage` 增加 `signature` 字段；
+`verify(message, *, secret, now_unix)` 实现 HMAC-SHA256：
+`HMAC(secret, delivered_at_unix || "." || raw_body)` 十六进制，常数时间
+比较；未知算法在构造时 fail closed（`SUPPORTED_SIGNATURE_ALGORITHMS`）。
+厂商特定方案（如 ed25519）随 S11 真实协议扩展本合同，不静默跳过验签。
+反向实证：移除密码学校验后，篡改 body/伪造签名/错误 secret 三个测试失败。
+
+### 5.3 [P1] deadline 没有真正传递到 HTTP 超时
+
+`CancellationScope` 只保存 deadline 不计算剩余时间；HTTP 用请求自身
+timeout，SSE 用固定 300s。修复：
+
+- `CancellationScope` 以 `time.monotonic()` 记录起点，新增
+  `remaining_seconds()`/`expired`；`ensure_active()` 在过期时抛
+  `TimeoutError`；deadline 非正数构造期拒绝。
+- 新增 `contracts.py::resolve_timeout()`（http/host 共用，消除两处重复
+  实现）：有效超时 = min(请求 timeout, 剩余 deadline)。
+- 新增 `contracts.py::send_cancellable()`：请求与取消 future 竞速，
+  `cancel()` 立即中断在途请求（含 SSE 逐行读取）。
+- SSE 空闲上界取 min(300s, 剩余 deadline)；read 超时且 deadline 已过期时
+  映射为 `TimeoutError` 而非 `TransportError`。
+- 取消等待改为“注册式 future”（`register_cancellation`），不再在 scope 上
+  保存跨事件循环的 `asyncio.Event`——评审前发现的既有用法（同一
+  TransportContext 跨两个 `asyncio.run`）会直接崩溃。
+  反向实证：`resolve_timeout` 恢复缺陷后客户端/宿主两个 deadline 测试均
+  失败；`_idle_bound` 恢复缺陷后 SSE deadline 测试失败。
+
+### 5.4 [P2] Operation 输出 schema 和结果大小限制没有在执行入口生效
+
+`invoke()` 只校验输入，裸返回整数也成功。修复：`invoke()` 强制 handler
+返回 `OperationResult` 封套（否则 `ValidationError`），并校验
+`result.value` against 声明的 `output_schema`；体积上界与
+needs_attention/effects 一致性由封套构造保证。`JsonSchema` 空声明
+（无 properties 且无 required）释义为“不约束”，未声明 schema 的
+operation 不再拒绝一切参数/输出。同步更新 `ContractRunner`（解包 value）、
+CLI fixture handler 与测试。反向实证：移除封套/输出校验后两个测试失败。
+
+### 5.5 [P2] Patch 字段数量限制无效
+
+Pydantic 模型上的 `__post_init__` 永不执行，33 个字段仍通过。修复：改用
+`field_validator("fields")` 强制 ≤ `MAX_PATCH_FIELDS`。反向实证：恢复
+“不检查”后测试 DID NOT RAISE。
+
+### 5.6 [P2] `TransportRequest.headers` 是公开字段但没有发送
+
+三种传输均未合并 `request.headers`，自定义头静默丢失。修复：
+`build_call_headers()` 以“调用方头 → 传输身份 → context 身份 → trace”
+顺序合并；受保护身份头由调用方提供即 `SecurityError`（见 5.1）。
+反向实证：去掉合并后 http send/http stream/host stream 三个自定义头
+断言失败。
+
+### 5.7 [P2] `parent_invocation_id` 保存但没有传输
+
+修复：新增 `X-OpsMesh-Parent-Invocation-Id` 委托头并纳入
+`_FORBIDDEN_CALLER_HEADERS`；根调用不带头。测试覆盖父子链与缺失两种
+情形。反向实证：移除父头后父子链测试失败。
+
+### 5.8 [P2] HostTransport 没有响应体大小限制
+
+修复：`HostTransport._to_response` 与 http 传输共用
+`MAX_RESPONSE_BYTES`（8MB）上界，超限抛 `TransportError`。反向实证：
+移除检查后大小测试失败（错误信息不含 size bound）。
+
+### 5.9 README CLI 示例与实际参数不一致
+
+`validate`/`test` 实际接收 manifest 文件路径，`build` 需要 `--target`；
+README 示例改为一致并补充说明。
+
+### 5.10 修复后验证证据（Windows 本地，2026-10-16）
+
+| 命令 | 结果 |
+| --- | --- |
+| `uv run ruff check sdk/python` | All checks passed |
+| `uv run ruff format --check sdk/python` | 33 already formatted |
+| `uv run mypy`（含 SDK，92 文件） | Success: no issues found |
+| `uv run lint-imports --no-cache`（根） | Contracts: 11 kept, 0 broken |
+| `uv run lint-imports --config sdk/python/pyproject.toml --no-cache` | Contracts: 5 kept, 0 broken |
+| `uv run pytest sdk/python/tests` | 58 passed |
+| `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| `uv build --package opsmesh-sdk` | wheel + sdist 构建成功 |
+| CLI validate/test/build（fixture 包） | 全部通过 |
+
+新增测试：流伪造拒绝（http/host）、send 伪造请求头拒绝、父调用链、
+host 响应大小、host/客户端 deadline 边界、请求超时、取消中断在途请求
+（send 与 stall 流）、SSE deadline、自定义头发送、封套拒绝、输出 schema
+拒绝、空声明不约束、Patch 上限、验签正向/篡改/错密/重放/未知算法。

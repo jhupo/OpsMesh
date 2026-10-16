@@ -8,16 +8,19 @@ re-reading from the beginning.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
 from typing import Final
 
 import httpx
 
-from opsmesh_sdk.errors import TransportError
+from opsmesh_sdk.errors import TimeoutError, TransportError
 from opsmesh_sdk.transport.contracts import (
+    CancellationScope,
     StreamChunk,
     TransportContext,
     TransportRequest,
+    build_call_headers,
+    send_cancellable,
 )
 
 MAX_IDLE_SECONDS: Final = 300.0
@@ -69,57 +72,85 @@ class EventStreamReader:
         base_url: httpx.URL,
         max_idle_seconds: float = MAX_IDLE_SECONDS,
         identity_headers: Mapping[str, str] | None = None,
+        protected_headers: Collection[str] = (),
+        overridable_headers: Collection[str] = (),
     ) -> None:
         if max_idle_seconds <= 0:
             raise ValueError("max_idle_seconds must be positive")
         self._client = client
         self._base_url = base_url
         self._max_idle_seconds = max_idle_seconds
-        # The owning transport injects its identity (session or delegation);
-        # a per-call context may still override individual headers.
+        # The owning transport injects its identity (session or delegation) and
+        # declares which headers a call may never override.
         self._identity_headers: dict[str, str] = dict(identity_headers or {})
+        self._protected_headers: frozenset[str] = frozenset(protected_headers)
+        self._overridable_headers: frozenset[str] = frozenset(overridable_headers)
 
     async def read(
         self, request: TransportRequest, context: TransportContext
     ) -> AsyncIterator[StreamChunk]:
-        headers = {**self._identity_headers, **context.identity_headers}
-        headers.update(context.trace_headers)
+        context.scope.ensure_active()
+        headers = build_call_headers(
+            request,
+            context,
+            identity=self._identity_headers,
+            protected=self._protected_headers,
+            overridable=self._overridable_headers,
+        )
         if request.last_event_id is not None:
             headers["Last-Event-ID"] = request.last_event_id
+        idle = self._idle_bound(context.scope)
+        stream = self._client.stream(
+            request.method,
+            self._base_url.join(request.path),
+            params=dict(request.query),
+            json=request.body,
+            headers=headers,
+            timeout=httpx.Timeout(idle, read=idle),
+        )
+        response = await send_cancellable(context.scope, stream.__aenter__)
         try:
-            async with self._client.stream(
-                request.method,
-                self._base_url.join(request.path),
-                params=dict(request.query),
-                json=request.body,
-                headers=headers,
-                timeout=httpx.Timeout(self._max_idle_seconds, read=self._max_idle_seconds),
-            ) as response:
-                if response.status_code >= 400:
-                    await response.aread()
-                    raise TransportError(
-                        "The event stream was rejected",
-                        details={"status": response.status_code},
-                    )
-                pending: list[str] = []
-                async for line in response.aiter_lines():
-                    context.scope.ensure_active()
-                    if line == "":
-                        event = parse_sse_event(pending)
-                        pending.clear()
-                        if event is None:
-                            continue
-                        yield _to_chunk(event)
+            if response.status_code >= 400:
+                await response.aread()
+                raise TransportError(
+                    "The event stream was rejected",
+                    details={"status": response.status_code},
+                )
+            pending: list[str] = []
+            lines = response.aiter_lines()
+            while True:
+                try:
+                    line = await send_cancellable(context.scope, lines.__anext__)
+                except StopAsyncIteration:
+                    break
+                context.scope.ensure_active()
+                if line == "":
+                    event = parse_sse_event(pending)
+                    pending.clear()
+                    if event is None:
                         continue
-                    if len(line) > MAX_CHUNK_BYTES:
-                        raise TransportError("An event line exceeds the chunk size bound")
-                    pending.append(line)
+                    yield _to_chunk(event)
+                    continue
+                if len(line) > MAX_CHUNK_BYTES:
+                    raise TransportError("An event line exceeds the chunk size bound")
+                pending.append(line)
         except httpx.TimeoutException as exc:
+            if context.scope.expired:
+                raise TimeoutError("The event stream exceeded the call deadline") from exc
             raise TransportError("The event stream idled past its bound") from exc
         except httpx.HTTPError as exc:
             raise TransportError(
                 "The event stream failed", details={"error_code": type(exc).__name__}
             ) from exc
+        finally:
+            await stream.__aexit__(None, None, None)
+
+    def _idle_bound(self, scope: CancellationScope) -> float:
+        """The smaller of the idle bound and the scope's remaining deadline."""
+        remaining = scope.remaining_seconds()
+        if remaining is None:
+            return self._max_idle_seconds
+        return min(self._max_idle_seconds, remaining)
 
 
 def _to_chunk(event: SseEvent) -> StreamChunk:

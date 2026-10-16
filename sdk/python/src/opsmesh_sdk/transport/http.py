@@ -27,6 +27,9 @@ from opsmesh_sdk.transport.contracts import (
     TransportContext,
     TransportRequest,
     TransportResponse,
+    build_call_headers,
+    resolve_timeout,
+    send_cancellable,
 )
 from opsmesh_sdk.transport.streams import EventStreamReader
 
@@ -64,24 +67,33 @@ class HttpTransport:
             self._client,
             base_url=self._base_url,
             identity_headers={SESSION_HEADER: session_id},
+            protected_headers=frozenset({SESSION_HEADER}),
+            overridable_headers=frozenset({SESSION_HEADER}),
         )
 
     async def send(self, request: TransportRequest, context: TransportContext) -> TransportResponse:
         context.scope.ensure_active()
-        # A delegated invocation may replace the session identity; otherwise the
-        # configured session applies.
-        headers = {SESSION_HEADER: context.identity_headers.get(SESSION_HEADER, self._session_id)}
-        headers.update(context.trace_headers)
+        headers = build_call_headers(
+            request,
+            context,
+            identity={SESSION_HEADER: self._session_id},
+            protected=frozenset({SESSION_HEADER}),
+            overridable=frozenset({SESSION_HEADER}),
+        )
         if request.idempotency_key is not None:
             headers[IDEMPOTENCY_HEADER] = request.idempotency_key
+        timeout = resolve_timeout(request, context.scope)
         try:
-            response = await self._client.request(
-                request.method,
-                self._base_url.join(request.path),
-                params=dict(request.query),
-                json=request.body,
-                headers=headers,
-                timeout=request.timeout_seconds,
+            response = await send_cancellable(
+                context.scope,
+                lambda: self._client.request(
+                    request.method,
+                    self._base_url.join(request.path),
+                    params=dict(request.query),
+                    json=request.body,
+                    headers=headers,
+                    timeout=timeout,
+                ),
             )
         except httpx.TimeoutException as exc:
             raise TimeoutError("The platform did not answer within the deadline") from exc

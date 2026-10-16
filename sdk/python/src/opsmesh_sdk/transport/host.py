@@ -17,16 +17,19 @@ from uuid import UUID
 import httpx
 
 from opsmesh_sdk.errors import (
-    SecurityError,
     TimeoutError,
     TransportError,
     error_for_code,
 )
 from opsmesh_sdk.transport.contracts import (
+    MAX_RESPONSE_BYTES,
     StreamChunk,
     TransportContext,
     TransportRequest,
     TransportResponse,
+    build_call_headers,
+    resolve_timeout,
+    send_cancellable,
 )
 from opsmesh_sdk.transport.streams import EventStreamReader
 
@@ -34,6 +37,7 @@ DELEGATION_HEADER: Final = "X-OpsMesh-Delegation"
 INSTALLATION_HEADER: Final = "X-OpsMesh-Installation-Id"
 INSTANCE_HEADER: Final = "X-OpsMesh-Instance-Id"
 INVOCATION_HEADER: Final = "X-OpsMesh-Invocation-Id"
+PARENT_INVOCATION_HEADER: Final = "X-OpsMesh-Parent-Invocation-Id"
 NAMESPACE_HEADER: Final = "X-OpsMesh-Namespace"
 DEADLINE_HEADER: Final = "X-OpsMesh-Deadline"
 _FORBIDDEN_CALLER_HEADERS: Final = frozenset(
@@ -42,6 +46,7 @@ _FORBIDDEN_CALLER_HEADERS: Final = frozenset(
         INSTALLATION_HEADER,
         INSTANCE_HEADER,
         INVOCATION_HEADER,
+        PARENT_INVOCATION_HEADER,
         NAMESPACE_HEADER,
         DEADLINE_HEADER,
     }
@@ -80,6 +85,8 @@ class DelegationIdentity:
             INVOCATION_HEADER: str(self.invocation_id),
             NAMESPACE_HEADER: self.namespace,
         }
+        if self.parent_invocation_id is not None:
+            headers[PARENT_INVOCATION_HEADER] = str(self.parent_invocation_id)
         if self.deadline_seconds is not None:
             headers[DEADLINE_HEADER] = str(self.deadline_seconds)
         return headers
@@ -107,29 +114,34 @@ class HostTransport:
             limits=httpx.Limits(max_connections=max_connections),
         )
         self._stream_reader = EventStreamReader(
-            self._client, base_url=self._base_url, identity_headers=identity.headers()
+            self._client,
+            base_url=self._base_url,
+            identity_headers=identity.headers(),
+            protected_headers=_FORBIDDEN_CALLER_HEADERS,
         )
 
     async def send(self, request: TransportRequest, context: TransportContext) -> TransportResponse:
         context.scope.ensure_active()
-        headers = self._identity.headers()
-        headers.update(context.trace_headers)
-        forged = sorted(_FORBIDDEN_CALLER_HEADERS.intersection(context.identity_headers))
-        if forged:
-            raise SecurityError(
-                "The delegation identity is attached by the host and cannot be forged",
-                details={"forged_headers": forged},
-            )
+        headers = build_call_headers(
+            request,
+            context,
+            identity=self._identity.headers(),
+            protected=_FORBIDDEN_CALLER_HEADERS,
+        )
         if request.idempotency_key is not None:
             headers["Idempotency-Key"] = request.idempotency_key
+        timeout = resolve_timeout(request, context.scope)
         try:
-            response = await self._client.request(
-                request.method,
-                self._base_url.join(request.path),
-                params=dict(request.query),
-                json=request.body,
-                headers=headers,
-                timeout=request.timeout_seconds,
+            response = await send_cancellable(
+                context.scope,
+                lambda: self._client.request(
+                    request.method,
+                    self._base_url.join(request.path),
+                    params=dict(request.query),
+                    json=request.body,
+                    headers=headers,
+                    timeout=timeout,
+                ),
             )
         except httpx.TimeoutException as exc:
             raise TimeoutError("The host did not answer within the deadline") from exc
@@ -150,6 +162,8 @@ class HostTransport:
 
     def _to_response(self, response: httpx.Response) -> TransportResponse:
         raw = response.content
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise TransportError("The host response exceeds the size bound")
         body: object = None
         if raw:
             try:
@@ -212,6 +226,7 @@ __all__ = [
     "INSTANCE_HEADER",
     "INVOCATION_HEADER",
     "NAMESPACE_HEADER",
+    "PARENT_INVOCATION_HEADER",
     "DelegationIdentity",
     "HostTransport",
 ]

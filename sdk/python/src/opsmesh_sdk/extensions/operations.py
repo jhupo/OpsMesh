@@ -8,23 +8,23 @@ records an Invocation receipt per occurrence.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Final, TypeVar
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from opsmesh_sdk.errors import CancelledError, UnknownEffectError
+from opsmesh_sdk.errors import CancelledError, UnknownEffectError, ValidationError
 from opsmesh_sdk.manifest import EffectKind, JsonSchema, OperationExport
 from opsmesh_sdk.values import IdempotencyKey
 
 MAX_RESULT_BYTES: Final = 1_048_576
 
-_T = TypeVar("_T")
-
 
 class Operation:
     """A declared operation: identity, schemas, effects and the typed handler."""
 
-    def __init__(self, export: OperationExport, handler: Callable[..., Awaitable[object]]) -> None:
+    def __init__(
+        self, export: OperationExport, handler: Callable[..., Awaitable[OperationResult]]
+    ) -> None:
         self._export = export
         self._handler = handler
 
@@ -40,10 +40,23 @@ class Operation:
         """The declaration the server freezes at installation time."""
         return self._export.model_dump(mode="json")
 
-    async def invoke(self, arguments: dict[str, JsonValue]) -> object:
-        """Run the declared handler after validating arguments against the schema."""
+    async def invoke(self, arguments: dict[str, JsonValue]) -> OperationResult:
+        """Validate input, run the handler, then validate the declared output.
+
+        The handler must return an ``OperationResult``: the envelope carries
+        the size bound, the effects and the needs_attention flag, and its
+        value is validated against the declared output schema. A bare return
+        value cannot bypass the declaration the server freezes.
+        """
         self._export.input_schema.validate_instance(arguments)
-        return await self._handler(arguments)
+        result = await self._handler(arguments)
+        if not isinstance(result, OperationResult):
+            raise ValidationError(
+                "a declared operation returns an OperationResult envelope",
+                details={"export_id": self.export_id},
+            )
+        self._export.output_schema.validate_instance(result.value)
+        return result
 
 
 class OperationResult(BaseModel):
@@ -76,7 +89,7 @@ def declare_operation(
     effects: tuple[EffectKind, ...] = (),
     timeout_seconds: int = 60,
     permissions: tuple[str, ...] = (),
-) -> Callable[[Callable[..., Awaitable[object]]], Operation]:
+) -> Callable[[Callable[..., Awaitable[OperationResult]]], Operation]:
     """Declare an operation export from a typed async handler."""
     export = OperationExport(
         export_id=export_id,
@@ -88,7 +101,7 @@ def declare_operation(
         permissions=permissions,
     )
 
-    def decorate(handler: Callable[..., Awaitable[object]]) -> Operation:
+    def decorate(handler: Callable[..., Awaitable[OperationResult]]) -> Operation:
         return Operation(export, handler)
 
     return decorate
