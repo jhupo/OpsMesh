@@ -239,3 +239,34 @@
 | 服务器（真实 PG 16 + Redis + Temporal 1.29.1） | `python -m pytest tests`（host 网络容器，OPSMESH_TEST_DATABASE_URL/TEMPORAL_ADDRESS/REDIS_URL） | **82 passed, 0 failed, 0 skipped**（dispatch outbox 15 项含 2 项新回归测试、cache 7 项含真实 Redis、bootstrap 14、security 20、shared_mechanisms 24、codec 3、replay 1） |
 
 3 项问题状态：implemented + verified。上轮已确认修正项（OTLP 日志挂载、数据库初始化失败后的日志清理、测试断言被清理掩盖）随本轮套件回归通过，未回退。
+
+## 12. 第四轮评审修复（提交 `46bdd6a5` 的 2 项问题）
+
+来源：对 `46bdd6a5` 的代码评审。2 项全部修复，本地与服务器真实 PostgreSQL/Redis 复验通过，并附反向实证。
+
+### 12.1 [P1] START 晚于取消检查提交时竞态仍存在
+
+- **问题**：START 准入只拦截“已确认”的取消。CANCEL 检查时没有 START → START 随后提交并通过检查 → CANCEL 查询不到 Workflow 确认完成 → START 成功启动。模拟复现“取消已确认，但 Workflow 仍在运行”。
+- **修复**：[`outbox.py`](src/opsmesh/temporal/dispatch/outbox.py) 引入持久化的取消意图并与投递确认区分：`temporal_dispatches` 新增 `decided_at` 列（[models.py](src/opsmesh/temporal/dispatch/models.py) 与空库初始迁移同步）。CANCEL 决策事务（持 per-workflow advisory lock）在放行投递前置位 `decided_at`；START 准入条件改为“存在 decided 或 confirmed 的 CANCEL”（`_has_sibling(..., decided=True)`），即取消意图一经持久化即拦截后续 START；`published_at` 仍只在投递成功后置位（确认语义）。投递失败时 `_record_failure` 清除 `decided_at`，取消意图不永久阻塞 START，重试重新决策。
+- **验证**：真实 PG 测试 `test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded`（cancel 决策后、describe 阻塞在途期间提交 START：START 被 SUPERSEDED，`calls == []`，cancel 行 `decided_at`/`published_at` 均置位）；服务器正向/反向复验：同交错在新代码下 workflow 从不启动；把准入条件换回“仅 confirmed”（评审行为）后同交错复现“取消确认且 workflow 在运行”，证明回归测试覆盖评审复现场景。
+
+### 12.2 [P2] 短 TTL 配置下缓存仍可能回填旧值
+
+- **问题**：`_generation` 把缺失标记视为空字符串。loader 开始时标记不存在，期间发生删除、标记又过期，发布时仍得到空字符串而错误放行（`generation_ttl_seconds=1` 复现）；且此前的过期测试替换回旧计数器实现仍通过，未覆盖该重复标记场景。
+- **修复**：[`cache.py`](src/opsmesh/shared/redis/cache.py) loader 在加载租约内先建立非空唯一标记：`_ensure_generation` 以 `set(nx=True)` 安装 `uuid4().hex`（已存在则读回现值），loader 因此始终持有具体 token；发布时标记缺失读作 `''`，与任何具体 token 不匹配即拦阻（按失效处理：服务本次调用、不持久化）。随机 token 不过期重复 + 加载前建标 双重保证短 TTL 下不回填旧值。
+- **验证**：fakeredis 测试 `test_publication_is_blocked_when_the_generation_token_expires`（`generation_ttl_seconds=1`：delete 后令牌过期，发布被拦阻）；真实 Redis 测试 `test_invalidation_guard_survives_a_short_generation_ttl_against_real_redis`（令牌真实过期 1.2s 后发布，旧值不持久）；反向实证：把 `_ensure_generation` 换回“缺失读作空串”的旧行为，同场景旧值回填（证明测试覆盖评审复现）。
+
+### 12.3 第四轮修复验证证据
+
+| 环境 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地 Windows | `uv run ruff check tests src/opsmesh migrations scripts` | All checks passed |
+| 本地 Windows | `uv run mypy` | Success: no issues found in 62 source files |
+| 本地 Windows | `uv run lint-imports --no-cache` | Contracts: 10 kept, 0 broken |
+| 本地 Windows | `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| 本地 Windows | `uv run pytest tests -q` | 65 passed, 20 skipped（跳过项均为 Windows 环境性/PG/Redis/Temporal 未配置） |
+| 服务器（真实 PG 16 + Redis + Temporal 1.29.1） | 重建测试库表后 `python -m pytest tests`（host 网络容器） | **85 passed, 0 failed, 0 skipped**（dispatch outbox 16 项含 2 项新回归测试、cache 8 项含真实 Redis 短 TTL、bootstrap 14、security 20、shared_mechanisms 24、codec 3、replay 1） |
+| 服务器（空库初始迁移） | `python -m alembic upgrade head`（opsmesh_s2_test） | Running upgrade -> 0001；`temporal_dispatches` 含 `decided_at` 列 |
+| 服务器（评审场景复验） | `python /verify/s2_round4_scenarios.py` | 正向：取消意图使在途 staged 的 START 被 SUPERSEDED；反向：仅确认准入复现评审故障；反向：旧空 token 行为回填旧值 |
+
+2 项问题状态：implemented + verified。

@@ -42,6 +42,7 @@ def upgrade() -> None:
         sa.Column("sealed_payload", sa.Text(), nullable=False),
         sa.Column("encryption_key_id", sa.String(length=100), nullable=False),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("claim_token", sa.Uuid(), nullable=True),

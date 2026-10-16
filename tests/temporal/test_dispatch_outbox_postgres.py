@@ -513,6 +513,68 @@ def test_cancel_defers_while_its_start_delivery_is_in_flight(
     assert workflow_id not in client.running
 
 
+def test_start_staged_while_the_cancel_delivery_is_in_flight_is_superseded(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    """The cancel intent is durable before its delivery is attempted. A start
+    that commits while the cancel delivery is still in flight must be
+    superseded even though the cancel itself completes against a Workflow that
+    does not exist yet."""
+    workflow_id = "cancel-in-flight-then-staged-run"
+    with database_sessions() as session:
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    class BlockingDescribeClient:
+        """The cancel delivery blocks in describe; the workflow never exists."""
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.running: set[str] = set()
+            self.release = asyncio.Event()
+
+        async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
+            self.calls.append(name)
+            self.running.add(kwargs.get("id", ""))
+
+        def get_workflow_handle(self, workflow_id):  # noqa: ANN001, ANN201
+            client = self
+
+            class Handle:
+                async def describe(self, **kwargs):  # noqa: ANN003, ANN201
+                    await client.release.wait()
+
+                    class Description:
+                        status = WorkflowExecutionStatus.COMPLETED
+
+                    return Description()
+
+                async def cancel(self, **kwargs):  # noqa: ANN003, ANN201
+                    client.running.discard(workflow_id)
+
+            return Handle()
+
+    client = BlockingDescribeClient()
+
+    async def run_cancel_then_stage_start() -> int:
+        task = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
+        await asyncio.sleep(0.3)
+        # The cancel decision is durable; its delivery is still in flight.
+        with database_sessions() as session:
+            stage_dispatch(session, start_request(workflow_id))
+            session.commit()
+        client.release.set()
+        return await task
+
+    delivered = asyncio.run(run_cancel_then_stage_start())
+    assert delivered == 2, "the cancel completes and the late start is superseded"
+    assert client.calls == [], "a workflow with a cancel intent must never be started"
+    cancel_row = load_cancel_row(database_engine, workflow_id)
+    assert cancel_row is not None
+    assert cancel_row.decided_at is not None, "the cancel intent must be durable"
+    assert cancel_row.published_at is not None
+
+
 def test_signal_delivery_carries_the_stable_dispatch_identity(
     database_sessions, async_database_sessions, database_engine
 ) -> None:

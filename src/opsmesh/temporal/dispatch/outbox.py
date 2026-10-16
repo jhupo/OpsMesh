@@ -288,16 +288,18 @@ class TemporalOutboxPublisher:
     ) -> DispatchOutcome | None:
         """Deliver one command, keeping start and cancel causally ordered.
 
-        The sibling check runs in one transaction that holds a per-workflow
-        advisory lock, and ``published_at`` is only ever set after a successful
+        Both checks and the cancel intent run in one transaction that holds a
+        per-workflow advisory lock, so concurrent commands for one Workflow are
+        serialized. ``decided_at`` persists a cancel intent before its delivery
+        is attempted and ``published_at`` is only ever set after a successful
         delivery, never before. A command therefore stays claimable until its
         delivery is confirmed, so an interrupted delivery (process exit, task
-        cancellation) is retried instead of being lost. A cancel is deferred
-        while its start is not yet confirmed, including while the start
-        delivery is still in flight, so it can never complete against a
-        Workflow that starts afterwards; a start whose workflow already has a
-        confirmed cancel is superseded and never started. Signals carry no
-        ordering contract and are delivered directly.
+        cancellation) is retried instead of being lost. A start is superseded as
+        soon as a cancel intent exists, decided or confirmed, so a cancellation
+        can never complete while the Workflow is still started afterwards; a
+        cancel is deferred while its start is not yet confirmed, including while
+        the start delivery is in flight. Signals carry no ordering contract and
+        are delivered directly.
         """
         if request.operation == DispatchOperation.SIGNAL:
             await dispatch_workflow(self._client, request, task_queue=self._task_queue)
@@ -319,7 +321,7 @@ class TemporalOutboxPublisher:
                 return None
             if request.operation == DispatchOperation.START:
                 cancelled = await self._has_sibling(
-                    session, request.workflow_id, DispatchOperation.CANCEL, published=True
+                    session, request.workflow_id, DispatchOperation.CANCEL, decided=True
                 )
                 if cancelled:
                     logger.info(
@@ -331,10 +333,14 @@ class TemporalOutboxPublisher:
                     return DispatchOutcome.SUPERSEDED
             elif request.operation == DispatchOperation.CANCEL:
                 starting = await self._has_sibling(
-                    session, request.workflow_id, DispatchOperation.START, published=False
+                    session, request.workflow_id, DispatchOperation.START, confirmed=False
                 )
                 if starting:
                     return DispatchOutcome.DEFERRED
+                # The cancellation intent is durable before the delivery is
+                # attempted, so a start staged in the meantime is superseded
+                # even if this cancel has not completed yet.
+                row.decided_at = datetime.now(UTC)
             # The decision only authorizes the delivery; the command stays
             # unconfirmed until _record_published observes the Temporal result.
         await dispatch_workflow(self._client, request, task_queue=self._task_queue)
@@ -346,21 +352,32 @@ class TemporalOutboxPublisher:
         workflow_id: str,
         operation: DispatchOperation,
         *,
-        published: bool,
+        decided: bool | None = None,
+        confirmed: bool | None = None,
     ) -> bool:
-        published_filter = (
-            TemporalOutboxEntry.published_at.is_not(None)
-            if published
-            else TemporalOutboxEntry.published_at.is_(None)
-        )
-        count = await session.scalar(
-            select(func.count())
-            .select_from(TemporalOutboxEntry)
-            .where(
-                TemporalOutboxEntry.workflow_id == workflow_id,
-                TemporalOutboxEntry.operation == operation.value,
-                published_filter,
+        """Whether a sibling command exists with the requested decision state.
+
+        ``decided`` filters on a persisted decision (cancel intent);
+        ``confirmed`` filters on a completed delivery (``published_at``).
+        """
+        conditions = [
+            TemporalOutboxEntry.workflow_id == workflow_id,
+            TemporalOutboxEntry.operation == operation.value,
+        ]
+        if decided is not None:
+            conditions.append(
+                TemporalOutboxEntry.decided_at.is_not(None)
+                if decided
+                else TemporalOutboxEntry.decided_at.is_(None)
             )
+        if confirmed is not None:
+            conditions.append(
+                TemporalOutboxEntry.published_at.is_not(None)
+                if confirmed
+                else TemporalOutboxEntry.published_at.is_(None)
+            )
+        count = await session.scalar(
+            select(func.count()).select_from(TemporalOutboxEntry).where(*conditions)
         )
         return bool(count)
 
@@ -390,6 +407,9 @@ class TemporalOutboxPublisher:
             )
             if row is None:
                 return
+            # Release the cancel intent so a failed cancellation stops blocking
+            # the start it was meant to stop; the retry re-decides the ordering.
+            row.decided_at = None
             row.attempts += 1
             row.available_at = datetime.now(UTC) + timedelta(
                 seconds=min(2 ** min(row.attempts, 8), _MAX_BACKOFF_SECONDS)

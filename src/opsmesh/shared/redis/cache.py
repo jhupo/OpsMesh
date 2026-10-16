@@ -38,12 +38,14 @@ class RedisJsonCache:
     """Single-loader cache whose publication is bounded by the loader lease and
     the invalidation generation observed before loading.
 
-    ``delete`` installs a fresh random generation first, so a loader that
-    started before the invalidation can never publish its (now stale) result
-    afterwards. The generation is a random token rather than a counter: it can
-    never repeat, not even after the generation key expires and is recreated.
-    The generation key carries a bounded TTL, so invalidations never accumulate
-    keys for entries that no longer exist.
+    A loading attempt establishes a concrete generation token under the loader
+    lease, and ``delete`` installs a fresh random token before removing the
+    entry. A loader that started before an invalidation can therefore never
+    publish its (now stale) result: random tokens never repeat, not even after
+    a generation key expires and is recreated, and a token that disappeared
+    before publication fails the check instead of matching an empty default.
+    Generation keys carry a bounded TTL, so invalidations never accumulate keys
+    for entries that no longer exist.
     """
 
     _PUBLISH_SCRIPT = """
@@ -152,7 +154,7 @@ class RedisJsonCache:
             if cached.found:
                 return cached
 
-            generation = self._generation(key)
+            generation = self._ensure_generation(key)
             value = loader()
             storage_key = self._storage_key(key)
             serialized = json.dumps(value, separators=(",", ":"), sort_keys=True, allow_nan=False)
@@ -188,9 +190,25 @@ class RedisJsonCache:
             )
         )
 
-    def _generation(self, key: str) -> str:
-        current = self._redis.get(self._generation_key(key))
-        return current if current is not None else ""
+    def _ensure_generation(self, key: str) -> str:
+        """Establish and return the generation token this loading attempt holds.
+
+        The token is always concrete and non-empty: an absent token would read
+        as an empty string, and an invalidation followed by the token's expiry
+        would then look unchanged, letting a stale value publish. Creating the
+        token under the loader lease also means a concurrent delete cannot
+        slip between the observation and the load.
+        """
+        generation_key = self._generation_key(key)
+        token = uuid4().hex
+        if self._redis.set(generation_key, token, ex=self._generation_ttl_seconds, nx=True):
+            return token
+        current = self._redis.get(generation_key)
+        if current is None:
+            # The observed token expired between the check and the read.
+            self._redis.set(generation_key, token, ex=self._generation_ttl_seconds)
+            return token
+        return current
 
     def _generation_key(self, key: str) -> str:
         normalized_key = self._normalize_key(key)

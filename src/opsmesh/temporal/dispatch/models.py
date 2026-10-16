@@ -23,6 +23,10 @@ class TemporalOutboxEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sealed_payload: Mapped[str] = mapped_column(Text, nullable=False)
     encryption_key_id: Mapped[str] = mapped_column(String(100), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A cancel decision is durable here before its delivery is attempted, so a
+    # start staged afterwards observes the cancellation intent instead of
+    # racing past a cancel whose delivery has not completed yet.
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     claim_token: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
