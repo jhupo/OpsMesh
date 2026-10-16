@@ -9,19 +9,35 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Collection,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any, Final, Protocol, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from opsmesh_sdk.errors import AuthenticationError, SecurityError, TimeoutError
+from opsmesh_sdk.errors import (
+    AuthenticationError,
+    SecurityError,
+    TimeoutError,
+    TransportError,
+    ValidationError,
+)
 
 DEFAULT_TIMEOUT_SECONDS: Final = 30.0
 MAX_RESPONSE_BYTES: Final = 8 * 1_048_576
 SESSION_HEADER: Final = "X-Session-ID"
+CONTENT_TYPE_HEADER: Final = "Content-Type"
+JSON_MEDIA_TYPES: Final = frozenset({"application/json", "text/json"})
 
 _T = TypeVar("_T")
 
@@ -36,20 +52,33 @@ class TransportRequest(BaseModel):
     query: Mapping[str, str] = Field(default_factory=dict)
     headers: Mapping[str, str] = Field(default_factory=dict)
     body: JsonValue = None
+    content: bytes | None = None
     timeout_seconds: float = Field(default=DEFAULT_TIMEOUT_SECONDS, gt=0, le=600)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
     stream: bool = False
     last_event_id: str | None = Field(default=None, max_length=512)
 
+    @model_validator(mode="after")
+    def reject_dual_payloads(self) -> TransportRequest:
+        """A call carries a JSON body or raw content, never both at once."""
+        if self.content is not None and self.body is not None:
+            raise ValueError("a request carries either a JSON body or raw content, not both")
+        return self
+
 
 class TransportResponse(BaseModel):
-    """A decidable server answer: status, headers and parsed JSON body."""
+    """A decidable server answer: status, headers and parsed JSON body.
+
+    ``body`` holds the decoded JSON value and ``content`` the raw bytes of a
+    non-JSON answer (an image, a file download); exactly one is set.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     status: int = Field(ge=100, le=599)
     headers: Mapping[str, str] = Field(default_factory=dict)
     body: JsonValue = None
+    content: bytes | None = None
     request_id: str | None = Field(default=None, max_length=128)
     retry_after: float | None = Field(default=None, ge=0)
 
@@ -179,6 +208,37 @@ def resolve_timeout(request: TransportRequest, scope: CancellationScope) -> floa
     return min(request.timeout_seconds, remaining)
 
 
+def decode_answer(raw: bytes, content_type: str | None) -> tuple[JsonValue, bytes | None]:
+    """Split one raw answer into its decoded JSON value or its raw bytes.
+
+    A JSON media type (including structured suffixes) decodes as a value; any
+    other media type travels as bytes so binary answers keep their payload.
+    """
+    if not raw:
+        return None, None
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if media_type and media_type not in JSON_MEDIA_TYPES and not media_type.endswith("+json"):
+        return None, raw
+    try:
+        return json.loads(raw), None
+    except json.JSONDecodeError as exc:
+        raise TransportError("The transport answer is not valid JSON") from exc
+
+
+def decode_array(response: TransportResponse) -> Sequence[object]:
+    """Read a JSON array answer; any other shape is a protocol violation."""
+    if not isinstance(response.body, list):
+        raise ValidationError("The transport answer is not a JSON array")
+    return response.body
+
+
+def decode_binary(response: TransportResponse) -> bytes:
+    """Read the raw bytes of a non-JSON answer."""
+    if response.content is None:
+        raise TransportError("The transport answer carried no content")
+    return response.content
+
+
 def _lowercased(headers: Mapping[str, str]) -> dict[str, str]:
     """Header names are case-insensitive; emit one canonical lowercase key."""
     return {name.lower(): value for name, value in headers.items()}
@@ -260,17 +320,37 @@ class Transport(Protocol):
     async def aclose(self) -> None: ...
 
 
+class GroupChannel(Protocol):
+    """The composing-client surface a generated group client calls through.
+
+    The generated ``api`` groups never import the composing client: they
+    receive this channel, read its transport and ask for a fresh per-call
+    context that carries the caller's identity and cancellation scope.
+    """
+
+    @property
+    def transport(self) -> Transport: ...
+
+    def context(self) -> TransportContext: ...
+
+
 __all__ = [
+    "CONTENT_TYPE_HEADER",
     "DEFAULT_TIMEOUT_SECONDS",
+    "JSON_MEDIA_TYPES",
     "MAX_RESPONSE_BYTES",
     "SESSION_HEADER",
     "CancellationScope",
+    "GroupChannel",
     "StreamChunk",
     "Transport",
     "TransportContext",
     "TransportRequest",
     "TransportResponse",
     "build_call_headers",
+    "decode_answer",
+    "decode_array",
+    "decode_binary",
     "require_session",
     "resolve_timeout",
     "send_cancellable",

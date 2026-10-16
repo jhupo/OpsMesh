@@ -11,6 +11,7 @@ from redis import Redis
 from starlette.middleware.base import RequestResponseEndpoint
 
 from opsmesh.bootstrap.http_policy import gateway_identifier, gateway_policy
+from opsmesh.bootstrap.mail import InvitationMailAuthorization, InvitationMailRegistrar
 from opsmesh.bootstrap.request_context import RequestContextMiddleware
 from opsmesh.bootstrap.resources import (
     DatabaseResources,
@@ -21,10 +22,21 @@ from opsmesh.bootstrap.resources import (
 from opsmesh.bootstrap.routers import register_routers
 from opsmesh.bootstrap.telemetry import configure_api_telemetry, flush_process_telemetry
 from opsmesh.config import Settings, get_settings
+from opsmesh.governance.approvals.targets import NoApprovalTargetNotifier
+from opsmesh.governance.security_events.service import SecurityEventLog
+from opsmesh.identity.auth.contracts import RejectingDelegationResolver
+from opsmesh.identity.auth.service import AuthService
+from opsmesh.identity.provisioning import (
+    AccountDefaults,
+    InvitationAccountService,
+    ProvisionedAccountOpening,
+    UserIdentityDirectory,
+)
 from opsmesh.shared.http.errors import ErrorResponse, register_error_handlers
 from opsmesh.shared.http.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from opsmesh.shared.redis.client import close_redis_client
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
+from opsmesh.shared.security.secrets import SecretCipher
 from opsmesh.shared.version import package_version
 from opsmesh.telemetry.logging import configure_logging, shutdown_logging
 
@@ -34,6 +46,37 @@ ERROR_RESPONSE_STATUS_CODES = (400, 401, 403, 404, 409, 422)
 def create_event_loop() -> asyncio.AbstractEventLoop:
     """Uvicorn loop factory compatible with psycopg async connections on Windows."""
     return asyncio.SelectorEventLoop()
+
+
+def assemble_feature_services(app: FastAPI, settings: Settings, cipher: SecretCipher) -> None:
+    """Assemble the identity and mail services the routes resolve per request.
+
+    The services are stateless facades over the injected owners: bootstrap
+    decides the defaults, the delegation policy and the mail source admission,
+    and the feature modules keep their own transactions.
+    """
+    defaults = AccountDefaults(
+        token_limit=settings.default_user_token_limit,
+        storage_limit_bytes=settings.default_user_storage_limit_bytes,
+    )
+    auth_service = AuthService(
+        account_opening=ProvisionedAccountOpening(defaults),
+        user_directory=UserIdentityDirectory(),
+        security_events=SecurityEventLog(),
+        session_ttl_seconds=settings.session_ttl_seconds,
+    )
+    app.state.settings = settings
+    app.state.auth_service = auth_service
+    # No delegation producer exists before the extensions step: every delegated
+    # call is rejected until one is registered.
+    app.state.delegation_resolver = RejectingDelegationResolver()
+    app.state.approval_notifier = NoApprovalTargetNotifier()
+    app.state.invitation_account_opening = InvitationAccountService(auth_service)
+    app.state.invitation_mail_sender = InvitationMailRegistrar(
+        authorization=InvitationMailAuthorization(),
+        cipher=cipher,
+        daily_source_limit=settings.mail_daily_source_limit,
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -62,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.storage_root = app_settings.storage_root
             app.state.trusted_proxy_hops = app_settings.trusted_proxy_hops
             app.state.trusted_proxy_networks = app_settings.trusted_proxy_networks
+            assemble_feature_services(app, app_settings, database.cipher)
             try:
                 api_resources = build_api_resources(app_settings)
                 redis_client = api_resources.redis_client
@@ -78,6 +122,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.json_cache = None
                 if redis_client is not None:
                     close_redis_client(redis_client)
+                app.state.settings = None
+                app.state.auth_service = None
+                app.state.delegation_resolver = None
+                app.state.approval_notifier = None
+                app.state.invitation_account_opening = None
+                app.state.invitation_mail_sender = None
                 if database is not None:
                     database.engine.dispose()
         finally:
@@ -98,6 +148,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.redis_client = None
     app.state.rate_limiter = None
     app.state.json_cache = None
+    app.state.settings = None
+    app.state.auth_service = None
+    app.state.delegation_resolver = None
+    app.state.approval_notifier = None
+    app.state.invitation_account_opening = None
+    app.state.invitation_mail_sender = None
     # Later registrations wrap earlier ones: CORS answers preflights outside the
     # gateway, request correlation precedes rate limiting, security headers sit
     # closest to the application.

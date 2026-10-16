@@ -13,16 +13,28 @@ pip install opsmesh-sdk
 
 ## 平台客户端
 
-登录获得 Session 后，用 `X-Session-ID` 访问平台 API。业务分组客户端
-（`identity`、`execution`、`governance` 等）由平台 OpenAPI 生成，随对应服务端
-版本一起交付；生成约定见 `codegen.toml`。
+登录获得 Session 后，用 `X-Session-ID` 访问平台 API。业务分组客户端由平台
+OpenAPI 生成，随对应服务端版本一起交付；生成约定见 `codegen.toml`。当前已
+生成 `identity`、`governance` 和 `platform` 三个分组：
 
 ```python
 from opsmesh_sdk import PlatformClient
 
 async with PlatformClient("https://opsmesh.example.com", session_id=session_id) as client:
-    ...
+    identity = client.group("identity")
+    profile = await identity.users.read_current()
+    quota = await identity.quotas.read_current()
+    sessions = await identity.auth.sessions.list()
 ```
+
+- `identity`：`auth`（登录/注销/改密/Session）、`users`（资料/角色/头像）、
+  `quotas`（Token 与存储账本）、`invitations`（平台邀请）；
+- `governance`：`audit.events`（记录/查询）、`audit.verifications`（哈希链
+  验证）、`approvals`（审批决定）、`security_events`（安全事实查询）；
+- `platform`：`mail.smtp`（配置/测试）、`mail.intents`（发送回执/取消/核对）。
+
+生成物位于 `src/opsmesh_sdk/api/`，服务端 API 变更后由
+`scripts/generate_sdk_api.py` 重新生成并做一致性检查，不手改。
 
 ## 扩展合同
 

@@ -8,17 +8,21 @@ import time
 from typing import Any
 
 import httpx
+import pydantic
 import pytest
 
 from opsmesh_sdk.errors import (
     AuthenticationError,
+    AuthorizationError,
     ConflictError,
     NotFoundError,
+    OpsMeshError,
     RateLimitError,
     SecurityError,
     TimeoutError,
     TransportError,
     ValidationError,
+    error_for_code,
 )
 from opsmesh_sdk.transport.contracts import (
     MAX_RESPONSE_BYTES,
@@ -285,6 +289,92 @@ def test_authentication_error_is_typed() -> None:
 
     with pytest.raises(AuthenticationError):
         asyncio.run(run())
+
+
+def test_server_error_codes_map_to_one_typed_error_per_failure_class() -> None:
+    assert error_for_code("unauthenticated") is AuthenticationError
+    assert error_for_code("invalid_credentials") is AuthenticationError
+    assert error_for_code("permission_denied") is AuthorizationError
+    assert error_for_code("user_disabled") is AuthorizationError
+    assert error_for_code("validation_error") is ValidationError
+    assert error_for_code("invalid_avatar") is ValidationError
+    assert error_for_code("duplicate_user") is ConflictError
+    assert error_for_code("idempotency_key_reused") is ConflictError
+    assert error_for_code("quota_exceeded") is RateLimitError
+    assert error_for_code("service_unavailable") is TransportError
+    assert error_for_code("a_future_code") is OpsMeshError
+
+
+def test_raw_binary_answers_travel_as_content() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"\x89PNG\r\n\x1a\nrest", headers={"content-type": "image/png"}
+        )
+
+    transport = HttpTransport(
+        "https://api.invalid",
+        session_id="session-1",
+        client=mock_transport(handler),
+    )
+
+    async def run() -> Any:
+        return await transport.send(
+            TransportRequest(path="/api/v1/users/me/avatar"), TransportContext()
+        )
+
+    response = asyncio.run(run())
+    assert response.content == b"\x89PNG\r\n\x1a\nrest"
+    assert response.body is None
+
+
+def test_structured_json_suffixes_decode_as_json() -> None:
+    transport = HttpTransport(
+        "https://api.invalid",
+        session_id="session-1",
+        client=mock_transport(
+            json_handler({"ok": True}, headers={"content-type": "application/problem+json"})
+        ),
+    )
+
+    async def run() -> Any:
+        return await transport.send(TransportRequest(path="/api/v1/things"), TransportContext())
+
+    response = asyncio.run(run())
+    assert response.body == {"ok": True}
+    assert response.content is None
+
+
+def test_a_request_carries_either_a_json_body_or_raw_content() -> None:
+    with pytest.raises(pydantic.ValidationError):
+        TransportRequest(path="/api/v1/things", body={"a": 1}, content=b"raw")
+
+
+def test_raw_content_requests_send_their_bytes() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["content_type"] = request.headers.get("content-type")
+        captured["content"] = request.content
+        return httpx.Response(204)
+
+    transport = HttpTransport(
+        "https://api.invalid", session_id="session-1", client=mock_transport(handler)
+    )
+
+    async def run() -> Any:
+        return await transport.send(
+            TransportRequest(
+                method="PUT",
+                path="/api/v1/users/me/avatar",
+                headers={"content-type": "image/png"},
+                content=b"\x89PNG\r\n\x1a\nrest",
+            ),
+            TransportContext(),
+        )
+
+    asyncio.run(run())
+    assert captured["content_type"] == "image/png"
+    assert captured["content"] == b"\x89PNG\r\n\x1a\nrest"
 
 
 def test_request_headers_reach_the_server_and_identity_is_protected() -> None:

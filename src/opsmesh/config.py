@@ -127,6 +127,16 @@ class Settings(BaseSettings):
     # Resource content root; owners decide their own layout below it
     storage_root: str = Field(default=".opsmesh-storage")
 
+    # Identity (S4)
+    session_ttl_seconds: int = Field(default=30 * 24 * 60 * 60, ge=60)
+    invitation_ttl_seconds: int = Field(default=7 * 24 * 60 * 60, ge=3_600)
+    platform_base_url: str = Field(default="")
+    default_user_token_limit: int | None = Field(default=None, ge=0)
+    default_user_storage_limit_bytes: int | None = Field(default=None, ge=0)
+
+    # Platform mail (S4)
+    mail_daily_source_limit: int = Field(default=1_000, ge=0)
+
     @model_validator(mode="after")
     def validate_security_configuration(self) -> "Settings":
         SecretCipher(
@@ -227,6 +237,12 @@ class Settings(BaseSettings):
             "trusted_proxy_hops": self.trusted_proxy_hops,
             "trusted_proxy_networks": self.trusted_proxy_networks,
             "storage_root": self.storage_root,
+            "session_ttl_seconds": self.session_ttl_seconds,
+            "invitation_ttl_seconds": self.invitation_ttl_seconds,
+            "platform_base_url_configured": bool(self.platform_base_url),
+            "default_user_token_limit": self.default_user_token_limit,
+            "default_user_storage_limit_bytes": self.default_user_storage_limit_bytes,
+            "mail_daily_source_limit": self.mail_daily_source_limit,
             "credential_encryption_key_id": self.credential_encryption_key_id,
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_keys

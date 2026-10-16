@@ -9,7 +9,6 @@ supplied by the caller instead of the host.
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 from typing import Final
 from uuid import UUID
@@ -22,12 +21,14 @@ from opsmesh_sdk.errors import (
     error_for_code,
 )
 from opsmesh_sdk.transport.contracts import (
+    CONTENT_TYPE_HEADER,
     MAX_RESPONSE_BYTES,
     StreamChunk,
     TransportContext,
     TransportRequest,
     TransportResponse,
     build_call_headers,
+    decode_answer,
     resolve_timeout,
     send_cancellable,
 )
@@ -134,14 +135,7 @@ class HostTransport:
         try:
             response = await send_cancellable(
                 context.scope,
-                lambda: self._client.request(
-                    request.method,
-                    self._base_url.join(request.path),
-                    params=dict(request.query),
-                    json=request.body,
-                    headers=headers,
-                    timeout=timeout,
-                ),
+                lambda: self._deliver(request, headers, timeout),
             )
         except httpx.TimeoutException as exc:
             raise TimeoutError("The host did not answer within the deadline") from exc
@@ -150,6 +144,28 @@ class HostTransport:
                 "The host could not be reached", details={"error_code": type(exc).__name__}
             ) from exc
         return self._to_response(response)
+
+    async def _deliver(
+        self, request: TransportRequest, headers: dict[str, str], timeout: float
+    ) -> httpx.Response:
+        """Send the JSON body or the raw content of one call, never both."""
+        if request.content is not None:
+            return await self._client.request(
+                request.method,
+                self._base_url.join(request.path),
+                params=dict(request.query),
+                content=request.content,
+                headers=headers,
+                timeout=timeout,
+            )
+        return await self._client.request(
+            request.method,
+            self._base_url.join(request.path),
+            params=dict(request.query),
+            json=request.body,
+            headers=headers,
+            timeout=timeout,
+        )
 
     def stream(
         self, request: TransportRequest, context: TransportContext
@@ -164,15 +180,7 @@ class HostTransport:
         raw = response.content
         if len(raw) > MAX_RESPONSE_BYTES:
             raise TransportError("The host response exceeds the size bound")
-        body: object = None
-        if raw:
-            try:
-                body = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise TransportError(
-                    "The host answer is not valid JSON",
-                    details={"status": response.status_code},
-                ) from exc
+        body, content = decode_answer(raw, response.headers.get(CONTENT_TYPE_HEADER))
         request_id = response.headers.get("X-Request-ID")
         retry_after = _parse_retry_after(response.headers.get("Retry-After"))
         if response.is_success:
@@ -180,6 +188,7 @@ class HostTransport:
                 status=response.status_code,
                 headers=dict(response.headers),
                 body=body,
+                content=content,
                 request_id=request_id,
                 retry_after=retry_after,
             )

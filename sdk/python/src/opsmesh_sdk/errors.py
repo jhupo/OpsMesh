@@ -102,6 +102,31 @@ class SecurityError(OpsMeshError):
     code: ClassVar[str] = "security_violation"
 
 
+# Several stable server codes describe the same caller-facing failure; the
+# alias table keeps one typed error per failure class while every code the
+# platform envelope can carry stays branchable.
+_CODE_ALIASES: Final[dict[str, type[OpsMeshError]]] = {
+    "invalid_credentials": AuthenticationError,
+    "unauthorized": AuthenticationError,
+    "user_disabled": AuthorizationError,
+    "forbidden": AuthorizationError,
+    "policy_denied": AuthorizationError,
+    "invalid_argument": ValidationError,
+    "invalid_avatar": ValidationError,
+    "validation_error": ValidationError,
+    "bad_request": ValidationError,
+    "payload_too_large": ValidationError,
+    "method_not_allowed": ValidationError,
+    "duplicate_user": ConflictError,
+    "invitation_state": ConflictError,
+    "quota_reservation": ConflictError,
+    "idempotency_key_reused": ConflictError,
+    "idempotency_resource_missing": ConflictError,
+    "quota_exceeded": RateLimitError,
+    "idempotency_in_progress": RateLimitError,
+    "service_unavailable": TransportError,
+}
+
 _ERROR_BY_CODE: Final[dict[str, type[OpsMeshError]]] = {
     error.code: error
     for error in (
@@ -117,7 +142,7 @@ _ERROR_BY_CODE: Final[dict[str, type[OpsMeshError]]] = {
         CancelledError,
         SecurityError,
     )
-}
+} | _CODE_ALIASES
 
 
 def error_for_code(code: str) -> type[OpsMeshError]:

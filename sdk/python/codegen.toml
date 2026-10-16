@@ -1,81 +1,128 @@
 # OpsMesh SDK 分组与代码生成映射
-
-平台 routes/schema 导出稳定 `operation_id` 的 OpenAPI 后，按本配置生成
-`src/opsmesh_sdk/api/*.py` 业务客户端与 DTO。本文件是生成的唯一输入约定；
-S3 只交付映射规则与传输合同，业务分组随对应服务端步骤生成，不在本步宣称
-未实现的业务 API 可用。
+#
+# 平台 routes/schema 导出稳定 operation_id 的 OpenAPI 后，按本配置由
+# scripts/generate_sdk_api.py 生成 src/opsmesh_sdk/api/*.py 业务客户端与 DTO。
+# 本文件是生成的唯一输入约定；S3 只交付映射规则与传输合同，业务分组随对应
+# 服务端步骤生成，不在本步宣称未实现的业务 API 可用。
 
 ## 生成边界
+#
+# - 生成物只放 src/opsmesh_sdk/api/，手写稳定合同不改：values.py、errors.py、
+#   manifest.py、transport/、extensions/、host/。
+# - 生成客户端可导入 transport.contracts、errors、values；不得反向导入
+#   client、context、development。
+# - 纯值类型经 [shared_values] 映射复用，不复制手写 DTO。
+# - API 变更须重新导出平台 OpenAPI 并做一致性检查后才允许提交生成物。
 
-- 生成物只放 `src/opsmesh_sdk/api/`，手写稳定合同不改：`values.py`、
-  `errors.py`、`manifest.py`、`transport/`、`extensions/`、`host/`。
-- 生成客户端可导入 `transport.contracts`、`errors`、`values`；不得反向导入
-  `client`、`context`、`development`。
-- 纯值类型经 `[shared_values]` 映射复用，不复制手写 DTO。
-- API 变更须重新导出平台 OpenAPI 并做一致性检查后才允许提交生成物。
-
-## [openapi]
-
+[openapi]
 source = "docs/openapi.json" # 由 scripts/export_api_docs.py 生成
 default_prefix = "/api/v1"
 error_model = "ErrorResponse"
 
-## [[clients]]
+# 每个分组对应一个资源族；operation_id 的第一段决定归属，其余段是子客户端与
+# 方法名（list/get/create/update/delete 等稳定动作）。
+[[clients]]
+group = "identity"
+target = "api/identity.py"
 
-每个分组对应一个资源族；`operation_id` 前缀决定归属，方法名取前缀之后的
-稳定动作（list/get/create/update/delete 等）。
+[[clients]]
+group = "workspaces"
+target = "api/workspaces.py"
 
-| 分组 | operation_id 前缀 | 目标文件 |
-| --- | --- | --- |
-| identity | identity | api/identity.py |
-| workspaces | workspaces | api/workspaces.py |
-| capabilities | capabilities | api/capabilities.py |
-| resources | resources | api/resources.py |
-| execution | execution | api/execution.py |
-| orchestration | orchestration | api/orchestration.py |
-| extensions | extensions | api/extensions.py |
-| channels | channels | api/channels.py |
-| governance | governance | api/governance.py |
-| platform | platform | api/platform.py |
+[[clients]]
+group = "capabilities"
+target = "api/capabilities.py"
 
-## [[pagination]]
+[[clients]]
+group = "resources"
+target = "api/resources.py"
 
+[[clients]]
+group = "execution"
+target = "api/execution.py"
+
+[[clients]]
+group = "orchestration"
+target = "api/orchestration.py"
+
+[[clients]]
+group = "extensions"
+target = "api/extensions.py"
+
+[[clients]]
+group = "channels"
+target = "api/channels.py"
+
+[[clients]]
+group = "governance"
+target = "api/governance.py"
+
+[[clients]]
+group = "platform"
+target = "api/platform.py"
+
+# 游标分页端点的查询参数、游标字段与集合字段名。
+[pagination]
 cursor_parameter = "cursor"
 cursor_field = "next_cursor"
 page_field = "items"
 
-## [[streaming]]
-
+# 流式端点的游标头、媒体类型与空闲上限。
+[streaming]
 event_cursor_header = "Last-Event-ID"
 sse_content_type = "text/event-stream"
 max_idle_seconds = 300
 
-## [[shared_values]]
+# 纯值映射：生成 DTO 中同名同义字段直接复用 SDK 手写类型，不生成副本。
+[shared_values]
+ResourceRef = "opsmesh_sdk.values"
+ScopeRef = "opsmesh_sdk.values"
+Cursor = "opsmesh_sdk.values"
+Page = "opsmesh_sdk.values"
+Usage = "opsmesh_sdk.values"
+IdempotencyKey = "opsmesh_sdk.values"
+TraceContext = "opsmesh_sdk.values"
+FlowRunRef = "opsmesh_sdk.values"
 
-纯值映射：生成 DTO 中同名同义字段直接复用 SDK 手写类型，不生成副本。
+# 统一错误响应体映射到 opsmesh_sdk.errors 的类型化错误。一个失败类别对应一个
+# 类型化错误；服务端多个稳定码描述同一类别时在 errors.py 的别名表中归并，
+# 本表登记全部可达码。
+[errors]
+unauthenticated = "AuthenticationError"
+invalid_credentials = "AuthenticationError"
+unauthorized = "AuthenticationError"
+permission_denied = "AuthorizationError"
+forbidden = "AuthorizationError"
+policy_denied = "AuthorizationError"
+user_disabled = "AuthorizationError"
+not_found = "NotFoundError"
+validation_failed = "ValidationError"
+validation_error = "ValidationError"
+invalid_argument = "ValidationError"
+invalid_avatar = "ValidationError"
+bad_request = "ValidationError"
+payload_too_large = "ValidationError"
+method_not_allowed = "ValidationError"
+conflict = "ConflictError"
+duplicate_user = "ConflictError"
+invitation_state = "ConflictError"
+quota_reservation = "ConflictError"
+idempotency_key_reused = "ConflictError"
+idempotency_resource_missing = "ConflictError"
+rate_limited = "RateLimitError"
+quota_exceeded = "RateLimitError"
+idempotency_in_progress = "RateLimitError"
+needs_attention = "UnknownEffectError"
+unavailable = "TransportError"
+service_unavailable = "TransportError"
 
-| 类型 | 来源 |
-| --- | --- |
-| ResourceRef | opsmesh_sdk.values |
-| ScopeRef | opsmesh_sdk.values |
-| Cursor | opsmesh_sdk.values |
-| Page | opsmesh_sdk.values |
-| Usage | opsmesh_sdk.values |
-| IdempotencyKey | opsmesh_sdk.values |
-| TraceContext | opsmesh_sdk.values |
-| FlowRunRef | opsmesh_sdk.values |
+# OpenAPI 无法忠实表达“任意图片类型”的二进制载荷：上传接受调用方声明的
+# Content-Type，读取返回存储时的媒体类型。这两个方向在此显式登记，生成客户端
+# 走传输层原始字节通道，其余操作一律按 JSON 编解码。
+[[binary]]
+operation = "identity.users.avatar.upload"
+direction = "request"
 
-## [[errors]]
-
-统一错误响应体映射到 `opsmesh_sdk.errors` 的类型化错误：
-
-| error.code | SDK 错误 |
-| --- | --- |
-| unauthenticated | AuthenticationError |
-| permission_denied | AuthorizationError |
-| not_found | NotFoundError |
-| validation_failed | ValidationError |
-| conflict | ConflictError |
-| rate_limited | RateLimitError |
-| needs_attention | UnknownEffectError |
-| unavailable | TransportError |
+[[binary]]
+operation = "identity.users.avatar.read"
+direction = "response"

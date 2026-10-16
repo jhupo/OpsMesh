@@ -20,6 +20,35 @@ from opsmesh.shared.security.secrets import SecretCipher
 
 TEST_DATABASE_URL_ENV = "OPSMESH_TEST_DATABASE_URL"
 TEST_STORAGE_ROOT = ".opsmesh-test-storage"
+FEATURE_TABLES = (
+    "audit_append_receipts",
+    "audit_chain_head",
+    "audit_events",
+    "audit_verifications",
+    "account_invitations",
+    "approval_requests",
+    "login_sessions",
+    "mail_intents",
+    "security_events",
+    "smtp_configurations",
+    "storage_reservations",
+    "token_reservations",
+    "user_credentials",
+    "user_quota_limits",
+    "user_storage_accounts",
+    "user_token_accounts",
+    "users",
+)
+
+
+def truncate_feature_tables(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "TRUNCATE temporal_dispatches, http_creation_receipts, "
+                + ", ".join(FEATURE_TABLES)
+            )
+        )
 
 
 def test_database_url() -> str | None:
@@ -63,8 +92,7 @@ def database_sessions(database_engine: Engine) -> Iterator[sessionmaker]:
         },
     )
     yield sessions
-    with database_engine.begin() as connection:
-        connection.execute(text("TRUNCATE temporal_dispatches, http_creation_receipts"))
+    truncate_feature_tables(database_engine)
 
 
 @pytest.fixture

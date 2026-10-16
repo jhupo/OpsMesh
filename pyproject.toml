@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.18.4",
     "cryptography>=48.0.0",
     "docker>=7.2.0,<8.0.0",
+    "email-validator>=2.0.0",
     "fastapi>=0.116.0,<1.0.0",
     "httpx>=0.28.0,<1.0.0",
     "httpx2>=2.12.0,<3.0.0",
@@ -44,6 +45,9 @@ dependencies = [
     "uvicorn[standard]>=0.35.0,<1.0.0",
     "pillow>=12.3.0",
 ]
+
+[project.scripts]
+opsmesh-cli = "opsmesh.bootstrap.cli:main"
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -220,6 +224,80 @@ source_modules = [
     "opsmesh.shared", "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
 ]
 forbidden_modules = ["opsmesh.bootstrap"]
+
+[[tool.importlinter.contracts]]
+id = "v4-identity-boundaries"
+name = "Identity uses shared, telemetry, temporal and governance only"
+type = "forbidden"
+source_modules = ["opsmesh.identity"]
+forbidden_modules = [
+    "opsmesh.platform", "opsmesh.resources", "opsmesh.capabilities",
+    "opsmesh.extensions", "opsmesh.execution", "opsmesh.workspaces",
+    "opsmesh.orchestration", "opsmesh.channels", "opsmesh.bootstrap",
+    "opsmesh.config", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-governance-boundaries"
+name = "Governance never imports identity or later owners; identity is injected"
+type = "forbidden"
+source_modules = ["opsmesh.governance"]
+forbidden_modules = [
+    "opsmesh.identity", "opsmesh.platform", "opsmesh.capabilities",
+    "opsmesh.resources", "opsmesh.extensions", "opsmesh.execution",
+    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
+    "opsmesh.bootstrap", "opsmesh.config", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-platform-boundaries"
+name = "Platform uses shared, telemetry, temporal, identity and governance only"
+type = "forbidden"
+source_modules = ["opsmesh.platform"]
+forbidden_modules = [
+    "opsmesh.capabilities", "opsmesh.resources", "opsmesh.extensions",
+    "opsmesh.execution", "opsmesh.workspaces", "opsmesh.orchestration",
+    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-identity-auth-isolated"
+name = "Authentication reaches the profile owner only through injected contracts"
+type = "forbidden"
+source_modules = ["opsmesh.identity.auth"]
+forbidden_modules = [
+    "opsmesh.identity.users", "opsmesh.identity.quotas", "opsmesh.identity.invitations",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-identity-users-service-no-auth"
+name = "The users service never imports authentication; only its routes may"
+type = "forbidden"
+source_modules = ["opsmesh.identity.users.service"]
+forbidden_modules = ["opsmesh.identity.auth"]
+
+[[tool.importlinter.contracts]]
+id = "v4-identity-quota-ledger-isolated"
+name = "Quota ledger services stay on shared database mechanisms"
+type = "forbidden"
+source_modules = ["opsmesh.identity.quotas.service"]
+forbidden_modules = [
+    "opsmesh.identity.auth", "opsmesh.identity.users", "opsmesh.identity.invitations",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-identity-invitations-no-auth"
+name = "Invitation services open accounts through injected contracts, not authentication"
+type = "forbidden"
+source_modules = ["opsmesh.identity.invitations.service"]
+forbidden_modules = ["opsmesh.identity.auth", "opsmesh.identity.quotas"]
+
+[[tool.importlinter.contracts]]
+id = "v4-platform-mail-service-no-identity"
+name = "The mail service never reads identity tables; only its routes authenticate"
+type = "forbidden"
+source_modules = ["opsmesh.platform.mail.service"]
+forbidden_modules = ["opsmesh.identity"]
 
 [[tool.importlinter.contracts]]
 id = "v4-server-does-not-import-sdk"

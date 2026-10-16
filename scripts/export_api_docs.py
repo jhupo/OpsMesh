@@ -13,6 +13,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+ERROR_AND_TRACING_NOTE = (
+    "所有错误响应使用统一封装 `{\"error\": {\"code\", \"message\", \"request_id\", \"details\"}}`；"
+    "客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` "
+    "与 `traceparent`。"
+)
 
 
 def dump(value: Any) -> str:
@@ -163,7 +168,7 @@ def render_operation(path: str, method: str, operation: dict[str, Any], route: A
                 f"| {code} | {cell(response.get('description', ''))} | "
                 f"{media} | {schema_type(value.get('schema', {})) if content else '无响应体'} |"
             )
-    lines.extend(["", "其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。", ""])
+    lines.extend(["", ERROR_AND_TRACING_NOTE, ""])
     return "\n".join(lines)
 
 
@@ -248,7 +253,9 @@ def build_documents() -> dict[Path, str]:
         f"共 **{len(operations)} 个接口**、**{len(document['paths'])} 个路径**、"
         f"**{len(schemas)} 个模型**。默认前缀 `/api/v1`。",
         "",
-        "[使用说明](../api.md) · [OpenAPI JSON](../openapi.json) · [全部数据模型](schemas.md)",
+        ERROR_AND_TRACING_NOTE,
+        "",
+        "[OpenAPI JSON](../openapi.json) · [全部数据模型](schemas.md)",
         "",
         "| 接口分组 | 接口数 |",
         "| --- | --- |",
