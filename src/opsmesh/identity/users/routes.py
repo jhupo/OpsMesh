@@ -107,23 +107,24 @@ def admin_update_user(
     user: CurrentUserDep,
 ) -> UserProfileView:
     require_platform_admin(user)
-    actor = AuditActor.from_user(user)
     with session_transaction(session):
-        if payload.display_name is not None or payload.work_root is not None:
-            service.update_profile(
-                session,
-                user_id=user_id,
-                actor=actor,
-                display_name=payload.display_name,
-                work_root=payload.work_root,
-            )
-        if payload.status is not None:
-            service.set_status(session, user_id=user_id, status=payload.status, actor=actor)
-        if payload.platform_roles is not None:
-            service.set_platform_roles(
-                session, user_id=user_id, roles=frozenset(payload.platform_roles), actor=actor
-            )
-        profile = service.get_user(session, user_id)
+        # One service call owns the whole update and its lock order; calling
+        # the field setters one by one would let a combined request take the
+        # audit chain head before the administrator rows a roles-only request
+        # already holds.
+        profile = service.apply_admin_update(
+            session,
+            user_id=user_id,
+            actor=AuditActor.from_user(user),
+            display_name=payload.display_name,
+            work_root=payload.work_root,
+            status=payload.status,
+            roles=(
+                frozenset(payload.platform_roles)
+                if payload.platform_roles is not None
+                else None
+            ),
+        )
     return _view(profile)
 
 

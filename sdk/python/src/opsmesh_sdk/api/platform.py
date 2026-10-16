@@ -41,6 +41,7 @@ class MailIntentView(BaseModel):
     sent_at: datetime | None
     source: str
     source_ref: str | None
+    source_revision: str | None
     status: str
     subject: str
 
@@ -88,6 +89,14 @@ class SmtpConfigurationView(BaseModel):
 
 
 class TestMailRequest(BaseModel):
+    """One administrator-triggered SMTP test.
+
+``idempotency_key`` identifies the test operation, not the configuration:
+a retry of the same request reuses the key and replays its intent, while
+a new test — after a failure, a configuration change or simply again —
+carries a new key and starts a new send."""
+
+    idempotency_key: str
     recipient: str
 
 
@@ -202,10 +211,12 @@ class PlatformMailSmtpClient:
     async def test(self, request: TestMailRequest) -> MailIntentView:
         """Register one administrator-triggered test mail for durable delivery.
 
-The idempotency key carries the configuration revision: a retry of the
-same test replays its intent, while a test after the server or the
-credentials changed is a new operation instead of a stale replay of an
-older configuration."""
+The idempotency key is the client's operation key: retrying the same
+request replays its intent, while a new test — after a failed send, a
+configuration change or simply another attempt — carries a new key and
+starts a new delivery. The configuration revision deliberately plays no
+part: an unchanged configuration must not turn a fresh test into a stale
+replay of an older outcome."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",

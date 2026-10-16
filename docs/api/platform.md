@@ -306,10 +306,12 @@ Operation ID：`platform.mail.smtp.test`。
 
 Register one administrator-triggered test mail for durable delivery.
 
-The idempotency key carries the configuration revision: a retry of the
-same test replays its intent, while a test after the server or the
-credentials changed is a new operation instead of a stale replay of an
-older configuration.
+The idempotency key is the client's operation key: retrying the same
+request replays its intent, while a new test — after a failed send, a
+configuration change or simply another attempt — carries a new key and
+starts a new delivery. The configuration revision deliberately plays no
+part: an unchanged configuration must not turn a fresh test into a stale
+replay of an older outcome.
 
 权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
 

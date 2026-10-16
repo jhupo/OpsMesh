@@ -1075,6 +1075,17 @@
             ],
             "title": "Source Ref"
           },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Revision"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1088,6 +1099,7 @@
           "intent_id",
           "source",
           "source_ref",
+          "source_revision",
           "recipient",
           "subject",
           "status",
@@ -1592,7 +1604,14 @@
       },
       "TestMailRequest": {
         "additionalProperties": false,
+        "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send.",
         "properties": {
+          "idempotency_key": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
           "recipient": {
             "format": "email",
             "maxLength": 320,
@@ -1601,7 +1620,8 @@
           }
         },
         "required": [
-          "recipient"
+          "recipient",
+          "idempotency_key"
         ],
         "title": "TestMailRequest",
         "type": "object"
@@ -6022,7 +6042,7 @@
     },
     "/api/v1/platform/mail/smtp/test": {
       "post": {
-        "description": "Register one administrator-triggered test mail for durable delivery.\n\nThe idempotency key carries the configuration revision: a retry of the\nsame test replays its intent, while a test after the server or the\ncredentials changed is a new operation instead of a stale replay of an\nolder configuration.",
+        "description": "Register one administrator-triggered test mail for durable delivery.\n\nThe idempotency key is the client's operation key: retrying the same\nrequest replays its intent, while a new test — after a failed send, a\nconfiguration change or simply another attempt — carries a new key and\nstarts a new delivery. The configuration revision deliberately plays no\npart: an unchanged configuration must not turn a fresh test into a stale\nreplay of an older outcome.",
         "operationId": "platform.mail.smtp.test",
         "parameters": [
           {

@@ -56,7 +56,9 @@ class MailIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     The rendered body is stored encrypted because it may carry an invitation
     token; the subject stays readable for operator status views. A send whose
-    outcome cannot be confirmed is never reported as delivered.
+    outcome cannot be confirmed is never reported as delivered. The source
+    revision binds one intent to the version of its source it was rendered
+    for, so a rotated source never delivers its stale content.
     """
 
     __tablename__ = "mail_intents"
@@ -68,6 +70,7 @@ class MailIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     source: Mapped[str] = mapped_column(String(100), nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String(200))
+    source_revision: Mapped[str | None] = mapped_column(String(100))
     recipient: Mapped[str] = mapped_column(String(320), nullable=False)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     body_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)

@@ -2,7 +2,10 @@
 
 Every mutating operation records its platform audit fact inside the caller's
 transaction; role and status changes are authorized by the route layer, which
-owns the platform-role check.
+owns the platform-role check. Every mutation locks the rows it writes — the
+administrator boundary and the target profile — before its first audit
+append, so no two user updates can hold the audit chain head while waiting
+for each other's row locks.
 """
 
 from __future__ import annotations
@@ -124,9 +127,112 @@ def update_profile(
     work_root: str | None = None,
 ) -> UserProfile:
     """Update the caller's own profile fields; nothing else is writable here."""
-    profile = session.get(UserProfile, user_id)
-    if profile is None:
-        raise NotFoundError("The user does not exist")
+    profile = _locked_profile(session, user_id)
+    return _apply_profile_fields(
+        session,
+        profile=profile,
+        actor=actor,
+        display_name=display_name,
+        work_root=work_root,
+    )
+
+
+def apply_admin_update(
+    session: Session,
+    *,
+    user_id: UUID,
+    actor: AuditActor,
+    display_name: str | None = None,
+    work_root: str | None = None,
+    status: str | None = None,
+    roles: frozenset[str] | None = None,
+) -> UserProfile:
+    """Apply one administrative update under one lock order.
+
+    The administrator boundary and the target profile are locked before the
+    first audit append, whatever fields the request carries: a combined
+    update, a roles-only update and a profile-only update then all take
+    their row locks before the audit chain head, so no two of them can hold
+    the chain head while waiting for each other's rows.
+    """
+    administrators = _lock_active_administrators(session)
+    profile = _locked_profile(session, user_id)
+    if display_name is not None or work_root is not None:
+        _apply_profile_fields(
+            session,
+            profile=profile,
+            actor=actor,
+            display_name=display_name,
+            work_root=work_root,
+        )
+    if status is not None:
+        _apply_status(
+            session,
+            profile=profile,
+            administrators=administrators,
+            status=status,
+            actor=actor,
+        )
+    if roles is not None:
+        _apply_roles(
+            session,
+            profile=profile,
+            administrators=administrators,
+            roles=roles,
+            actor=actor,
+        )
+    return profile
+
+
+def set_platform_roles(
+    session: Session,
+    *,
+    user_id: UUID,
+    roles: frozenset[str],
+    actor: AuditActor,
+) -> UserProfile:
+    """Replace one account's platform roles; the last admin is protected."""
+    # The administrator set is the serialization boundary of the last-admin
+    # guard: every role or status change locks it first, in one global order,
+    # so two transactions cannot each see the other administrator and both
+    # remove the last ones.
+    administrators = _lock_active_administrators(session)
+    profile = _locked_profile(session, user_id)
+    return _apply_roles(
+        session, profile=profile, administrators=administrators, roles=roles, actor=actor
+    )
+
+
+def set_status(
+    session: Session,
+    *,
+    user_id: UUID,
+    status: str,
+    actor: AuditActor,
+) -> UserProfile:
+    """Enable or disable one account; a disabled account cannot authenticate."""
+    if status not in USER_STATUSES:
+        raise InvalidArgumentError("The user status is unknown")
+    administrators = _lock_active_administrators(session)
+    profile = _locked_profile(session, user_id)
+    return _apply_status(
+        session,
+        profile=profile,
+        administrators=administrators,
+        status=status,
+        actor=actor,
+    )
+
+
+def _apply_profile_fields(
+    session: Session,
+    *,
+    profile: UserProfile,
+    actor: AuditActor,
+    display_name: str | None,
+    work_root: str | None,
+) -> UserProfile:
+    """Write the self-writable fields of an already locked profile."""
     changed: list[str] = []
     if display_name is not None and display_name != profile.display_name:
         profile.display_name = display_name
@@ -147,21 +253,16 @@ def update_profile(
     return profile
 
 
-def set_platform_roles(
+def _apply_roles(
     session: Session,
     *,
-    user_id: UUID,
+    profile: UserProfile,
+    administrators: list[UserProfile],
     roles: frozenset[str],
     actor: AuditActor,
 ) -> UserProfile:
-    """Replace one account's platform roles; the last admin is protected."""
+    """Replace the platform roles of an already locked profile."""
     validated = _validated_roles(roles)
-    # The administrator set is the serialization boundary of the last-admin
-    # guard: every role or status change locks it first, in one global order,
-    # so two transactions cannot each see the other administrator and both
-    # remove the last ones.
-    administrators = _lock_active_administrators(session)
-    profile = _locked_profile(session, user_id)
     previous = frozenset(profile.platform_roles)
     if previous == validated:
         return profile
@@ -184,18 +285,15 @@ def set_platform_roles(
     return profile
 
 
-def set_status(
+def _apply_status(
     session: Session,
     *,
-    user_id: UUID,
+    profile: UserProfile,
+    administrators: list[UserProfile],
     status: str,
     actor: AuditActor,
 ) -> UserProfile:
-    """Enable or disable one account; a disabled account cannot authenticate."""
-    if status not in USER_STATUSES:
-        raise InvalidArgumentError("The user status is unknown")
-    administrators = _lock_active_administrators(session)
-    profile = _locked_profile(session, user_id)
+    """Set the account status of an already locked profile."""
     if profile.status == status:
         return profile
     previous_status = profile.status
@@ -224,9 +322,10 @@ def set_avatar(
 ) -> UserProfile:
     """Normalize and store one avatar on the profile itself."""
     normalized = normalize_avatar(content, content_type=content_type)
-    profile = session.get(UserProfile, user_id)
-    if profile is None:
-        raise NotFoundError("The user does not exist")
+    # The row is locked before the audit append: a mutation that took the
+    # audit chain head first and the row lock at flush could deadlock against
+    # a concurrent role change that holds the row and waits for the head.
+    profile = _locked_profile(session, user_id)
     profile.avatar_content = normalized.content
     profile.avatar_content_type = normalized.content_type
     profile.avatar_updated_at = datetime.now(UTC)
@@ -247,9 +346,7 @@ def set_avatar(
 
 
 def clear_avatar(session: Session, *, user_id: UUID, actor: AuditActor) -> UserProfile:
-    profile = session.get(UserProfile, user_id)
-    if profile is None:
-        raise NotFoundError("The user does not exist")
+    profile = _locked_profile(session, user_id)
     if profile.avatar_content is None:
         return profile
     profile.avatar_content = None

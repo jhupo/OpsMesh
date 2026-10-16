@@ -10,6 +10,7 @@ opening.
 from __future__ import annotations
 
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -22,6 +23,7 @@ from opsmesh.governance.security_events.service import SecurityEventLog
 from opsmesh.identity.access import PlatformRole
 from opsmesh.identity.auth.models import LoginSession
 from opsmesh.identity.auth.service import AuthService, token_digest
+from opsmesh.identity.context import CurrentUser
 from opsmesh.identity.errors import (
     AuthenticationError,
     InvalidCredentialsError,
@@ -609,6 +611,114 @@ def test_concurrent_demotion_cannot_empty_the_platform(
             )
         )
     assert active_admins == 1
+
+
+def wait_for_lock_waits(engine, *, expected: int, timeout: float = 20.0) -> None:
+    """Block until ``expected`` other backends wait for a lock."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as connection:
+            waiting = connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() "
+                    "AND datname = current_database()"
+                )
+            )
+        if (waiting or 0) >= expected:
+            return
+        time.sleep(0.02)
+    raise TimeoutError("the expected lock waits did not appear in time")
+
+
+def test_a_combined_update_and_a_roles_only_update_do_not_deadlock(
+    database_engine, clean_concurrency_tables
+) -> None:
+    """Both admin update shapes take their row locks before the audit head.
+
+    The interleaving is forced, not raced: one session holds the last
+    administrator row, the roles-only request locks the remaining
+    administrator rows and waits for that row, and only then does the
+    combined request start. With the row locks first — the fixed order — the
+    combined request blocks on an administrator row before it ever reaches
+    the audit chain head, and releasing the held row unwinds both requests.
+    With the chain head first the combined request holds the head while
+    waiting for the rows the roles-only request holds and is waiting for the
+    head with, and PostgreSQL aborts one of them.
+    """
+    from opsmesh.identity.users.routes import admin_update_user
+    from opsmesh.identity.users.schemas import AdminUpdateUserRequest
+
+    sessions = concurrent_sessions(database_engine)
+    admin_user = CurrentUser(
+        user_id=uuid4(),
+        email="actor@example.com",
+        display_name="Actor",
+        status="active",
+        platform_roles=frozenset({"admin", "member"}),
+    )
+    first_id, _token = open_account(
+        sessions, email=ADMIN_EMAIL, display_name="First", password="correct-horse",
+        roles=ADMIN_ROLES,
+    )
+    second_id, _token = open_account(
+        sessions, email="second-admin@example.com", display_name="Second",
+        password="correct-horse", roles=ADMIN_ROLES,
+    )
+    third_id, _token = open_account(
+        sessions, email="third-admin@example.com", display_name="Third",
+        password="correct-horse", roles=ADMIN_ROLES,
+    )
+    # The held row is the largest id: the roles-only request then locks every
+    # other administrator before it reaches the row it waits for.
+    held_id = max(first_id, second_id, third_id)
+    outcomes: dict[str, str] = {}
+
+    def apply(name: str, user_id: UUID, *, combined: bool) -> None:
+        try:
+            with sessions() as session:
+                admin_update_user(
+                    user_id,
+                    AdminUpdateUserRequest(
+                        display_name="Renamed" if combined else None,
+                        platform_roles=["member"],
+                    ),
+                    session,
+                    admin_user,
+                )
+            outcomes[name] = "updated"
+        except Exception as exc:  # noqa: BLE001 - the deadlock must surface here
+            outcomes[name] = type(exc).__name__
+
+    holder = sessions()
+    transaction = holder.begin()
+    roles_thread = threading.Thread(
+        target=apply, args=("roles_only", second_id), kwargs={"combined": False}
+    )
+    combined_thread = threading.Thread(
+        target=apply, args=("combined", first_id), kwargs={"combined": True}
+    )
+    try:
+        holder.scalar(
+            select(UserProfile).where(UserProfile.id == held_id).with_for_update()
+        )
+        roles_thread.start()
+        wait_for_lock_waits(database_engine, expected=1)
+        combined_thread.start()
+        wait_for_lock_waits(database_engine, expected=2)
+    finally:
+        transaction.rollback()
+        holder.close()
+    roles_thread.join(timeout=30)
+    combined_thread.join(timeout=30)
+    assert sorted(outcomes.values()) == ["updated", "updated"], outcomes
+    with sessions() as session:
+        profiles = {profile.id: profile for profile in session.scalars(select(UserProfile))}
+    assert profiles[first_id].display_name == "Renamed"
+    assert profiles[first_id].platform_roles == ["member"]
+    assert profiles[second_id].platform_roles == ["member"]
+    assert profiles[second_id].display_name == "Second"
+    assert users.PLATFORM_ADMINISTRATOR in profiles[third_id].platform_roles
 
 
 def test_concurrent_reservations_of_one_key_replay_one_reservation(

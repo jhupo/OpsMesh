@@ -54,11 +54,17 @@ MAIL_CLAIM_LEASE_SECONDS = 300
 
 @dataclass(frozen=True)
 class SourceScope:
-    """The declared origin of one send, admitted before anything is registered."""
+    """The declared origin of one send, admitted before anything is registered.
+
+    ``source_revision`` is the version of the source this send was rendered
+    for; a versioned source's admission contract requires it to still be the
+    current version when the mail is registered and again when it is sent.
+    """
 
     source: str
     source_ref: str | None
     recipient: str
+    source_revision: str | None = None
 
 
 class MailAuthorization(Protocol):
@@ -207,6 +213,7 @@ def register_mail(
     authorization: MailAuthorization,
     cipher: SecretCipher,
     source_ref: str | None = None,
+    source_revision: str | None = None,
     daily_source_limit: int = DEFAULT_DAILY_SOURCE_LIMIT,
 ) -> tuple[MailIntent, bool]:
     """Admit, bound and register one send intent inside the caller's transaction.
@@ -228,10 +235,21 @@ def register_mail(
     body_bytes = body.encode("utf-8")
     if len(body_bytes) > MAX_BODY_BYTES:
         raise InvalidArgumentError("The mail body is too long")
-    scope = SourceScope(source=source, source_ref=source_ref, recipient=recipient)
+    scope = SourceScope(
+        source=source,
+        source_ref=source_ref,
+        recipient=recipient,
+        source_revision=source_revision,
+    )
     authorization.authorize(session, scope)
     content_digest = payload_digest(
-        {"subject": subject, "body": body, "recipient": recipient, "source_ref": source_ref}
+        {
+            "subject": subject,
+            "body": body,
+            "recipient": recipient,
+            "source_ref": source_ref,
+            "source_revision": source_revision,
+        }
     )
     _lock_source_day(session, source=source)
     idempotency_scope = f"mail-source:{source}"
@@ -264,6 +282,7 @@ def register_mail(
     intent = MailIntent(
         source=source,
         source_ref=source_ref,
+        source_revision=source_revision,
         recipient=recipient,
         subject=subject,
         body_ciphertext=sealed.ciphertext,

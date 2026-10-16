@@ -30,7 +30,12 @@ INVITATION_MAIL_SOURCE = "identity.invitations"
 
 
 class InvitationMailAuthorization:
-    """Admit one invitation mail for its pending invitation and recipient."""
+    """Admit one invitation mail for its pending invitation and recipient.
+
+    The mail also carries the invitation's token revision it was rendered
+    for: a resend rotates the token, so an older intent is refused even
+    though the invitation itself is still pending.
+    """
 
     def authorize(self, session: Session, scope: SourceScope) -> None:
         if scope.source != INVITATION_MAIL_SOURCE:
@@ -43,14 +48,34 @@ class InvitationMailAuthorization:
             invitation_id = UUID(scope.source_ref)
         except ValueError as exc:
             raise ForbiddenError("The invitation reference is malformed") from exc
+        revision = _required_revision(scope.source_revision)
         invitation = invitations.get_invitation(session, invitation_id)
         if invitation.email != scope.recipient:
             raise ForbiddenError("The recipient does not match the invitation")
+        if invitation.send_count != revision:
+            raise ConflictError(
+                "The invitation token was rotated after this mail was rendered",
+                code="invitation_rotated",
+                details={
+                    "rendered_revision": revision,
+                    "current_revision": invitation.send_count,
+                },
+            )
         if invitations.effective_status(invitation) != INVITATION_PENDING:
             raise ConflictError(
                 "The invitation is no longer pending",
                 details={"status": invitations.effective_status(invitation)},
             )
+
+
+def _required_revision(source_revision: str | None) -> int:
+    """Parse the revision one versioned source must declare."""
+    if source_revision is None:
+        raise ForbiddenError("An invitation mail requires its token revision")
+    try:
+        return int(source_revision)
+    except ValueError as exc:
+        raise ForbiddenError("The invitation mail revision is malformed") from exc
 
 
 def mail_source_authorizations() -> dict[str, MailAuthorization]:
@@ -89,10 +114,15 @@ class InvitationMailRegistrar:
         body: str,
         idempotency_key: str,
     ) -> None:
+        # The revision is the invitation's current token version: identity has
+        # already created or rotated it in this transaction, so the mail is
+        # bound to the token its body actually carries.
+        revision = str(invitations.get_invitation(session, invitation_id).send_count)
         mail.register_mail(
             session,
             source=INVITATION_MAIL_SOURCE,
             source_ref=str(invitation_id),
+            source_revision=revision,
             recipient=recipient,
             subject=subject,
             body=body,

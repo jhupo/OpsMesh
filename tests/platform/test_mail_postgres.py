@@ -414,6 +414,68 @@ def test_a_delivery_re_admits_its_source_and_refuses_a_revoked_invitation(
         assert intent.outcome_unknown is False
 
 
+def test_a_rotated_invitation_never_sends_its_old_token(
+    database_sessions, async_database_sessions
+) -> None:
+    """A resend rotates the token, so the earlier mail is refused, not sent.
+
+    Both intents reference the same pending invitation; only the one whose
+    revision still matches the invitation's current token is admitted. The
+    stale one ends failed with its rotation reason instead of delivering a
+    link that can no longer accept the invitation.
+    """
+    registrar = InvitationMailRegistrar(
+        authorization=InvitationMailAuthorization(),
+        cipher=cipher(),
+        daily_source_limit=100,
+    )
+    with database_sessions() as session, session.begin():
+        invitation, _token = invitations.create_invitation(
+            session,
+            email="invited@example.com",
+            invited_by=platform_actor(),
+            sender=registrar,
+        )
+    with database_sessions() as session, session.begin():
+        invitations.resend_invitation(
+            session,
+            invitation_id=invitation.id,
+            invited_by=platform_actor(),
+            sender=registrar,
+            platform_base_url="https://opsmesh.example.com",
+        )
+    with database_sessions() as session:
+        intents = list(
+            session.scalars(
+                select(MailIntent)
+                .where(MailIntent.source_ref == str(invitation.id))
+                .order_by(MailIntent.source_revision.asc())
+            )
+        )
+    assert [intent.source_revision for intent in intents] == ["1", "2"]
+    stale_id, current_id = intents[0].id, intents[1].id
+    activities = MailActivities(cipher(), async_database_sessions, mail_source_authorizations())
+    stale_outcome = asyncio.run(activities.deliver_mail_intent(stale_id))
+    assert stale_outcome.delivered is False
+    assert stale_outcome.reason == "source_not_admitted:invitation_rotated"
+    with database_sessions() as session:
+        stale = session.get(MailIntent, stale_id)
+        assert stale is not None
+        assert stale.status == MAIL_FAILED
+        assert stale.outcome_unknown is False
+        assert stale.failure_reason == "source_not_admitted:invitation_rotated"
+    # The current revision passes admission; only the missing SMTP
+    # configuration stops it, never the rotation.
+    current_outcome = asyncio.run(activities.deliver_mail_intent(current_id))
+    assert current_outcome.delivered is False
+    assert current_outcome.reason == "smtp_not_configured"
+    with database_sessions() as session:
+        current = session.get(MailIntent, current_id)
+        assert current is not None
+        assert current.status == MAIL_FAILED
+        assert current.failure_reason == "smtp_not_configured"
+
+
 def test_a_slow_send_does_not_block_the_event_loop(
     database_sessions, async_database_sessions, monkeypatch
 ) -> None:
@@ -461,10 +523,16 @@ def test_a_refused_smtp_endpoint_ends_the_intent_failed(
         assert intent.outcome_unknown is False
 
 
-def test_a_repeat_smtp_test_replays_and_a_new_configuration_starts_a_new_one(
+def test_a_test_operation_replays_and_a_new_operation_sends_again(
     database_sessions,
 ) -> None:
-    """One test operation is bounded by the configuration revision it tested."""
+    """The operation key, not the configuration, bounds one SMTP test.
+
+    Retrying the same request replays its intent. A new test — after a failed
+    send, a configuration change or simply another attempt — carries a new
+    key and registers a new delivery: an unchanged configuration must not
+    turn a fresh test into a stale replay of an older outcome.
+    """
     from opsmesh.identity.context import CurrentUser
     from opsmesh.platform.mail.routes import test_smtp
     from opsmesh.platform.mail.schemas import TestMailRequest
@@ -477,10 +545,33 @@ def test_a_repeat_smtp_test_replays_and_a_new_configuration_starts_a_new_one(
         platform_roles=frozenset({"admin", "member"}),
     )
     with database_sessions() as session:
-        first = test_smtp(TestMailRequest(recipient="ops@example.com"), session, admin, cipher())
+        first = test_smtp(
+            TestMailRequest(recipient="ops@example.com", idempotency_key="test-op-1"),
+            session,
+            admin,
+            cipher(),
+        )
     with database_sessions() as session:
-        replay = test_smtp(TestMailRequest(recipient="ops@example.com"), session, admin, cipher())
+        replay = test_smtp(
+            TestMailRequest(recipient="ops@example.com", idempotency_key="test-op-1"),
+            session,
+            admin,
+            cipher(),
+        )
     assert replay.intent_id == first.intent_id
+    with database_sessions() as session, session.begin():
+        mail.mark_failed(
+            session, intent_id=first.intent_id, reason="ConnectionRefusedError"
+        )
+    with database_sessions() as session:
+        retest = test_smtp(
+            TestMailRequest(recipient="ops@example.com", idempotency_key="test-op-2"),
+            session,
+            admin,
+            cipher(),
+        )
+    assert retest.intent_id != first.intent_id
+    assert retest.status == MAIL_PENDING
     with database_sessions() as session, session.begin():
         mail.configure_smtp(
             session,
@@ -498,9 +589,12 @@ def test_a_repeat_smtp_test_replays_and_a_new_configuration_starts_a_new_one(
         )
     with database_sessions() as session:
         after_reconfiguration = test_smtp(
-            TestMailRequest(recipient="ops@example.com"), session, admin, cipher()
+            TestMailRequest(recipient="ops@example.com", idempotency_key="test-op-3"),
+            session,
+            admin,
+            cipher(),
         )
-    assert after_reconfiguration.intent_id != first.intent_id
+    assert after_reconfiguration.intent_id not in (first.intent_id, retest.intent_id)
 
 
 def concurrent_mail_sessions(engine) -> sessionmaker[Session]:

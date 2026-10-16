@@ -44,6 +44,7 @@ def mail_intent_payload() -> dict[str, Any]:
         "intent_id": str(INTENT_ID),
         "source": "extension:demo",
         "source_ref": None,
+        "source_revision": None,
         "recipient": "user@example.com",
         "subject": "Hello",
         "status": "pending",
@@ -178,9 +179,12 @@ def test_test_mail_registers_one_platform_intent() -> None:
 
     intent = asyncio.run(
         platform_client(handler).mail.smtp.test(
-            TestMailRequest(recipient="user@example.com")
+            TestMailRequest(recipient="user@example.com", idempotency_key="smtp-test-1")
         )
     )
     assert captured["path"] == "/api/v1/platform/mail/smtp/test"
-    assert captured["body"] == {"recipient": "user@example.com"}
+    assert captured["body"] == {
+        "recipient": "user@example.com",
+        "idempotency_key": "smtp-test-1",
+    }
     assert intent.status == "pending"

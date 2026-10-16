@@ -46,9 +46,18 @@ class SmtpConfigurationRequest(BaseModel):
 
 
 class TestMailRequest(BaseModel):
+    """One administrator-triggered SMTP test.
+
+    ``idempotency_key`` identifies the test operation, not the configuration:
+    a retry of the same request reuses the key and replays its intent, while
+    a new test — after a failure, a configuration change or simply again —
+    carries a new key and starts a new send.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     recipient: EmailStr = Field(max_length=MAX_RECIPIENT_LENGTH)
+    idempotency_key: str = Field(min_length=1, max_length=MAX_IDEMPOTENCY_KEY_LENGTH)
 
 
 class SendMailRequest(BaseModel):
@@ -71,6 +80,7 @@ class MailIntentView(BaseModel):
     intent_id: UUID
     source: str
     source_ref: str | None
+    source_revision: str | None
     recipient: str
     subject: str
     status: str

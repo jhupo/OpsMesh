@@ -1336,6 +1336,7 @@ One durable send intent and its confirmed or unconfirmed outcome.
 | `intent_id` | string (uuid) | 是 | `format="uuid"` |
 | `source` | string | 是 | — |
 | `source_ref` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `source_revision` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `recipient` | string | 是 | — |
 | `subject` | string | 是 | — |
 | `status` | string | 是 | — |
@@ -1435,6 +1436,17 @@ One durable send intent and its confirmed or unconfirmed outcome.
       ],
       "title": "Source Ref"
     },
+    "source_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Revision"
+    },
     "status": {
       "title": "Status",
       "type": "string"
@@ -1448,6 +1460,7 @@ One durable send intent and its confirmed or unconfirmed outcome.
     "intent_id",
     "source",
     "source_ref",
+    "source_revision",
     "recipient",
     "subject",
     "status",
@@ -2137,14 +2150,29 @@ The stored configuration; the password is never rendered back.
 
 ## TestMailRequest
 
+One administrator-triggered SMTP test.
+
+``idempotency_key`` identifies the test operation, not the configuration:
+a retry of the same request reuses the key and replays its intent, while
+a new test — after a failure, a configuration change or simply again —
+carries a new key and starts a new send.
+
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `recipient` | string (email) | 是 | `format="email"`; `maxLength=320` |
+| `idempotency_key` | string | 是 | `maxLength=200`; `minLength=1` |
 
 ```json
 {
   "additionalProperties": false,
+  "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send.",
   "properties": {
+    "idempotency_key": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
     "recipient": {
       "format": "email",
       "maxLength": 320,
@@ -2153,7 +2181,8 @@ The stored configuration; the password is never rendered back.
     }
   },
   "required": [
-    "recipient"
+    "recipient",
+    "idempotency_key"
   ],
   "title": "TestMailRequest",
   "type": "object"

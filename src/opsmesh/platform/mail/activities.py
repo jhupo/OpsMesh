@@ -25,13 +25,16 @@ class DeliveryAttempt:
 
     The body is not part of it: it is decrypted only after the source has
     been re-admitted for this delivery, so a revoked or rotated source never
-    has its content rendered for sending.
+    has its content rendered for sending. The source revision travels with
+    the attempt so the admission can refuse a version that was rotated after
+    this mail was rendered.
     """
 
     recipient: str
     subject: str
     source: str
     source_ref: str | None
+    source_revision: str | None
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class MailActivities:
             subject=claimed.subject,
             source=claimed.source,
             source_ref=claimed.source_ref,
+            source_revision=claimed.source_revision,
         )
 
         if attempt.source not in self._authorizations:
@@ -163,7 +167,10 @@ class MailActivities:
         """Re-admit the source for this delivery; None when it is admitted."""
         authorization = self._authorizations[attempt.source]
         scope = SourceScope(
-            source=attempt.source, source_ref=attempt.source_ref, recipient=attempt.recipient
+            source=attempt.source,
+            source_ref=attempt.source_ref,
+            recipient=attempt.recipient,
+            source_revision=attempt.source_revision,
         )
 
         def admit(session: Session) -> None:
