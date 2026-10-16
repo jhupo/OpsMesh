@@ -2,10 +2,12 @@
 
 These checks are pure: they read declared values and package bytes and
 never import user code, connect to a server or start a process. The
-type-specific configuration contracts live in the owning sub-package
-services; what is common to every type — resource manifests, fixed
-dependencies, flow template declarations, parameter schemas and secret
-slots — is validated here so publish cannot trust an unvalidated draft.
+type-specific configuration contracts of the five sub-packaged types live
+in their own services; what is common to every type — resource manifests,
+fixed dependencies, flow template declarations, parameter schemas and
+secret slots — is validated here, and so are the channel and extension
+type checks, which the V4 target tree keeps in the root modules instead
+of a sub-package. Publish therefore cannot trust an unvalidated draft.
 """
 
 from __future__ import annotations
@@ -16,12 +18,14 @@ from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.models import (
     CAPABILITY_TYPES,
     MAX_DESCRIPTION_LENGTH,
     MAX_KEY_LENGTH,
     MAX_NAME_LENGTH,
+    CapabilityVersion,
 )
 from opsmesh.capabilities.packages import package_digest
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError
@@ -348,3 +352,72 @@ def _validated_entry_path(path: object, *, field: str) -> str:
         return validate_relative_path(path)
     except ValueError as exc:
         raise InvalidArgumentError(f"The {field} is not a safe relative path") from exc
+
+
+def channel_intake_package(
+    files: Mapping[str, bytes],
+    *,
+    configuration: Mapping[str, object],
+    resource_manifest: Sequence[Mapping[str, object]],
+    flow_templates: Sequence[Mapping[str, object]],
+) -> PackageIntake:
+    """Verify a channel package against its declarations and its entrypoints.
+
+    Every adapter entrypoint must name a module the package declares and
+    carries, so a package cannot claim code it does not ship. The
+    entrypoint stays an identifier: it is resolved by the runtime in an
+    approved environment, never at publish time.
+    """
+    verify_declared_resources(files, resource_manifest)
+    verify_flow_template_files(files, flow_templates)
+    declared = {str(entry["path"]) for entry in resource_manifest}
+    operations = configuration.get("operations")
+    if not isinstance(operations, list):
+        raise InvalidArgumentError("A channel configuration must declare its operations")
+    for raw in operations:
+        if not isinstance(raw, Mapping):
+            raise InvalidArgumentError("Every channel operation must be an object")
+        entrypoint = raw.get("entrypoint")
+        if not isinstance(entrypoint, str):
+            raise InvalidArgumentError("A channel entrypoint must name module:function")
+        module = entrypoint.split(":", 1)[0].replace(".", "/")
+        module_files = {f"{module}.py", f"{module}/__init__.py"}
+        if not module_files & declared:
+            raise InvalidArgumentError(
+                "A channel entrypoint must name a module the package declares",
+                details={"entrypoint": entrypoint},
+            )
+    return PackageIntake(
+        configuration=dict(configuration),
+        resource_manifest=[dict(entry) for entry in resource_manifest],
+        flow_templates=[dict(entry) for entry in flow_templates],
+    )
+
+
+def validate_channel_version(session: Session, version: CapabilityVersion) -> None:
+    """A channel version publishes with the package that carries its adapter."""
+    if version.package_digest is None:
+        raise ConflictError("A channel version must publish with its package")
+
+
+def extension_intake_package(
+    files: Mapping[str, bytes],
+    *,
+    configuration: Mapping[str, object],
+    resource_manifest: Sequence[Mapping[str, object]],
+    flow_templates: Sequence[Mapping[str, object]],
+) -> PackageIntake:
+    """Verify an extension package against its declared resources."""
+    verify_declared_resources(files, resource_manifest)
+    verify_flow_template_files(files, flow_templates)
+    return PackageIntake(
+        configuration=dict(configuration),
+        resource_manifest=[dict(entry) for entry in resource_manifest],
+        flow_templates=[dict(entry) for entry in flow_templates],
+    )
+
+
+def validate_extension_version(session: Session, version: CapabilityVersion) -> None:
+    """An extension version publishes with the package that carries its exports."""
+    if version.package_digest is None:
+        raise ConflictError("An extension version must publish with its package")

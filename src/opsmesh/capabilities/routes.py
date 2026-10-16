@@ -1,9 +1,12 @@
 """Public capability catalog: definitions, versions, publishing and packages.
 
-These routes serve all seven definition types; the type-specific
-configuration creation and draft editing live in the sub-package routers.
-Authentication reuses the identity session contract, and every read is
-scoped by the viewer the route builds from it.
+These routes serve all seven definition types. The common catalog,
+publishing and package resources live here, and so do the channel and
+extension type routes: per the V4 target tree those two types keep their
+configuration creation and draft editing in this root router, while the
+other five types own a sub-package router for theirs. Authentication
+reuses the identity session contract, and every read is scoped by the
+viewer the route builds from it.
 """
 
 from __future__ import annotations
@@ -12,11 +15,13 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities import lifecycle
 from opsmesh.capabilities.models import (
+    CAPABILITY_TYPE_CHANNEL,
+    CAPABILITY_TYPE_EXTENSION,
     CAPABILITY_TYPES,
     SOURCES,
     VISIBILITIES,
@@ -27,6 +32,10 @@ from opsmesh.capabilities.schemas import (
     CapabilityDefinitionPage,
     CapabilityDefinitionView,
     CapabilityVersionView,
+    ChannelCreateRequest,
+    ChannelDraftRequest,
+    ExtensionCreateRequest,
+    ExtensionDraftRequest,
     UpdateDefinitionRequest,
     UpdateDefinitionStatusRequest,
     UpdateDefinitionVisibilityRequest,
@@ -315,3 +324,165 @@ def read_version_package(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.post(
+    "/channels",
+    response_model=CapabilityVersionView,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="capabilities.channels.create",
+)
+def create_channel(
+    payload: ChannelCreateRequest,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    """Create one channel definition with its first draft version."""
+    with session_transaction(session):
+        _, version = lifecycle.create_definition(
+            session,
+            capability_type=CAPABILITY_TYPE_CHANNEL,
+            key=payload.key,
+            name=payload.name,
+            description=payload.description,
+            visibility=payload.visibility,
+            configuration=payload.configuration.model_dump(mode="json"),
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.put(
+    "/channels/{definition_id}/draft",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.channels.update_draft",
+)
+def update_channel_draft(
+    definition_id: UUID,
+    payload: ChannelDraftRequest,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    """Replace the current draft configuration of one channel definition."""
+    with session_transaction(session):
+        version = lifecycle.update_draft(
+            session,
+            definition_id=definition_id,
+            configuration=payload.configuration.model_dump(mode="json"),
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.put(
+    "/channels/{definition_id}/draft/package",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.channels.package.attach",
+)
+def attach_channel_package(
+    definition_id: UUID,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+    body: Annotated[bytes, Body()],
+) -> CapabilityVersionView:
+    """Attach a channel adapter package to the current draft.
+
+    Every adapter entrypoint must name a module the package declares and
+    carries. Nothing is imported or executed.
+    """
+    with session_transaction(session):
+        version = lifecycle.attach_package(
+            session,
+            definition_id=definition_id,
+            package=body,
+            filename=f"channel-{definition_id}.zip",
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.post(
+    "/extensions",
+    response_model=CapabilityVersionView,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="capabilities.extensions.create",
+)
+def create_extension(
+    payload: ExtensionCreateRequest,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    """Create one extension definition with its first draft version."""
+    with session_transaction(session):
+        _, version = lifecycle.create_definition(
+            session,
+            capability_type=CAPABILITY_TYPE_EXTENSION,
+            key=payload.key,
+            name=payload.name,
+            description=payload.description,
+            visibility=payload.visibility,
+            configuration=payload.configuration.model_dump(mode="json"),
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.put(
+    "/extensions/{definition_id}/draft",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.extensions.update_draft",
+)
+def update_extension_draft(
+    definition_id: UUID,
+    payload: ExtensionDraftRequest,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    """Replace the current draft configuration of one extension definition."""
+    with session_transaction(session):
+        version = lifecycle.update_draft(
+            session,
+            definition_id=definition_id,
+            configuration=payload.configuration.model_dump(mode="json"),
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.put(
+    "/extensions/{definition_id}/draft/package",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.extensions.package.attach",
+)
+def attach_extension_package(
+    definition_id: UUID,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+    body: Annotated[bytes, Body()],
+) -> CapabilityVersionView:
+    """Attach an extension package to the current draft.
+
+    The declared resources and flow templates must exist in the package
+    with their digests. Nothing is imported or executed.
+    """
+    with session_transaction(session):
+        version = lifecycle.attach_package(
+            session,
+            definition_id=definition_id,
+            package=body,
+            filename=f"extension-{definition_id}.zip",
+            actor=AuditActor.from_user(user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)

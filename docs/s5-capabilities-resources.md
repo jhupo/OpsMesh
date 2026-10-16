@@ -194,11 +194,15 @@ PostgreSQL 下串行化、`output_declarations` 无路径与结构校验。以�
 
 ### 12.1 七类能力接通（channel/extension）
 
-- 新增 `src/opsmesh/capabilities/channels/` 与 `extensions/` 子包（各
-  `schemas`/`service`/`routes`/`__init__`）；`lifecycle` 的
+- 按 V4 第 9 节职责树，channel 与 extension **不设类型子包**：两类合同的
+  pydantic 模型与 `validated_channel_configuration`/
+  `validated_extension_configuration` 并入根 `schemas.py`，包接收
+  （`channel_intake_package`/`extension_intake_package`）与版本校验
+  （`validate_channel_version`/`validate_extension_version`）并入根
+  `validation.py`，六条类型路由（create/update_draft/package.attach）并入
+  根 `routes.py`；其余五类保持子包。`lifecycle` 的
   `CONFIGURED_TYPES`、`_CONFIGURATION_VALIDATORS`、`_PACKAGE_INTAKE`、
-  `_VERSION_VALIDATORS` 注册满七类，`bootstrap/routers.py` 注册两组路由
-  （create/update_draft/package.attach）。
+  `_VERSION_VALIDATORS` 注册满七类；`bootstrap/routers.py` 不需要新增注册。
 - channel 配置合同：`protocol` 为小写厂商标识；`signature_algorithm` 仅
   `hmac-sha256`（镜像 SDK `SUPPORTED_SIGNATURE_ALGORITHMS`）；operations
   必须含 receive/send、entrypoint 为 `module:function`；intake 校验
@@ -211,6 +215,13 @@ PostgreSQL 下串行化、`output_declarations` 无路径与结构校验。以�
 - provisioning 无需改动：channel/extension 走通用 manifest.json 路径。
 - `sdk/python/codegen.toml` 增加 2 条二进制 attach 条目，OpenAPI/SDK
   重新生成（`channels`/`extensions` 分组与配置模型进入生成客户端）。
+- 2026-10-17 夜修正：初版曾为两类各建 `capabilities/channels/`、
+  `capabilities/extensions/` 子包，不在 V4 第 9 节树内（第 1681 行明确
+  第七类 extension 的合同归根 `schemas.py`/`validation.py`），且未按
+  AGENTS.md 规则 3 先同步方案。已按树整改：合同并入根模块、删除子包；
+  OpenAPI 路径/operationId/字段结构与 SDK 生成客户端逐字节不变
+  （`generate_sdk_api.py --check` 通过），仅两条 schema 描述文案随根模块
+  文档串变详细及 `capabilities.md` 中六条路由的实现路径引用更新。
 
 ### 12.2 CAS 与版本号分配串行化
 
@@ -244,7 +255,11 @@ PostgreSQL 下串行化、`output_declarations` 无路径与结构校验。以�
 | 端到端 | `python /tmp/s5-e2e.py` | **7/7 PASS** |
 | 反向实证 | `/tmp/s5-review-reverse.py`（7 项变异，truncate 前置、finally 还原、MD5 复核） | **7/7 CAUGHT** |
 | SDK wheel | 干净 venv 仅装 wheel 后冒烟（含 channels/extensions 分组、OutputDeclaration） | OK |
-| 本地静态门 | ruff / mypy（212 文件）/ lint-imports（21 kept）/ audit（177 文件）/ export check（8）/ SDK gen check（5）/ pytest（307 + SDK 110） | 全部通过 |
+| 本地静态门 | ruff / mypy（204 文件）/ lint-imports（21 kept）/ audit（169 文件）/ export check（8）/ SDK gen check（5）/ pytest（307 + SDK 110） | 全部通过 |
+
+> 2026-10-17 夜按 V4 第 9 节树整改 channel/extension 归属后复跑：受影响测试
+> 92 passed、反向实证 7/7 CAUGHT、服务器全量 + e2e 7/7（`ALL_S5_SERVER_CHECKS_DONE`）、
+> 六个同步文件 MD5 与服务端一致；SDK 生成客户端逐字节不变。
 
 反向实证 7 项：channel 类型未注册、write_back 行锁移除、publish 定义行锁
 移除、输出声明路径校验移除、输出声明跨文件校验移除、create 冲突映射移除、

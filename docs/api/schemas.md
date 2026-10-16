@@ -1398,6 +1398,12 @@ One immutable-or-draft version with its full declared content.
 
 The vendor protocol one channel definition speaks.
 
+A channel declares one vendor protocol and the adapter operations
+that speak it. The declaration is static: an entrypoint is an
+identifier the package must carry as a declared resource, and no
+vendor client is constructed, no signature is verified and no
+message is exchanged at publish time.
+
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `protocol` | string | 是 | `maxLength=50`; `minLength=2` |
@@ -1409,7 +1415,7 @@ The vendor protocol one channel definition speaks.
 ```json
 {
   "additionalProperties": false,
-  "description": "The vendor protocol one channel definition speaks.",
+  "description": "The vendor protocol one channel definition speaks.\n\nA channel declares one vendor protocol and the adapter operations\nthat speak it. The declaration is static: an entrypoint is an\nidentifier the package must carry as a declared resource, and no\nvendor client is constructed, no signature is verified and no\nmessage is exchanged at publish time.",
   "properties": {
     "operations": {
       "items": {
@@ -2055,6 +2061,11 @@ One extension-reported fact; actor and scope come from the verified call.
 
 The export contract one extension definition publishes.
 
+An extension declares the exports its package installs with — typed
+operations with their effects, hooks bound to fixed stages, and event
+consumers — plus the permissions those exports need. The declaration
+is frozen at publish; nothing is imported, registered or run here.
+
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
 | `operations` | array&lt;[ExtensionOperation](schemas.md#schema-ExtensionOperation)&gt; | 否 | `maxItems=256` |
@@ -2065,7 +2076,7 @@ The export contract one extension definition publishes.
 ```json
 {
   "additionalProperties": false,
-  "description": "The export contract one extension definition publishes.",
+  "description": "The export contract one extension definition publishes.\n\nAn extension declares the exports its package installs with — typed\noperations with their effects, hooks bound to fixed stages, and event\nconsumers — plus the permissions those exports need. The declaration\nis frozen at publish; nothing is imported, registered or run here.",
   "properties": {
     "events": {
       "items": {

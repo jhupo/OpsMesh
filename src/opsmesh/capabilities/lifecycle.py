@@ -21,9 +21,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from opsmesh.capabilities.channels import service as channel_service
 from opsmesh.capabilities.experts import service as expert_service
-from opsmesh.capabilities.extensions import service as extension_service
 from opsmesh.capabilities.mcp import service as mcp_service
 from opsmesh.capabilities.models import (
     CAPABILITY_TYPE_CHANNEL,
@@ -56,13 +54,21 @@ from opsmesh.capabilities.packages import (
     save_package,
     save_package_files,
 )
+from opsmesh.capabilities.schemas import (
+    validated_channel_configuration,
+    validated_extension_configuration,
+)
 from opsmesh.capabilities.skills import service as skill_service
 from opsmesh.capabilities.teams import service as team_service
 from opsmesh.capabilities.tools import service as tool_service
 from opsmesh.capabilities.validation import (
     PackageIntake,
+    channel_intake_package,
+    extension_intake_package,
+    validate_channel_version,
     validate_dependencies,
     validate_description,
+    validate_extension_version,
     validate_flow_templates,
     validate_key,
     validate_name,
@@ -94,8 +100,8 @@ _CONFIGURATION_VALIDATORS: dict[str, ConfigurationValidator] = {
     CAPABILITY_TYPE_MCP: mcp_service.validate_configuration,
     CAPABILITY_TYPE_SKILL: skill_service.validate_configuration,
     CAPABILITY_TYPE_TOOL: tool_service.validate_configuration,
-    CAPABILITY_TYPE_CHANNEL: channel_service.validate_configuration,
-    CAPABILITY_TYPE_EXTENSION: extension_service.validate_configuration,
+    CAPABILITY_TYPE_CHANNEL: validated_channel_configuration,
+    CAPABILITY_TYPE_EXTENSION: validated_extension_configuration,
 }
 _PACKAGE_INTAKE: dict[str, PackageIntakeHandler] = {
     CAPABILITY_TYPE_EXPERT: expert_service.intake_package,
@@ -103,8 +109,8 @@ _PACKAGE_INTAKE: dict[str, PackageIntakeHandler] = {
     CAPABILITY_TYPE_MCP: mcp_service.intake_package,
     CAPABILITY_TYPE_SKILL: skill_service.intake_package,
     CAPABILITY_TYPE_TOOL: tool_service.intake_package,
-    CAPABILITY_TYPE_CHANNEL: channel_service.intake_package,
-    CAPABILITY_TYPE_EXTENSION: extension_service.intake_package,
+    CAPABILITY_TYPE_CHANNEL: channel_intake_package,
+    CAPABILITY_TYPE_EXTENSION: extension_intake_package,
 }
 _VERSION_VALIDATORS: dict[str, VersionValidator] = {
     CAPABILITY_TYPE_EXPERT: expert_service.validate_version,
@@ -112,8 +118,8 @@ _VERSION_VALIDATORS: dict[str, VersionValidator] = {
     CAPABILITY_TYPE_MCP: mcp_service.validate_version,
     CAPABILITY_TYPE_SKILL: skill_service.validate_version,
     CAPABILITY_TYPE_TOOL: tool_service.validate_version,
-    CAPABILITY_TYPE_CHANNEL: channel_service.validate_version,
-    CAPABILITY_TYPE_EXTENSION: extension_service.validate_version,
+    CAPABILITY_TYPE_CHANNEL: validate_channel_version,
+    CAPABILITY_TYPE_EXTENSION: validate_extension_version,
 }
 
 
@@ -559,12 +565,11 @@ def definition_summaries(
             CapabilityVersion.definition_id,
             func.max(CapabilityVersion.version),
             func.max(case((CapabilityVersion.status == VERSION_STATUS_PUBLISHED, 1), else_=0)),
-        ).where(CapabilityVersion.definition_id.in_([item.id for item in definitions]))
+        )
+        .where(CapabilityVersion.definition_id.in_([item.id for item in definitions]))
         .group_by(CapabilityVersion.definition_id)
     ).all()
-    return {
-        row[0]: (int(row[1] or 0), bool(row[2])) for row in rows
-    }
+    return {row[0]: (int(row[1] or 0), bool(row[2])) for row in rows}
 
 
 def list_versions(
@@ -886,10 +891,7 @@ def _resolve_dependencies(
                 "A fixed dependency names a version that is not published",
                 details={"type": dependency_type, "key": key, "version": raw_version},
             )
-        if (
-            definition.visibility == VISIBILITY_PUBLIC
-            and target.visibility != VISIBILITY_PUBLIC
-        ):
+        if definition.visibility == VISIBILITY_PUBLIC and target.visibility != VISIBILITY_PUBLIC:
             raise ConflictError(
                 "A public definition cannot pin a private dependency",
                 details={"key": key},

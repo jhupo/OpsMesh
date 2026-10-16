@@ -40,7 +40,7 @@ Create Channel
 
 Operation ID：`capabilities.channels.create`。
 
-实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `create_channel`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `create_channel`。
 
 Create one channel definition with its first draft version.
 
@@ -90,7 +90,7 @@ Update Channel Draft
 
 Operation ID：`capabilities.channels.update_draft`。
 
-实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `update_channel_draft`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `update_channel_draft`。
 
 Replace the current draft configuration of one channel definition.
 
@@ -141,7 +141,7 @@ Attach Channel Package
 
 Operation ID：`capabilities.channels.package.attach`。
 
-实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `attach_channel_package`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `attach_channel_package`。
 
 Attach a channel adapter package to the current draft.
 
@@ -720,7 +720,7 @@ Create Extension
 
 Operation ID：`capabilities.extensions.create`。
 
-实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `create_extension`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `create_extension`。
 
 Create one extension definition with its first draft version.
 
@@ -770,7 +770,7 @@ Update Extension Draft
 
 Operation ID：`capabilities.extensions.update_draft`。
 
-实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `update_extension_draft`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `update_extension_draft`。
 
 Replace the current draft configuration of one extension definition.
 
@@ -821,7 +821,7 @@ Attach Extension Package
 
 Operation ID：`capabilities.extensions.package.attach`。
 
-实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `attach_extension_package`。
+实现：[src/opsmesh/capabilities/routes.py](../../src/opsmesh/capabilities/routes.py) · `attach_extension_package`。
 
 Attach an extension package to the current draft.
 

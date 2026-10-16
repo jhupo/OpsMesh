@@ -15,11 +15,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from opsmesh.capabilities.channels import service as channel_service
-from opsmesh.capabilities.channels.schemas import ChannelConfiguration
 from opsmesh.capabilities.experts.schemas import ExpertConfiguration
-from opsmesh.capabilities.extensions import service as extension_service
-from opsmesh.capabilities.extensions.schemas import ExtensionConfiguration
 from opsmesh.capabilities.mcp.schemas import McpConfiguration
 from opsmesh.capabilities.packages import (
     MAX_PACKAGE_BYTES,
@@ -29,11 +25,19 @@ from opsmesh.capabilities.packages import (
     package_digest,
     read_archive,
 )
+from opsmesh.capabilities.schemas import (
+    ChannelConfiguration,
+    ExtensionConfiguration,
+    validated_channel_configuration,
+    validated_extension_configuration,
+)
 from opsmesh.capabilities.skills.schemas import parse_skill_package, validated_configuration
 from opsmesh.capabilities.teams.schemas import TeamConfiguration
 from opsmesh.capabilities.tools.schemas import ToolConfiguration
 from opsmesh.capabilities.validation import (
+    channel_intake_package,
     detect_dependency_cycle,
+    extension_intake_package,
     validate_dependencies,
     validate_flow_templates,
     validate_key,
@@ -380,7 +384,7 @@ def extension_configuration() -> dict[str, object]:
 
 class TestChannelContracts:
     def test_configuration_accepts_receive_and_send(self) -> None:
-        validated = channel_service.validate_configuration(channel_configuration())
+        validated = validated_channel_configuration(channel_configuration())
         assert validated["protocol"] == "wecom"
         assert validated["signature_algorithm"] == "hmac-sha256"
         assert [operation["name"] for operation in validated["operations"]] == [
@@ -431,7 +435,7 @@ class TestChannelContracts:
         manifest = [
             {"path": "wecom/adapter.py", "digest": package_digest(adapter), "size": len(adapter)}
         ]
-        intake = channel_service.intake_package(
+        intake = channel_intake_package(
             {"wecom/adapter.py": adapter},
             configuration=channel_configuration(),
             resource_manifest=manifest,
@@ -447,7 +451,7 @@ class TestChannelContracts:
         configuration = channel_configuration()
         configuration["operations"][0]["entrypoint"] = "other.adapter:receive"
         with pytest.raises(InvalidArgumentError):
-            channel_service.intake_package(
+            channel_intake_package(
                 {"wecom/adapter.py": adapter},
                 configuration=configuration,
                 resource_manifest=manifest,
@@ -460,7 +464,7 @@ class TestChannelContracts:
             {"path": "wecom/adapter.py", "digest": package_digest(adapter), "size": len(adapter)}
         ]
         with pytest.raises(InvalidArgumentError):
-            channel_service.intake_package(
+            channel_intake_package(
                 {"wecom/other.py": adapter},
                 configuration=channel_configuration(),
                 resource_manifest=manifest,
@@ -470,7 +474,7 @@ class TestChannelContracts:
 
 class TestExtensionContracts:
     def test_configuration_accepts_operations_hooks_and_events(self) -> None:
-        validated = extension_service.validate_configuration(extension_configuration())
+        validated = validated_extension_configuration(extension_configuration())
         assert [operation["export_id"] for operation in validated["operations"]] == ["summarize"]
         assert [hook["export_id"] for hook in validated["hooks"]] == ["guard-output"]
 
@@ -509,7 +513,7 @@ class TestExtensionContracts:
     def test_intake_verifies_the_declared_resources(self) -> None:
         code = b"# extension code stays data at publish\n"
         manifest = [{"path": "ext/main.py", "digest": package_digest(code), "size": len(code)}]
-        intake = extension_service.intake_package(
+        intake = extension_intake_package(
             {"ext/main.py": code},
             configuration=extension_configuration(),
             resource_manifest=manifest,
@@ -517,7 +521,7 @@ class TestExtensionContracts:
         )
         assert intake.configuration["permissions"] == ["governance.audit.append"]
         with pytest.raises(InvalidArgumentError):
-            extension_service.intake_package(
+            extension_intake_package(
                 {"ext/main.py": b"changed"},
                 configuration=extension_configuration(),
                 resource_manifest=manifest,
