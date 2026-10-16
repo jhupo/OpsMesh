@@ -1604,7 +1604,7 @@
       },
       "TestMailRequest": {
         "additionalProperties": false,
-        "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send.",
+        "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send. The key is persisted as declared\ninside the test source's own scope, so this bound is the stored one.",
         "properties": {
           "idempotency_key": {
             "maxLength": 200,
@@ -6042,7 +6042,7 @@
     },
     "/api/v1/platform/mail/smtp/test": {
       "post": {
-        "description": "Register one administrator-triggered test mail for durable delivery.\n\nThe idempotency key is the client's operation key: retrying the same\nrequest replays its intent, while a new test — after a failed send, a\nconfiguration change or simply another attempt — carries a new key and\nstarts a new delivery. The configuration revision deliberately plays no\npart: an unchanged configuration must not turn a fresh test into a stale\nreplay of an older outcome.",
+        "description": "Register one administrator-triggered test mail for durable delivery.\n\nThe idempotency key is the client's operation key: retrying the same\nrequest replays its intent, while a new test — after a failed send, a\nconfiguration change or simply another attempt — carries a new key and\nstarts a new delivery. The configuration revision deliberately plays no\npart: an unchanged configuration must not turn a fresh test into a stale\nreplay of an older outcome. The key is stored as declared because the\nmail source scope already namespaces it, so the published length bound\nand the persisted one are the same.",
         "operationId": "platform.mail.smtp.test",
         "parameters": [
           {

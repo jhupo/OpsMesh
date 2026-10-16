@@ -597,6 +597,48 @@ def test_a_test_operation_replays_and_a_new_operation_sends_again(
     assert after_reconfiguration.intent_id not in (first.intent_id, retest.intent_id)
 
 
+def test_a_maximum_length_test_key_is_admitted_and_a_longer_one_refused(
+    database_sessions,
+) -> None:
+    """The published key bound is the persisted one.
+
+    The route stores the operation key as declared — the test source's own
+    idempotency scope already namespaces it — so a key at the published
+    maximum registers and persists unchanged, while one character more is
+    refused by the request contract before any send is staged.
+    """
+    from pydantic import ValidationError
+
+    from opsmesh.identity.context import CurrentUser
+    from opsmesh.platform.mail.routes import test_smtp
+    from opsmesh.platform.mail.schemas import TestMailRequest
+
+    admin = CurrentUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Administrator",
+        status="active",
+        platform_roles=frozenset({"admin", "member"}),
+    )
+    maximum = "k" * mail.MAX_IDEMPOTENCY_KEY_LENGTH
+    with pytest.raises(ValidationError):
+        TestMailRequest(recipient="ops@example.com", idempotency_key="k" * 201)
+    with database_sessions() as session:
+        view = test_smtp(
+            TestMailRequest(recipient="ops@example.com", idempotency_key=maximum),
+            session,
+            admin,
+            cipher(),
+        )
+    assert view.status == MAIL_PENDING
+    with database_sessions() as session:
+        intent = session.get(MailIntent, view.intent_id)
+        assert intent is not None
+        assert intent.idempotency_key == maximum
+        staged = list(session.scalars(select(TemporalOutboxEntry)))
+    assert [entry.workflow_id for entry in staged] == [f"mail-send:{view.intent_id}"]
+
+
 def concurrent_mail_sessions(engine) -> sessionmaker[Session]:
     """One sessionmaker per worker thread over the shared test engine."""
     return sessionmaker(

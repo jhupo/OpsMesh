@@ -42,7 +42,7 @@ from opsmesh.identity.quotas import service as quotas
 from opsmesh.identity.quotas.models import TokenReservation, UserTokenAccount
 from opsmesh.identity.users import service as users
 from opsmesh.identity.users.models import UserProfile
-from opsmesh.shared.errors import ConflictError, NotFoundError
+from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.secrets import SecretCipher
 
@@ -217,6 +217,114 @@ def test_the_last_administrator_is_protected(database_sessions) -> None:
             roles=frozenset({str(PlatformRole.MEMBER)}),
             actor=AuditActor(actor_type="platform"),
         )
+
+
+def admin_actor() -> CurrentUser:
+    """The verified administrator the admin routes require."""
+    return CurrentUser(
+        user_id=uuid4(),
+        email="actor@example.com",
+        display_name="Actor",
+        status="active",
+        platform_roles=frozenset({"admin", "member"}),
+    )
+
+
+def test_an_unknown_status_is_refused_by_the_admin_update(database_sessions) -> None:
+    """The administrative entry validates the status before writing it.
+
+    The HTTP schema only bounds the string length, so the service entry both
+    the route and the standalone setter share must refuse an undefined
+    status: an invalid value written past the guard would take the account
+    out of service without the last-administrator protection applying.
+    """
+    from opsmesh.identity.users.routes import admin_update_user
+    from opsmesh.identity.users.schemas import AdminUpdateUserRequest
+
+    user_id, _token = open_account(
+        database_sessions, email=MEMBER_EMAIL, display_name="Member", password="correct-horse"
+    )
+    for status in ("activ", ""):
+        with database_sessions() as session, pytest.raises(InvalidArgumentError):
+            admin_update_user(
+                user_id,
+                AdminUpdateUserRequest(status=status),
+                session,
+                admin_actor(),
+            )
+    with database_sessions() as session:
+        profile = session.get(UserProfile, user_id)
+        assert profile is not None
+        assert profile.status == "active"
+
+
+def test_the_last_administrator_is_protected_through_the_admin_update(
+    database_sessions,
+) -> None:
+    """The administrative PATCH cannot disable the only administrator.
+
+    The refused writes leave the account active, so the sole administrator
+    keeps authenticating; a platform whose only administrator stopped being
+    active could no longer admit anyone.
+    """
+    from opsmesh.identity.users.routes import admin_update_user
+    from opsmesh.identity.users.schemas import AdminUpdateUserRequest
+
+    service = auth_service()
+    user_id, token = open_account(
+        database_sessions,
+        email=ADMIN_EMAIL,
+        display_name="Administrator",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
+    )
+    for payload in (
+        AdminUpdateUserRequest(status="disabled"),
+        AdminUpdateUserRequest(display_name="Locked out", status="disabled"),
+    ):
+        with database_sessions() as session, pytest.raises(ConflictError):
+            admin_update_user(user_id, payload, session, admin_actor())
+    with database_sessions() as session, session.begin():
+        profile = session.get(UserProfile, user_id)
+        assert profile is not None
+        assert profile.status == "active"
+        assert profile.display_name == "Administrator"
+        assert service.authenticate(session, token=token).user_id == user_id
+
+
+def test_a_second_administrator_can_be_disabled_through_the_admin_update(
+    database_sessions,
+) -> None:
+    """With another administrator left, the same entry disables one account."""
+    from opsmesh.identity.users.routes import admin_update_user
+    from opsmesh.identity.users.schemas import AdminUpdateUserRequest
+
+    _keeper_id, _token = open_account(
+        database_sessions,
+        email=ADMIN_EMAIL,
+        display_name="Keeper",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
+    )
+    second_id, _token = open_account(
+        database_sessions,
+        email="second-admin@example.com",
+        display_name="Second",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
+    )
+    with database_sessions() as session:
+        view = admin_update_user(
+            second_id,
+            AdminUpdateUserRequest(status="disabled"),
+            session,
+            admin_actor(),
+        )
+    assert view.status == "disabled"
+    with database_sessions() as session:
+        profile = session.get(UserProfile, second_id)
+        assert profile is not None
+        assert profile.status == "disabled"
 
 
 def test_the_token_ledger_serializes_reservations(database_sessions) -> None:

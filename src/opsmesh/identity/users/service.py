@@ -24,7 +24,6 @@ from opsmesh.identity.errors import DuplicateUserError
 from opsmesh.identity.users.avatars import normalize_avatar
 from opsmesh.identity.users.models import (
     USER_STATUS_ACTIVE,
-    USER_STATUS_DISABLED,
     USER_STATUSES,
     UserProfile,
 )
@@ -155,6 +154,13 @@ def apply_admin_update(
     their row locks before the audit chain head, so no two of them can hold
     the chain head while waiting for each other's rows.
     """
+    # Every declared field is validated before the first lock or mutation:
+    # an unknown status must be refused here, exactly like in set_status, or
+    # an invalid value would be written past the last-administrator guard.
+    if status is not None:
+        status = _validated_status(status)
+    if roles is not None:
+        roles = _validated_roles(roles)
     administrators = _lock_active_administrators(session)
     profile = _locked_profile(session, user_id)
     if display_name is not None or work_root is not None:
@@ -211,8 +217,7 @@ def set_status(
     actor: AuditActor,
 ) -> UserProfile:
     """Enable or disable one account; a disabled account cannot authenticate."""
-    if status not in USER_STATUSES:
-        raise InvalidArgumentError("The user status is unknown")
+    status = _validated_status(status)
     administrators = _lock_active_administrators(session)
     profile = _locked_profile(session, user_id)
     return _apply_status(
@@ -293,11 +298,16 @@ def _apply_status(
     status: str,
     actor: AuditActor,
 ) -> UserProfile:
-    """Set the account status of an already locked profile."""
+    """Set the account status of an already locked profile.
+
+    The caller validates the status; any status that is not active takes the
+    account out of service, so the last-administrator guard covers it, not
+    only the literal ``disabled`` value.
+    """
     if profile.status == status:
         return profile
     previous_status = profile.status
-    if status == USER_STATUS_DISABLED:
+    if status != USER_STATUS_ACTIVE:
         _guard_last_administrator(administrators, profile=profile, keeps_admin=False)
     profile.status = status
     append_platform_event(
@@ -422,6 +432,22 @@ def _validated_roles(roles: frozenset[str]) -> frozenset[str]:
             "The platform roles are unknown", details={"unknown_roles": unknown}
         )
     return frozenset(roles)
+
+
+def _validated_status(status: str) -> str:
+    """Refuse a status the account lifecycle does not define.
+
+    Both status entries — the standalone setter and the administrative
+    update — validate through here before any lock or mutation, so an
+    unknown value can never reach the last-administrator guard or the
+    stored profile.
+    """
+    if status not in USER_STATUSES:
+        raise InvalidArgumentError(
+            "The user status is unknown",
+            details={"known_statuses": list(USER_STATUSES)},
+        )
+    return status
 
 
 def _guard_last_administrator(

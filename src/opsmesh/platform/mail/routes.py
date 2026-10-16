@@ -149,7 +149,9 @@ def test_smtp(
     configuration change or simply another attempt — carries a new key and
     starts a new delivery. The configuration revision deliberately plays no
     part: an unchanged configuration must not turn a fresh test into a stale
-    replay of an older outcome.
+    replay of an older outcome. The key is stored as declared because the
+    mail source scope already namespaces it, so the published length bound
+    and the persisted one are the same.
     """
     require_platform_admin(user)
     with session_transaction(session):
@@ -159,7 +161,7 @@ def test_smtp(
             recipient=payload.recipient,
             subject=PLATFORM_TEST_SUBJECT,
             body=PLATFORM_TEST_BODY,
-            idempotency_key=f"smtp-test:{payload.idempotency_key}",
+            idempotency_key=payload.idempotency_key,
             authorization=PlatformTestAuthorization(),
             cipher=cipher,
         )

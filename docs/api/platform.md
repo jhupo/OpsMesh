@@ -311,7 +311,9 @@ request replays its intent, while a new test — after a failed send, a
 configuration change or simply another attempt — carries a new key and
 starts a new delivery. The configuration revision deliberately plays no
 part: an unchanged configuration must not turn a fresh test into a stale
-replay of an older outcome.
+replay of an older outcome. The key is stored as declared because the
+mail source scope already namespaces it, so the published length bound
+and the persisted one are the same.
 
 权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
 

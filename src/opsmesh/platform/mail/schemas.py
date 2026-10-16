@@ -51,7 +51,8 @@ class TestMailRequest(BaseModel):
     ``idempotency_key`` identifies the test operation, not the configuration:
     a retry of the same request reuses the key and replays its intent, while
     a new test — after a failure, a configuration change or simply again —
-    carries a new key and starts a new send.
+    carries a new key and starts a new send. The key is persisted as declared
+    inside the test source's own scope, so this bound is the stored one.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -94,7 +94,8 @@ class TestMailRequest(BaseModel):
 ``idempotency_key`` identifies the test operation, not the configuration:
 a retry of the same request reuses the key and replays its intent, while
 a new test — after a failure, a configuration change or simply again —
-carries a new key and starts a new send."""
+carries a new key and starts a new send. The key is persisted as declared
+inside the test source's own scope, so this bound is the stored one."""
 
     idempotency_key: str
     recipient: str
@@ -216,7 +217,9 @@ request replays its intent, while a new test — after a failed send, a
 configuration change or simply another attempt — carries a new key and
 starts a new delivery. The configuration revision deliberately plays no
 part: an unchanged configuration must not turn a fresh test into a stale
-replay of an older outcome."""
+replay of an older outcome. The key is stored as declared because the
+mail source scope already namespaces it, so the published length bound
+and the persisted one are the same."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",

@@ -2155,7 +2155,8 @@ One administrator-triggered SMTP test.
 ``idempotency_key`` identifies the test operation, not the configuration:
 a retry of the same request reuses the key and replays its intent, while
 a new test — after a failure, a configuration change or simply again —
-carries a new key and starts a new send.
+carries a new key and starts a new send. The key is persisted as declared
+inside the test source's own scope, so this bound is the stored one.
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -2165,7 +2166,7 @@ carries a new key and starts a new send.
 ```json
 {
   "additionalProperties": false,
-  "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send.",
+  "description": "One administrator-triggered SMTP test.\n\n``idempotency_key`` identifies the test operation, not the configuration:\na retry of the same request reuses the key and replays its intent, while\na new test — after a failure, a configuration change or simply again —\ncarries a new key and starts a new send. The key is persisted as declared\ninside the test source's own scope, so this bound is the stored one.",
   "properties": {
     "idempotency_key": {
       "maxLength": 200,
