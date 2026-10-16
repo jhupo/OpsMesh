@@ -11,9 +11,11 @@ overwrite.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -37,6 +39,7 @@ from opsmesh.resources.files.models import (
     ResourceFileVersion,
     ResourceRuntimePolicy,
 )
+from opsmesh.resources.files.schemas import OutputDeclaration
 from opsmesh.resources.storage.filesystem import (
     MAX_CONTENT_BYTES,
     content_digest,
@@ -188,6 +191,20 @@ def get_file(
     return resource, grant
 
 
+def _lock_file_row(session: Session, *, file_id: UUID) -> None:
+    """Serialize every version mutation of one file on its row.
+
+    A version number is allocated from the committed state and a
+    compare-and-set expectation is checked against it, so two concurrent
+    writers must not both read the same pre-state: PostgreSQL row locks
+    give that ordering inside one transaction, and the loser observes the
+    winner's committed version instead of a unique constraint error.
+    """
+    session.execute(
+        select(ResourceFile.id).where(ResourceFile.id == file_id).with_for_update()
+    )
+
+
 def upload_version(
     session: Session,
     *,
@@ -215,6 +232,7 @@ def upload_version(
     if len(content) > MAX_CONTENT_BYTES:
         raise InvalidArgumentError("The content exceeds the permitted size")
     digest = content_digest(content)
+    _lock_file_row(session, file_id=resource.id)
     return run_idempotent_create(
         session=session,
         scope_id=resource.owner_user_id,
@@ -321,10 +339,12 @@ def write_back(
 
     A writer that read version N must send N back; a different current
     version is a conflict rather than a silent overwrite of someone
-    else's change.
+    else's change. The expectation is checked under the file row lock, so
+    a concurrent write-back cannot pass the same check from a stale read.
     """
     resource, grant = get_file(session, file_id=file_id, reader=reader)
     authorize_write(resource, reader=reader, grant=grant)
+    _lock_file_row(session, file_id=resource.id)
     current = latest_version_number(session, file_id=resource.id)
     if current != expected_version:
         raise ConflictError(
@@ -355,10 +375,12 @@ def delete_file(
 
     The rows are removed with explicit statements in dependency order — the
     ORM's flush ordering across tables without relationships is not a
-    contract this deletion may rely on.
+    contract this deletion may rely on. The file row is locked first, so a
+    concurrent upload cannot interleave a version insert with the delete.
     """
     resource, grant = get_file(session, file_id=file_id, reader=reader)
     authorize_delete(resource, reader=reader, grant=grant)
+    _lock_file_row(session, file_id=resource.id)
     content_ids = list(
         session.scalars(
             select(ResourceFileContent.id)
@@ -473,13 +495,85 @@ def list_grants(
     )
 
 
+def _validated_output_declarations(
+    session: Session,
+    *,
+    resource: ResourceFile,
+    declarations: Sequence[OutputDeclaration | Mapping[str, object]],
+) -> list[dict[str, object]]:
+    """Validate every output declaration and normalize it for storage.
+
+    The request schema already rejects unknown fields and bounds lengths,
+    but the service is the gate every caller passes: each declaration is
+    re-validated here and its path checked as a safe relative path again,
+    because a persisted declaration is later resolved against a storage
+    root. A path another file of the same owner already occupies is
+    refused so a write-back through this policy cannot bypass that file's
+    own grants.
+    """
+    validated: list[dict[str, object]] = []
+    for declaration in declarations:
+        if isinstance(declaration, OutputDeclaration):
+            model = declaration
+        else:
+            try:
+                model = OutputDeclaration.model_validate(declaration)
+            except ValidationError as exc:
+                raise InvalidArgumentError(
+                    "An output declaration violates its contract",
+                    details={"reason": str(exc)},
+                ) from exc
+        try:
+            path = validate_relative_path(model.path)
+        except ValueError as exc:
+            raise InvalidArgumentError(
+                "An output declaration path is not a safe relative path"
+            ) from exc
+        _reject_declared_file_collision(session, resource=resource, path=path)
+        validated.append(model.model_dump(mode="json"))
+    return validated
+
+
+def _reject_declared_file_collision(
+    session: Session, *, resource: ResourceFile, path: str
+) -> None:
+    """Refuse an output declaration whose resolved path another file occupies.
+
+    Output paths resolve inside the owning file's directory; if another
+    file of the same owner lives at the resolved path, a run writing back
+    through this policy would overwrite that file without holding its
+    grants.
+    """
+    parent, _, name = path.rpartition("/")
+    directory_path = session.scalar(
+        select(ResourceDirectory.path).where(ResourceDirectory.id == resource.directory_id)
+    )
+    target_directory = f"{directory_path}/{parent}" if parent else directory_path
+    occupied = session.scalar(
+        select(ResourceFile.id)
+        .join(ResourceDirectory, ResourceFile.directory_id == ResourceDirectory.id)
+        .where(
+            ResourceDirectory.owner_user_id == resource.owner_user_id,
+            ResourceDirectory.path == target_directory,
+            ResourceFile.name == name,
+            ResourceFile.id != resource.id,
+        )
+        .limit(1)
+    )
+    if occupied is not None:
+        raise ConflictError(
+            "An output declaration claims a path another file occupies",
+            details={"path": path},
+        )
+
+
 def set_runtime_policy(
     session: Session,
     *,
     file_id: UUID,
     frozen_input_versions: list[int],
     relative_paths: list[str],
-    output_declarations: list[dict[str, object]],
+    output_declarations: Sequence[OutputDeclaration | Mapping[str, object]],
     use_in_execution: bool,
     reader: ResourceReader,
     actor: AuditActor,
@@ -495,6 +589,9 @@ def set_runtime_policy(
             raise InvalidArgumentError(
                 "A runtime relative path is not a safe relative path"
             ) from exc
+    declarations = _validated_output_declarations(
+        session, resource=resource, declarations=output_declarations
+    )
     frozen = []
     for number in frozen_input_versions:
         version = session.scalar(
@@ -516,7 +613,7 @@ def set_runtime_policy(
             file_id=resource.id,
             frozen_input_versions=frozen,
             relative_paths=validated_paths,
-            output_declarations=output_declarations,
+            output_declarations=declarations,
             use_in_execution=use_in_execution,
             updated_by_user_id=reader.user_id,
         )
@@ -524,7 +621,7 @@ def set_runtime_policy(
     else:
         policy.frozen_input_versions = frozen
         policy.relative_paths = validated_paths
-        policy.output_declarations = output_declarations
+        policy.output_declarations = declarations
         policy.use_in_execution = use_in_execution
         policy.updated_by_user_id = reader.user_id
     session.flush()

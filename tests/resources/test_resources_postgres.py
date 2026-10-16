@@ -10,10 +10,13 @@ rejecting default authorization.
 
 from __future__ import annotations
 
+import threading
+import time
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.bootstrap.capabilities import IdentityStorageQuotaLedger
 from opsmesh.governance.audit.service import AuditActor
@@ -34,6 +37,8 @@ from opsmesh.resources.storage.filesystem import content_storage_key, new_conten
 from opsmesh.resources.storage.transactions import stage_content, stage_content_removal
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.security.secrets import SecretCipher
+from tests.conftest import FEATURE_TABLES
 
 
 def open_account(sessions, *, email: str, display_name: str) -> UserProfile:
@@ -451,6 +456,7 @@ def test_artifact_recording_uses_the_injected_authorization(database_sessions, t
             authorization=RejectingArtifactAuthorization(),
             storage_root=tmp_path,
         )
+
     class AllowingAuthorization:
         def authorize_record(self, *, reader, source_kind, source_id):
             return None
@@ -500,3 +506,264 @@ def test_artifact_recording_uses_the_injected_authorization(database_sessions, t
                 authorization=AllowingAuthorization(),
                 storage_root=tmp_path,
             )
+
+
+def test_runtime_policy_refuses_unsafe_output_declarations(database_sessions) -> None:
+    """An output declaration is a safe relative path no other file occupies.
+
+    The policy becomes the input of a later write-back, so the service
+    re-validates every declaration instead of trusting the request
+    schema: a traversal or absolute path, an unknown field and a path
+    another file already occupies are all refused before persisting.
+    """
+    owner = open_account(
+        database_sessions, email="declarations@example.com", display_name="Declarations"
+    )
+    reader = reader_of(owner)
+    with database_sessions() as session:
+        directory = file_service.create_directory(
+            session,
+            owner_id=owner.id,
+            path="docs",
+            admission=RejectingScopeAdmission(),
+            reader=reader,
+            scope=ScopeRef(),
+        )
+        resource = file_service.create_file(
+            session, owner_id=owner.id, directory_id=directory.id, name="notes.txt", reader=reader
+        )
+        sibling = file_service.create_file(
+            session, owner_id=owner.id, directory_id=directory.id, name="report.md", reader=reader
+        )
+        session.commit()
+    with database_sessions() as session:
+        for declaration in ({"path": "../escape.md"}, {"path": "/etc/passwd"}):
+            with pytest.raises(InvalidArgumentError):
+                file_service.set_runtime_policy(
+                    session,
+                    file_id=resource.id,
+                    frozen_input_versions=[],
+                    relative_paths=[],
+                    output_declarations=[declaration],
+                    use_in_execution=True,
+                    reader=reader_of(owner),
+                    actor=actor_of(owner),
+                )
+        with pytest.raises(InvalidArgumentError):
+            file_service.set_runtime_policy(
+                session,
+                file_id=resource.id,
+                frozen_input_versions=[],
+                relative_paths=[],
+                output_declarations=[{"path": "out.md", "bogus": True}],
+                use_in_execution=True,
+                reader=reader_of(owner),
+                actor=actor_of(owner),
+            )
+        with pytest.raises(ConflictError):
+            file_service.set_runtime_policy(
+                session,
+                file_id=resource.id,
+                frozen_input_versions=[],
+                relative_paths=[],
+                output_declarations=[{"path": "report.md"}],
+                use_in_execution=True,
+                reader=reader_of(owner),
+                actor=actor_of(owner),
+            )
+        assert (
+            file_service.get_runtime_policy(session, file_id=resource.id, reader=reader_of(owner))
+            is None
+        )
+        policy = file_service.set_runtime_policy(
+            session,
+            file_id=resource.id,
+            frozen_input_versions=[],
+            relative_paths=["docs/notes.txt"],
+            output_declarations=[{"path": "out/report.md", "media_type": "text/markdown"}],
+            use_in_execution=True,
+            reader=reader_of(owner),
+            actor=actor_of(owner),
+        )
+        session.commit()
+        assert policy.output_declarations == [
+            {"path": "out/report.md", "media_type": "text/markdown", "description": ""}
+        ]
+        assert sibling.id != resource.id
+
+
+TEST_CIPHER_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
+
+
+def reset_tables(engine) -> None:
+    """Start one concurrency test from a known-empty database."""
+    with engine.begin() as connection:
+        connection.execute(text("TRUNCATE " + ", ".join(FEATURE_TABLES)))
+
+
+@pytest.fixture
+def clean_concurrency_tables(database_engine):
+    """Empty the database around a concurrency test, before and after it."""
+    reset_tables(database_engine)
+    yield
+    reset_tables(database_engine)
+
+
+def concurrent_sessions(engine) -> sessionmaker[Session]:
+    """One sessionmaker per worker thread over the shared test engine."""
+    return sessionmaker(
+        bind=engine,
+        autoflush=False,
+        expire_on_commit=False,
+        info={
+            "dispatch_cipher": SecretCipher(key=TEST_CIPHER_KEY, key_id="test"),
+            "dispatch_trace_context": lambda: {},
+        },
+    )
+
+
+def wait_for_lock_waits(engine, *, expected: int, timeout: float = 20.0) -> None:
+    """Block until ``expected`` other backends wait for a lock."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as connection:
+            waiting = connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() "
+                    "AND datname = current_database()"
+                )
+            )
+        if (waiting or 0) >= expected:
+            return
+        time.sleep(0.02)
+    raise TimeoutError("the expected lock waits did not appear in time")
+
+
+def test_concurrent_write_back_conflicts_on_a_stale_expectation(
+    database_engine, clean_concurrency_tables, tmp_path
+) -> None:
+    """Two writers of the same expected version cannot both pass the check.
+
+    The interleaving is forced: the first writer replaces the content
+    inside an open transaction, the second writer starts and blocks on
+    the file row lock, and only then does the first commit. The second
+    wakes up to the new version and is refused with a conflict; without
+    the lock both pass from the same stale read and the database unique
+    constraint decides the outcome.
+    """
+    sessions = concurrent_sessions(database_engine)
+    owner = open_account(sessions, email="cas@example.com", display_name="Cas")
+    _, resource = make_file(sessions, owner=owner)
+    with sessions() as session, session.begin():
+        file_service.upload_version(
+            session,
+            file_id=resource.id,
+            content=b"first",
+            media_type="text/plain",
+            reader=reader_of(owner),
+            actor=actor_of(owner),
+            ledger=ledger(),
+            storage_root=tmp_path,
+            idempotency_key="cas-upload",
+        )
+    outcomes: dict[str, str] = {}
+
+    def write_back(session: Session, content: bytes, key: str) -> None:
+        file_service.write_back(
+            session,
+            file_id=resource.id,
+            expected_version=1,
+            content=content,
+            media_type="text/plain",
+            reader=reader_of(owner),
+            actor=actor_of(owner),
+            ledger=ledger(),
+            storage_root=tmp_path,
+            idempotency_key=key,
+        )
+
+    def attempt(name: str, content: bytes, key: str) -> None:
+        try:
+            with sessions() as session, session.begin():
+                write_back(session, content, key)
+            outcomes[name] = "written"
+        except ConflictError:
+            outcomes[name] = "conflicted"
+        except Exception as exc:  # noqa: BLE001 - the loser must fail as a conflict
+            outcomes[name] = type(exc).__name__
+
+    holder = sessions()
+    transaction = holder.begin()
+    try:
+        write_back(holder, b"written by the first writer", "cas-first")
+        outcomes["first"] = "written"
+        second = threading.Thread(
+            target=attempt, args=("second", b"written by the second writer", "cas-second")
+        )
+        second.start()
+        wait_for_lock_waits(database_engine, expected=1)
+    finally:
+        transaction.commit()
+        holder.close()
+    second.join(timeout=30)
+    assert outcomes == {"first": "written", "second": "conflicted"}
+    with sessions() as session:
+        assert file_service.latest_version_number(session, file_id=resource.id) == 2
+
+
+def test_concurrent_uploads_allocate_distinct_versions(
+    database_engine, clean_concurrency_tables, tmp_path
+) -> None:
+    """Two uploads of one file cannot both claim the same version number.
+
+    The interleaving is forced: the first upload stores version 1 inside
+    an open transaction, the second upload starts and blocks on the file
+    row lock, and only then does the first commit. Both writers then
+    succeed with consecutive versions instead of racing toward the
+    version unique constraint.
+    """
+    sessions = concurrent_sessions(database_engine)
+    owner = open_account(sessions, email="upload-race@example.com", display_name="Upload")
+    _, resource = make_file(sessions, owner=owner)
+    outcomes: dict[str, str] = {}
+
+    def upload(session: Session, content: bytes, key: str) -> None:
+        file_service.upload_version(
+            session,
+            file_id=resource.id,
+            content=content,
+            media_type="text/plain",
+            reader=reader_of(owner),
+            actor=actor_of(owner),
+            ledger=ledger(),
+            storage_root=tmp_path,
+            idempotency_key=key,
+        )
+
+    def attempt(name: str, content: bytes, key: str) -> None:
+        try:
+            with sessions() as session, session.begin():
+                upload(session, content, key)
+            outcomes[name] = "stored"
+        except Exception as exc:  # noqa: BLE001 - both writers must succeed
+            outcomes[name] = type(exc).__name__
+
+    holder = sessions()
+    transaction = holder.begin()
+    try:
+        upload(holder, b"stored by the first writer", "upload-race-first")
+        outcomes["first"] = "stored"
+        second = threading.Thread(
+            target=attempt,
+            args=("second", b"stored by the second writer", "upload-race-second"),
+        )
+        second.start()
+        wait_for_lock_waits(database_engine, expected=1)
+    finally:
+        transaction.commit()
+        holder.close()
+    second.join(timeout=30)
+    assert outcomes == {"first": "stored", "second": "stored"}
+    with sessions() as session:
+        assert file_service.latest_version_number(session, file_id=resource.id) == 2

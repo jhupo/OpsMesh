@@ -103,20 +103,16 @@ class GrantView(BaseModel):
     permissions: list[str]
 
 
-class RuntimePolicyRequest(BaseModel):
-    frozen_input_versions: list[int] | None = None
-    output_declarations: list[dict[str, object]] | None = None
-    relative_paths: list[str] | None = None
-    use_in_execution: bool = False
+class OutputDeclaration(BaseModel):
+    """One declared execution output: a safe relative path and its media type.
 
+The path is where a run may write back inside the granted workspace;
+it is validated as a safe relative path again in the service, because
+a persisted declaration is later resolved against a storage root."""
 
-class RuntimePolicyView(BaseModel):
-    file_id: UUID
-    frozen_input_versions: list[int]
-    output_declarations: list[dict[str, object]]
-    relative_paths: list[str]
-    updated_at: datetime
-    use_in_execution: bool
+    description: str = ''
+    media_type: str | None = None
+    path: str
 
 
 class VersionDiffView(BaseModel):
@@ -131,6 +127,22 @@ class VersionDiffView(BaseModel):
 class FilePage(BaseModel):
     items: list[FileView]
     total: int
+
+
+class RuntimePolicyRequest(BaseModel):
+    frozen_input_versions: list[int] | None = None
+    output_declarations: list[OutputDeclaration] | None = None
+    relative_paths: list[str] | None = None
+    use_in_execution: bool = False
+
+
+class RuntimePolicyView(BaseModel):
+    file_id: UUID
+    frozen_input_versions: list[int]
+    output_declarations: list[OutputDeclaration]
+    relative_paths: list[str]
+    updated_at: datetime
+    use_in_execution: bool
 
 
 class ResourcesArtifactsContentClient:
@@ -496,6 +508,7 @@ __all__ = [
     "FileView",
     "GrantCreateRequest",
     "GrantView",
+    "OutputDeclaration",
     "ResourcesArtifactsClient",
     "ResourcesArtifactsContentClient",
     "ResourcesClient",

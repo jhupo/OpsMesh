@@ -15,7 +15,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from opsmesh.capabilities.channels import service as channel_service
+from opsmesh.capabilities.channels.schemas import ChannelConfiguration
 from opsmesh.capabilities.experts.schemas import ExpertConfiguration
+from opsmesh.capabilities.extensions import service as extension_service
+from opsmesh.capabilities.extensions.schemas import ExtensionConfiguration
 from opsmesh.capabilities.mcp.schemas import McpConfiguration
 from opsmesh.capabilities.packages import (
     MAX_PACKAGE_BYTES,
@@ -302,9 +306,7 @@ class TestTypeContracts:
     def test_skill_package_derives_configuration_and_resources(self) -> None:
         configuration, resources = parse_skill_package(
             {
-                "SKILL.md": (
-                    b"---\nname: guide\ndescription: A guide.\n---\n\nBody text.\n"
-                ),
+                "SKILL.md": (b"---\nname: guide\ndescription: A guide.\n---\n\nBody text.\n"),
                 "references/extra.md": b"extra",
             }
         )
@@ -330,6 +332,196 @@ class TestTypeContracts:
                     "pkg/SKILL.md": b"---\nname: a\ndescription: b\n---\n\nx",
                     "other.txt": b"y",
                 }
+            )
+
+
+def channel_configuration() -> dict[str, object]:
+    return {
+        "protocol": "wecom",
+        "operations": [
+            {"name": "receive", "entrypoint": "wecom.adapter:receive"},
+            {"name": "send", "entrypoint": "wecom.adapter:send"},
+        ],
+        "secret_slots": ["wecom-secret"],
+    }
+
+
+def extension_configuration() -> dict[str, object]:
+    return {
+        "operations": [
+            {
+                "export_id": "summarize",
+                "description": "Summarize one run.",
+                "effects": ["read"],
+                "permissions": ["governance.audit.append"],
+            }
+        ],
+        "hooks": [
+            {
+                "export_id": "guard-output",
+                "description": "Guard model output.",
+                "stages": ["output_guardrail"],
+                "failure_policy": "block",
+            }
+        ],
+        "events": [
+            {
+                "export_id": "on-run-finished",
+                "description": "Consume finished runs.",
+                "source_types": ["run"],
+                "source_versions": ["1"],
+                "operation_export_id": "summarize",
+                "idempotency_key_fields": ["run_id"],
+            }
+        ],
+        "permissions": ["governance.audit.append"],
+    }
+
+
+class TestChannelContracts:
+    def test_configuration_accepts_receive_and_send(self) -> None:
+        validated = channel_service.validate_configuration(channel_configuration())
+        assert validated["protocol"] == "wecom"
+        assert validated["signature_algorithm"] == "hmac-sha256"
+        assert [operation["name"] for operation in validated["operations"]] == [
+            "receive",
+            "send",
+        ]
+
+    def test_configuration_requires_receive_and_send(self) -> None:
+        payload = channel_configuration()
+        payload["operations"] = [{"name": "receive", "entrypoint": "wecom.adapter:receive"}]
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+
+    def test_configuration_refuses_unknown_and_duplicate_operations(self) -> None:
+        payload = channel_configuration()
+        payload["operations"] = [
+            {"name": "receive", "entrypoint": "wecom.adapter:receive"},
+            {"name": "publish", "entrypoint": "wecom.adapter:publish"},
+            {"name": "send", "entrypoint": "wecom.adapter:send"},
+        ]
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+        payload["operations"] = [
+            {"name": "receive", "entrypoint": "wecom.adapter:receive"},
+            {"name": "receive", "entrypoint": "wecom.adapter:again"},
+            {"name": "send", "entrypoint": "wecom.adapter:send"},
+        ]
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+
+    def test_protocol_is_a_lowercase_vendor_identifier(self) -> None:
+        payload = channel_configuration()
+        payload["protocol"] = "WeCom"
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+        payload["protocol"] = "w"
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+
+    def test_entrypoint_must_name_module_function(self) -> None:
+        payload = channel_configuration()
+        payload["operations"][0]["entrypoint"] = "not-an-entrypoint"
+        with pytest.raises(ValidationError):
+            ChannelConfiguration.model_validate(payload)
+
+    def test_intake_accepts_a_package_that_declares_its_entrypoint_module(self) -> None:
+        adapter = b"# the adapter stays data at publish\n"
+        manifest = [
+            {"path": "wecom/adapter.py", "digest": package_digest(adapter), "size": len(adapter)}
+        ]
+        intake = channel_service.intake_package(
+            {"wecom/adapter.py": adapter},
+            configuration=channel_configuration(),
+            resource_manifest=manifest,
+            flow_templates=[],
+        )
+        assert intake.configuration["protocol"] == "wecom"
+
+    def test_intake_refuses_an_entrypoint_the_package_does_not_declare(self) -> None:
+        adapter = b"# the adapter stays data at publish\n"
+        manifest = [
+            {"path": "wecom/adapter.py", "digest": package_digest(adapter), "size": len(adapter)}
+        ]
+        configuration = channel_configuration()
+        configuration["operations"][0]["entrypoint"] = "other.adapter:receive"
+        with pytest.raises(InvalidArgumentError):
+            channel_service.intake_package(
+                {"wecom/adapter.py": adapter},
+                configuration=configuration,
+                resource_manifest=manifest,
+                flow_templates=[],
+            )
+
+    def test_intake_refuses_a_declared_resource_the_package_does_not_carry(self) -> None:
+        adapter = b"# the adapter stays data at publish\n"
+        manifest = [
+            {"path": "wecom/adapter.py", "digest": package_digest(adapter), "size": len(adapter)}
+        ]
+        with pytest.raises(InvalidArgumentError):
+            channel_service.intake_package(
+                {"wecom/other.py": adapter},
+                configuration=channel_configuration(),
+                resource_manifest=manifest,
+                flow_templates=[],
+            )
+
+
+class TestExtensionContracts:
+    def test_configuration_accepts_operations_hooks_and_events(self) -> None:
+        validated = extension_service.validate_configuration(extension_configuration())
+        assert [operation["export_id"] for operation in validated["operations"]] == ["summarize"]
+        assert [hook["export_id"] for hook in validated["hooks"]] == ["guard-output"]
+
+    def test_configuration_refuses_duplicate_export_ids(self) -> None:
+        payload = extension_configuration()
+        payload["hooks"][0]["export_id"] = "summarize"
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+
+    def test_event_must_consume_a_declared_operation(self) -> None:
+        payload = extension_configuration()
+        payload["events"][0]["operation_export_id"] = "missing"
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+
+    def test_operation_permissions_must_be_declared(self) -> None:
+        payload = extension_configuration()
+        payload["permissions"] = []
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+
+    def test_unknown_effects_stages_and_failure_policies_are_refused(self) -> None:
+        payload = extension_configuration()
+        payload["operations"][0]["effects"] = ["teleport"]
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+        payload = extension_configuration()
+        payload["hooks"][0]["stages"] = ["whenever"]
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+        payload = extension_configuration()
+        payload["hooks"][0]["failure_policy"] = "ignore"
+        with pytest.raises(ValidationError):
+            ExtensionConfiguration.model_validate(payload)
+
+    def test_intake_verifies_the_declared_resources(self) -> None:
+        code = b"# extension code stays data at publish\n"
+        manifest = [{"path": "ext/main.py", "digest": package_digest(code), "size": len(code)}]
+        intake = extension_service.intake_package(
+            {"ext/main.py": code},
+            configuration=extension_configuration(),
+            resource_manifest=manifest,
+            flow_templates=[],
+        )
+        assert intake.configuration["permissions"] == ["governance.audit.append"]
+        with pytest.raises(InvalidArgumentError):
+            extension_service.intake_package(
+                {"ext/main.py": b"changed"},
+                configuration=extension_configuration(),
+                resource_manifest=manifest,
+                flow_templates=[],
             )
 
 

@@ -9,7 +9,12 @@ from uuid import UUID
 
 import httpx
 
-from opsmesh_sdk.api.capabilities import ExpertCreateRequest, create_capabilities_client
+from opsmesh_sdk.api.capabilities import (
+    ChannelCreateRequest,
+    ExpertCreateRequest,
+    ExtensionCreateRequest,
+    create_capabilities_client,
+)
 from opsmesh_sdk.client import PlatformClient
 from opsmesh_sdk.transport.http import HttpTransport
 
@@ -157,3 +162,83 @@ def test_package_attach_sends_raw_bytes() -> None:
     assert captured["method"] == "PUT"
     assert captured["content_type"] == "application/zip"
     assert captured["content"] == b"package-bytes"
+
+
+def test_channel_create_and_package_attach_use_the_raw_byte_channel() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["content_type"] = request.headers.get("content-type")
+        captured["content"] = request.content
+        return httpx.Response(201, json=version_payload())
+
+    group = capabilities_client(handler)
+    created = asyncio.run(
+        group.channels.create(
+            ChannelCreateRequest(
+                key="wecom",
+                name="WeCom channel",
+                configuration={
+                    "protocol": "wecom",
+                    "operations": [
+                        {"name": "receive", "entrypoint": "wecom.adapter:receive"},
+                        {"name": "send", "entrypoint": "wecom.adapter:send"},
+                    ],
+                },
+            )
+        )
+    )
+    assert captured["path"] == "/api/v1/capabilities/channels"
+    assert created.version == 1
+    asyncio.run(
+        group.channels.package.attach(
+            DEFINITION_ID, b"channel-bytes", content_type="application/zip"
+        )
+    )
+    assert captured["method"] == "PUT"
+    assert captured["path"] == f"/api/v1/capabilities/channels/{DEFINITION_ID}/draft/package"
+    assert captured["content"] == b"channel-bytes"
+
+
+def test_extension_create_and_package_attach_use_the_raw_byte_channel() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["content_type"] = request.headers.get("content-type")
+        captured["content"] = request.content
+        return httpx.Response(201, json=version_payload())
+
+    group = capabilities_client(handler)
+    created = asyncio.run(
+        group.extensions.create(
+            ExtensionCreateRequest(
+                key="run-digest",
+                name="Run digest",
+                configuration={
+                    "operations": [
+                        {
+                            "export_id": "summarize",
+                            "description": "Summarize one run.",
+                            "effects": ["read"],
+                            "permissions": ["governance.audit.append"],
+                        }
+                    ],
+                    "permissions": ["governance.audit.append"],
+                },
+            )
+        )
+    )
+    assert captured["path"] == "/api/v1/capabilities/extensions"
+    assert created.version == 1
+    asyncio.run(
+        group.extensions.package.attach(
+            DEFINITION_ID, b"extension-bytes", content_type="application/zip"
+        )
+    )
+    assert captured["method"] == "PUT"
+    assert captured["path"] == f"/api/v1/capabilities/extensions/{DEFINITION_ID}/draft/package"
+    assert captured["content"] == b"extension-bytes"

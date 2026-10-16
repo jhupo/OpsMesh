@@ -4,6 +4,9 @@
 
 | 方法 | 路径 | 操作 |
 | --- | --- | --- |
+| POST | `/api/v1/capabilities/channels` | Create Channel |
+| PUT | `/api/v1/capabilities/channels/{definition_id}/draft` | Update Channel Draft |
+| PUT | `/api/v1/capabilities/channels/{definition_id}/draft/package` | Attach Channel Package |
 | GET | `/api/v1/capabilities/definitions` | List Definitions |
 | GET | `/api/v1/capabilities/definitions/{definition_id}` | Read Definition |
 | PATCH | `/api/v1/capabilities/definitions/{definition_id}` | Update Definition |
@@ -16,6 +19,9 @@
 | POST | `/api/v1/capabilities/experts` | Create Expert |
 | PUT | `/api/v1/capabilities/experts/{definition_id}/draft` | Update Expert Draft |
 | PUT | `/api/v1/capabilities/experts/{definition_id}/draft/package` | Attach Expert Package |
+| POST | `/api/v1/capabilities/extensions` | Create Extension |
+| PUT | `/api/v1/capabilities/extensions/{definition_id}/draft` | Update Extension Draft |
+| PUT | `/api/v1/capabilities/extensions/{definition_id}/draft/package` | Attach Extension Package |
 | POST | `/api/v1/capabilities/mcp` | Create Mcp |
 | PUT | `/api/v1/capabilities/mcp/{definition_id}/draft` | Update Mcp Draft |
 | PUT | `/api/v1/capabilities/mcp/{definition_id}/draft/package` | Attach Mcp Package |
@@ -27,6 +33,161 @@
 | POST | `/api/v1/capabilities/tools` | Create Tool |
 | PUT | `/api/v1/capabilities/tools/{definition_id}/draft` | Update Tool Draft |
 | PUT | `/api/v1/capabilities/tools/{definition_id}/draft/package` | Attach Tool Package |
+
+## POST `/api/v1/capabilities/channels`
+
+Create Channel
+
+Operation ID：`capabilities.channels.create`。
+
+实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `create_channel`。
+
+Create one channel definition with its first draft version.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/ChannelCreateRequest"
+}
+```
+
+模型：[ChannelCreateRequest](schemas.md#schema-ChannelCreateRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 201 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/capabilities/channels/{definition_id}/draft`
+
+Update Channel Draft
+
+Operation ID：`capabilities.channels.update_draft`。
+
+实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `update_channel_draft`。
+
+Replace the current draft configuration of one channel definition.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `definition_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/ChannelDraftRequest"
+}
+```
+
+模型：[ChannelDraftRequest](schemas.md#schema-ChannelDraftRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/capabilities/channels/{definition_id}/draft/package`
+
+Attach Channel Package
+
+Operation ID：`capabilities.channels.package.attach`。
+
+实现：[src/opsmesh/capabilities/channels/routes.py](../../src/opsmesh/capabilities/channels/routes.py) · `attach_channel_package`。
+
+Attach a channel adapter package to the current draft.
+
+Every adapter entrypoint must name a module the package declares and
+carries. Nothing is imported or executed.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `definition_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "contentMediaType": "application/octet-stream",
+  "title": "Body",
+  "type": "string"
+}
+```
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
 
 ## GET `/api/v1/capabilities/definitions`
 
@@ -511,6 +672,161 @@ Attach a resource package to the current expert draft.
 
 The package is verified against the draft's declared manifests and
 stored under its digest; nothing inside it is imported or executed.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `definition_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "contentMediaType": "application/octet-stream",
+  "title": "Body",
+  "type": "string"
+}
+```
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## POST `/api/v1/capabilities/extensions`
+
+Create Extension
+
+Operation ID：`capabilities.extensions.create`。
+
+实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `create_extension`。
+
+Create one extension definition with its first draft version.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/ExtensionCreateRequest"
+}
+```
+
+模型：[ExtensionCreateRequest](schemas.md#schema-ExtensionCreateRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 201 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/capabilities/extensions/{definition_id}/draft`
+
+Update Extension Draft
+
+Operation ID：`capabilities.extensions.update_draft`。
+
+实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `update_extension_draft`。
+
+Replace the current draft configuration of one extension definition.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `definition_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/ExtensionDraftRequest"
+}
+```
+
+模型：[ExtensionDraftRequest](schemas.md#schema-ExtensionDraftRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapabilityVersionView](schemas.md#schema-CapabilityVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/capabilities/extensions/{definition_id}/draft/package`
+
+Attach Extension Package
+
+Operation ID：`capabilities.extensions.package.attach`。
+
+实现：[src/opsmesh/capabilities/extensions/routes.py](../../src/opsmesh/capabilities/extensions/routes.py) · `attach_extension_package`。
+
+Attach an extension package to the current draft.
+
+The declared resources and flow templates must exist in the package
+with their digests. Nothing is imported or executed.
 
 权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
 

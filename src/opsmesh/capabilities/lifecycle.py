@@ -18,12 +18,17 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.channels import service as channel_service
 from opsmesh.capabilities.experts import service as expert_service
+from opsmesh.capabilities.extensions import service as extension_service
 from opsmesh.capabilities.mcp import service as mcp_service
 from opsmesh.capabilities.models import (
+    CAPABILITY_TYPE_CHANNEL,
     CAPABILITY_TYPE_EXPERT,
+    CAPABILITY_TYPE_EXTENSION,
     CAPABILITY_TYPE_MCP,
     CAPABILITY_TYPE_SKILL,
     CAPABILITY_TYPE_TEAM,
@@ -79,6 +84,8 @@ CONFIGURED_TYPES = (
     CAPABILITY_TYPE_MCP,
     CAPABILITY_TYPE_SKILL,
     CAPABILITY_TYPE_TOOL,
+    CAPABILITY_TYPE_CHANNEL,
+    CAPABILITY_TYPE_EXTENSION,
 )
 
 _CONFIGURATION_VALIDATORS: dict[str, ConfigurationValidator] = {
@@ -87,6 +94,8 @@ _CONFIGURATION_VALIDATORS: dict[str, ConfigurationValidator] = {
     CAPABILITY_TYPE_MCP: mcp_service.validate_configuration,
     CAPABILITY_TYPE_SKILL: skill_service.validate_configuration,
     CAPABILITY_TYPE_TOOL: tool_service.validate_configuration,
+    CAPABILITY_TYPE_CHANNEL: channel_service.validate_configuration,
+    CAPABILITY_TYPE_EXTENSION: extension_service.validate_configuration,
 }
 _PACKAGE_INTAKE: dict[str, PackageIntakeHandler] = {
     CAPABILITY_TYPE_EXPERT: expert_service.intake_package,
@@ -94,6 +103,8 @@ _PACKAGE_INTAKE: dict[str, PackageIntakeHandler] = {
     CAPABILITY_TYPE_MCP: mcp_service.intake_package,
     CAPABILITY_TYPE_SKILL: skill_service.intake_package,
     CAPABILITY_TYPE_TOOL: tool_service.intake_package,
+    CAPABILITY_TYPE_CHANNEL: channel_service.intake_package,
+    CAPABILITY_TYPE_EXTENSION: extension_service.intake_package,
 }
 _VERSION_VALIDATORS: dict[str, VersionValidator] = {
     CAPABILITY_TYPE_EXPERT: expert_service.validate_version,
@@ -101,6 +112,8 @@ _VERSION_VALIDATORS: dict[str, VersionValidator] = {
     CAPABILITY_TYPE_MCP: mcp_service.validate_version,
     CAPABILITY_TYPE_SKILL: skill_service.validate_version,
     CAPABILITY_TYPE_TOOL: tool_service.validate_version,
+    CAPABILITY_TYPE_CHANNEL: channel_service.validate_version,
+    CAPABILITY_TYPE_EXTENSION: extension_service.validate_version,
 }
 
 
@@ -186,7 +199,16 @@ def create_definition(
         created_by_user_id=_actor_user_id(actor),
     )
     session.add(definition)
-    session.flush()
+    try:
+        # The check above is a courtesy; the unique index is the contract, so a
+        # concurrent creator of the same type and key surfaces as a conflict
+        # instead of a database error.
+        session.flush()
+    except IntegrityError as exc:
+        raise ConflictError(
+            "A capability definition already uses this type and key",
+            details={"type": capability_type, "key": validated_key},
+        ) from exc
     version = _new_draft_version(session, definition=definition, content=content)
     append_platform_event(
         session,
@@ -318,7 +340,11 @@ def publish_version(
     changed, and because an internal caller must not be able to publish a
     shape the API would refuse.
     """
-    definition = session.get(CapabilityDefinition, definition_id)
+    definition = session.scalar(
+        select(CapabilityDefinition)
+        .where(CapabilityDefinition.id == definition_id)
+        .with_for_update()
+    )
     if definition is None or definition.status == DEFINITION_STATUS_DELETED:
         raise NotFoundError("The capability definition does not exist")
     if definition.status != DEFINITION_STATUS_ACTIVE:
@@ -951,7 +977,19 @@ def _guard_public_dependencies(session: Session, *, definition: CapabilityDefini
 def _authorized_definition(
     session: Session, *, definition_id: UUID, actor: AuditActor
 ) -> CapabilityDefinition:
-    definition = session.get(CapabilityDefinition, definition_id)
+    """The definition one write targets, locked for the whole transaction.
+
+    Every mutation of one definition — draft edits, package attachment,
+    publishing and status changes — serializes on this row, so a version
+    number is allocated from the committed state and two writers cannot
+    both pass a check the other one invalidates. PostgreSQL row locks are
+    the only ordering this module needs; no advisory lock is involved.
+    """
+    definition = session.scalar(
+        select(CapabilityDefinition)
+        .where(CapabilityDefinition.id == definition_id)
+        .with_for_update()
+    )
     if definition is None or definition.status == DEFINITION_STATUS_DELETED:
         raise NotFoundError("The capability definition does not exist")
     if definition.status != DEFINITION_STATUS_ACTIVE:

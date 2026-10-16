@@ -185,3 +185,78 @@ session 被 `ValidationError` 拒绝；传输可关闭。冒烟退出 0。
    扩展源包；admin 安装/替换/卸载可执行包。
 5. operator/deploy/scripts 与 V4 的合同同步（现存脚本仍含参考实现的工程
    合同，属未提交的迁移清理，不随本步提交）。
+
+## 12. Review 整改（2026-10-17 晚，对应 `docs/s5-code-review.md` 三个 P1）
+
+Review 判定 S5 为 partial/blocked：七类能力只接通五类、CAS/版本号分配未在
+PostgreSQL 下串行化、`output_declarations` 无路径与结构校验。以下整改不改变
+第 3、4 节已记录合同，只补齐缺口并按同规格重新验证。
+
+### 12.1 七类能力接通（channel/extension）
+
+- 新增 `src/opsmesh/capabilities/channels/` 与 `extensions/` 子包（各
+  `schemas`/`service`/`routes`/`__init__`）；`lifecycle` 的
+  `CONFIGURED_TYPES`、`_CONFIGURATION_VALIDATORS`、`_PACKAGE_INTAKE`、
+  `_VERSION_VALIDATORS` 注册满七类，`bootstrap/routers.py` 注册两组路由
+  （create/update_draft/package.attach）。
+- channel 配置合同：`protocol` 为小写厂商标识；`signature_algorithm` 仅
+  `hmac-sha256`（镜像 SDK `SUPPORTED_SIGNATURE_ALGORITHMS`）；operations
+  必须含 receive/send、entrypoint 为 `module:function`；intake 校验
+  entrypoint 的模块是包内声明资源；版本必须带包（适配器代码随包发布）。
+- extension 配置合同：operations/hooks/events 声明镜像 SDK
+  `PackageManifest.validate_declarations`（export_id 全局唯一、event 必须
+  引用已声明 operation、operation permissions ⊆ 声明 permissions、总数
+  ≤256）；effects/stages/failure_policy 枚举镜像 SDK 纯合同；intake 核对
+  声明资源；版本必须带包。
+- provisioning 无需改动：channel/extension 走通用 manifest.json 路径。
+- `sdk/python/codegen.toml` 增加 2 条二进制 attach 条目，OpenAPI/SDK
+  重新生成（`channels`/`extensions` 分组与配置模型进入生成客户端）。
+
+### 12.2 CAS 与版本号分配串行化
+
+- capabilities：`_authorized_definition` 与 `publish_version` 对定义行
+  `SELECT ... FOR UPDATE`；`create_definition` 的 (type,key) 竞争经
+  IntegrityError→ConflictError 映射（唯一索引是合同）。
+- resources：`_lock_file_row` 单锁点；`write_back` 在 CAS 检查**之前**加锁，
+  `upload_version` 在版本分配之前加锁，`delete_file` 在授权后加锁。写路径
+  只有"文件行/定义行"一个锁点，无嵌套第二锁，无死锁环。
+- 并发测试全部用 holder 事务 + `wait_for_lock_waits` 强制窗口（不用时序
+  竞赛）：并发 create 同 key 一成一败、并发 publish 一成一败、并发
+  update_draft 均成且只有一个 draft、并发 write_back 同期望一成一败、
+  并发 upload 版本递增。
+
+### 12.3 runtime-policy 输出声明校验
+
+- schema：`OutputDeclaration`（`extra=forbid`、path 1..1000、
+  media_type ≤255、description ≤2000）；`RuntimePolicyRequest`/`View` 改
+  `list[OutputDeclaration]`。
+- 服务层（唯一门）：`_validated_output_declarations` 对每个声明重跑
+  pydantic 校验与 `validate_relative_path`，并执行
+  `_reject_declared_file_collision`——声明路径解析到文件所属目录后若被他
+  人文件占位即 ConflictError，防止经本文件策略的写回绕过他人文件授权。
+  路由层 schema 之外不依赖，直接调用 service 的内部路径同样被拒绝。
+
+### 12.4 重新验证证据
+
+| 步骤 | 命令 | 结果 |
+| --- | --- | --- |
+| 服务器全量 | `pytest tests -o addopts='' -q`（干净库 + alembic upgrade head/check 后） | **304 passed, 3 skipped** |
+| 端到端 | `python /tmp/s5-e2e.py` | **7/7 PASS** |
+| 反向实证 | `/tmp/s5-review-reverse.py`（7 项变异，truncate 前置、finally 还原、MD5 复核） | **7/7 CAUGHT** |
+| SDK wheel | 干净 venv 仅装 wheel 后冒烟（含 channels/extensions 分组、OutputDeclaration） | OK |
+| 本地静态门 | ruff / mypy（212 文件）/ lint-imports（21 kept）/ audit（177 文件）/ export check（8）/ SDK gen check（5）/ pytest（307 + SDK 110） | 全部通过 |
+
+反向实证 7 项：channel 类型未注册、write_back 行锁移除、publish 定义行锁
+移除、输出声明路径校验移除、输出声明跨文件校验移除、create 冲突映射移除、
+`_authorized_definition` 行锁移除。一项说明：移除 `upload_version` 文件行锁
+的变异未被测试抓到——`reserve_storage` 的账户行锁在版本分配前已串行化；
+保留显式文件行锁不依赖账本锁的副作用，该变异不计入缺陷复现。
+
+### 12.5 结论分级（整改后）
+
+- **implemented**：七类能力的配置合同/包接收/版本校验/路由；CAS 与版本号
+  分配的行锁串行化；输出声明 schema + 服务层路径/跨文件校验。
+- **verified**：12.4 全部证据（服务器真实 PG 含 5 个确定性并发测试、7/7
+  反向实证、SDK 干净环境）。
+- **unverified**：同第 10 节（Temporal/SMTP/模型/机器人非本步范围）。
+- **blocked**：S5 范围内无；第 11 节集成门槛不变。

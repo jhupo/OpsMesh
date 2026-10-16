@@ -1392,6 +1392,216 @@ One immutable-or-draft version with its full declared content.
 }
 ```
 
+<a id="schema-ChannelConfiguration"></a>
+
+## ChannelConfiguration
+
+The vendor protocol one channel definition speaks.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `protocol` | string | 是 | `maxLength=50`; `minLength=2` |
+| `signature_algorithm` | string | 否 | `const="hmac-sha256"`; `default="hmac-sha256"` |
+| `operations` | array&lt;[ChannelOperation](schemas.md#schema-ChannelOperation)&gt; | 是 | `maxItems=4`; `minItems=1` |
+| `parameters_schema` | object | 否 | `additionalProperties=true` |
+| `secret_slots` | array&lt;string&gt; | 否 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The vendor protocol one channel definition speaks.",
+  "properties": {
+    "operations": {
+      "items": {
+        "$ref": "#/components/schemas/ChannelOperation"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "title": "Parameters Schema",
+      "type": "object"
+    },
+    "protocol": {
+      "maxLength": 50,
+      "minLength": 2,
+      "title": "Protocol",
+      "type": "string"
+    },
+    "secret_slots": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Slots",
+      "type": "array"
+    },
+    "signature_algorithm": {
+      "const": "hmac-sha256",
+      "default": "hmac-sha256",
+      "title": "Signature Algorithm",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocol",
+    "operations"
+  ],
+  "title": "ChannelConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelCreateRequest"></a>
+
+## ChannelCreateRequest
+
+Create one channel definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [ChannelConfiguration](schemas.md#schema-ChannelConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one channel definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ChannelConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "ChannelCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelDraftRequest"></a>
+
+## ChannelDraftRequest
+
+Replace the current draft configuration of one channel definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [ChannelConfiguration](schemas.md#schema-ChannelConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one channel definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ChannelConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "ChannelDraftRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ChannelOperation"></a>
+
+## ChannelOperation
+
+One adapter operation with its identifier and typed I/O schemas.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `enum=["receive", "send", "connect", "disconnect"]` |
+| `entrypoint` | string | 是 | `maxLength=300`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `input_schema` | object | 否 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One adapter operation with its identifier and typed I/O schemas.",
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "entrypoint": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Entrypoint",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "name": {
+      "enum": [
+        "receive",
+        "send",
+        "connect",
+        "disconnect"
+      ],
+      "title": "Name",
+      "type": "string"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "entrypoint"
+  ],
+  "title": "ChannelOperation",
+  "type": "object"
+}
+```
+
 <a id="schema-CreateInvitationRequest"></a>
 
 ## CreateInvitationRequest
@@ -1835,6 +2045,383 @@ One extension-reported fact; actor and scope come from the verified call.
     "idempotency_key"
   ],
   "title": "ExtensionAuditAppend",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionConfiguration"></a>
+
+## ExtensionConfiguration
+
+The export contract one extension definition publishes.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `operations` | array&lt;[ExtensionOperation](schemas.md#schema-ExtensionOperation)&gt; | 否 | `maxItems=256` |
+| `hooks` | array&lt;[ExtensionHook](schemas.md#schema-ExtensionHook)&gt; | 否 | `maxItems=256` |
+| `events` | array&lt;[ExtensionEvent](schemas.md#schema-ExtensionEvent)&gt; | 否 | `maxItems=256` |
+| `permissions` | array&lt;string&gt; | 否 | `maxItems=128` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The export contract one extension definition publishes.",
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/components/schemas/ExtensionEvent"
+      },
+      "maxItems": 256,
+      "title": "Events",
+      "type": "array"
+    },
+    "hooks": {
+      "items": {
+        "$ref": "#/components/schemas/ExtensionHook"
+      },
+      "maxItems": 256,
+      "title": "Hooks",
+      "type": "array"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/components/schemas/ExtensionOperation"
+      },
+      "maxItems": 256,
+      "title": "Operations",
+      "type": "array"
+    },
+    "permissions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Permissions",
+      "type": "array"
+    }
+  },
+  "title": "ExtensionConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionCreateRequest"></a>
+
+## ExtensionCreateRequest
+
+Create one extension definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [ExtensionConfiguration](schemas.md#schema-ExtensionConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one extension definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ExtensionConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "ExtensionCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionDraftRequest"></a>
+
+## ExtensionDraftRequest
+
+Replace the current draft configuration of one extension definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [ExtensionConfiguration](schemas.md#schema-ExtensionConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one extension definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ExtensionConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "ExtensionDraftRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionEvent"></a>
+
+## ExtensionEvent
+
+One declared event consumer with its operation and idempotency fields.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `export_id` | string | 是 | `maxLength=100`; `minLength=1` |
+| `description` | string | 是 | `maxLength=2000`; `minLength=1` |
+| `source_types` | array&lt;string&gt; | 是 | `minItems=1` |
+| `source_versions` | array&lt;string&gt; | 是 | `minItems=1` |
+| `operation_export_id` | string | 是 | `maxLength=100`; `minLength=1` |
+| `filter_scope` | array&lt;string&gt; | 否 | — |
+| `idempotency_key_fields` | array&lt;string&gt; | 是 | `minItems=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One declared event consumer with its operation and idempotency fields.",
+  "properties": {
+    "description": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "export_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Export Id",
+      "type": "string"
+    },
+    "filter_scope": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Filter Scope",
+      "type": "array"
+    },
+    "idempotency_key_fields": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Idempotency Key Fields",
+      "type": "array"
+    },
+    "operation_export_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Operation Export Id",
+      "type": "string"
+    },
+    "source_types": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Types",
+      "type": "array"
+    },
+    "source_versions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Versions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "export_id",
+    "description",
+    "source_types",
+    "source_versions",
+    "operation_export_id",
+    "idempotency_key_fields"
+  ],
+  "title": "ExtensionEvent",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionHook"></a>
+
+## ExtensionHook
+
+One declared hook bound to fixed stages with a failure policy.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `export_id` | string | 是 | `maxLength=100`; `minLength=1` |
+| `description` | string | 是 | `maxLength=2000`; `minLength=1` |
+| `stages` | array&lt;string&gt; | 是 | `maxItems=9`; `minItems=1` |
+| `input_schema` | object | 否 | `additionalProperties=true` |
+| `patch_fields` | array&lt;string&gt; | 否 | `maxItems=32` |
+| `failure_policy` | string | 否 | `default="block"`; `enum=["block", "observe"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One declared hook bound to fixed stages with a failure policy.",
+  "properties": {
+    "description": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "export_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Export Id",
+      "type": "string"
+    },
+    "failure_policy": {
+      "default": "block",
+      "enum": [
+        "block",
+        "observe"
+      ],
+      "title": "Failure Policy",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "patch_fields": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Patch Fields",
+      "type": "array"
+    },
+    "stages": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 9,
+      "minItems": 1,
+      "title": "Stages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "export_id",
+    "description",
+    "stages"
+  ],
+  "title": "ExtensionHook",
+  "type": "object"
+}
+```
+
+<a id="schema-ExtensionOperation"></a>
+
+## ExtensionOperation
+
+One declared operation: typed I/O, effects, timeout and permissions.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `export_id` | string | 是 | `maxLength=100`; `minLength=1` |
+| `description` | string | 是 | `maxLength=2000`; `minLength=1` |
+| `input_schema` | object | 否 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+| `effects` | array&lt;string&gt; | 否 | `maxItems=7` |
+| `timeout_seconds` | integer | 否 | `default=60`; `maximum=3600.0`; `minimum=1.0` |
+| `permissions` | array&lt;string&gt; | 否 | `maxItems=128` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One declared operation: typed I/O, effects, timeout and permissions.",
+  "properties": {
+    "description": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "effects": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 7,
+      "title": "Effects",
+      "type": "array"
+    },
+    "export_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Export Id",
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "permissions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Permissions",
+      "type": "array"
+    },
+    "timeout_seconds": {
+      "default": 60,
+      "maximum": 3600.0,
+      "minimum": 1.0,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "export_id",
+    "description"
+  ],
+  "title": "ExtensionOperation",
   "type": "object"
 }
 ```
@@ -2804,6 +3391,60 @@ The model an expert expects; selection itself belongs to execution.
 }
 ```
 
+<a id="schema-OutputDeclaration"></a>
+
+## OutputDeclaration
+
+One declared execution output: a safe relative path and its media type.
+
+The path is where a run may write back inside the granted workspace;
+it is validated as a safe relative path again in the service, because
+a persisted declaration is later resolved against a storage root.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `path` | string | 是 | `maxLength=1000`; `minLength=1` |
+| `media_type` | string anyOf null | 否 | `anyOf=[{"maxLength": 255, "type": "string"}, {"type": "null"}]` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One declared execution output: a safe relative path and its media type.\n\nThe path is where a run may write back inside the granted workspace;\nit is validated as a safe relative path again in the service, because\na persisted declaration is later resolved against a storage root.",
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "media_type": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Media Type"
+    },
+    "path": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "OutputDeclaration",
+  "type": "object"
+}
+```
+
 <a id="schema-QuotaLimitsRequest"></a>
 
 ## QuotaLimitsRequest
@@ -3041,7 +3682,7 @@ The operator's confirmation of one unconfirmed send.
 | --- | --- | --- | --- |
 | `frozen_input_versions` | array&lt;integer&gt; | 否 | `maxItems=256` |
 | `relative_paths` | array&lt;string&gt; | 否 | `maxItems=256` |
-| `output_declarations` | array&lt;object&gt; | 否 | `maxItems=256` |
+| `output_declarations` | array&lt;[OutputDeclaration](schemas.md#schema-OutputDeclaration)&gt; | 否 | `maxItems=256` |
 | `use_in_execution` | boolean | 否 | `default=false` |
 
 ```json
@@ -3058,8 +3699,7 @@ The operator's confirmation of one unconfirmed send.
     },
     "output_declarations": {
       "items": {
-        "additionalProperties": true,
-        "type": "object"
+        "$ref": "#/components/schemas/OutputDeclaration"
       },
       "maxItems": 256,
       "title": "Output Declarations",
@@ -3093,7 +3733,7 @@ The operator's confirmation of one unconfirmed send.
 | `file_id` | string (uuid) | 是 | `format="uuid"` |
 | `frozen_input_versions` | array&lt;integer&gt; | 是 | — |
 | `relative_paths` | array&lt;string&gt; | 是 | — |
-| `output_declarations` | array&lt;object&gt; | 是 | — |
+| `output_declarations` | array&lt;[OutputDeclaration](schemas.md#schema-OutputDeclaration)&gt; | 是 | — |
 | `use_in_execution` | boolean | 是 | — |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 
@@ -3115,8 +3755,7 @@ The operator's confirmation of one unconfirmed send.
     },
     "output_declarations": {
       "items": {
-        "additionalProperties": true,
-        "type": "object"
+        "$ref": "#/components/schemas/OutputDeclaration"
       },
       "title": "Output Declarations",
       "type": "array"

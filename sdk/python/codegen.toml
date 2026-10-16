@@ -150,6 +150,14 @@ operation = "capabilities.tools.package.attach"
 direction = "request"
 
 [[binary]]
+operation = "capabilities.channels.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.extensions.package.attach"
+direction = "request"
+
+[[binary]]
 operation = "capabilities.versions.package.read"
 direction = "response"
 

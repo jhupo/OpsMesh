@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from opsmesh.resources.files.access import (
     RejectingScopeAdmission,
@@ -14,6 +15,7 @@ from opsmesh.resources.files.access import (
     validate_permissions,
 )
 from opsmesh.resources.files.content import content_download_response
+from opsmesh.resources.files.schemas import RuntimePolicyRequest
 from opsmesh.resources.storage.filesystem import (
     ContentStorageError,
     content_storage_key,
@@ -68,10 +70,36 @@ def test_the_default_scope_admission_refuses_every_external_scope() -> None:
 
 
 def test_download_response_sanitizes_the_filename() -> None:
-    response = content_download_response(
-        b"data", filename='evil"\r\nX-Evil: 1', media_type=None
-    )
+    response = content_download_response(b"data", filename='evil"\r\nX-Evil: 1', media_type=None)
     disposition = response.headers["content-disposition"]
     assert "\r" not in disposition and "\n" not in disposition
     assert disposition == 'attachment; filename="evilX-Evil: 1"'
     assert response.media_type == "application/octet-stream"
+
+
+class TestOutputDeclarationContract:
+    def test_declarations_are_typed_objects(self) -> None:
+        request = RuntimePolicyRequest.model_validate(
+            {
+                "relative_paths": ["docs/notes.txt"],
+                "output_declarations": [{"path": "out/report.md", "media_type": "text/markdown"}],
+            }
+        )
+        assert request.output_declarations[0].path == "out/report.md"
+        assert request.output_declarations[0].description == ""
+
+    def test_unknown_declaration_fields_are_refused(self) -> None:
+        with pytest.raises(ValidationError):
+            RuntimePolicyRequest.model_validate(
+                {"output_declarations": [{"path": "out/report.md", "bogus": True}]}
+            )
+
+    def test_declaration_path_and_description_are_bounded(self) -> None:
+        with pytest.raises(ValidationError):
+            RuntimePolicyRequest.model_validate({"output_declarations": [{"path": ""}]})
+        with pytest.raises(ValidationError):
+            RuntimePolicyRequest.model_validate({"output_declarations": [{"path": "x" * 1001}]})
+        with pytest.raises(ValidationError):
+            RuntimePolicyRequest.model_validate(
+                {"output_declarations": [{"path": "out.md", "description": "y" * 2001}]}
+            )

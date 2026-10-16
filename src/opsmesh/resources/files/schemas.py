@@ -73,13 +73,28 @@ class GrantCreateRequest(BaseModel):
     permissions: list[FilePermissionName] = Field(min_length=1, max_length=8)
 
 
+class OutputDeclaration(BaseModel):
+    """One declared execution output: a safe relative path and its media type.
+
+    The path is where a run may write back inside the granted workspace;
+    it is validated as a safe relative path again in the service, because
+    a persisted declaration is later resolved against a storage root.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=1000)
+    media_type: str | None = Field(default=None, max_length=255)
+    description: str = Field(default="", max_length=2000)
+
+
 class RuntimePolicyView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     file_id: UUID
     frozen_input_versions: list[int]
     relative_paths: list[str]
-    output_declarations: list[dict[str, object]]
+    output_declarations: list[OutputDeclaration]
     use_in_execution: bool
     updated_at: datetime
 
@@ -89,7 +104,9 @@ class RuntimePolicyRequest(BaseModel):
 
     frozen_input_versions: list[int] = Field(default_factory=list, max_length=256)
     relative_paths: list[str] = Field(default_factory=list, max_length=256)
-    output_declarations: list[dict[str, object]] = Field(default_factory=list, max_length=256)
+    output_declarations: list[OutputDeclaration] = Field(
+        default_factory=list, max_length=256
+    )
     use_in_execution: bool = False
 
 

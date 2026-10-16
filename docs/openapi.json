@@ -1057,6 +1057,152 @@
         "title": "ChangePasswordRequest",
         "type": "object"
       },
+      "ChannelConfiguration": {
+        "additionalProperties": false,
+        "description": "The vendor protocol one channel definition speaks.",
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOperation"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          },
+          "parameters_schema": {
+            "additionalProperties": true,
+            "title": "Parameters Schema",
+            "type": "object"
+          },
+          "protocol": {
+            "maxLength": 50,
+            "minLength": 2,
+            "title": "Protocol",
+            "type": "string"
+          },
+          "secret_slots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Slots",
+            "type": "array"
+          },
+          "signature_algorithm": {
+            "const": "hmac-sha256",
+            "default": "hmac-sha256",
+            "title": "Signature Algorithm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "operations"
+        ],
+        "title": "ChannelConfiguration",
+        "type": "object"
+      },
+      "ChannelCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create one channel definition with its first draft version.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ChannelConfiguration"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "private",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "configuration"
+        ],
+        "title": "ChannelCreateRequest",
+        "type": "object"
+      },
+      "ChannelDraftRequest": {
+        "additionalProperties": false,
+        "description": "Replace the current draft configuration of one channel definition.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ChannelConfiguration"
+          }
+        },
+        "required": [
+          "configuration"
+        ],
+        "title": "ChannelDraftRequest",
+        "type": "object"
+      },
+      "ChannelOperation": {
+        "additionalProperties": false,
+        "description": "One adapter operation with its identifier and typed I/O schemas.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "entrypoint": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "enum": [
+              "receive",
+              "send",
+              "connect",
+              "disconnect"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "title": "Output Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "entrypoint"
+        ],
+        "title": "ChannelOperation",
+        "type": "object"
+      },
       "CreateInvitationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1374,6 +1520,281 @@
           "idempotency_key"
         ],
         "title": "ExtensionAuditAppend",
+        "type": "object"
+      },
+      "ExtensionConfiguration": {
+        "additionalProperties": false,
+        "description": "The export contract one extension definition publishes.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionEvent"
+            },
+            "maxItems": 256,
+            "title": "Events",
+            "type": "array"
+          },
+          "hooks": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionHook"
+            },
+            "maxItems": 256,
+            "title": "Hooks",
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionOperation"
+            },
+            "maxItems": 256,
+            "title": "Operations",
+            "type": "array"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "title": "ExtensionConfiguration",
+        "type": "object"
+      },
+      "ExtensionCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create one extension definition with its first draft version.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ExtensionConfiguration"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "private",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "configuration"
+        ],
+        "title": "ExtensionCreateRequest",
+        "type": "object"
+      },
+      "ExtensionDraftRequest": {
+        "additionalProperties": false,
+        "description": "Replace the current draft configuration of one extension definition.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ExtensionConfiguration"
+          }
+        },
+        "required": [
+          "configuration"
+        ],
+        "title": "ExtensionDraftRequest",
+        "type": "object"
+      },
+      "ExtensionEvent": {
+        "additionalProperties": false,
+        "description": "One declared event consumer with its operation and idempotency fields.",
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "export_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Export Id",
+            "type": "string"
+          },
+          "filter_scope": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Filter Scope",
+            "type": "array"
+          },
+          "idempotency_key_fields": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Idempotency Key Fields",
+            "type": "array"
+          },
+          "operation_export_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Operation Export Id",
+            "type": "string"
+          },
+          "source_types": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Source Types",
+            "type": "array"
+          },
+          "source_versions": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Source Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "export_id",
+          "description",
+          "source_types",
+          "source_versions",
+          "operation_export_id",
+          "idempotency_key_fields"
+        ],
+        "title": "ExtensionEvent",
+        "type": "object"
+      },
+      "ExtensionHook": {
+        "additionalProperties": false,
+        "description": "One declared hook bound to fixed stages with a failure policy.",
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "export_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Export Id",
+            "type": "string"
+          },
+          "failure_policy": {
+            "default": "block",
+            "enum": [
+              "block",
+              "observe"
+            ],
+            "title": "Failure Policy",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "patch_fields": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Patch Fields",
+            "type": "array"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "export_id",
+          "description",
+          "stages"
+        ],
+        "title": "ExtensionHook",
+        "type": "object"
+      },
+      "ExtensionOperation": {
+        "additionalProperties": false,
+        "description": "One declared operation: typed I/O, effects, timeout and permissions.",
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "effects": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 7,
+            "title": "Effects",
+            "type": "array"
+          },
+          "export_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Export Id",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "title": "Output Schema",
+            "type": "object"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Permissions",
+            "type": "array"
+          },
+          "timeout_seconds": {
+            "default": 60,
+            "maximum": 3600.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "export_id",
+          "description"
+        ],
+        "title": "ExtensionOperation",
         "type": "object"
       },
       "FileCreateRequest": {
@@ -2083,6 +2504,41 @@
         "title": "ModelRequirements",
         "type": "object"
       },
+      "OutputDeclaration": {
+        "additionalProperties": false,
+        "description": "One declared execution output: a safe relative path and its media type.\n\nThe path is where a run may write back inside the granted workspace;\nit is validated as a safe relative path again in the service, because\na persisted declaration is later resolved against a storage root.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Type"
+          },
+          "path": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "OutputDeclaration",
+        "type": "object"
+      },
       "QuotaLimitsRequest": {
         "additionalProperties": false,
         "description": "The administrator-writable allowances of one account.",
@@ -2264,8 +2720,7 @@
           },
           "output_declarations": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/OutputDeclaration"
             },
             "maxItems": 256,
             "title": "Output Declarations",
@@ -2305,8 +2760,7 @@
           },
           "output_declarations": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/OutputDeclaration"
             },
             "title": "Output Declarations",
             "type": "array"
@@ -4119,6 +4573,550 @@
         "summary": "Revoke Session",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/capabilities/channels": {
+      "post": {
+        "description": "Create one channel definition with its first draft version.",
+        "operationId": "capabilities.channels.create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Create Channel",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/api/v1/capabilities/channels/{definition_id}/draft": {
+      "put": {
+        "description": "Replace the current draft configuration of one channel definition.",
+        "operationId": "capabilities.channels.update_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Definition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Update Channel Draft",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/api/v1/capabilities/channels/{definition_id}/draft/package": {
+      "put": {
+        "description": "Attach a channel adapter package to the current draft.\n\nEvery adapter entrypoint must name a module the package declares and\ncarries. Nothing is imported or executed.",
+        "operationId": "capabilities.channels.package.attach",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Definition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "title": "Body",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Attach Channel Package",
+        "tags": [
+          "capabilities"
         ]
       }
     },
@@ -6375,6 +7373,550 @@
           }
         },
         "summary": "Attach Expert Package",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/api/v1/capabilities/extensions": {
+      "post": {
+        "description": "Create one extension definition with its first draft version.",
+        "operationId": "capabilities.extensions.create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Create Extension",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/api/v1/capabilities/extensions/{definition_id}/draft": {
+      "put": {
+        "description": "Replace the current draft configuration of one extension definition.",
+        "operationId": "capabilities.extensions.update_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Definition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Update Extension Draft",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/api/v1/capabilities/extensions/{definition_id}/draft/package": {
+      "put": {
+        "description": "Attach an extension package to the current draft.\n\nThe declared resources and flow templates must exist in the package\nwith their digests. Nothing is imported or executed.",
+        "operationId": "capabilities.extensions.package.attach",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "definition_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Definition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Installation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Installation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Instance-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Instance-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Invocation-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Invocation-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OpsMesh-Namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Opsmesh-Namespace"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "title": "Body",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Attach Extension Package",
         "tags": [
           "capabilities"
         ]

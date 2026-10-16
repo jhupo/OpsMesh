@@ -13,7 +13,9 @@ from uuid import UUID
 from fastapi import FastAPI, Header
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.channels import routes as channel_routes
 from opsmesh.capabilities.experts import routes as expert_routes
+from opsmesh.capabilities.extensions import routes as extension_routes
 from opsmesh.capabilities.mcp import routes as mcp_routes
 from opsmesh.capabilities.routes import router as capability_router
 from opsmesh.capabilities.skills import routes as skill_routes
@@ -143,6 +145,8 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
         mcp_routes.router,
         skill_routes.router,
         tool_routes.router,
+        channel_routes.router,
+        extension_routes.router,
         file_routes.router,
         artifact_routes.router,
     ):
