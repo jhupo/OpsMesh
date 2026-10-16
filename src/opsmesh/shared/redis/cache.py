@@ -31,11 +31,24 @@ class CachedValue:
 
 
 class RedisJsonCache:
+    """Single-loader cache whose publication is bounded by the loader lease and
+    the invalidation generation observed before loading.
+
+    ``delete`` advances the generation first, so a loader that started before
+    the invalidation can never publish its (now stale) result afterwards.
+    """
+
     _PUBLISH_SCRIPT = """
         if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end
-        redis.call('set', KEYS[2], ARGV[2], 'EX', ARGV[3])
+        local generation = redis.call('get', KEYS[3])
+        if generation == false then generation = '0' end
+        if generation ~= ARGV[2] then return 2 end
+        redis.call('set', KEYS[2], ARGV[3], 'EX', ARGV[4])
         return 1
     """
+    _PUBLISH_LOCK_LOST = 0
+    _PUBLISH_INVALIDATED = 2
+    _PUBLISHED = 1
 
     def __init__(
         self,
@@ -121,12 +134,19 @@ class RedisJsonCache:
             if cached.found:
                 return cached
 
+            generation = self._generation(key)
             value = loader()
             storage_key = self._storage_key(key)
             serialized = json.dumps(value, separators=(",", ":"), sort_keys=True, allow_nan=False)
-            if not self._publish(
-                keys=[lock_key, storage_key], args=[token, serialized, resolved_ttl]
-            ):
+            published = self._publish(
+                keys=[lock_key, storage_key, self._generation_key(key)],
+                args=[token, generation, serialized, resolved_ttl],
+            )
+            if published == self._PUBLISH_INVALIDATED:
+                # The entry was invalidated while loading: the loaded value is
+                # served for this call only and never persisted.
+                return CachedValue(key=storage_key, found=True, value=value)
+            if published != self._PUBLISHED:
                 raise LockNotOwnedError("Cache loader lease expired before publication")
             return CachedValue(key=storage_key, found=True, value=value)
         finally:
@@ -140,7 +160,19 @@ class RedisJsonCache:
                 )
 
     def delete(self, key: str) -> int:
+        generation_key = self._generation_key(key)
+        # Invalidate before deleting so a concurrent loader cannot publish the
+        # pre-delete value after the delete completes.
+        self._redis.incr(generation_key)
         return int(self._redis.delete(self._storage_key(key)))
+
+    def _generation(self, key: str) -> str:
+        current = self._redis.get(self._generation_key(key))
+        return current if current is not None else "0"
+
+    def _generation_key(self, key: str) -> str:
+        normalized_key = self._normalize_key(key)
+        return self._keys.cache_generation(self._namespace, normalized_key)
 
     def _storage_key(self, key: str) -> str:
         normalized_key = self._normalize_key(key)

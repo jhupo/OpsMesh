@@ -89,3 +89,70 @@
 - 工作区中 `AGENTS.md`、`README.md`、`deploy/*`、`.agents/skills/*` 的改动为先于 S2 存在的未提交变更，不属于 S2 提交范围。
 - 服务器 `/tmp/s2-verify` 为验证用临时环境（temporal dev server、pylibs、测试库 `opsmesh_s2_test`），不参与运行部署；`opsmesh_s2_test` 库与 temporal 进程可在后续步骤复用。
 - 待关闭集成门槛：S3 SDK 纯合同起按第 16.2/16.3 节逐项验收；S2 不替后续步骤背书。真实 Temporal 沙箱/取消/恢复与官方 Agents 集成在 S7（execution）按第 16.4 节登记。
+
+## 9. 评审修复（提交 `9e000211` 的 8 项问题）
+
+来源：对 `9e000211` 的代码评审，结论"基础函数已经写出，但装配和失败场景尚未闭环"。8 项全部修复，本地与服务器真实 PG/Redis/Temporal 复验通过。以下按问题逐条登记。
+
+### 9.1 [P1] Docker 启动入口无法启动（无参工厂）
+
+- **问题**：`create_app(settings)` 为必填参数，Uvicorn `--factory opsmesh.main:create_app` 无参调用报 `missing 1 required positional argument: 'settings'`。
+- **修复**：[`src/opsmesh/bootstrap/api.py`](src/opsmesh/bootstrap/api.py) 改为 `create_app(settings: Settings | None = None)`，`None` 时 `get_settings()` 读取进程配置；显式传参的测试与脚本行为不变。
+- **验证**：`uvicorn --factory target opsmesh.main:create_app resolved: OpsMesh` 真实启动成功；`tests/bootstrap/test_api_assembly.py::test_create_app_reads_the_process_configuration` 覆盖无参工厂。
+
+### 9.2 [P1] HTTP 安全配置没有接入应用
+
+- **问题**：文档开关、CORS、限流配置未实际生效——关闭文档后 `/docs`、`/openapi.json` 仍 200；每窗口 1 次请求连续三次仍全 200；允许来源的 CORS 预检 405。
+- **修复**：`create_app` 用 `app_settings.enable_api_docs` 控制 `docs_url`/`redoc_url`/`openapi_url`（None 即不注册路由）；按 V4 网关限流策略新增 [`src/opsmesh/bootstrap/http_policy.py`](src/opsmesh/bootstrap/http_policy.py)——按 `api_prefix` 首段分类：`auth`→authentication（fail_closed）、`platform`→platform（fail_closed）、其余 api（fail_closed=False）；中间件注册顺序为"后注册在最外层"：SecurityHeaders → RateLimit → RequestContext → CORS，保证 CORS 预检在网关内层得到应答、`enabled`/`window_seconds` 来自配置。
+- **验证**：服务器真实 Redis 场景复验——关闭文档返回统一 404 envelope；CORS 预检 200；每窗口 1 次请求第二次即 429 `rate_limited`；`test_api_applies_the_configured_docs_cors_and_rate_limit_settings`、`test_gateway_policy_classifies_paths_by_scope` 覆盖。
+
+### 9.3 [P1] Outbox 可能永久丢失取消命令
+
+- **问题**：Workflow 不存在被当作取消成功，START 与 CANCEL 并发投递时取消先到会被标记完成，Workflow 随后仍启动。
+- **修复**：[`src/opsmesh/temporal/dispatch/outbox.py`](src/opsmesh/temporal/dispatch/outbox.py) 引入兄弟命令感知的因果序：`DispatchOutcome` 增加 `DEFERRED`/`SUPERSEDED`。START 投递前检查同 `workflow_id` 是否已有**已发布** CANCEL（有则 SUPERSEDED，记录完成但不启动）；CANCEL 投递前检查是否还有**未发布** START（有则 DEFERRED，`available_at` 按指数退避重排、`last_error_code=awaiting_sibling_command`，等待 START 先投递）。`delivery.py` 对已结束 Workflow 的取消仍按成功处理（取消已终结对象是幂等空操作），"尚未启动"由兄弟检查覆盖。投递失败退避上限常量收敛为 `_MAX_DEFERRAL_SECONDS = 30`。
+- **验证**：服务器真实 PG 确定性测试（按操作类型精确控制 `available_at`）：`test_cancel_arriving_before_start_defers_until_the_start_is_delivered`（取消 DEFERRED 且代码为 `awaiting_sibling_command`；释放 START 后投递；释放 CANCEL 后取消运行中的 workflow）、`test_start_is_never_delivered_after_its_cancel_was_published`。
+
+### 9.4 [P2] Signal 重投缺少端到端去重合同
+
+- **问题**：未把稳定 `dispatch_id` 传给接收方，服务端接受 Signal 后响应丢失，Outbox 重试导致两次接收。
+- **修复**：[`src/opsmesh/temporal/dispatch/delivery.py`](src/opsmesh/temporal/dispatch/delivery.py) 将 `dispatch_id` 作为 Signal 首参数：`args=(str(request.dispatch_id), *request.signal_args)`；[`contracts.py`](src/opsmesh/temporal/dispatch/contracts.py) `DispatchRequest` docstring 明确合同——`dispatch_id` 是稳定投递身份，Signal 首参数即该身份，接收方按 Temporal 消息传递要求对 at-least-once 重投做去重（恰好一次处理）。
+- **验证**：`test_signal_delivery_carries_the_stable_dispatch_identity` 断言首参数为 `str(request.dispatch_id)`。接收方去重规则属于使用 Signal 的 Workflow 合同，随 S7 execution 具体 workflow 落地时逐项验收。
+
+### 9.5 [P2] API 遥测与统一日志没有装配
+
+- **问题**：`configure_api_telemetry()` 已定义但应用入口未调用；Worker 的初始化不能覆盖独立 API 进程。
+- **修复**：lifespan 启动时 `configure_logging(...)` 按 `log_level`/`log_format`/`log_queue_capacity`/`service_name`/`environment` 初始化统一日志；`create_app` 中调用 `configure_api_telemetry(app, app_settings)`；关闭时 `flush_process_telemetry()` + `shutdown_logging()`，与引擎/Redis 释放共同构成逆序。
+- **验证**：服务器真实 Redis 起完整应用——API 进程 `trace.get_tracer_provider()` 非 Proxy（真实 TracerProvider）、root logger 挂 QueueHandler（统一有界队列）；输出可见结构化 JSON 请求日志（`request_id`、`trace_id`、`http_status`、`duration_ms`）；`test_api_process_installs_telemetry_and_unified_logging` 覆盖。
+
+### 9.6 [P2] API 数据库配置被硬编码覆盖
+
+- **问题**：lifespan 固定 `pool_size=5, max_overflow=5`，配置 1/0 实际仍 5/5，语句超时等参数未传入。
+- **修复**：[`src/opsmesh/bootstrap/resources.py`](src/opsmesh/bootstrap/resources.py) `build_database_resources(settings)` 统一装配——`pool_size`/`max_overflow`/`pool_timeout_seconds`/`pool_recycle_seconds`/`statement_timeout_ms` 全部来自配置；sessionmaker `info` 注入 dispatch cipher 与 trace context 捕获。api.py lifespan 改为调用该函数，删除硬编码。
+- **验证**：`test_api_database_uses_the_configured_pool_and_session_resources` 以 spy + `database_pool_snapshot` 断言配置 3/1 时实际池为 3/1。
+
+### 9.7 [P2] 缓存失效可能被正在加载的旧结果覆盖
+
+- **问题**：`get_or_set` 发布时只检查加载锁，加载旧数据期间发生更新和 `delete()` 后旧结果仍重新写入缓存。
+- **修复**：[`src/opsmesh/shared/redis/cache.py`](src/opsmesh/shared/redis/cache.py) 发布脚本增加失效代次守卫（三 KEY：锁/存储/代次键）：代次不匹配返回 2，`get_or_set` 对 2 只为本调用返回加载值、不持久化；`delete()` 先 `incr` 代次键再删存储键，保证并发加载者无法发布删除前旧值；[`keys.py`](src/opsmesh/shared/redis/keys.py) 新增 `cache_generation`。
+- **验证**：`tests/shared/test_cache_invalidation.py` 5 项（fakeredis 确定性：`test_invalidation_during_load_never_publishes_the_stale_value` 等；真实 Redis opt-in）；服务器真实 Redis 全过。
+
+### 9.8 [P2] 框架产生的 404/405 不符合统一错误合同
+
+- **问题**：只注册 FastAPI `HTTPException`，遗漏 Starlette 基类；未匹配路由返回 `{"detail":"Not Found"}`，缺 `error.code`/`request_id`。
+- **修复**：[`src/opsmesh/shared/http/errors.py`](src/opsmesh/shared/http/errors.py) 注册 `starlette.exceptions.HTTPException`（FastAPI 子类继承它，一个处理器同时覆盖两者）；`_code_for_status` 增加 `HTTP_405_METHOD_NOT_ALLOWED → method_not_allowed`。
+- **验证**：`test_unmatched_route_returns_the_unified_error_envelope`（含 `request_id`）、`test_method_not_allowed_uses_the_unified_envelope`；服务器真实应用访问不存在路由返回统一 envelope。
+
+### 9.9 修复后验证证据
+
+| 环境 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地 Windows | `uv run ruff check tests src/opsmesh migrations scripts` | All checks passed |
+| 本地 Windows | `uv run mypy` | Success: no issues found in 62 source files |
+| 本地 Windows | `uv run lint-imports --no-cache` | Contracts: 10 kept, 0 broken |
+| 本地 Windows | `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| 本地 Windows | `uv run pytest tests -q` | 58 passed, 13 skipped（跳过项均为 Windows 环境性/PG/Temporal 未配置，服务器补验） |
+| 服务器（真实 PG 16 + Redis + Temporal 1.29.1） | `OPSMESH_TEST_DATABASE_URL=... OPSMESH_TEST_TEMPORAL_ADDRESS=127.0.0.1:7233 python -m pytest tests` | **72 passed, 0 failed, 0 skipped**（bootstrap 12、cache 5、security 20、shared_mechanisms 24、dispatch outbox 11 含 3 项新增因果序测试、codec 3、replay 1、真实 Redis 缓存测试） |
+| 服务器（无参工厂实证） | `uvicorn --factory target opsmesh.main:create_app` | `resolved: OpsMesh`，启动成功 |
+| 服务器（评审场景复验，真实 Redis） | 完整应用逐项访问 | 关闭文档→统一 404 envelope；未匹配路由带 `request_id`；CORS 预检 200；每窗口 1 次第二次 429 `rate_limited`；API 进程真实 tracer provider + 统一有界日志队列，输出含 `request_id`/`trace_id` 的结构化请求日志 |
+
+第 9.3、9.4、9.7 的复现此前仅用模拟依赖；本次已在服务器用真实 PostgreSQL/Temporal/Redis 补齐对应验证。8 项问题状态：implemented + verified（9.4 的接收方去重规则属后续 S7 workflow 合同，已按第 16.2 节登记为待关闭项）。

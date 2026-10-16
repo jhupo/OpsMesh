@@ -55,7 +55,11 @@ async def _deliver(
         if description.status == WorkflowExecutionStatus.RUNNING:
             try:
                 await handle.signal(
-                    request.signal_name, args=request.signal_args, rpc_timeout=rpc_timeout
+                    request.signal_name,
+                    # The dispatch identity leads the payload so the receiver can
+                    # deduplicate an at-least-once redelivery of this command.
+                    args=(str(request.dispatch_id), *request.signal_args),
+                    rpc_timeout=rpc_timeout,
                 )
             except RPCError as exc:
                 if exc.status != RPCStatusCode.NOT_FOUND:

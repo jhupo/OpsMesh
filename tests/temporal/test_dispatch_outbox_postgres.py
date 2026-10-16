@@ -11,10 +11,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import Session
+from temporalio.client import WorkflowExecutionStatus
 
 from opsmesh.temporal.dispatch.contracts import (
     DispatchOperation,
@@ -24,6 +25,7 @@ from opsmesh.temporal.dispatch.contracts import (
 from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
 from opsmesh.temporal.dispatch.outbox import (
     TemporalOutboxPublisher,
+    stage_cancellation,
     stage_dispatch,
     stage_signal,
 )
@@ -38,6 +40,24 @@ def start_request(workflow_id: str) -> DispatchRequest:
         execution={"input": "value"},
         workflow_name="OpsMeshTestWorkflow",
         start_options=WorkflowStartOptions(),
+    )
+
+
+def cancel_request(workflow_id: str) -> DispatchRequest:
+    return DispatchRequest(
+        dispatch_id=uuid4(),
+        workflow_id=workflow_id,
+        operation=DispatchOperation.CANCEL,
+    )
+
+
+def signal_request(workflow_id: str) -> DispatchRequest:
+    return DispatchRequest(
+        dispatch_id=uuid4(),
+        workflow_id=workflow_id,
+        operation=DispatchOperation.SIGNAL,
+        signal_name="resume",
+        signal_args=({"approved": True},),
     )
 
 
@@ -56,9 +76,35 @@ def load_row(engine: Engine) -> TemporalOutboxEntry | None:
 class RecordingClient:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.signal_calls: list[tuple[str, tuple[object, ...]]] = []
+        self.running: set[str] = set()
 
     async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
         self.calls.append(name)
+        self.running.add(kwargs.get("id", ""))
+
+    def get_workflow_handle(self, workflow_id):  # noqa: ANN001, ANN201
+        client = self
+
+        class Handle:
+            async def describe(self, **kwargs):  # noqa: ANN003, ANN201
+                class Description:
+                    status = (
+                        WorkflowExecutionStatus.RUNNING
+                        if workflow_id in client.running
+                        else WorkflowExecutionStatus.COMPLETED
+                    )
+
+                return Description()
+
+            async def signal(self, name, **kwargs):  # noqa: ANN001, ANN003
+                client.signal_calls.append((name, tuple(kwargs.get("args", ()))))
+                client.running.discard(workflow_id)
+
+            async def cancel(self, **kwargs):  # noqa: ANN003
+                client.running.discard(workflow_id)
+
+        return Handle()
 
 
 class BlockingClient:
@@ -205,3 +251,121 @@ def test_concurrent_publishers_claim_exclusively(
     row = load_row(database_engine)
     assert row is not None
     assert row.published_at is not None
+
+
+def test_cancel_arriving_before_start_defers_until_the_start_is_delivered(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    workflow_id = "cancel-before-start-run"
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    # Hold the start back so the cancel is claimable while the start is undelivered.
+    postpone_rows(database_engine, DispatchOperation.START, timedelta(seconds=120))
+
+    client = RecordingClient()
+    delivered = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered == 0, "the cancel defers while its start command is still undelivered"
+    assert client.calls == []
+    deferred_row = load_cancel_row(database_engine, workflow_id)
+    assert deferred_row is not None
+    assert deferred_row.published_at is None
+    assert deferred_row.last_error_code == "awaiting_sibling_command"
+
+    release_rows(database_engine, DispatchOperation.START)
+    delivered_start = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered_start == 1, "the start is delivered once it is due"
+    assert client.calls == ["OpsMeshTestWorkflow"]
+    assert workflow_id in client.running, "the workflow must be running after its start"
+
+    release_rows(database_engine, DispatchOperation.CANCEL)
+    delivered_cancel = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered_cancel == 1, "the deferred cancel cancels the running workflow"
+    assert workflow_id not in client.running
+    cancel_row = load_cancel_row(database_engine, workflow_id)
+    assert cancel_row is not None
+    assert cancel_row.published_at is not None
+
+
+def test_start_is_never_delivered_after_its_cancel_was_published(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    workflow_id = "cancel-without-start-run"
+    with database_sessions() as session:
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    client = RecordingClient()
+    delivered = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered == 1, "a cancel for a workflow that was never started completes"
+    assert client.calls == []
+
+    # A start staged afterwards for the same workflow must not start it.
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        session.commit()
+    delivered_again = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered_again == 1, "the superseded start is recorded as delivered"
+    assert client.calls == [], "a cancelled workflow must never be started"
+
+
+def test_signal_delivery_carries_the_stable_dispatch_identity(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    workflow_id = "signal-identity-run"
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        session.commit()
+
+    client = RecordingClient()
+    assert asyncio.run(publisher(async_database_sessions, client).publish_pending()) == 1
+    assert workflow_id in client.running
+
+    request = signal_request(workflow_id)
+    with database_sessions() as session:
+        stage_signal(
+            session,
+            dispatch_id=request.dispatch_id,
+            workflow_id=workflow_id,
+            signal_name="resume",
+            signal_args=request.signal_args,
+        )
+        session.commit()
+
+    assert asyncio.run(publisher(async_database_sessions, client).publish_pending()) == 1
+    assert len(client.signal_calls) == 1
+    signal_name, signal_args = client.signal_calls[0]
+    assert signal_name == "resume"
+    assert signal_args[0] == str(request.dispatch_id), (
+        "the dispatch identity leads the payload for receiver-side deduplication"
+    )
+    assert signal_args[1:] == ({"approved": True},)
+
+
+def load_cancel_row(engine: Engine, workflow_id: str) -> TemporalOutboxEntry | None:
+    with Session(engine) as session:
+        return session.scalar(
+            select(TemporalOutboxEntry).where(
+                TemporalOutboxEntry.workflow_id == workflow_id,
+                TemporalOutboxEntry.operation == DispatchOperation.CANCEL.value,
+            )
+        )
+
+
+def set_available_at(engine: Engine, operation: DispatchOperation, when: datetime) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            update(TemporalOutboxEntry)
+            .where(TemporalOutboxEntry.operation == operation.value)
+            .values(available_at=when)
+        )
+
+
+def postpone_rows(engine: Engine, operation: DispatchOperation, delay: timedelta) -> None:
+    set_available_at(engine, operation, datetime.now(UTC) + delay)
+
+
+def release_rows(engine: Engine, operation: DispatchOperation) -> None:
+    set_available_at(engine, operation, datetime.now(UTC))

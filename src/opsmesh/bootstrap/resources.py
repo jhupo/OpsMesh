@@ -57,7 +57,14 @@ def build_api_resources(settings: Settings) -> APIResources:
     )
 
 
-def build_database_resources(settings: Settings) -> tuple[Engine, sessionmaker[Session]]:
+@dataclass(frozen=True)
+class DatabaseResources:
+    engine: Engine
+    sessions: sessionmaker[Session]
+    cipher: SecretCipher
+
+
+def build_database_resources(settings: Settings) -> DatabaseResources:
     engine = create_database_engine(
         settings.database_url,
         pool_size=settings.database_pool_size,
@@ -67,11 +74,15 @@ def build_database_resources(settings: Settings) -> tuple[Engine, sessionmaker[S
         statement_timeout_ms=settings.database_statement_timeout_ms,
     )
     cipher = secret_cipher(settings)
-    return engine, sessionmaker(
-        bind=engine,
-        autoflush=False,
-        expire_on_commit=False,
-        info={"dispatch_cipher": cipher, "dispatch_trace_context": capture_trace_context},
+    return DatabaseResources(
+        engine=engine,
+        sessions=sessionmaker(
+            bind=engine,
+            autoflush=False,
+            expire_on_commit=False,
+            info={"dispatch_cipher": cipher, "dispatch_trace_context": capture_trace_context},
+        ),
+        cipher=cipher,
     )
 
 

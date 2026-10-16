@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
@@ -31,6 +32,15 @@ DEFAULT_DISPATCH_CONCURRENCY = 16
 DEFAULT_PUBLISH_LIMIT = 100
 _CLAIM_LEASE_SECONDS = 60
 _MAX_BACKOFF_SECONDS = 300
+_MAX_DEFERRAL_SECONDS = 30
+
+
+class DispatchOutcome(StrEnum):
+    """Result of one delivery attempt for a claimed command."""
+
+    DELIVERED = "delivered"
+    DEFERRED = "deferred"
+    SUPERSEDED = "superseded"
 
 
 class WorkflowRequest(Protocol):
@@ -247,25 +257,75 @@ class TemporalOutboxPublisher:
         return claimed
 
     async def _deliver(self, dispatch_id: UUID, token: UUID, request: DispatchRequest) -> int:
+        carrier = {
+            key: value
+            for key, value in (
+                ("traceparent", request.traceparent),
+                ("tracestate", request.tracestate),
+            )
+            if value is not None
+        }
+        context = self._restore_context(carrier) if self._restore_context else nullcontext()
         try:
-            carrier = {
-                key: value
-                for key, value in (
-                    ("traceparent", request.traceparent),
-                    ("tracestate", request.tracestate),
-                )
-                if value is not None
-            }
-            context = self._restore_context(carrier) if self._restore_context else nullcontext()
             with context:
-                await dispatch_workflow(self._client, request, task_queue=self._task_queue)
+                outcome = await self._deliver_command(request)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             await self._record_failure(dispatch_id, token, type(exc).__name__[:100])
             return 0
+        if outcome is DispatchOutcome.DEFERRED:
+            await self._record_deferral(dispatch_id, token)
+            return 0
         await self._record_published(dispatch_id, token)
         return 1
+
+    async def _deliver_command(self, request: DispatchRequest) -> DispatchOutcome:
+        """Deliver one command, keeping start and cancel causally ordered.
+
+        A cancel is published only when its start command is already published
+        (the Workflow then exists) or was never staged at all; otherwise it is
+        deferred so the start is delivered first. A start whose workflow already
+        has a published cancel is superseded and never started.
+        """
+        if request.operation == DispatchOperation.START:
+            cancelled = await self._has_command(
+                request.workflow_id, DispatchOperation.CANCEL, published=True
+            )
+            if cancelled:
+                logger.info(
+                    "Dispatch start superseded by an earlier cancellation",
+                    extra={"dispatch_id": str(request.dispatch_id)},
+                )
+                return DispatchOutcome.SUPERSEDED
+        elif request.operation == DispatchOperation.CANCEL:
+            starting = await self._has_command(
+                request.workflow_id, DispatchOperation.START, published=False
+            )
+            if starting:
+                return DispatchOutcome.DEFERRED
+        await dispatch_workflow(self._client, request, task_queue=self._task_queue)
+        return DispatchOutcome.DELIVERED
+
+    async def _has_command(
+        self, workflow_id: str, operation: DispatchOperation, *, published: bool
+    ) -> bool:
+        published_filter = (
+            TemporalOutboxEntry.published_at.is_not(None)
+            if published
+            else TemporalOutboxEntry.published_at.is_(None)
+        )
+        async with self._sessions() as session:
+            count = await session.scalar(
+                select(func.count())
+                .select_from(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.workflow_id == workflow_id,
+                    TemporalOutboxEntry.operation == operation.value,
+                    published_filter,
+                )
+            )
+        return bool(count)
 
     async def _record_published(self, dispatch_id: UUID, token: UUID) -> None:
         async with self._sessions.begin() as session:
@@ -307,6 +367,31 @@ class TemporalOutboxPublisher:
                     "error_code": error_code,
                 },
             )
+
+    async def _record_deferral(self, dispatch_id: UUID, token: UUID) -> None:
+        """Reschedule a command whose sibling command must be delivered first."""
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.id == dispatch_id, TemporalOutboxEntry.claim_token == token
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return
+            row.attempts += 1
+            row.available_at = now + timedelta(
+                seconds=min(2 ** min(row.attempts, 5), _MAX_DEFERRAL_SECONDS)
+            )
+            row.claim_token = None
+            row.claim_until = None
+            row.last_error_code = "awaiting_sibling_command"
+        logger.info(
+            "Dispatch deferred until its sibling command is delivered",
+            extra={"dispatch_id": str(dispatch_id)},
+        )
 
     async def next_delivery_at(self) -> datetime | None:
         async with self._sessions() as session:

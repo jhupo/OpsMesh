@@ -35,6 +35,17 @@ class DispatchOperation(StrEnum):
 
 
 class DispatchRequest(BaseModel):
+    """One durable command for a Workflow.
+
+    ``dispatch_id`` is the stable delivery identity: a start command is
+    idempotent through the Workflow id, and a signal command is delivered with
+    this identity as its first argument so receivers can deduplicate
+    at-least-once signal delivery (V4: signals bind command_id and waiting
+    generation). A cancel command is only published once the matching start
+    command has been published, so a cancellation can never be recorded as
+    complete while the Workflow is still started afterwards.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     dispatch_id: UUID
