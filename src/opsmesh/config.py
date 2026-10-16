@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     # Platform mail (S4)
     mail_daily_source_limit: int = Field(default=1_000, ge=0)
 
+    # Built-in capability release root (S5)
+    bundled_root: str = Field(default="bundled")
+
     @model_validator(mode="after")
     def validate_security_configuration(self) -> "Settings":
         SecretCipher(

@@ -45,6 +45,7 @@ from opsmesh.identity.users.models import UserProfile
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.secrets import SecretCipher
+from tests.conftest import FEATURE_TABLES
 
 ADMIN_EMAIL = "admin@example.com"
 MEMBER_EMAIL = "member@example.com"
@@ -592,33 +593,11 @@ def test_an_accepted_invitation_is_never_revoked_or_resent(database_sessions) ->
 
 TEST_CIPHER_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
 
-CONCURRENCY_TABLES = (
-    "temporal_dispatches",
-    "http_creation_receipts",
-    "audit_append_receipts",
-    "audit_chain_head",
-    "audit_events",
-    "audit_verifications",
-    "account_invitations",
-    "approval_requests",
-    "login_sessions",
-    "mail_intents",
-    "security_events",
-    "smtp_configurations",
-    "storage_reservations",
-    "token_reservations",
-    "user_credentials",
-    "user_quota_limits",
-    "user_storage_accounts",
-    "user_token_accounts",
-    "users",
-)
-
 
 def reset_tables(engine) -> None:
     """Start one concurrency test from a known-empty database."""
     with engine.begin() as connection:
-        connection.execute(text("TRUNCATE " + ", ".join(CONCURRENCY_TABLES)))
+        connection.execute(text("TRUNCATE " + ", ".join(FEATURE_TABLES)))
 
 
 @pytest.fixture

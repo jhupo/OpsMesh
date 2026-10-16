@@ -13,6 +13,12 @@ from uuid import UUID
 from fastapi import FastAPI, Header
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.experts import routes as expert_routes
+from opsmesh.capabilities.mcp import routes as mcp_routes
+from opsmesh.capabilities.routes import router as capability_router
+from opsmesh.capabilities.skills import routes as skill_routes
+from opsmesh.capabilities.teams import routes as team_routes
+from opsmesh.capabilities.tools import routes as tool_routes
 from opsmesh.governance.approvals import routes as approval_routes
 from opsmesh.governance.audit import routes as audit_routes
 from opsmesh.governance.audit.service import AuditActor
@@ -38,6 +44,9 @@ from opsmesh.platform.mail.service import (
     MailSource,
     SourceScope,
 )
+from opsmesh.resources.artifacts import routes as artifact_routes
+from opsmesh.resources.files import routes as file_routes
+from opsmesh.resources.files.access import ResourceReader
 from opsmesh.shared.errors import ForbiddenError
 
 
@@ -84,6 +93,11 @@ def _security_reader(user: CurrentUserDep) -> CurrentUser:
     return user
 
 
+def _resource_reader(user: CurrentUserDep) -> ResourceReader:
+    """The verified session identity is the only resource reader."""
+    return ResourceReader(user_id=user.user_id)
+
+
 def _delegated_mail_send(
     user: DelegatedUserDep,
     x_installation_id: Annotated[str | None, Header(alias=INSTALLATION_HEADER)],
@@ -123,6 +137,14 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
         approval_routes.router,
         security_routes.router,
         mail_routes.router,
+        capability_router,
+        expert_routes.router,
+        team_routes.router,
+        mcp_routes.router,
+        skill_routes.router,
+        tool_routes.router,
+        file_routes.router,
+        artifact_routes.router,
     ):
         app.include_router(router, prefix=prefix)
     app.dependency_overrides[audit_routes.require_audit_reader] = _audit_reader
@@ -130,3 +152,5 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
     app.dependency_overrides[approval_routes.require_approval_subject] = _approval_subject
     app.dependency_overrides[security_routes.require_security_reader] = _security_reader
     app.dependency_overrides[mail_routes.require_delegated_mail_send] = _delegated_mail_send
+    app.dependency_overrides[file_routes.require_resource_reader] = _resource_reader
+    app.dependency_overrides[artifact_routes.require_resource_reader] = _resource_reader

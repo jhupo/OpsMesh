@@ -208,6 +208,12 @@ def render_default(value: Any) -> str:
         return "True" if value else "False"
     if isinstance(value, int | float | str | list):
         return repr(value)
+    if isinstance(value, dict):
+        # An empty object is the only meaningful schema default; a non-empty
+        # one would need a canonical literal the schema cannot guarantee.
+        if value:
+            raise GenerationError(f"unsupported default value {value!r}")
+        return "{}"
     raise GenerationError(f"unsupported default value {value!r}")
 
 

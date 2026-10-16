@@ -1,0 +1,35 @@
+{
+  "name": "Weather MCP",
+  "description": "Remote weather forecast MCP server template; the endpoint and API key are configured at installation.",
+  "visibility": "public",
+  "configuration": {
+    "transport": "remote",
+    "endpoint": "https://weather.example.com/mcp",
+    "tools": [
+      {
+        "name": "get_forecast",
+        "description": "Read the forecast for one location and day.",
+        "parameters_schema": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "minLength": 1, "maxLength": 200},
+            "day": {"type": "string", "maxLength": 40}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "parameters_schema": {
+      "type": "object",
+      "properties": {
+        "location": {"type": "string", "minLength": 1, "maxLength": 200}
+      },
+      "required": ["location"],
+      "additionalProperties": false
+    },
+    "secret_slots": ["weather_api_key"]
+  },
+  "dependencies": [],
+  "flow_templates": []
+}

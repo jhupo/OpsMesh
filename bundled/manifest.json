@@ -1,0 +1,33 @@
+{
+  "release": "opsmesh-builtins",
+  "packages": [
+    {
+      "type": "expert",
+      "key": "coding",
+      "version": 1,
+      "path": "experts/coding",
+      "digest": "5682041a1527bc197c14f3b6b733b6dcbb5b6762ea57657f5efdfafcf6a3f668"
+    },
+    {
+      "type": "team",
+      "key": "development",
+      "version": 1,
+      "path": "teams/development",
+      "digest": "c0c2cc09c8a06ac07cc5c1cc696a03980742fb5c66c24385fc1be3e1a585556a"
+    },
+    {
+      "type": "skill",
+      "key": "workspace-guide",
+      "version": 1,
+      "path": "skills/workspace-guide",
+      "digest": "4be759cb686aa5f3122a297689111f06c9896506e7e869a630f6be9dbe67a1ef"
+    },
+    {
+      "type": "mcp",
+      "key": "weather",
+      "version": 1,
+      "path": "mcp/weather",
+      "digest": "626ad7f39bd3d3133ffdd1c290f8f347d495a0932e2520c0214456875632178c"
+    }
+  ]
+}

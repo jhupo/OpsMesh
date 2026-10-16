@@ -14,6 +14,7 @@ import getpass
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from pydantic import EmailStr, TypeAdapter
@@ -21,7 +22,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from opsmesh.bootstrap.resources import DatabaseResources, build_database_resources
+from opsmesh.capabilities.provisioning import provision_release
 from opsmesh.config import Settings, get_settings
+from opsmesh.governance.audit.service import AuditActor
 from opsmesh.identity.auth.models import UserCredential
 from opsmesh.identity.auth.passwords import validate_password_shape
 from opsmesh.identity.provisioning import (
@@ -152,9 +155,36 @@ def initialize_first_administrator(
     return 0
 
 
+def provision_builtin_capabilities(settings: Settings, *, release_root: str | None) -> int:
+    """Publish the bundled built-in capabilities, idempotently."""
+    resources: DatabaseResources = build_database_resources(settings)
+    root = Path(release_root or settings.bundled_root)
+    try:
+        with resources.sessions() as session:
+            report = provision_release(
+                session,
+                release_root=root,
+                storage_root=Path(settings.storage_root),
+                actor=AuditActor(actor_type="platform"),
+            )
+            session.commit()
+    except DomainError as exc:
+        print(f"Provisioning refused: {exc.message}", file=sys.stderr)
+        return 1
+    finally:
+        resources.engine.dispose()
+    print(
+        f"Provisioned {report.release}: published {len(report.published)}, "
+        f"skipped {len(report.skipped)}"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "provision-builtins":
+        return provision_builtin_capabilities(get_settings(), release_root=args.release_root)
     if args.command != "init-admin":
         parser.error(f"unsupported command: {args.command}")
     try:

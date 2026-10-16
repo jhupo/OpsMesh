@@ -126,3 +126,45 @@ direction = "request"
 [[binary]]
 operation = "identity.users.avatar.read"
 direction = "response"
+
+# S5：能力包与资源内容的原始字节通道。能力包上传与资源内容写回接受调用方
+# 声明的 Content-Type；包下载、版本内容与产物内容返回存储时的媒体类型。
+[[binary]]
+operation = "capabilities.experts.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.teams.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.mcp.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.skills.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.tools.package.attach"
+direction = "request"
+
+[[binary]]
+operation = "capabilities.versions.package.read"
+direction = "response"
+
+[[binary]]
+operation = "resources.files.content.write"
+direction = "request"
+
+[[binary]]
+operation = "resources.files.content.read"
+direction = "response"
+
+[[binary]]
+operation = "resources.files.versions.content.read"
+direction = "response"
+
+[[binary]]
+operation = "resources.artifacts.content.read"
+direction = "response"

@@ -1,0 +1,1 @@
+"""Team capability definitions."""

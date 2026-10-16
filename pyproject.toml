@@ -261,6 +261,29 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "v4-capabilities-boundaries"
+name = "Capabilities use shared, identity and governance only"
+type = "forbidden"
+source_modules = ["opsmesh.capabilities"]
+forbidden_modules = [
+    "opsmesh.platform", "opsmesh.resources", "opsmesh.extensions",
+    "opsmesh.execution", "opsmesh.workspaces", "opsmesh.orchestration",
+    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-resources-boundaries"
+name = "Resources use shared, telemetry, temporal and governance only"
+type = "forbidden"
+source_modules = ["opsmesh.resources"]
+forbidden_modules = [
+    "opsmesh.identity", "opsmesh.capabilities", "opsmesh.platform",
+    "opsmesh.extensions", "opsmesh.execution", "opsmesh.workspaces",
+    "opsmesh.orchestration", "opsmesh.channels", "opsmesh.bootstrap",
+    "opsmesh.config", "opsmesh.main", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
 id = "v4-identity-auth-isolated"
 name = "Authentication reaches the profile owner only through injected contracts"
 type = "forbidden"

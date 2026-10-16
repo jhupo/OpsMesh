@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 from starlette.middleware.base import RequestResponseEndpoint
 
+from opsmesh.bootstrap.capabilities import assemble_storage_quota_ledger
 from opsmesh.bootstrap.http_policy import gateway_identifier, gateway_policy
 from opsmesh.bootstrap.mail import InvitationMailAuthorization, InvitationMailRegistrar
 from opsmesh.bootstrap.request_context import RequestContextMiddleware
@@ -32,6 +33,8 @@ from opsmesh.identity.provisioning import (
     ProvisionedAccountOpening,
     UserIdentityDirectory,
 )
+from opsmesh.resources.artifacts.service import RejectingArtifactAuthorization
+from opsmesh.resources.files.access import RejectingScopeAdmission
 from opsmesh.shared.http.errors import ErrorResponse, register_error_handlers
 from opsmesh.shared.http.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from opsmesh.shared.redis.client import close_redis_client
@@ -77,6 +80,12 @@ def assemble_feature_services(app: FastAPI, settings: Settings, cipher: SecretCi
         cipher=cipher,
         daily_source_limit=settings.mail_daily_source_limit,
     )
+    # The storage ledger has its identity owner today; the resource scope
+    # admission and the artifact record authorization keep their rejecting
+    # defaults until the workspace and execution steps register real owners.
+    app.state.storage_quota_ledger = assemble_storage_quota_ledger()
+    app.state.scope_admission = RejectingScopeAdmission()
+    app.state.artifact_authorization = RejectingArtifactAuthorization()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -120,6 +129,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.redis_client = None
                 app.state.rate_limiter = None
                 app.state.json_cache = None
+                app.state.storage_quota_ledger = None
+                app.state.scope_admission = None
+                app.state.artifact_authorization = None
                 if redis_client is not None:
                     close_redis_client(redis_client)
                 app.state.settings = None
@@ -148,6 +160,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.redis_client = None
     app.state.rate_limiter = None
     app.state.json_cache = None
+    app.state.storage_quota_ledger = None
+    app.state.scope_admission = None
+    app.state.artifact_authorization = None
     app.state.settings = None
     app.state.auth_service = None
     app.state.delegation_resolver = None

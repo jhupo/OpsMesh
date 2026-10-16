@@ -1,0 +1,26 @@
+{
+  "name": "Development Team",
+  "description": "A lead-engineer entrypoint team that delegates implementation work to the coding expert.",
+  "visibility": "public",
+  "configuration": {
+    "members": [
+      {"slot": "lead", "expert_key": "coding", "role": "lead-engineer"}
+    ],
+    "entrypoint": "lead",
+    "handoffs": [],
+    "agents_as_tools": [],
+    "parameters_schema": {
+      "type": "object",
+      "properties": {
+        "objective": {"type": "string", "minLength": 1, "maxLength": 20000}
+      },
+      "required": ["objective"],
+      "additionalProperties": false
+    },
+    "secret_slots": []
+  },
+  "dependencies": [
+    {"type": "expert", "key": "coding", "version": 1}
+  ],
+  "flow_templates": []
+}

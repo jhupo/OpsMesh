@@ -171,6 +171,44 @@ The administrator-writable fields of one account.
 }
 ```
 
+<a id="schema-AgentAsTool"></a>
+
+## AgentAsTool
+
+One member exposed to another member as a callable tool.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `source` | string | 是 | `maxLength=100`; `minLength=1` |
+| `tool` | string | 是 | `maxLength=100`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One member exposed to another member as a callable tool.",
+  "properties": {
+    "source": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "tool": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Tool",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "tool"
+  ],
+  "title": "AgentAsTool",
+  "type": "object"
+}
+```
+
 <a id="schema-ApprovalDecisionRequest"></a>
 
 ## ApprovalDecisionRequest
@@ -412,6 +450,97 @@ One approval request; the presented status derives expiry.
     "decision_reason"
   ],
   "title": "ApprovalRequestView",
+  "type": "object"
+}
+```
+
+<a id="schema-ArtifactView"></a>
+
+## ArtifactView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `artifact_id` | string (uuid) | 是 | `format="uuid"` |
+| `source_kind` | string | 是 | — |
+| `source_id` | string (uuid) | 是 | `format="uuid"` |
+| `owner_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `digest` | string | 是 | — |
+| `size` | integer | 是 | — |
+| `media_type` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `labels` | object | 是 | `additionalProperties=true` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "artifact_id": {
+      "format": "uuid",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "labels": {
+      "additionalProperties": true,
+      "title": "Labels",
+      "type": "object"
+    },
+    "media_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Media Type"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "owner_user_id": {
+      "format": "uuid",
+      "title": "Owner User Id",
+      "type": "string"
+    },
+    "size": {
+      "title": "Size",
+      "type": "integer"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "source_kind": {
+      "title": "Source Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact_id",
+    "source_kind",
+    "source_id",
+    "owner_user_id",
+    "name",
+    "digest",
+    "size",
+    "media_type",
+    "labels",
+    "created_at"
+  ],
+  "title": "ArtifactView",
   "type": "object"
 }
 ```
@@ -879,6 +1008,355 @@ One sanitized audit fact; the digest columns prove its chain position.
 }
 ```
 
+<a id="schema-CapabilityDefinitionPage"></a>
+
+## CapabilityDefinitionPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[CapabilityDefinitionView](schemas.md#schema-CapabilityDefinitionView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/CapabilityDefinitionView"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "title": "CapabilityDefinitionPage",
+  "type": "object"
+}
+```
+
+<a id="schema-CapabilityDefinitionView"></a>
+
+## CapabilityDefinitionView
+
+One definition as the catalog exposes it; content lives in versions.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `definition_id` | string (uuid) | 是 | `format="uuid"` |
+| `type` | string | 是 | — |
+| `key` | string | 是 | — |
+| `name` | string | 是 | — |
+| `description` | string | 是 | — |
+| `visibility` | string | 是 | — |
+| `status` | string | 是 | — |
+| `source` | string | 是 | — |
+| `created_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `latest_version` | integer | 是 | — |
+| `has_published_version` | boolean | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One definition as the catalog exposes it; content lives in versions.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by_user_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Created By User Id"
+    },
+    "definition_id": {
+      "format": "uuid",
+      "title": "Definition Id",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "has_published_version": {
+      "title": "Has Published Version",
+      "type": "boolean"
+    },
+    "key": {
+      "title": "Key",
+      "type": "string"
+    },
+    "latest_version": {
+      "title": "Latest Version",
+      "type": "integer"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "type": {
+      "title": "Type",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "visibility": {
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "definition_id",
+    "type",
+    "key",
+    "name",
+    "description",
+    "visibility",
+    "status",
+    "source",
+    "created_by_user_id",
+    "latest_version",
+    "has_published_version",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "CapabilityDefinitionView",
+  "type": "object"
+}
+```
+
+<a id="schema-CapabilitySlot"></a>
+
+## CapabilitySlot
+
+One named capability slot an expert fills through fixed dependencies.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `slot` | string | 是 | — |
+| `kind` | string | 是 | `enum=["tool", "mcp", "skill"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One named capability slot an expert fills through fixed dependencies.",
+  "properties": {
+    "kind": {
+      "enum": [
+        "tool",
+        "mcp",
+        "skill"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "slot": {
+      "title": "Slot",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slot",
+    "kind"
+  ],
+  "title": "CapabilitySlot",
+  "type": "object"
+}
+```
+
+<a id="schema-CapabilityVersionView"></a>
+
+## CapabilityVersionView
+
+One immutable-or-draft version with its full declared content.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `definition_id` | string (uuid) | 是 | `format="uuid"` |
+| `version` | integer | 是 | — |
+| `status` | string | 是 | — |
+| `configuration` | object | 是 | `additionalProperties=true` |
+| `resource_manifest` | array&lt;object&gt; | 是 | — |
+| `dependencies` | array&lt;object&gt; | 是 | — |
+| `flow_templates` | array&lt;object&gt; | 是 | — |
+| `digest` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `package_digest` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `package_size` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `package_filename` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `published_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `published_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One immutable-or-draft version with its full declared content.",
+  "properties": {
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "definition_id": {
+      "format": "uuid",
+      "title": "Definition Id",
+      "type": "string"
+    },
+    "dependencies": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Dependencies",
+      "type": "array"
+    },
+    "digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Digest"
+    },
+    "flow_templates": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Flow Templates",
+      "type": "array"
+    },
+    "package_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Package Digest"
+    },
+    "package_filename": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Package Filename"
+    },
+    "package_size": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Package Size"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Published At"
+    },
+    "published_by_user_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Published By User Id"
+    },
+    "resource_manifest": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Resource Manifest",
+      "type": "array"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "definition_id",
+    "version",
+    "status",
+    "configuration",
+    "resource_manifest",
+    "dependencies",
+    "flow_templates",
+    "digest",
+    "package_digest",
+    "package_size",
+    "package_filename",
+    "published_at",
+    "published_by_user_id",
+    "created_at"
+  ],
+  "title": "CapabilityVersionView",
+  "type": "object"
+}
+```
+
 <a id="schema-ChangePasswordRequest"></a>
 
 ## ChangePasswordRequest
@@ -951,6 +1429,86 @@ One sanitized audit fact; the digest columns prove its chain position.
     "email"
   ],
   "title": "CreateInvitationRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-DirectoryCreateRequest"></a>
+
+## DirectoryCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `path` | string | 是 | `maxLength=1000`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "path": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "DirectoryCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-DirectoryView"></a>
+
+## DirectoryView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `directory_id` | string (uuid) | 是 | `format="uuid"` |
+| `path` | string | 是 | — |
+| `parent_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "directory_id": {
+      "format": "uuid",
+      "title": "Directory Id",
+      "type": "string"
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Parent Id"
+    },
+    "path": {
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "directory_id",
+    "path",
+    "parent_id",
+    "created_at"
+  ],
+  "title": "DirectoryView",
   "type": "object"
 }
 ```
@@ -1041,6 +1599,169 @@ One sanitized audit fact; the digest columns prove its chain position.
 }
 ```
 
+<a id="schema-ExpertConfiguration"></a>
+
+## ExpertConfiguration
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `instructions` | string | 是 | — |
+| `prompt` | string | 否 | `default=""` |
+| `model_requirements` | [ModelRequirements](schemas.md#schema-ModelRequirements) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/ModelRequirements"}, {"type": "null"}]` |
+| `guardrails` | array&lt;string&gt; | 否 | `default=[]` |
+| `capability_slots` | array&lt;[CapabilitySlot](schemas.md#schema-CapabilitySlot)&gt; | 否 | `default=[]` |
+| `parameters_schema` | object | 否 | `additionalProperties=true`; `default={}` |
+| `secret_slots` | array&lt;string&gt; | 否 | `default=[]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "capability_slots": {
+      "default": [],
+      "items": {
+        "$ref": "#/components/schemas/CapabilitySlot"
+      },
+      "title": "Capability Slots",
+      "type": "array"
+    },
+    "guardrails": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Guardrails",
+      "type": "array"
+    },
+    "instructions": {
+      "title": "Instructions",
+      "type": "string"
+    },
+    "model_requirements": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/ModelRequirements"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Parameters Schema",
+      "type": "object"
+    },
+    "prompt": {
+      "default": "",
+      "title": "Prompt",
+      "type": "string"
+    },
+    "secret_slots": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Slots",
+      "type": "array"
+    }
+  },
+  "required": [
+    "instructions"
+  ],
+  "title": "ExpertConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-ExpertCreateRequest"></a>
+
+## ExpertCreateRequest
+
+Create one expert definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [ExpertConfiguration](schemas.md#schema-ExpertConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one expert definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ExpertConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "ExpertCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ExpertDraftRequest"></a>
+
+## ExpertDraftRequest
+
+Replace the current draft configuration of one expert definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [ExpertConfiguration](schemas.md#schema-ExpertConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one expert definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ExpertConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "ExpertDraftRequest",
+  "type": "object"
+}
+```
+
 <a id="schema-ExtensionAuditAppend"></a>
 
 ## ExtensionAuditAppend
@@ -1114,6 +1835,341 @@ One extension-reported fact; actor and scope come from the verified call.
     "idempotency_key"
   ],
   "title": "ExtensionAuditAppend",
+  "type": "object"
+}
+```
+
+<a id="schema-FileCreateRequest"></a>
+
+## FileCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `directory_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | `maxLength=260`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "directory_id": {
+      "format": "uuid",
+      "title": "Directory Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 260,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "directory_id",
+    "name"
+  ],
+  "title": "FileCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-FilePage"></a>
+
+## FilePage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `items` | array&lt;[FileView](schemas.md#schema-FileView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/FileView"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "title": "FilePage",
+  "type": "object"
+}
+```
+
+<a id="schema-FileVersionView"></a>
+
+## FileVersionView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `file_id` | string (uuid) | 是 | `format="uuid"` |
+| `version` | integer | 是 | — |
+| `digest` | string | 是 | — |
+| `size` | integer | 是 | — |
+| `media_type` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `created_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by_user_id": {
+      "format": "uuid",
+      "title": "Created By User Id",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "file_id": {
+      "format": "uuid",
+      "title": "File Id",
+      "type": "string"
+    },
+    "media_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Media Type"
+    },
+    "size": {
+      "title": "Size",
+      "type": "integer"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "file_id",
+    "version",
+    "digest",
+    "size",
+    "media_type",
+    "created_by_user_id",
+    "created_at"
+  ],
+  "title": "FileVersionView",
+  "type": "object"
+}
+```
+
+<a id="schema-FileView"></a>
+
+## FileView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `file_id` | string (uuid) | 是 | `format="uuid"` |
+| `directory_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `owner_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `latest_version` | integer | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "directory_id": {
+      "format": "uuid",
+      "title": "Directory Id",
+      "type": "string"
+    },
+    "file_id": {
+      "format": "uuid",
+      "title": "File Id",
+      "type": "string"
+    },
+    "latest_version": {
+      "title": "Latest Version",
+      "type": "integer"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "owner_user_id": {
+      "format": "uuid",
+      "title": "Owner User Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file_id",
+    "directory_id",
+    "name",
+    "owner_user_id",
+    "latest_version",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "FileView",
+  "type": "object"
+}
+```
+
+<a id="schema-GrantCreateRequest"></a>
+
+## GrantCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `grantee_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `permissions` | array&lt;string&gt; | 是 | `maxItems=8`; `minItems=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "grantee_user_id": {
+      "format": "uuid",
+      "title": "Grantee User Id",
+      "type": "string"
+    },
+    "permissions": {
+      "items": {
+        "enum": [
+          "read",
+          "write",
+          "delete",
+          "use_in_execution"
+        ],
+        "type": "string"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Permissions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "grantee_user_id",
+    "permissions"
+  ],
+  "title": "GrantCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-GrantView"></a>
+
+## GrantView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `grant_id` | string (uuid) | 是 | `format="uuid"` |
+| `grantee_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `permissions` | array&lt;string&gt; | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "grant_id": {
+      "format": "uuid",
+      "title": "Grant Id",
+      "type": "string"
+    },
+    "grantee_user_id": {
+      "format": "uuid",
+      "title": "Grantee User Id",
+      "type": "string"
+    },
+    "permissions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "grant_id",
+    "grantee_user_id",
+    "permissions",
+    "created_at"
+  ],
+  "title": "GrantView",
+  "type": "object"
+}
+```
+
+<a id="schema-Handoff"></a>
+
+## Handoff
+
+One directed handoff edge between two member slots.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `source` | string | 是 | `maxLength=100`; `minLength=1` |
+| `target` | string | 是 | `maxLength=100`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One directed handoff edge between two member slots.",
+  "properties": {
+    "source": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "target": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Target",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "target"
+  ],
+  "title": "Handoff",
   "type": "object"
 }
 ```
@@ -1477,6 +2533,277 @@ One durable send intent and its confirmed or unconfirmed outcome.
 }
 ```
 
+<a id="schema-McpConfiguration"></a>
+
+## McpConfiguration
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `transport` | string | 是 | `enum=["remote", "stdio"]` |
+| `endpoint` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
+| `command` | array&lt;string&gt; anyOf null | 否 | `anyOf=[{"items": {"type": "string"}, "maxItems": 64, "type": "array"}, {"type": "null"}]` |
+| `arguments` | array&lt;string&gt; | 否 | `maxItems=256` |
+| `environment` | object | 否 | `additionalProperties={"type": "string"}` |
+| `tools` | array&lt;[McpToolDeclaration](schemas.md#schema-McpToolDeclaration)&gt; | 否 | `maxItems=256` |
+| `parameters_schema` | object | 否 | `additionalProperties=true` |
+| `secret_slots` | array&lt;string&gt; | 否 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "arguments": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Arguments",
+      "type": "array"
+    },
+    "command": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Command"
+    },
+    "endpoint": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Endpoint"
+    },
+    "environment": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Environment",
+      "type": "object"
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "title": "Parameters Schema",
+      "type": "object"
+    },
+    "secret_slots": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Slots",
+      "type": "array"
+    },
+    "tools": {
+      "items": {
+        "$ref": "#/components/schemas/McpToolDeclaration"
+      },
+      "maxItems": 256,
+      "title": "Tools",
+      "type": "array"
+    },
+    "transport": {
+      "enum": [
+        "remote",
+        "stdio"
+      ],
+      "title": "Transport",
+      "type": "string"
+    }
+  },
+  "required": [
+    "transport"
+  ],
+  "title": "McpConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-McpCreateRequest"></a>
+
+## McpCreateRequest
+
+Create one MCP definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [McpConfiguration](schemas.md#schema-McpConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one MCP definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/McpConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "McpCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-McpDraftRequest"></a>
+
+## McpDraftRequest
+
+Replace the current draft configuration of one MCP definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [McpConfiguration](schemas.md#schema-McpConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one MCP definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/McpConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "McpDraftRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-McpToolDeclaration"></a>
+
+## McpToolDeclaration
+
+One advertised tool with its parameter schema; discovery is runtime.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=100`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `parameters_schema` | object | 否 | `additionalProperties=true` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One advertised tool with its parameter schema; discovery is runtime.",
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "title": "Parameters Schema",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "McpToolDeclaration",
+  "type": "object"
+}
+```
+
+<a id="schema-ModelRequirements"></a>
+
+## ModelRequirements
+
+The model an expert expects; selection itself belongs to execution.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `model` | string | 是 | `maxLength=100`; `minLength=1` |
+| `reasoning` | string anyOf null | 否 | `anyOf=[{"maxLength": 40, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The model an expert expects; selection itself belongs to execution.",
+  "properties": {
+    "model": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "reasoning": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reasoning"
+    }
+  },
+  "required": [
+    "model"
+  ],
+  "title": "ModelRequirements",
+  "type": "object"
+}
+```
+
 <a id="schema-QuotaLimitsRequest"></a>
 
 ## QuotaLimitsRequest
@@ -1702,6 +3029,124 @@ The operator's confirmation of one unconfirmed send.
     "password"
   ],
   "title": "RegisterRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-RuntimePolicyRequest"></a>
+
+## RuntimePolicyRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `frozen_input_versions` | array&lt;integer&gt; | 否 | `maxItems=256` |
+| `relative_paths` | array&lt;string&gt; | 否 | `maxItems=256` |
+| `output_declarations` | array&lt;object&gt; | 否 | `maxItems=256` |
+| `use_in_execution` | boolean | 否 | `default=false` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "frozen_input_versions": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 256,
+      "title": "Frozen Input Versions",
+      "type": "array"
+    },
+    "output_declarations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "maxItems": 256,
+      "title": "Output Declarations",
+      "type": "array"
+    },
+    "relative_paths": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Relative Paths",
+      "type": "array"
+    },
+    "use_in_execution": {
+      "default": false,
+      "title": "Use In Execution",
+      "type": "boolean"
+    }
+  },
+  "title": "RuntimePolicyRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-RuntimePolicyView"></a>
+
+## RuntimePolicyView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `file_id` | string (uuid) | 是 | `format="uuid"` |
+| `frozen_input_versions` | array&lt;integer&gt; | 是 | — |
+| `relative_paths` | array&lt;string&gt; | 是 | — |
+| `output_declarations` | array&lt;object&gt; | 是 | — |
+| `use_in_execution` | boolean | 是 | — |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "file_id": {
+      "format": "uuid",
+      "title": "File Id",
+      "type": "string"
+    },
+    "frozen_input_versions": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Frozen Input Versions",
+      "type": "array"
+    },
+    "output_declarations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Output Declarations",
+      "type": "array"
+    },
+    "relative_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Relative Paths",
+      "type": "array"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "use_in_execution": {
+      "title": "Use In Execution",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "file_id",
+    "frozen_input_versions",
+    "relative_paths",
+    "output_declarations",
+    "use_in_execution",
+    "updated_at"
+  ],
+  "title": "RuntimePolicyView",
   "type": "object"
 }
 ```
@@ -1980,6 +3425,61 @@ authenticate. The public row id appears in the session listings.
 }
 ```
 
+<a id="schema-SkillCreateRequest"></a>
+
+## SkillCreateRequest
+
+Import one skill definition; its configuration comes from the package.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Import one skill definition; its configuration comes from the package.",
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name"
+  ],
+  "title": "SkillCreateRequest",
+  "type": "object"
+}
+```
+
 <a id="schema-SmtpConfigurationRequest"></a>
 
 ## SmtpConfigurationRequest
@@ -2146,6 +3646,209 @@ The stored configuration; the password is never rendered back.
 }
 ```
 
+<a id="schema-TeamConfiguration"></a>
+
+## TeamConfiguration
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `members` | array&lt;[TeamMember](schemas.md#schema-TeamMember)&gt; | 是 | `maxItems=32`; `minItems=1` |
+| `entrypoint` | string | 是 | `maxLength=100`; `minLength=1` |
+| `handoffs` | array&lt;[Handoff](schemas.md#schema-Handoff)&gt; | 否 | `maxItems=128` |
+| `agents_as_tools` | array&lt;[AgentAsTool](schemas.md#schema-AgentAsTool)&gt; | 否 | `maxItems=128` |
+| `parameters_schema` | object | 否 | `additionalProperties=true` |
+| `secret_slots` | array&lt;string&gt; | 否 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents_as_tools": {
+      "items": {
+        "$ref": "#/components/schemas/AgentAsTool"
+      },
+      "maxItems": 128,
+      "title": "Agents As Tools",
+      "type": "array"
+    },
+    "entrypoint": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Entrypoint",
+      "type": "string"
+    },
+    "handoffs": {
+      "items": {
+        "$ref": "#/components/schemas/Handoff"
+      },
+      "maxItems": 128,
+      "title": "Handoffs",
+      "type": "array"
+    },
+    "members": {
+      "items": {
+        "$ref": "#/components/schemas/TeamMember"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Members",
+      "type": "array"
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "title": "Parameters Schema",
+      "type": "object"
+    },
+    "secret_slots": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Slots",
+      "type": "array"
+    }
+  },
+  "required": [
+    "members",
+    "entrypoint"
+  ],
+  "title": "TeamConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamCreateRequest"></a>
+
+## TeamCreateRequest
+
+Create one team definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [TeamConfiguration](schemas.md#schema-TeamConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one team definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/TeamConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "TeamCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamDraftRequest"></a>
+
+## TeamDraftRequest
+
+Replace the current draft configuration of one team definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [TeamConfiguration](schemas.md#schema-TeamConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one team definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/TeamConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "TeamDraftRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-TeamMember"></a>
+
+## TeamMember
+
+One expert member filling one named slot with one unique role.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `slot` | string | 是 | `maxLength=100`; `minLength=1` |
+| `expert_key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `role` | string | 是 | `maxLength=100`; `minLength=1` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One expert member filling one named slot with one unique role.",
+  "properties": {
+    "expert_key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Expert Key",
+      "type": "string"
+    },
+    "role": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Role",
+      "type": "string"
+    },
+    "slot": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Slot",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slot",
+    "expert_key",
+    "role"
+  ],
+  "title": "TeamMember",
+  "type": "object"
+}
+```
+
 <a id="schema-TestMailRequest"></a>
 
 ## TestMailRequest
@@ -2186,6 +3889,329 @@ inside the test source's own scope, so this bound is the stored one.
     "idempotency_key"
   ],
   "title": "TestMailRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ToolConfiguration"></a>
+
+## ToolConfiguration
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `execution_mode` | string | 是 | — |
+| `entrypoint` | string | 是 | `maxLength=300`; `minLength=1` |
+| `operations` | array&lt;[ToolOperation](schemas.md#schema-ToolOperation)&gt; | 是 | `maxItems=256`; `minItems=1` |
+| `parameters_schema` | object | 否 | `additionalProperties=true` |
+| `secret_slots` | array&lt;string&gt; | 否 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "entrypoint": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Entrypoint",
+      "type": "string"
+    },
+    "execution_mode": {
+      "title": "Execution Mode",
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/components/schemas/ToolOperation"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    },
+    "parameters_schema": {
+      "additionalProperties": true,
+      "title": "Parameters Schema",
+      "type": "object"
+    },
+    "secret_slots": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Slots",
+      "type": "array"
+    }
+  },
+  "required": [
+    "execution_mode",
+    "entrypoint",
+    "operations"
+  ],
+  "title": "ToolConfiguration",
+  "type": "object"
+}
+```
+
+<a id="schema-ToolCreateRequest"></a>
+
+## ToolCreateRequest
+
+Create one tool definition with its first draft version.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `key` | string | 是 | `maxLength=100`; `minLength=1` |
+| `name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `visibility` | string | 否 | `default="private"`; `enum=["private", "public"]` |
+| `configuration` | [ToolConfiguration](schemas.md#schema-ToolConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create one tool definition with its first draft version.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ToolConfiguration"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "visibility": {
+      "default": "private",
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "configuration"
+  ],
+  "title": "ToolCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ToolDraftRequest"></a>
+
+## ToolDraftRequest
+
+Replace the current draft configuration of one tool definition.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `configuration` | [ToolConfiguration](schemas.md#schema-ToolConfiguration) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Replace the current draft configuration of one tool definition.",
+  "properties": {
+    "configuration": {
+      "$ref": "#/components/schemas/ToolConfiguration"
+    }
+  },
+  "required": [
+    "configuration"
+  ],
+  "title": "ToolDraftRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ToolOperation"></a>
+
+## ToolOperation
+
+One callable operation with its schemas, effects and approval demand.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=100`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+| `input_schema` | object | 否 | `additionalProperties=true` |
+| `output_schema` | object | 否 | `additionalProperties=true` |
+| `effects` | array&lt;string&gt; | 否 | `maxItems=7` |
+| `requires_approval` | boolean | 否 | `default=false` |
+| `timeout_seconds` | integer | 否 | `default=60`; `maximum=3600.0`; `minimum=1.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "One callable operation with its schemas, effects and approval demand.",
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "effects": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 7,
+      "title": "Effects",
+      "type": "array"
+    },
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "output_schema": {
+      "additionalProperties": true,
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "requires_approval": {
+      "default": false,
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "timeout_seconds": {
+      "default": 60,
+      "maximum": 3600.0,
+      "minimum": 1.0,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "ToolOperation",
+  "type": "object"
+}
+```
+
+<a id="schema-UpdateDefinitionRequest"></a>
+
+## UpdateDefinitionRequest
+
+The definition-level metadata an author may change.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The definition-level metadata an author may change.",
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Description"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Name"
+    }
+  },
+  "title": "UpdateDefinitionRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-UpdateDefinitionStatusRequest"></a>
+
+## UpdateDefinitionStatusRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `status` | string | 是 | `enum=["active", "disabled", "deleted"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "active",
+        "disabled",
+        "deleted"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "UpdateDefinitionStatusRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-UpdateDefinitionVisibilityRequest"></a>
+
+## UpdateDefinitionVisibilityRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `visibility` | string | 是 | `enum=["private", "public"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "visibility": {
+      "enum": [
+        "private",
+        "public"
+      ],
+      "title": "Visibility",
+      "type": "string"
+    }
+  },
+  "required": [
+    "visibility"
+  ],
+  "title": "UpdateDefinitionVisibilityRequest",
   "type": "object"
 }
 ```
@@ -2384,6 +4410,61 @@ One account profile; avatar bytes are fetched from their own route.
     "updated_at"
   ],
   "title": "UserProfileView",
+  "type": "object"
+}
+```
+
+<a id="schema-VersionDiffView"></a>
+
+## VersionDiffView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `from_version` | integer | 是 | — |
+| `to_version` | integer | 是 | — |
+| `identical` | boolean | 是 | — |
+| `from_size` | integer | 是 | — |
+| `to_size` | integer | 是 | — |
+| `size_delta` | integer | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "from_size": {
+      "title": "From Size",
+      "type": "integer"
+    },
+    "from_version": {
+      "title": "From Version",
+      "type": "integer"
+    },
+    "identical": {
+      "title": "Identical",
+      "type": "boolean"
+    },
+    "size_delta": {
+      "title": "Size Delta",
+      "type": "integer"
+    },
+    "to_size": {
+      "title": "To Size",
+      "type": "integer"
+    },
+    "to_version": {
+      "title": "To Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "from_version",
+    "to_version",
+    "identical",
+    "from_size",
+    "to_size",
+    "size_delta"
+  ],
+  "title": "VersionDiffView",
   "type": "object"
 }
 ```
