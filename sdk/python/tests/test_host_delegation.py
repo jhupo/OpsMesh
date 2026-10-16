@@ -80,7 +80,7 @@ def test_caller_cannot_forge_the_delegation_identity() -> None:
 
     with pytest.raises(SecurityError) as excinfo:
         asyncio.run(run())
-    assert INVOCATION_HEADER in excinfo.value.details["forged_headers"]  # type: ignore[operator]
+    assert INVOCATION_HEADER.lower() in excinfo.value.details["forged_headers"]  # type: ignore[operator]
 
 
 def test_cancelled_delegation_scope_blocks_the_call() -> None:
@@ -208,7 +208,7 @@ def test_delegation_stream_rejects_a_forged_invocation_header() -> None:
 
     with pytest.raises(SecurityError) as excinfo:
         asyncio.run(run())
-    assert INVOCATION_HEADER in excinfo.value.details["forged_headers"]  # type: ignore[operator]
+    assert INVOCATION_HEADER.lower() in excinfo.value.details["forged_headers"]  # type: ignore[operator]
 
 
 def test_delegation_send_rejects_forged_request_headers() -> None:
@@ -223,6 +223,80 @@ def test_delegation_send_rejects_forged_request_headers() -> None:
 
     with pytest.raises(SecurityError):
         asyncio.run(run())
+
+
+def test_delegation_send_rejects_case_variant_forgery() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    transport = HostTransport("https://host.invalid", identity(), client=mock_client(handler))
+
+    async def run_request_variant() -> Any:
+        request = TransportRequest(
+            path="/host/state/k", headers={INVOCATION_HEADER.lower(): str(uuid4())}
+        )
+        return await transport.send(request, TransportContext())
+
+    async def run_context_variant() -> Any:
+        context = TransportContext(identity_headers={INVOCATION_HEADER.lower(): str(uuid4())})
+        return await transport.send(TransportRequest(path="/host/state/k"), context)
+
+    with pytest.raises(SecurityError):
+        asyncio.run(run_request_variant())
+    with pytest.raises(SecurityError):
+        asyncio.run(run_context_variant())
+
+
+def test_delegation_send_rejects_trace_header_forgery() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    transport = HostTransport("https://host.invalid", identity(), client=mock_client(handler))
+    context = TransportContext(trace_headers={INVOCATION_HEADER: str(uuid4())})
+
+    async def run() -> Any:
+        return await transport.send(TransportRequest(path="/host/state/k"), context)
+
+    with pytest.raises(SecurityError) as excinfo:
+        asyncio.run(run())
+    assert INVOCATION_HEADER.lower() in excinfo.value.details["forged_headers"]  # type: ignore[operator]
+
+
+def test_delegation_stream_rejects_trace_header_forgery() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text='data: {"ok": true}\n\n')
+
+    transport = HostTransport("https://host.invalid", identity(), client=mock_client(handler))
+    context = TransportContext(trace_headers={INVOCATION_HEADER: str(uuid4())})
+
+    async def run() -> Any:
+        request = TransportRequest(path="/host/events", stream=True)
+        return [chunk async for chunk in transport.stream(request, context)]
+
+    with pytest.raises(SecurityError):
+        asyncio.run(run())
+
+
+def test_trace_headers_propagate_without_touching_the_identity() -> None:
+    captured: dict[str, Any] = {}
+    delegation = identity()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["traceparent"] = request.headers.get("traceparent")
+        captured["invocation"] = request.headers.get(INVOCATION_HEADER)
+        captured["delegation"] = request.headers.get(DELEGATION_HEADER)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = HostTransport("https://host.invalid", delegation, client=mock_client(handler))
+    context = TransportContext(trace_headers={"traceparent": "00-" + "0" * 32 + "-01"})
+
+    async def run() -> Any:
+        return await transport.send(TransportRequest(path="/host/state/k"), context)
+
+    asyncio.run(run())
+    assert captured["traceparent"] == "00-" + "0" * 32 + "-01"
+    assert captured["invocation"] == str(delegation.invocation_id)
+    assert captured["delegation"] == "invocation"
 
 
 def test_parent_invocation_id_travels_in_the_delegation_headers() -> None:

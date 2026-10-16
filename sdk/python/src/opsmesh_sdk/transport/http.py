@@ -81,7 +81,7 @@ class HttpTransport:
             overridable=frozenset({SESSION_HEADER}),
         )
         if request.idempotency_key is not None:
-            headers[IDEMPOTENCY_HEADER] = request.idempotency_key
+            headers[IDEMPOTENCY_HEADER.lower()] = request.idempotency_key
         timeout = resolve_timeout(request, context.scope)
         try:
             response = await send_cancellable(

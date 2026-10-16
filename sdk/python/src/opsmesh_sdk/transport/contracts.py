@@ -179,6 +179,11 @@ def resolve_timeout(request: TransportRequest, scope: CancellationScope) -> floa
     return min(request.timeout_seconds, remaining)
 
 
+def _lowercased(headers: Mapping[str, str]) -> dict[str, str]:
+    """Header names are case-insensitive; emit one canonical lowercase key."""
+    return {name.lower(): value for name, value in headers.items()}
+
+
 def build_call_headers(
     request: TransportRequest,
     context: TransportContext,
@@ -187,33 +192,40 @@ def build_call_headers(
     protected: Collection[str] = (),
     overridable: Collection[str] = (),
 ) -> dict[str, str]:
-    """Assemble call headers: caller headers, then identity, then trace.
+    """Assemble call headers: caller headers, trace, then identity last.
 
-    ``request.headers`` carries per-call static headers. Headers that protect
-    the transport identity (the session or the delegation chain) cannot be
-    supplied by the caller: overriding one is a security violation, not a
-    merge conflict. A context may only replace the headers the transport
-    declares overridable (the session of a delegated invocation).
+    Every header name is normalized to lowercase before checking and before
+    emission, so a case variant cannot smuggle a second value for the same
+    header past the checks or past the server. Headers that protect the
+    transport identity (the session or the delegation chain) cannot be
+    supplied by any caller source — request, context identity or trace:
+    overriding one is a security violation, not a merge conflict. A context
+    may only replace the headers the transport declares overridable (the
+    session of a delegated invocation), and trace headers never override an
+    identity header because identity is applied after trace.
     """
-    protected_set = frozenset(protected)
-    forged = sorted(protected_set.intersection(request.headers))
-    if forged:
-        raise SecurityError(
-            "The caller cannot override protected transport identity headers",
-            details={"forged_headers": forged},
-        )
-    forged_context = sorted(
-        protected_set.difference(overridable).intersection(context.identity_headers)
-    )
-    if forged_context:
-        raise SecurityError(
-            "The caller cannot override protected transport identity headers",
-            details={"forged_headers": forged_context},
-        )
-    headers = dict(request.headers)
-    headers.update(identity)
-    headers.update(context.identity_headers)
-    headers.update(context.trace_headers)
+    protected_set = {name.lower() for name in protected}
+    overridable_set = {name.lower() for name in overridable}
+
+    def reject(source: Mapping[str, str], forbidden: set[str]) -> None:
+        forged = sorted(forbidden.intersection(source))
+        if forged:
+            raise SecurityError(
+                "The caller cannot override protected transport identity headers",
+                details={"forged_headers": forged},
+            )
+
+    caller = _lowercased(request.headers)
+    trace = _lowercased(context.trace_headers)
+    context_identity = _lowercased(context.identity_headers)
+    reject(caller, protected_set)
+    reject(trace, protected_set)
+    reject(context_identity, protected_set - overridable_set)
+
+    headers = caller
+    headers.update(trace)
+    headers.update(_lowercased(identity))
+    headers.update(context_identity)
     return headers
 
 
@@ -228,7 +240,7 @@ class TransportContext:
 
 def require_session(context: TransportContext) -> str:
     """Read the session identity from the context; a missing one is fatal."""
-    value = context.identity_headers.get(SESSION_HEADER)
+    value = _lowercased(context.identity_headers).get(SESSION_HEADER.lower())
     if value is None:
         raise AuthenticationError("A platform session is required")
     return value

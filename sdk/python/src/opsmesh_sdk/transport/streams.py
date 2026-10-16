@@ -98,7 +98,7 @@ class EventStreamReader:
             overridable=self._overridable_headers,
         )
         if request.last_event_id is not None:
-            headers["Last-Event-ID"] = request.last_event_id
+            headers["last-event-id"] = request.last_event_id
         idle = self._idle_bound(context.scope)
         stream = self._client.stream(
             request.method,

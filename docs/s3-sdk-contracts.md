@@ -39,9 +39,9 @@ flow 纯值、HTTP/宿主传输合同、包构建与代码生成工具。服务�
 | `src/opsmesh_sdk/development/testing.py` | 合同 fixture 与可记录宿主替身 | `RecordingHostClient`、`ContractFixtures`、`hook_input()`、`invocation_context()` |
 | `src/opsmesh_sdk/development/cli.py` | 作者 CLI | `main()`：validate/build/test |
 | `src/opsmesh_sdk/api/__init__.py` | 生成包标记（业务分组随 S4+ 生成） | — |
-| `tests/test_client_contracts.py` | 传输合同测试（httpx MockTransport/异步替身） | 21 项 |
+| `tests/test_client_contracts.py` | 传输合同测试（httpx MockTransport/异步替身） | 24 项 |
 | `tests/test_extension_contracts.py` | 扩展声明测试 | 23 项 |
-| `tests/test_host_delegation.py` | 宿主委托测试 | 14 项 |
+| `tests/test_host_delegation.py` | 宿主委托测试 | 18 项 |
 
 工程合同同步修改（AGENTS.md：实施时核对受影响工程文件）：
 
@@ -133,7 +133,7 @@ JsonSchema 导出/再入往返稳定。
 
 - **implemented**：`sdk/python` 全部 33 个源/测试文件、pyproject/codegen.toml/
   README.md；主工程 workspace 成员、mypy 纳入、服务端禁导入 SDK 合同。
-- **verified**：ruff/format/mypy strict/两份 import-linter/pytest 36 项/
+- **verified**：ruff/format/mypy strict/两份 import-linter/pytest 65 项/
   布局审计/wheel 与 sdist 构建及边界检查/CLI validate-build-test 端到端。
 - **unverified**：
   - wheel 在干净 venv（无 opsmesh）实际安装导入未执行（本轮跳过）；已用
@@ -212,10 +212,9 @@ Pydantic 模型上的 `__post_init__` 永不执行，33 个字段仍通过。修
 ### 5.6 [P2] `TransportRequest.headers` 是公开字段但没有发送
 
 三种传输均未合并 `request.headers`，自定义头静默丢失。修复：
-`build_call_headers()` 以“调用方头 → 传输身份 → context 身份 → trace”
-顺序合并；受保护身份头由调用方提供即 `SecurityError`（见 5.1）。
-反向实证：去掉合并后 http send/http stream/host stream 三个自定义头
-断言失败。
+`build_call_headers()` 合并调用方头；受保护身份头由调用方提供即
+`SecurityError`（见 5.1）。反向实证：去掉合并后 http send/http stream/
+host stream 三个自定义头断言失败。
 
 ### 5.7 [P2] `parent_invocation_id` 保存但没有传输
 
@@ -252,3 +251,50 @@ README 示例改为一致并补充说明。
 host 响应大小、host/客户端 deadline 边界、请求超时、取消中断在途请求
 （send 与 stall 流）、SSE deadline、自定义头发送、封套拒绝、输出 schema
 拒绝、空声明不约束、Patch 上限、验签正向/篡改/错密/重放/未知算法。
+
+## 6. 二次评审修复（提交 `a2afb94` 的 1 项 P1 头部绕过）
+
+### 6.1 [P1] 受保护身份头仍可通过 `trace_headers` 或大小写变体绕过
+
+`build_call_headers()` 只做精确大小写检查，且最后无条件
+`headers.update(context.trace_headers)`。因此
+`trace_headers={"X-OpsMesh-Invocation-Id": "forged"}` 可覆盖宿主身份；
+`request.headers={"x-opsmesh-invocation-id": "forged"}` 可绕过大小写
+敏感的集合检查；httpx 会把大小写不同的同名头合并，服务端可能收到
+攻击者值。修复：
+
+- 所有头名在检查前与发射前统一小写标准化（`_lowercased()`），输出
+  每个逻辑头只有一个规范键，大小写变体无法携带第二个值。
+- 三个调用方来源全部参与受保护头校验：`request.headers`（任何受保护
+  头即拒绝）、`context.trace_headers`（任何受保护头即拒绝）、
+  `context.identity_headers`（仅 `overridable` 声明集合内的头可替换，
+  http 为 session，host 为空集）。
+- 合并顺序改为“调用方头 → trace → 传输身份 → context 身份”：身份最后
+  应用，trace 头永远不能覆盖身份头；`require_session()` 同样按小写
+  查找。
+- `Idempotency-Key`、`Last-Event-ID` 等发射点同步小写，保持输出一致。
+
+反向实证：恢复“精确大小写 + trace 最后”旧逻辑后，trace 伪造（send 与
+stream）、大小写变体伪造均 DID NOT RAISE；且
+`test_context_may_replace_the_session_in_any_header_case` 实测到请求头
+为 `"session-1, delegated-session"`——httpx 确实合并了大小写变体头，
+证明该攻击路径真实存在、修复必要。
+
+### 6.2 修复后验证证据（Windows 本地，2026-10-16）
+
+| 命令 | 结果 |
+| --- | --- |
+| `uv run ruff check sdk/python` | All checks passed |
+| `uv run ruff format --check sdk/python` | 33 already formatted |
+| `uv run mypy`（含 SDK，92 文件） | Success: no issues found |
+| `uv run lint-imports --no-cache`（根） | Contracts: 11 kept, 0 broken |
+| `uv run lint-imports --config sdk/python/pyproject.toml --no-cache` | Contracts: 5 kept, 0 broken |
+| `uv run pytest sdk/python/tests` | 65 passed |
+| `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| `uv build --package opsmesh-sdk` | wheel + sdist 构建成功 |
+| CLI validate/test/build（fixture 包） | 全部通过 |
+
+新增测试：host send/stream trace 伪造拒绝、host 大小写变体伪造拒绝
+（request 与 context 两种来源）、http 大小写变体与 trace 变体拒绝、
+context 小写替换 session 的正向行为、http/host trace 正向传播且不触碰
+身份头。

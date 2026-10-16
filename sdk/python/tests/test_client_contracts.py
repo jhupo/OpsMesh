@@ -310,6 +310,67 @@ def test_request_headers_reach_the_server_and_identity_is_protected() -> None:
         asyncio.run(run_forged())
 
 
+def test_identity_protection_ignores_header_case() -> None:
+    transport = HttpTransport(
+        "https://api.invalid",
+        session_id="session-1",
+        client=mock_transport(json_handler({"ok": True})),
+    )
+
+    async def run_request_variant() -> Any:
+        forged = TransportRequest(path="/api/v1/things", headers={SESSION_HEADER.lower(): "forged"})
+        return await transport.send(forged, TransportContext())
+
+    async def run_trace_variant() -> Any:
+        context = TransportContext(trace_headers={SESSION_HEADER.lower(): "forged"})
+        return await transport.send(TransportRequest(path="/api/v1/things"), context)
+
+    with pytest.raises(SecurityError):
+        asyncio.run(run_request_variant())
+    with pytest.raises(SecurityError):
+        asyncio.run(run_trace_variant())
+
+
+def test_context_may_replace_the_session_in_any_header_case() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["session"] = request.headers.get(SESSION_HEADER)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = HttpTransport(
+        "https://api.invalid", session_id="session-1", client=mock_transport(handler)
+    )
+    context = TransportContext(identity_headers={SESSION_HEADER.lower(): "delegated-session"})
+
+    async def run() -> Any:
+        return await transport.send(TransportRequest(path="/api/v1/things"), context)
+
+    asyncio.run(run())
+    assert captured["session"] == "delegated-session"
+
+
+def test_trace_headers_propagate_without_touching_the_session() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["traceparent"] = request.headers.get("traceparent")
+        captured["session"] = request.headers.get(SESSION_HEADER)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = HttpTransport(
+        "https://api.invalid", session_id="session-1", client=mock_transport(handler)
+    )
+    context = TransportContext(trace_headers={"traceparent": "00-" + "0" * 32 + "-01"})
+
+    async def run() -> Any:
+        return await transport.send(TransportRequest(path="/api/v1/things"), context)
+
+    asyncio.run(run())
+    assert captured["traceparent"] == "00-" + "0" * 32 + "-01"
+    assert captured["session"] == "session-1"
+
+
 def test_deadline_bounds_the_request_before_its_own_timeout() -> None:
     delaying = DelayingTransport(delay_seconds=0.4)
     transport = HttpTransport(

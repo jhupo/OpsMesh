@@ -129,7 +129,7 @@ class HostTransport:
             protected=_FORBIDDEN_CALLER_HEADERS,
         )
         if request.idempotency_key is not None:
-            headers["Idempotency-Key"] = request.idempotency_key
+            headers["idempotency-key"] = request.idempotency_key
         timeout = resolve_timeout(request, context.scope)
         try:
             response = await send_cancellable(
