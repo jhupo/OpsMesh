@@ -288,12 +288,16 @@ class TemporalOutboxPublisher:
     ) -> DispatchOutcome | None:
         """Deliver one command, keeping start and cancel causally ordered.
 
-        The sibling check and its durable decision share one transaction that
-        holds a per-workflow advisory lock, so a start and its cancel can never
-        both pass their sibling check: whichever decision commits first is seen
-        by the other. Only the Temporal call runs after the lock is released; a
-        failed delivery releases the decision for a later retry. Signals carry
-        no ordering contract and are delivered directly.
+        The sibling check runs in one transaction that holds a per-workflow
+        advisory lock, and ``published_at`` is only ever set after a successful
+        delivery, never before. A command therefore stays claimable until its
+        delivery is confirmed, so an interrupted delivery (process exit, task
+        cancellation) is retried instead of being lost. A cancel is deferred
+        while its start is not yet confirmed, including while the start
+        delivery is still in flight, so it can never complete against a
+        Workflow that starts afterwards; a start whose workflow already has a
+        confirmed cancel is superseded and never started. Signals carry no
+        ordering contract and are delivered directly.
         """
         if request.operation == DispatchOperation.SIGNAL:
             await dispatch_workflow(self._client, request, task_queue=self._task_queue)
@@ -322,6 +326,7 @@ class TemporalOutboxPublisher:
                         "Dispatch start superseded by an earlier cancellation",
                         extra={"dispatch_id": str(request.dispatch_id)},
                     )
+                    # Superseded is a terminal decision: nothing will be delivered.
                     row.published_at = datetime.now(UTC)
                     return DispatchOutcome.SUPERSEDED
             elif request.operation == DispatchOperation.CANCEL:
@@ -330,9 +335,8 @@ class TemporalOutboxPublisher:
                 )
                 if starting:
                     return DispatchOutcome.DEFERRED
-            # The decision is durable before the network call, so a sibling that
-            # commits afterwards observes it instead of racing past the check.
-            row.published_at = datetime.now(UTC)
+            # The decision only authorizes the delivery; the command stays
+            # unconfirmed until _record_published observes the Temporal result.
         await dispatch_workflow(self._client, request, task_queue=self._task_queue)
         return DispatchOutcome.DELIVERED
 
@@ -386,9 +390,6 @@ class TemporalOutboxPublisher:
             )
             if row is None:
                 return
-            # Release the pre-delivery decision so a later retry re-decides the
-            # ordering against the siblings committed in the meantime.
-            row.published_at = None
             row.attempts += 1
             row.available_at = datetime.now(UTC) + timedelta(
                 seconds=min(2 ** min(row.attempts, 8), _MAX_BACKOFF_SECONDS)

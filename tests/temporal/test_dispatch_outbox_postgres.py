@@ -402,6 +402,117 @@ def test_concurrent_start_and_cancel_settle_without_a_running_workflow(
     assert len(decisions) == 2 and all(decision is not None for decision in decisions)
 
 
+def test_interrupted_delivery_stays_claimable_and_is_retried(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    """A delivery cancelled before the Temporal call must not be recorded as
+    published: the command stays claimable once the lease expires and delivers
+    on a later pass."""
+    workflow_id = "interrupted-delivery-run"
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        session.commit()
+
+    class CancellingClient:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
+            self.calls.append(name)
+            raise asyncio.CancelledError
+
+    client = CancellingClient()
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    row = load_row(database_engine)
+    assert row is not None
+    assert row.published_at is None, "an interrupted delivery must not be recorded as published"
+    assert client.calls == ["OpsMeshTestWorkflow"]
+
+    # The claim lease expires, so the command is claimable again.
+    release_rows(database_engine, DispatchOperation.START)
+    expire_claims(database_engine)
+    delivered = asyncio.run(publisher(async_database_sessions, RecordingClient()).publish_pending())
+    assert delivered == 1, "the interrupted command must be delivered on a later pass"
+    delivered_row = load_row(database_engine)
+    assert delivered_row is not None
+    assert delivered_row.published_at is not None
+
+
+def test_cancel_defers_while_its_start_delivery_is_in_flight(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    """While the start RPC has not taken effect the Workflow does not exist yet;
+    a cancel that completed against that absence would leave the Workflow
+    running once the start lands, so the cancel must wait for the confirmation."""
+    workflow_id = "cancel-during-start-delivery-run"
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    class InFlightClient:
+        """The start blocks on an event; the workflow only exists afterwards."""
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.cancelled: list[str] = []
+            self.running: set[str] = set()
+            self.release = asyncio.Event()
+
+        async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
+            self.calls.append(name)
+            await self.release.wait()
+            self.running.add(kwargs.get("id", ""))
+
+        def get_workflow_handle(self, workflow_id):  # noqa: ANN001, ANN201
+            client = self
+
+            class Handle:
+                async def describe(self, **kwargs):  # noqa: ANN003, ANN201
+                    class Description:
+                        status = (
+                            WorkflowExecutionStatus.RUNNING
+                            if workflow_id in client.running
+                            else WorkflowExecutionStatus.COMPLETED
+                        )
+
+                    return Description()
+
+                async def cancel(self, **kwargs):  # noqa: ANN003, ANN201
+                    client.cancelled.append(workflow_id)
+                    client.running.discard(workflow_id)
+
+            return Handle()
+
+    client = InFlightClient()
+
+    async def run_both() -> list[int]:
+        first = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
+        second = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
+        await asyncio.sleep(0.5)
+        # The start delivery is still in flight here.
+        client.release.set()
+        return await asyncio.gather(first, second)
+
+    delivered = asyncio.run(run_both())
+    assert sorted(delivered) == [0, 1], "only the start delivers while its cancel waits"
+    cancel_row = load_cancel_row(database_engine, workflow_id)
+    assert cancel_row is not None
+    assert cancel_row.published_at is None, (
+        "the cancel must not complete while the start delivery is in flight"
+    )
+    assert cancel_row.last_error_code == "awaiting_sibling_command"
+    assert client.cancelled == []
+
+    # Once the start is confirmed, the cancel cancels the running workflow.
+    release_rows(database_engine, DispatchOperation.CANCEL)
+    delivered_cancel = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered_cancel == 1
+    assert client.cancelled == [workflow_id], "the cancel must reach the running workflow"
+    assert workflow_id not in client.running
+
+
 def test_signal_delivery_carries_the_stable_dispatch_identity(
     database_sessions, async_database_sessions, database_engine
 ) -> None:
@@ -460,3 +571,11 @@ def postpone_rows(engine: Engine, operation: DispatchOperation, delay: timedelta
 
 def release_rows(engine: Engine, operation: DispatchOperation) -> None:
     set_available_at(engine, operation, datetime.now(UTC))
+
+
+def expire_claims(engine: Engine) -> None:
+    """Simulate expired claim leases, as after a publisher process exit."""
+    with engine.begin() as connection:
+        connection.execute(
+            update(TemporalOutboxEntry).values(claim_token=None, claim_until=None)
+        )

@@ -78,6 +78,43 @@ def test_delete_bounds_the_generation_key_with_a_ttl() -> None:
     )
 
 
+def test_expired_generation_does_not_unblock_a_stale_loader() -> None:
+    """A generation key that expires and is recreated must not reissue the token
+    a stale loader holds, otherwise the stale value would be published."""
+    redis_client = fakeredis.FakeStrictRedis(decode_responses=True)
+    keys = RedisKeyBuilder("opsmesh")
+    cache_instance = RedisJsonCache(
+        cast("object", redis_client), keys, namespace="test", default_ttl_seconds=60
+    )
+    generation_key = keys.cache_generation("test", "key")
+    started = threading.Event()
+    release = threading.Event()
+
+    def loader() -> dict[str, object]:
+        started.set()
+        release.wait(timeout=5)
+        return {"value": "stale"}
+
+    def invalidate() -> None:
+        started.wait(timeout=5)
+        cache_instance.delete("key")
+        # Redis recycles the expired generation key; the next delete recreates it.
+        redis_client.delete(generation_key)
+        cache_instance.delete("key")
+        release.set()
+
+    thread = threading.Thread(target=invalidate)
+    thread.start()
+    try:
+        result = cache_instance.get_or_set("key", loader)
+    finally:
+        thread.join(timeout=5)
+    assert result.value == {"value": "stale"}
+    assert cache_instance.get("key").found is False, (
+        "a recycled generation must not reissue the token a stale loader holds"
+    )
+
+
 def test_value_loaded_after_invalidation_is_published() -> None:
     cache_instance = cache()
     cache_instance.delete("key")
@@ -135,6 +172,12 @@ def test_invalidation_guard_holds_against_real_redis() -> None:
     generation_ttl = redis_client.ttl(generation_key)
     assert 0 < generation_ttl <= DEFAULT_GENERATION_TTL_SECONDS, (
         "an invalidation must leave a bounded generation key against real Redis"
+    )
+    first_generation = redis_client.get(generation_key)
+    cache_instance.delete(key)
+    second_generation = redis_client.get(generation_key)
+    assert first_generation != second_generation, (
+        "a recreated generation must issue a fresh token, never repeat the old one"
     )
     cache_instance.delete(key)
     redis_client.close()

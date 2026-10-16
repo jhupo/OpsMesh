@@ -42,10 +42,12 @@ class DispatchRequest(BaseModel):
     this identity as its first argument so receivers can deduplicate
     at-least-once signal delivery (V4: signals bind command_id and waiting
     generation). Start and cancel commands for one Workflow are ordered by a
-    durable decision taken under a per-Workflow lock: a cancel never publishes
-    while its start is still undelivered, and a start is superseded once a
-    cancel decision exists, so a cancellation can never be recorded as complete
-    while the Workflow is still started afterwards.
+    sibling check under a per-Workflow lock, and a command is only marked
+    published once its delivery is confirmed: a cancel waits while its start
+    is unconfirmed (in flight included), and a start is superseded once a
+    cancel is confirmed, so a cancellation can never be recorded as complete
+    while the Workflow is still started afterwards. An interrupted delivery
+    stays claimable and is retried.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

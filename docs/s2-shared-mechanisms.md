@@ -204,3 +204,38 @@
 | 服务器（评审场景复验） | `python /verify/s2_review_scenarios.py` | OTLP 导出收到记录；数据库失败后 listener 停止（`_listener is None`）；真实 Redis 代次键 TTL 86400s 且守卫有效；移除守卫后旧值持久化（反向证明测试有效）；START/CANCEL 原子性由真实 PG 测试覆盖 |
 
 5 项问题状态：implemented + verified。第二轮复验使用服务器真实 PostgreSQL/Redis/Temporal（host 网络容器 `opsmesh-refactor-test:initial`，依赖版本与本地 uv.lock 一致：temporalio 1.34.0、opentelemetry-sdk 1.44.0、fakeredis 2.35.1 + lupa）。
+
+## 11. 第三轮评审修复（提交 `c3f2f7c8` 的 3 项问题）
+
+来源：对 `c3f2f7c8` 的代码评审。3 项全部修复，本地与服务器真实 PostgreSQL/Redis 复验通过。
+
+### 11.1 [P1] 投递中断永久丢失命令
+
+- **问题**：决策事务在调用 Temporal 前就提交 `published_at`。进程退出或任务取消时命令实际未投递，但后续领取只查 `published_at IS NULL`，租约过期也无法恢复——命令永久丢失。
+- **修复**：[`outbox.py`](src/opsmesh/temporal/dispatch/outbox.py) 拆分语义：`published_at` 只在投递成功确认后由 `_record_published` 置位；决策事务（持 per-workflow advisory lock）只做兄弟检查与 claim 校验，不再提前写任何状态。命令在确认前保持 `published_at IS NULL`，进程退出/取消后租约过期即可被重新领取、重新决策并重投。SUPERSEDED 是唯一在决策事务内置位的终态（无需投递）。`_record_failure` 不再需要清理预置位。
+- **验证**：真实 PG 测试 `test_interrupted_delivery_stays_claimable_and_is_retried`（`start_workflow` 抛 `CancelledError` 模拟中断：行保持 `published_at IS NULL`；租约过期释放后重新领取并投递成功）。
+
+### 11.2 [P1] 启动与取消竞态仍然存在
+
+- **问题**：START 提前标记后，启动 RPC 尚未生效时 CANCEL 查询不到 Workflow 并幂等“完成”，START 随后成功——取消已完成、Workflow 却在运行（模拟复现）。
+- **修复**：同一拆分顺带闭合此窗口——CANCEL 的 DEFER 条件是“START 未确认”（`published_at IS NULL`），而 `published_at` 现在只在启动成功后置位，因此 START 投递在途期间 CANCEL 一律等待，绝不会对“尚不存在的 Workflow”完成取消；START 确认后 CANCEL 才投递，取消的是真正运行中的 Workflow。CANCEL 的 SUPERSEDED 侧不变（仅对已确认取消的 START 生效）。
+- **验证**：真实 PG 测试 `test_cancel_defers_while_its_start_delivery_is_in_flight`（START RPC 阻塞在途期间并发 CANCEL：取消 DEFERRED、`last_error_code=awaiting_sibling_command`、未调用取消；START 确认后取消到达运行中的 Workflow）。
+
+### 11.3 [P2] 缓存失效标记过期后重复
+
+- **问题**：代次键 TTL 过期后重新从 `1` 计数。旧 loader 持旧 `1`，标记过期、再次 delete 又生成 `1`，旧 loader 通过检查写回旧值（fakeredis 复现）。
+- **修复**：[`cache.py`](src/opsmesh/shared/redis/cache.py) 代次值改为随机 token：`_INVALIDATE_SCRIPT` 直接 `set` 一个 `uuid4().hex`（不再 incr），随机 token 永不过期重复；发布脚本代次缺省值同步改为 `''`。TTL 保留仅为有界回收，正确性不再依赖代次键存活时长。
+- **验证**：fakeredis 测试 `test_expired_generation_does_not_unblock_a_stale_loader`（delete → 删除代次键模拟过期回收 → 再次 delete：旧 loader 被拦阻，旧值不持久化）；真实 Redis 测试增加断言：连续两次 delete 生成的代次 token 不同。
+
+### 11.4 第三轮修复验证证据
+
+| 环境 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地 Windows | `uv run ruff check tests src/opsmesh migrations scripts` | All checks passed |
+| 本地 Windows | `uv run mypy` | Success: no issues found in 62 source files |
+| 本地 Windows | `uv run lint-imports --no-cache` | Contracts: 10 kept, 0 broken |
+| 本地 Windows | `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| 本地 Windows | `uv run pytest tests -q` | 64 passed, 18 skipped（跳过项均为 Windows 环境性/PG/Redis/Temporal 未配置） |
+| 服务器（真实 PG 16 + Redis + Temporal 1.29.1） | `python -m pytest tests`（host 网络容器，OPSMESH_TEST_DATABASE_URL/TEMPORAL_ADDRESS/REDIS_URL） | **82 passed, 0 failed, 0 skipped**（dispatch outbox 15 项含 2 项新回归测试、cache 7 项含真实 Redis、bootstrap 14、security 20、shared_mechanisms 24、codec 3、replay 1） |
+
+3 项问题状态：implemented + verified。上轮已确认修正项（OTLP 日志挂载、数据库初始化失败后的日志清理、测试断言被清理掩盖）随本轮套件回归通过，未回退。

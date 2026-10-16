@@ -21,10 +21,9 @@ DEFAULT_CACHE_TTL_SECONDS = 60
 DEFAULT_LOCK_TTL_SECONDS = 30
 DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS = 5.0
 DEFAULT_LOCK_RETRY_INTERVAL_SECONDS = 0.025
-# The generation key must outlive any in-flight loader lease, otherwise an
-# expired generation would read as "0" and let a stale load publish. It is
-# still bounded so invalidated keys never accumulate: 24h far exceeds the
-# default 30s loader lease, and the loader lease itself bounds publication.
+# The generation key only needs to outlive the in-flight loader lease for
+# observability; correctness no longer depends on it because generations are
+# random tokens that never repeat. The TTL keeps invalidations bounded.
 DEFAULT_GENERATION_TTL_SECONDS = 86_400
 
 
@@ -39,16 +38,18 @@ class RedisJsonCache:
     """Single-loader cache whose publication is bounded by the loader lease and
     the invalidation generation observed before loading.
 
-    ``delete`` advances the generation first, so a loader that started before
-    the invalidation can never publish its (now stale) result afterwards. The
-    generation key carries a bounded TTL, so invalidations never accumulate
+    ``delete`` installs a fresh random generation first, so a loader that
+    started before the invalidation can never publish its (now stale) result
+    afterwards. The generation is a random token rather than a counter: it can
+    never repeat, not even after the generation key expires and is recreated.
+    The generation key carries a bounded TTL, so invalidations never accumulate
     keys for entries that no longer exist.
     """
 
     _PUBLISH_SCRIPT = """
         if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end
         local generation = redis.call('get', KEYS[3])
-        if generation == false then generation = '0' end
+        if generation == false then generation = '' end
         if generation ~= ARGV[2] then return 2 end
         redis.call('set', KEYS[2], ARGV[3], 'EX', ARGV[4])
         return 1
@@ -57,12 +58,7 @@ class RedisJsonCache:
     _PUBLISH_INVALIDATED = 2
     _PUBLISHED = 1
     _INVALIDATE_SCRIPT = """
-        local generation = redis.call('get', KEYS[1])
-        if generation == false then
-            redis.call('set', KEYS[1], '1')
-        else
-            redis.call('incr', KEYS[1])
-        end
+        redis.call('set', KEYS[1], ARGV[2])
         redis.call('expire', KEYS[1], ARGV[1])
         return redis.call('del', KEYS[2])
     """
@@ -183,18 +179,18 @@ class RedisJsonCache:
 
     def delete(self, key: str) -> int:
         # Invalidate before deleting so a concurrent loader cannot publish the
-        # pre-delete value after the delete completes. One script advances the
-        # generation, bounds its TTL and removes the entry atomically.
+        # pre-delete value after the delete completes. One script installs a
+        # fresh random generation, bounds its TTL and removes the entry.
         return int(
             self._invalidate(
                 keys=[self._generation_key(key), self._storage_key(key)],
-                args=[self._generation_ttl_seconds],
+                args=[self._generation_ttl_seconds, uuid4().hex],
             )
         )
 
     def _generation(self, key: str) -> str:
         current = self._redis.get(self._generation_key(key))
-        return current if current is not None else "0"
+        return current if current is not None else ""
 
     def _generation_key(self, key: str) -> str:
         normalized_key = self._normalize_key(key)
