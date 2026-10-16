@@ -11,7 +11,7 @@ import fakeredis
 import pytest
 from redis import Redis
 
-from opsmesh.shared.redis.cache import RedisJsonCache
+from opsmesh.shared.redis.cache import DEFAULT_GENERATION_TTL_SECONDS, RedisJsonCache
 from opsmesh.shared.redis.keys import RedisKeyBuilder
 
 REDIS_URL_ENV = "OPSMESH_TEST_REDIS_URL"
@@ -62,6 +62,22 @@ def test_invalidation_during_load_never_publishes_the_stale_value() -> None:
     )
 
 
+def test_delete_bounds_the_generation_key_with_a_ttl() -> None:
+    redis_client = fakeredis.FakeStrictRedis(decode_responses=True)
+    cache_instance = RedisJsonCache(
+        cast("object", redis_client),
+        RedisKeyBuilder("opsmesh"),
+        namespace="test",
+        default_ttl_seconds=60,
+    )
+    generation_key = RedisKeyBuilder("opsmesh").cache_generation("test", "absent")
+    cache_instance.delete("absent")
+    ttl = redis_client.ttl(generation_key)
+    assert 0 < ttl <= DEFAULT_GENERATION_TTL_SECONDS, (
+        "an invalidation must leave a bounded generation key, never a permanent one"
+    )
+
+
 def test_value_loaded_after_invalidation_is_published() -> None:
     cache_instance = cache()
     cache_instance.delete("key")
@@ -109,9 +125,16 @@ def test_invalidation_guard_holds_against_real_redis() -> None:
         result = cache_instance.get_or_set(key, loader)
     finally:
         thread.join(timeout=5)
-        cache_instance.delete(key)
-        redis_client.close()
+    # Assert before any cleanup: deleting the key here would hide a stale value
+    # that the guard failed to keep out of the cache.
     assert result.value == {"value": "stale"}
     assert cache_instance.get(key).found is False, (
         "a value loaded before invalidation must not persist against real Redis"
     )
+    generation_key = RedisKeyBuilder("opsmesh-test").cache_generation("real", key)
+    generation_ttl = redis_client.ttl(generation_key)
+    assert 0 < generation_ttl <= DEFAULT_GENERATION_TTL_SECONDS, (
+        "an invalidation must leave a bounded generation key against real Redis"
+    )
+    cache_instance.delete(key)
+    redis_client.close()

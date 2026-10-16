@@ -222,6 +222,7 @@ def test_failed_delivery_schedules_backoff(
     assert delivered == 0
     row = load_row(database_engine)
     assert row is not None
+    assert row.published_at is None, "a failed delivery must release its ordering decision"
     assert row.attempts == 1
     assert row.available_at > datetime.now(UTC)
     assert row.available_at <= datetime.now(UTC) + timedelta(seconds=5)
@@ -309,6 +310,96 @@ def test_start_is_never_delivered_after_its_cancel_was_published(
     delivered_again = asyncio.run(publisher(async_database_sessions, client).publish_pending())
     assert delivered_again == 1, "the superseded start is recorded as delivered"
     assert client.calls == [], "a cancelled workflow must never be started"
+
+
+def test_cancel_decided_before_its_start_is_staged_supersedes_the_start(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    """The start command commits only while the cancel is being delivered.
+
+    The cancel decision finds no start command at all, so it publishes; the
+    start that commits afterwards must observe that decision instead of
+    starting the workflow behind the completed cancellation.
+    """
+    workflow_id = "cancel-decided-then-staged-run"
+    with database_sessions() as session:
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    class StagingClient:
+        """Commits the start command while the cancel is being delivered."""
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.running: set[str] = set()
+            self.staged = False
+
+        async def start_workflow(self, name, execution, **kwargs):  # noqa: ANN001, ANN003
+            self.calls.append(name)
+            self.running.add(kwargs.get("id", ""))
+
+        def get_workflow_handle(self, workflow_id):  # noqa: ANN001, ANN201
+            client = self
+
+            class Handle:
+                async def describe(self, **kwargs):  # noqa: ANN003, ANN201
+                    class Description:
+                        # The workflow is running, so the cancel is delivered
+                        # through the handle instead of short-circuiting.
+                        status = WorkflowExecutionStatus.RUNNING
+
+                    return Description()
+
+                async def cancel(self, **kwargs):  # noqa: ANN003, ANN201
+                    if not client.staged:
+                        client.staged = True
+                        with database_sessions() as session:
+                            stage_dispatch(session, start_request(workflow_id))
+                            session.commit()
+                    client.running.discard(workflow_id)
+
+            return Handle()
+
+    client = StagingClient()
+    delivered = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered == 2, "the cancel completes and the late start is superseded"
+    assert client.staged, "the start command must have committed during the cancel delivery"
+    assert client.calls == [], "a workflow with a decided cancel must never be started"
+    delivered_again = asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered_again == 0, "both commands reached a durable decision"
+
+
+def test_concurrent_start_and_cancel_settle_without_a_running_workflow(
+    database_sessions, async_database_sessions, database_engine
+) -> None:
+    workflow_id = "concurrent-start-cancel-run"
+    with database_sessions() as session:
+        stage_dispatch(session, start_request(workflow_id))
+        stage_cancellation(session, dispatch_id=uuid4(), workflow_id=workflow_id)
+        session.commit()
+
+    client = RecordingClient()
+
+    async def run_both() -> list[int]:
+        first = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
+        second = asyncio.create_task(publisher(async_database_sessions, client).publish_pending())
+        return await asyncio.gather(first, second)
+
+    delivered = sum(asyncio.run(run_both()))
+    # A cancel deferred behind the start retries after its backoff.
+    release_rows(database_engine, DispatchOperation.CANCEL)
+    delivered += asyncio.run(publisher(async_database_sessions, client).publish_pending())
+    assert delivered == 2, "both commands must reach a durable decision"
+    assert workflow_id not in client.running, (
+        "the workflow must never stay running after its cancel is decided"
+    )
+    with Session(database_engine) as session:
+        decisions = session.scalars(
+            select(TemporalOutboxEntry.published_at).where(
+                TemporalOutboxEntry.workflow_id == workflow_id
+            )
+        ).all()
+    assert len(decisions) == 2 and all(decision is not None for decision in decisions)
 
 
 def test_signal_delivery_carries_the_stable_dispatch_identity(

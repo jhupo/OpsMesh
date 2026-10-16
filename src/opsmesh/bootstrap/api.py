@@ -13,6 +13,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from opsmesh.bootstrap.http_policy import gateway_identifier, gateway_policy
 from opsmesh.bootstrap.request_context import RequestContextMiddleware
 from opsmesh.bootstrap.resources import (
+    DatabaseResources,
     build_api_resources,
     build_database_resources,
     build_json_cache,
@@ -38,41 +39,50 @@ def create_event_loop() -> asyncio.AbstractEventLoop:
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Assemble the application; without settings the process configuration is read."""
     app_settings = settings if settings is not None else get_settings()
+    # Unified logging comes first: it resets the root handlers, so the OTLP log
+    # handler installed by the telemetry setup below survives and every log
+    # record reaches both the bounded stdout queue and the log exporter.
+    configure_logging(
+        level=app_settings.log_level,
+        format=app_settings.log_format,
+        queue_capacity=app_settings.log_queue_capacity,
+        service_name=app_settings.service_name,
+        environment=app_settings.environment,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        configure_logging(
-            level=app_settings.log_level,
-            format=app_settings.log_format,
-            queue_capacity=app_settings.log_queue_capacity,
-            service_name=app_settings.service_name,
-            environment=app_settings.environment,
-        )
-        database = build_database_resources(app_settings)
-        app.state.database_engine = database.engine
-        app.state.database_sessions = database.sessions
-        app.state.secret_cipher = database.cipher
-        app.state.storage_root = app_settings.storage_root
-        app.state.trusted_proxy_hops = app_settings.trusted_proxy_hops
-        app.state.trusted_proxy_networks = app_settings.trusted_proxy_networks
+        database: DatabaseResources | None = None
         redis_client: Redis[str] | None = None
         try:
-            api_resources = build_api_resources(app_settings)
-            redis_client = api_resources.redis_client
-            app.state.redis_client = redis_client
-            app.state.rate_limiter = api_resources.rate_limiter
-            app.state.json_cache = build_json_cache(
-                redis_client, key_prefix=app_settings.redis_key_prefix
-            )
-            yield
+            database = build_database_resources(app_settings)
+            app.state.database_engine = database.engine
+            app.state.database_sessions = database.sessions
+            app.state.secret_cipher = database.cipher
+            app.state.storage_root = app_settings.storage_root
+            app.state.trusted_proxy_hops = app_settings.trusted_proxy_hops
+            app.state.trusted_proxy_networks = app_settings.trusted_proxy_networks
+            try:
+                api_resources = build_api_resources(app_settings)
+                redis_client = api_resources.redis_client
+                app.state.redis_client = redis_client
+                app.state.rate_limiter = api_resources.rate_limiter
+                app.state.json_cache = build_json_cache(
+                    redis_client, key_prefix=app_settings.redis_key_prefix
+                )
+                yield
+            finally:
+                # Reverse acquisition order: release later resources before earlier ones.
+                app.state.redis_client = None
+                app.state.rate_limiter = None
+                app.state.json_cache = None
+                if redis_client is not None:
+                    close_redis_client(redis_client)
+                if database is not None:
+                    database.engine.dispose()
         finally:
-            # Reverse acquisition order: release later resources before earlier ones.
-            app.state.redis_client = None
-            app.state.rate_limiter = None
-            app.state.json_cache = None
-            if redis_client is not None:
-                close_redis_client(redis_client)
-            database.engine.dispose()
+            # The logging listener is the first acquired resource: every failure
+            # after its configuration must still drain and stop it.
             flush_process_telemetry()
             shutdown_logging()
 

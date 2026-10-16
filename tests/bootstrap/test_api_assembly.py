@@ -14,11 +14,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry import trace
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 import opsmesh.bootstrap.api as api_module
 import opsmesh.bootstrap.resources as resources_module
+import opsmesh.bootstrap.telemetry as telemetry_module
 from opsmesh.bootstrap.http_policy import gateway_policy
 from opsmesh.bootstrap.resources import APIResources, DatabaseResources
 from opsmesh.config import Settings
@@ -64,6 +66,10 @@ def fake_api_resources(app_settings: Settings) -> APIResources:
     )
 
 
+def _noop_export(*args: object, **kwargs: object) -> None:
+    """Skip real OTLP exporters while keeping the handler wiring observable."""
+
+
 def install_fake_assembly(monkeypatch: pytest.MonkeyPatch) -> FakeEngine:
     """Replace the infrastructure builders with observable fakes."""
     engine = FakeEngine()
@@ -101,6 +107,31 @@ def test_startup_failure_disposes_engine_before_exit(
     with pytest.raises(RuntimeError, match="redis unavailable"):
         run_lifespan(app)
     assert engine.disposed, "the database engine must be released on startup failure"
+
+
+def test_database_startup_failure_stops_the_logging_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Logging is configured before any other resource; its listener must be
+    stopped even when the next acquisition fails."""
+    install_fake_assembly(monkeypatch)
+
+    def failing_database(app_settings: Settings) -> DatabaseResources:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(api_module, "build_database_resources", failing_database)
+    shutdowns: list[str] = []
+    real_shutdown = api_module.shutdown_logging
+
+    def spy() -> None:
+        shutdowns.append("stopped")
+        real_shutdown()
+
+    monkeypatch.setattr(api_module, "shutdown_logging", spy)
+    app = api_module.create_app(settings())
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        run_lifespan(app)
+    assert shutdowns, "the logging listener must be stopped when startup fails after logging"
 
 
 def test_application_lifespan_sets_state_and_releases_engine(
@@ -144,6 +175,24 @@ def test_api_process_configures_tracing_and_unified_logging(
             "the API process must route logs through the unified bounded queue"
         )
         assert client.get("/api/v1/ping").status_code == 404
+
+
+def test_api_log_export_handler_survives_the_unified_logging_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unified logging resets the root handlers, so it must run before the OTLP
+    log handler is mounted; otherwise stdout receives logs but export gets none."""
+    monkeypatch.setattr(telemetry_module, "configure_trace_export", _noop_export)
+    monkeypatch.setattr(telemetry_module, "configure_log_export", _noop_export)
+    install_fake_assembly(monkeypatch)
+    api_module.create_app(settings(otel_exporter_otlp_endpoint="http://127.0.0.1:4317"))
+    root_handlers = logging.getLogger().handlers
+    assert any(isinstance(handler, QueueHandler) for handler in root_handlers), (
+        "the API process must route logs through the unified bounded queue"
+    )
+    assert any(isinstance(handler, LoggingHandler) for handler in root_handlers), (
+        "the OTLP log handler must stay mounted on the root logger after logging setup"
+    )
 
 
 def test_application_builds_its_database_through_the_configured_assembly(

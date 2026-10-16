@@ -21,6 +21,11 @@ DEFAULT_CACHE_TTL_SECONDS = 60
 DEFAULT_LOCK_TTL_SECONDS = 30
 DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS = 5.0
 DEFAULT_LOCK_RETRY_INTERVAL_SECONDS = 0.025
+# The generation key must outlive any in-flight loader lease, otherwise an
+# expired generation would read as "0" and let a stale load publish. It is
+# still bounded so invalidated keys never accumulate: 24h far exceeds the
+# default 30s loader lease, and the loader lease itself bounds publication.
+DEFAULT_GENERATION_TTL_SECONDS = 86_400
 
 
 @dataclass(frozen=True)
@@ -35,7 +40,9 @@ class RedisJsonCache:
     the invalidation generation observed before loading.
 
     ``delete`` advances the generation first, so a loader that started before
-    the invalidation can never publish its (now stale) result afterwards.
+    the invalidation can never publish its (now stale) result afterwards. The
+    generation key carries a bounded TTL, so invalidations never accumulate
+    keys for entries that no longer exist.
     """
 
     _PUBLISH_SCRIPT = """
@@ -49,6 +56,16 @@ class RedisJsonCache:
     _PUBLISH_LOCK_LOST = 0
     _PUBLISH_INVALIDATED = 2
     _PUBLISHED = 1
+    _INVALIDATE_SCRIPT = """
+        local generation = redis.call('get', KEYS[1])
+        if generation == false then
+            redis.call('set', KEYS[1], '1')
+        else
+            redis.call('incr', KEYS[1])
+        end
+        redis.call('expire', KEYS[1], ARGV[1])
+        return redis.call('del', KEYS[2])
+    """
 
     def __init__(
         self,
@@ -57,14 +74,19 @@ class RedisJsonCache:
         *,
         namespace: str,
         default_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+        generation_ttl_seconds: int = DEFAULT_GENERATION_TTL_SECONDS,
     ) -> None:
         if default_ttl_seconds <= 0:
             raise ValueError("default_ttl_seconds must be greater than zero")
+        if generation_ttl_seconds <= 0:
+            raise ValueError("generation_ttl_seconds must be greater than zero")
         self._redis = redis
         self._keys = keys
         self._namespace = namespace
         self._default_ttl_seconds = default_ttl_seconds
+        self._generation_ttl_seconds = generation_ttl_seconds
         self._publish = redis.register_script(self._PUBLISH_SCRIPT)
+        self._invalidate = redis.register_script(self._INVALIDATE_SCRIPT)
 
     def get(self, key: str) -> CachedValue:
         storage_key = self._storage_key(key)
@@ -160,11 +182,15 @@ class RedisJsonCache:
                 )
 
     def delete(self, key: str) -> int:
-        generation_key = self._generation_key(key)
         # Invalidate before deleting so a concurrent loader cannot publish the
-        # pre-delete value after the delete completes.
-        self._redis.incr(generation_key)
-        return int(self._redis.delete(self._storage_key(key)))
+        # pre-delete value after the delete completes. One script advances the
+        # generation, bounds its TTL and removes the entry atomically.
+        return int(
+            self._invalidate(
+                keys=[self._generation_key(key), self._storage_key(key)],
+                args=[self._generation_ttl_seconds],
+            )
+        )
 
     def _generation(self, key: str) -> str:
         current = self._redis.get(self._generation_key(key))

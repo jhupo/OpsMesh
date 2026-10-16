@@ -10,7 +10,7 @@ from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
-from sqlalchemy import Table, func, select
+from sqlalchemy import Table, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -268,7 +268,7 @@ class TemporalOutboxPublisher:
         context = self._restore_context(carrier) if self._restore_context else nullcontext()
         try:
             with context:
-                outcome = await self._deliver_command(request)
+                outcome = await self._deliver_command(dispatch_id, token, request)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -277,54 +277,87 @@ class TemporalOutboxPublisher:
         if outcome is DispatchOutcome.DEFERRED:
             await self._record_deferral(dispatch_id, token)
             return 0
-        await self._record_published(dispatch_id, token)
-        return 1
+        if outcome is DispatchOutcome.SUPERSEDED or outcome is DispatchOutcome.DELIVERED:
+            await self._record_published(dispatch_id, token)
+            return 1
+        # The claim expired before the ordering decision; the current owner delivers it.
+        return 0
 
-    async def _deliver_command(self, request: DispatchRequest) -> DispatchOutcome:
+    async def _deliver_command(
+        self, dispatch_id: UUID, token: UUID, request: DispatchRequest
+    ) -> DispatchOutcome | None:
         """Deliver one command, keeping start and cancel causally ordered.
 
-        A cancel is published only when its start command is already published
-        (the Workflow then exists) or was never staged at all; otherwise it is
-        deferred so the start is delivered first. A start whose workflow already
-        has a published cancel is superseded and never started.
+        The sibling check and its durable decision share one transaction that
+        holds a per-workflow advisory lock, so a start and its cancel can never
+        both pass their sibling check: whichever decision commits first is seen
+        by the other. Only the Temporal call runs after the lock is released; a
+        failed delivery releases the decision for a later retry. Signals carry
+        no ordering contract and are delivered directly.
         """
-        if request.operation == DispatchOperation.START:
-            cancelled = await self._has_command(
-                request.workflow_id, DispatchOperation.CANCEL, published=True
+        if request.operation == DispatchOperation.SIGNAL:
+            await dispatch_workflow(self._client, request, task_queue=self._task_queue)
+            return DispatchOutcome.DELIVERED
+        async with self._sessions.begin() as session:
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:workflow_id, 0))"),
+                {"workflow_id": request.workflow_id},
             )
-            if cancelled:
-                logger.info(
-                    "Dispatch start superseded by an earlier cancellation",
-                    extra={"dispatch_id": str(request.dispatch_id)},
+            row = await session.scalar(
+                select(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.id == dispatch_id,
+                    TemporalOutboxEntry.claim_token == token,
                 )
-                return DispatchOutcome.SUPERSEDED
-        elif request.operation == DispatchOperation.CANCEL:
-            starting = await self._has_command(
-                request.workflow_id, DispatchOperation.START, published=False
+                .with_for_update()
             )
-            if starting:
-                return DispatchOutcome.DEFERRED
+            if row is None:
+                return None
+            if request.operation == DispatchOperation.START:
+                cancelled = await self._has_sibling(
+                    session, request.workflow_id, DispatchOperation.CANCEL, published=True
+                )
+                if cancelled:
+                    logger.info(
+                        "Dispatch start superseded by an earlier cancellation",
+                        extra={"dispatch_id": str(request.dispatch_id)},
+                    )
+                    row.published_at = datetime.now(UTC)
+                    return DispatchOutcome.SUPERSEDED
+            elif request.operation == DispatchOperation.CANCEL:
+                starting = await self._has_sibling(
+                    session, request.workflow_id, DispatchOperation.START, published=False
+                )
+                if starting:
+                    return DispatchOutcome.DEFERRED
+            # The decision is durable before the network call, so a sibling that
+            # commits afterwards observes it instead of racing past the check.
+            row.published_at = datetime.now(UTC)
         await dispatch_workflow(self._client, request, task_queue=self._task_queue)
         return DispatchOutcome.DELIVERED
 
-    async def _has_command(
-        self, workflow_id: str, operation: DispatchOperation, *, published: bool
+    async def _has_sibling(
+        self,
+        session: AsyncSession,
+        workflow_id: str,
+        operation: DispatchOperation,
+        *,
+        published: bool,
     ) -> bool:
         published_filter = (
             TemporalOutboxEntry.published_at.is_not(None)
             if published
             else TemporalOutboxEntry.published_at.is_(None)
         )
-        async with self._sessions() as session:
-            count = await session.scalar(
-                select(func.count())
-                .select_from(TemporalOutboxEntry)
-                .where(
-                    TemporalOutboxEntry.workflow_id == workflow_id,
-                    TemporalOutboxEntry.operation == operation.value,
-                    published_filter,
-                )
+        count = await session.scalar(
+            select(func.count())
+            .select_from(TemporalOutboxEntry)
+            .where(
+                TemporalOutboxEntry.workflow_id == workflow_id,
+                TemporalOutboxEntry.operation == operation.value,
+                published_filter,
             )
+        )
         return bool(count)
 
     async def _record_published(self, dispatch_id: UUID, token: UUID) -> None:
@@ -353,6 +386,9 @@ class TemporalOutboxPublisher:
             )
             if row is None:
                 return
+            # Release the pre-delivery decision so a later retry re-decides the
+            # ordering against the siblings committed in the meantime.
+            row.published_at = None
             row.attempts += 1
             row.available_at = datetime.now(UTC) + timedelta(
                 seconds=min(2 ** min(row.attempts, 8), _MAX_BACKOFF_SECONDS)

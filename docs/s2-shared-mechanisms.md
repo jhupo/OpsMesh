@@ -155,4 +155,52 @@
 | 服务器（无参工厂实证） | `uvicorn --factory target opsmesh.main:create_app` | `resolved: OpsMesh`，启动成功 |
 | 服务器（评审场景复验，真实 Redis） | 完整应用逐项访问 | 关闭文档→统一 404 envelope；未匹配路由带 `request_id`；CORS 预检 200；每窗口 1 次第二次 429 `rate_limited`；API 进程真实 tracer provider + 统一有界日志队列，输出含 `request_id`/`trace_id` 的结构化请求日志 |
 
-第 9.3、9.4、9.7 的复现此前仅用模拟依赖；本次已在服务器用真实 PostgreSQL/Temporal/Redis 补齐对应验证。8 项问题状态：implemented + verified（9.4 的接收方去重规则属后续 S7 workflow 合同，已按第 16.2 节登记为待关闭项）。
+第 9.3、9.4、9.7 的复现此前仅用模拟依赖；本次已在服务器用真实 PostgreSQL/Redis/Temporal 补齐对应验证。8 项问题状态：implemented + verified（9.4 的接收方去重规则属后续 S7 workflow 合同，已按第 16.2 节登记为待关闭项）。
+
+## 10. 第二轮评审修复（提交 `15bdd5f5` 的 5 项问题）
+
+来源：对 `15bdd5f5` 的代码评审，结论集中在"决策未原子化、装配顺序与清理覆盖不全、回收策略缺失、测试自身可被规避"。5 项全部修复，本地与服务器真实 PostgreSQL/Redis/Temporal 复验通过。
+
+### 10.1 [P1] START/CANCEL 并发窗口（决策原子化）
+
+- **问题**：`_deliver_command` 用独立事务查询兄弟命令，检查与标记 `published_at` 之间有窗口。取消查询时 START 尚未提交，随后 START 提交并投递，两边都通过检查——取消标记完成后 Workflow 仍然启动（交错模拟已复现）。
+- **修复**：[`outbox.py`](src/opsmesh/temporal/dispatch/outbox.py) 将"兄弟检查 + 决策持久化"合并到同一事务，事务持有 PostgreSQL 事务级 advisory lock（`pg_advisory_xact_lock(hashtextextended(workflow_id, 0))`），同一 Workflow 的 START/CANCEL 因此串行化，先提交的决策必然被后决策方观察到：START 见已决策 CANCEL → SUPERSEDED（标记终态不启动）；CANCEL 见未决策 START → DEFERRED。决策事务内即把本行 `published_at` 置位（决策先于网络调用持久化），Temporal 投递在锁外进行（网络 I/O 不持 DB 锁）；投递失败时 `_record_failure` 清回 `published_at`，命令回到未决策态按新同胞状态重判。SIGNAL 无因果序合同，仍直接投递。`_has_command` 改为决策事务内的 `_has_sibling(session, ...)`。
+- **验证**：真实 PG 测试 `test_cancel_decided_before_its_start_is_staged_supersedes_the_start`（取消投递期间才提交 START，START 随后被 SUPERSEDED，`client.calls == []`）、`test_concurrent_start_and_cancel_settle_without_a_running_workflow`（两个 publisher 并发，终态两行均有决策且 Workflow 不停留运行）；`test_failed_delivery_schedules_backoff` 增加 `published_at is None` 断言（失败释放决策）。
+
+### 10.2 [P2] OTLP 日志导出生效
+
+- **问题**：`configure_logging()` 在 lifespan 中清空 root handlers，把创建应用时已挂载的 OTLP `LoggingHandler` 一并移除——stdout 有日志、OTLP 零条（内存导出器复现）。
+- **修复**：[`api.py`](src/opsmesh/bootstrap/api.py) 将 `configure_logging(...)` 移到 `create_app` 主体，且先于 `configure_api_telemetry(app, app_settings)`：统一日志先重置 root handlers，OTLP 处理器随后挂载，两者并存。
+- **验证**：`test_api_log_export_handler_survives_the_unified_logging_setup`（create_app 后 root logger 同时存在 QueueHandler 与 OTLP LoggingHandler）；服务器内存导出器实证：应用装配后发出的日志记录被 OTLP 导出器收到（1 条，payload 匹配）。
+
+### 10.3 [P2] 数据库初始化失败泄漏日志监听线程
+
+- **问题**：`build_database_resources` 在清理 try/finally 之前，日志已启动时数据库构建失败，`shutdown_logging()` 不执行，监听线程残留（已复现）。
+- **修复**：lifespan 重构为"日志配置之后的一切获取都在 try 内"：外层 finally 固定执行 `flush_process_telemetry()` + `shutdown_logging()`；内层 finally 维持逆序释放（redis client → database engine），`database` 预声明为 `None` 并按实际构建情况释放。
+- **验证**：`test_database_startup_failure_stops_the_logging_listener`（数据库构建失败时 spy 记录到 `shutdown_logging` 调用）；服务器实证：失败后 `telemetry.logging._listener is None`，监听线程已停止。
+
+### 10.4 [P2] 代次键永久累积
+
+- **问题**：`delete()` 每次 `incr` 代次键但无过期，目标缓存不存在也留下永久键。
+- **修复**：[`cache.py`](src/opsmesh/shared/redis/cache.py) 新增原子 Lua 脚本 `_INVALIDATE_SCRIPT`：递增（或初始化）代次键、设置 TTL、删除存储键一步完成。TTL 取 `DEFAULT_GENERATION_TTL_SECONDS = 86_400`（24h）：必须长于任何加载租约（默认 30s），否则过期代次读作 '0' 会放行旧值发布；加载租约本身由锁检查兜底（锁过期则发布失败），24h 覆盖全部合理场景且有界。
+- **验证**：`test_delete_bounds_the_generation_key_with_a_ttl`（fakeredis：TTL 在 `(0, 86400]`）；真实 Redis 实证：delete 不存在的键后代次键 TTL 为 86400s，且加载期间 delete 的守卫仍然拦阻旧值发布。
+
+### 10.5 [P2] 真实 Redis 测试无法证明旧值未重新发布
+
+- **问题**：`test_invalidation_guard_holds_against_real_redis` 在 finally 中先删除目标缓存再断言，即使旧值被错误写入断言也通过（内存中移除守卫仍通过）。
+- **修复**：调整为"先断言、后清理"：join 加载线程后立即断言旧值未持久化与代次键 TTL 有界，全部通过后才 `delete(key)` 清理并关闭连接。
+- **验证**：服务器真实 Redis 下该测试通过；反向实证：故意把发布脚本替换为无代次检查的版本后，交错场景中旧值确实重新持久化（证明修复后的测试能抓住该回归）。
+
+### 10.6 第二轮修复验证证据
+
+| 环境 | 命令 | 结果 |
+| --- | --- | --- |
+| 本地 Windows | `uv run ruff check tests src/opsmesh migrations scripts` | All checks passed |
+| 本地 Windows | `uv run mypy` | Success: no issues found in 62 source files |
+| 本地 Windows | `uv run lint-imports --no-cache` | Contracts: 10 kept, 0 broken |
+| 本地 Windows | `uv run python scripts/audit_app_layout.py --architecture-check` | Architecture verified: 62 source files |
+| 本地 Windows | `uv run pytest tests -q` | 63 passed, 16 skipped（跳过项均为 Windows 环境性/PG/Temporal/Redis 未配置） |
+| 服务器（真实 PG 16 + Redis + Temporal 1.29.1，host 网络容器） | `python -m pytest tests`（OPSMESH_TEST_DATABASE_URL/TEMPORAL_ADDRESS/REDIS_URL） | **79 passed, 0 failed, 0 skipped**（dispatch outbox 13 项含 2 项新原子性测试、bootstrap 14、cache 6 含真实 Redis、security 20、shared_mechanisms 24、codec 3、replay 1） |
+| 服务器（评审场景复验） | `python /verify/s2_review_scenarios.py` | OTLP 导出收到记录；数据库失败后 listener 停止（`_listener is None`）；真实 Redis 代次键 TTL 86400s 且守卫有效；移除守卫后旧值持久化（反向证明测试有效）；START/CANCEL 原子性由真实 PG 测试覆盖 |
+
+5 项问题状态：implemented + verified。第二轮复验使用服务器真实 PostgreSQL/Redis/Temporal（host 网络容器 `opsmesh-refactor-test:initial`，依赖版本与本地 uv.lock 一致：temporalio 1.34.0、opentelemetry-sdk 1.44.0、fakeredis 2.35.1 + lupa）。
