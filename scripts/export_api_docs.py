@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
-import os
+import sys
 from collections import defaultdict
 from enum import Enum
 from pathlib import Path
@@ -88,7 +88,6 @@ def dependency_details(route: Any) -> list[str]:
                 "require_workspace_context",
                 "require_account_action",
                 "get_authenticated_worker",
-                "plugin_principal",
             }:
                 details.append(f"`{name}`" + (f"：`{actions}`" if actions else ""))
         for child in dependency.dependencies:
@@ -197,20 +196,20 @@ def render_schemas(schemas: dict[str, Any]) -> str:
 
 
 def build_documents() -> dict[Path, str]:
-    # This subprocess exports a canonical /api/v1 contract, without telemetry exporters.
-    os.environ.update(
-        {
-            "OPSMESH_ENVIRONMENT": "test",
-            "OPSMESH_API_PREFIX": "/api/v1",
-            "OPSMESH_ENABLE_API_DOCS": "true",
-            "OPSMESH_TRACING_ENABLED": "false",
-            "OPSMESH_OTEL_LOGS_ENABLED": "false",
-        }
-    )
+    # Construct the canonical contract without starting the application lifespan.
+    sys.path.insert(0, str(ROOT / "src"))
     from fastapi.routing import APIRoute
 
-    from opsmesh.main import app
+    from opsmesh.bootstrap.api import create_app
+    from opsmesh.config import Settings
 
+    app = create_app(
+        Settings(
+            database_url="postgresql+psycopg://unused@127.0.0.1/unused",
+            storage_root=str(ROOT / ".tmp" / "api-export"),
+            api_prefix="/api/v1",
+        )
+    )
     document = app.openapi()
     routes = {
         (route.path, method.lower()): route
@@ -230,7 +229,10 @@ def build_documents() -> dict[Path, str]:
             groups[tag].append((path, method, operation, routes[key]))
     if operations != set(routes):
         raise ValueError("OpenAPI operations do not exactly cover registered API routes")
-    schemas = document["components"]["schemas"]
+    if not operations:
+        # Feature routers arrive with their own steps; generate documents once routes exist.
+        return {}
+    schemas = document.get("components", {}).get("schemas", {})
     missing = references(document) - schemas.keys()
     if missing:
         raise ValueError(f"Unresolved schema references: {sorted(missing)}")
@@ -276,6 +278,12 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="Fail on missing or stale artifacts")
     args = parser.parse_args()
     documents = build_documents()
+    if not documents:
+        if args.check:
+            print("No feature routes registered; API documentation export deferred.")
+            return 0
+        print("No feature routes registered; nothing to export")
+        return 0
     existing = set((ROOT / "docs/api").glob("*.md"))
     stale = existing - documents.keys()
     changed = [

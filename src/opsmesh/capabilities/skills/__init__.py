@@ -1,1 +1,0 @@
-"""Capability skills modules."""

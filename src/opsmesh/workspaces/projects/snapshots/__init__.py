@@ -1,1 +1,0 @@
-"""Workspace project feature package."""

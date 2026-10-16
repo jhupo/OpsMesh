@@ -1,25 +1,53 @@
+"""Build database, Redis and cache resources; owners receive explicit options."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import cast
 
-from fastapi import FastAPI
+import sqlalchemy.ext.asyncio
+from redis import Redis
+from sqlalchemy import Engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.shared.config import Settings
-from opsmesh.shared.redis.client import close_redis_client, create_redis_client
+from opsmesh.config import Settings
+from opsmesh.shared.db.session import create_database_engine
+from opsmesh.shared.redis.cache import RedisJsonCache
+from opsmesh.shared.redis.client import create_redis_client
+from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
+from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.telemetry.context import capture_trace_context
+
+POSTGRES_PSYCOPG_DRIVER = "postgresql+psycopg"
 
 
-class ShutdownResource(Protocol):
-    def shutdown(self) -> None: ...
+def secret_cipher(settings: Settings) -> SecretCipher:
+    return SecretCipher(
+        key=settings.credential_encryption_key,
+        key_id=settings.credential_encryption_key_id,
+        previous_keys=settings.credential_encryption_previous_keys,
+    )
 
 
 @dataclass(frozen=True)
 class APIResources:
-    redis_client: object
+    redis_client: Redis[str]
     rate_limiter: FixedWindowRateLimiter
 
 
 def build_api_resources(settings: Settings) -> APIResources:
-    redis_client = create_redis_client(settings)
+    redis_client = create_redis_client(
+        settings.redis_url,
+        max_connections=settings.redis_max_connections,
+        socket_timeout_seconds=settings.redis_socket_timeout_seconds,
+        socket_connect_timeout_seconds=settings.redis_socket_connect_timeout_seconds,
+        health_check_interval_seconds=settings.redis_health_check_interval_seconds,
+    )
     return APIResources(
         redis_client=redis_client,
         rate_limiter=FixedWindowRateLimiter.from_redis(
@@ -29,14 +57,56 @@ def build_api_resources(settings: Settings) -> APIResources:
     )
 
 
-def shutdown_api_resources(app: FastAPI) -> None:
-    redis_client = getattr(app.state, "redis_client", None)
-    if redis_client is not None:
-        close_redis_client(redis_client)
-    telemetry_runtime: ShutdownResource | None = getattr(
-        app.state,
-        "telemetry_runtime",
-        None,
+def build_database_resources(settings: Settings) -> tuple[Engine, sessionmaker[Session]]:
+    engine = create_database_engine(
+        settings.database_url,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout_seconds=settings.database_pool_timeout_seconds,
+        pool_recycle_seconds=settings.database_pool_recycle_seconds,
+        statement_timeout_ms=settings.database_statement_timeout_ms,
     )
-    if telemetry_runtime is not None:
-        telemetry_runtime.shutdown()
+    cipher = secret_cipher(settings)
+    return engine, sessionmaker(
+        bind=engine,
+        autoflush=False,
+        expire_on_commit=False,
+        info={"dispatch_cipher": cipher, "dispatch_trace_context": capture_trace_context},
+    )
+
+
+def build_json_cache(redis_client: object | None, *, key_prefix: str) -> RedisJsonCache | None:
+    if redis_client is None:
+        return None
+    return RedisJsonCache(
+        cast("Redis[str]", redis_client), RedisKeyBuilder(key_prefix), namespace="api"
+    )
+
+
+@dataclass(frozen=True)
+class TemporalDatabase:
+    engine: AsyncEngine
+    sessions: async_sessionmaker[AsyncSession]
+
+
+@asynccontextmanager
+async def temporal_database(settings: Settings) -> AsyncIterator[TemporalDatabase]:
+    database_url = make_url(settings.database_url).set(drivername=POSTGRES_PSYCOPG_DRIVER)
+    configured_options = database_url.query.get("options", "")
+    if not isinstance(configured_options, str):
+        raise ValueError("Database connection options must be a single string")
+    options = (
+        f"{configured_options} -c statement_timeout={settings.database_statement_timeout_ms}"
+    ).strip()
+    engine = sqlalchemy.ext.asyncio.create_async_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=settings.temporal_outbox_database_pool_size,
+        max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
+        connect_args={"options": options},
+    )
+    try:
+        yield TemporalDatabase(engine, async_sessionmaker(engine, expire_on_commit=False))
+    finally:
+        await engine.dispose()

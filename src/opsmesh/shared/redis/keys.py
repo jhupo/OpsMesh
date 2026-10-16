@@ -1,3 +1,5 @@
+"""Explicit tenant- and resource-scoped Redis key construction."""
+
 from dataclasses import dataclass
 
 
@@ -5,11 +7,11 @@ from dataclasses import dataclass
 class RedisKeyBuilder:
     prefix: str
 
-    def idempotency_key(self, workspace_id: str, idempotency_key: str) -> str:
-        return self._join("idempotency", workspace_id, idempotency_key)
-
     def cache(self, namespace: str, key: str) -> str:
         return self._join("cache", namespace, key)
+
+    def cache_lock(self, namespace: str, key: str) -> str:
+        return self._join("cache-lock", namespace, key)
 
     def _join(self, *parts: str) -> str:
         clean_parts = [self.prefix.strip(":")]

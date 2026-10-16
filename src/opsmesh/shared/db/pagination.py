@@ -1,3 +1,5 @@
+"""SQL query pagination with total counts."""
+
 from typing import TypeVar
 
 from sqlalchemy import Select, func, select

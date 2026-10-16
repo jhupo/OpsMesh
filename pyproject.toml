@@ -8,13 +8,12 @@ license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
     "opsmesh-operator[host]==0.1.0rc23",
-    "opsmesh-plugin-sdk==0.6.0",
     "alembic>=1.18.4",
-    "boto3>=1.35.0,<2.0.0",
     "cryptography>=48.0.0",
     "docker>=7.2.0,<8.0.0",
     "fastapi>=0.116.0,<1.0.0",
     "httpx>=0.28.0,<1.0.0",
+    "httpx2>=2.12.0,<3.0.0",
     "jsonschema>=4.26.0,<5.0.0",
     "limits>=5.8.0,<6.0.0",
     "mcp>=2.0.0,<3.0.0",
@@ -34,6 +33,7 @@ dependencies = [
     "pgvector>=0.5.0,<0.6.0",
     "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.3.4",
+    "pyyaml>=6.0,<7.0",
     "pydantic-settings>=2.10.0,<3.0.0",
     "pwdlib[argon2]>=0.3.1,<0.4.0",
     "python-json-logger>=3.3.0,<4.0.0",
@@ -54,13 +54,12 @@ compute = ["mcp>=2.0.0,<3.0.0"]
 packaging = ["pyinstaller==6.22.2"]
 dev = [
     "aiosqlite>=0.22.1",
-    "boto3-stubs[s3]==1.43.23",
     "fakeredis[lua]>=2.35.1",
     "import-linter>=2.11,<3.0",
     "mypy>=1.17.0,<2.0.0",
     "pytest>=8.4.0,<9.0.0",
-    "pyyaml>=6.0",
     "ruff>=0.12.0,<1.0.0",
+    "types-pyyaml>=6.0.12",
     "types-docker>=7.2.0.20260827",
     "types-jsonschema>=4.26.0.20260518",
     "types-redis>=4.6.0.20241004",
@@ -74,7 +73,6 @@ members = ["operator"]
 
 [tool.uv.sources]
 opsmesh-operator = { workspace = true }
-opsmesh-plugin-sdk = { path = "vendor/opsmesh_plugin_sdk-0.6.0-py3-none-any.whl" }
 
 [tool.setuptools]
 include-package-data = false
@@ -96,6 +94,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["backup", "backup_2"]
 
 [tool.ruff.lint]
 select = [
@@ -133,155 +132,99 @@ files = ["src/opsmesh"]
 root_package = "opsmesh"
 include_external_packages = true
 
+# V4 contracts (docs/source-refactor-plan-v4.md section 12). Each step extends
+# this section for the modules it implements; the root and second-level graphs
+# must stay acyclic and shared must keep zero product dependencies.
+
 [[tool.importlinter.contracts]]
-id = "http-transport"
-name = "HTTP middleware is composed only at the API entry point"
-type = "protected"
-protected_modules = [
-    "opsmesh.shared.http.middleware",
-]
-allowed_importers = [
-    "opsmesh.main",
+id = "v4-root-independence"
+name = "Shared has zero product module dependencies"
+type = "forbidden"
+source_modules = ["opsmesh.shared"]
+forbidden_modules = [
+    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.bootstrap",
+    "opsmesh.config", "opsmesh.main",
 ]
 
 [[tool.importlinter.contracts]]
-id = "shared-no-business"
-name = "Shared mechanisms cannot import business modules or bootstrap"
+id = "v4-telemetry-foundation"
+name = "Telemetry uses only shared mechanisms and observability SDKs"
+type = "forbidden"
+source_modules = ["opsmesh.telemetry"]
+forbidden_modules = ["opsmesh.temporal", "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main"]
+
+[[tool.importlinter.contracts]]
+id = "v4-temporal-foundation"
+name = "Temporal uses shared and telemetry only; no business modules"
+type = "forbidden"
+source_modules = ["opsmesh.temporal"]
+forbidden_modules = [
+    "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main",
+    "opsmesh.identity", "opsmesh.capabilities", "opsmesh.resources",
+    "opsmesh.governance", "opsmesh.extensions", "opsmesh.execution",
+    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
+    "opsmesh.platform",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-config-foundation"
+name = "Process configuration depends on shared mechanisms only"
+type = "forbidden"
+source_modules = ["opsmesh.config"]
+forbidden_modules = [
+    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.bootstrap",
+    "opsmesh.main", "opsmesh.shared.http",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-shared-core-independent"
+name = "Core types and pure helpers cannot depend on infrastructure adapters"
 type = "forbidden"
 source_modules = [
-    "opsmesh.shared",
+    "opsmesh.shared.contracts", "opsmesh.shared.errors", "opsmesh.shared.files",
+    "opsmesh.shared.pagination", "opsmesh.shared.serialization",
+    "opsmesh.shared.version", "opsmesh.shared.mail",
 ]
 forbidden_modules = [
-    "opsmesh.identity",
-    "opsmesh.workspaces",
-    "opsmesh.agents",
-    "opsmesh.teams",
-    "opsmesh.capabilities",
-    "opsmesh.resources",
-    "opsmesh.orchestration",
-    "opsmesh.runtime",
-    "opsmesh.platform",
-    "opsmesh.messaging",
-    "opsmesh.governance",
-    "opsmesh.bootstrap",
-    "opsmesh.main",
+    "opsmesh.shared.db", "opsmesh.shared.redis",
+    "opsmesh.shared.http", "opsmesh.shared.security",
 ]
 
 [[tool.importlinter.contracts]]
-id = "pagination-no-transport"
+id = "v4-pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
+source_modules = ["opsmesh.shared.pagination"]
+forbidden_modules = ["fastapi", "starlette", "sqlalchemy"]
+
+[[tool.importlinter.contracts]]
+id = "v4-shared-infrastructure-no-http"
+name = "Database and Redis mechanisms have no HTTP framework dependency"
+type = "forbidden"
+source_modules = ["opsmesh.shared.db", "opsmesh.shared.redis", "opsmesh.shared.security"]
+forbidden_modules = ["fastapi", "starlette", "opsmesh.shared.http"]
+
+[[tool.importlinter.contracts]]
+id = "v4-shared-no-execution-sdk"
+name = "Shared does not own execution or telemetry SDK integration"
+type = "forbidden"
+source_modules = ["opsmesh.shared"]
+forbidden_modules = ["temporalio", "agents", "openai", "opentelemetry"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "v4-bootstrap-not-imported"
+name = "Bootstrap is never imported by other application modules"
+type = "forbidden"
 source_modules = [
-    "opsmesh.shared.pagination",
+    "opsmesh.shared", "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
 ]
-forbidden_modules = [
-    "fastapi",
-    "starlette",
-    "sqlalchemy",
-]
+forbidden_modules = ["opsmesh.bootstrap"]
 
 [[tool.importlinter.contracts]]
 id = "production-no-test-framework"
 name = "Production code cannot depend on the test framework"
 type = "forbidden"
-source_modules = [
-    "opsmesh",
-]
-forbidden_modules = [
-    "pytest",
-]
-
-[[tool.importlinter.contracts]]
-id = "docker-sdk-boundary"
-name = "Docker daemon access stays in its infrastructure adapter"
-type = "protected"
-protected_modules = [
-    "docker",
-]
-allowed_importers = [
-    "opsmesh.runtime.sandboxes.factory",
-]
-
-[[tool.importlinter.contracts]]
-id = "s3-sdk-boundary"
-name = "S3 SDK access stays in its storage adapter"
-type = "protected"
-protected_modules = [
-    "boto3",
-]
-allowed_importers = [
-    "opsmesh.resources.storage.backends",
-]
-
-[[tool.importlinter.contracts]]
-id = "provider-neutral-contracts"
-name = "Agent runtime contracts stay independent of vendor SDK and HTTP"
-type = "forbidden"
-source_modules = [
-    "opsmesh.agents.execution.contracts",
-]
-forbidden_modules = [
-    "agents",
-    "openai",
-    "fastapi",
-    "starlette",
-    "opsmesh.bootstrap",
-]
-
-[[tool.importlinter.contracts]]
-id = "bootstrap-composition"
-name = "Only application entry points import concrete composition"
-type = "protected"
-protected_modules = [
-    "opsmesh.bootstrap",
-]
-allowed_importers = [
-    "opsmesh.main",
-    "opsmesh.delivery",
-    "opsmesh.runtime.temporal.cli",
-    "opsmesh.platform.updates.daemon",
-]
-
-[[tool.importlinter.contracts]]
-id = "email-http-composition"
-name = "Email HTTP routes are only composed by the platform API"
-type = "protected"
-protected_modules = [
-    "opsmesh.messaging.email.routes",
-]
-allowed_importers = [
-    "opsmesh.bootstrap.platform_routes",
-]
-
-[[tool.importlinter.contracts]]
-id = "email-service-boundary"
-name = "Email persistence and delivery stay independent of HTTP and consumers"
-type = "forbidden"
-source_modules = [
-    "opsmesh.messaging.email.service",
-    "opsmesh.messaging.email.schemas",
-    "opsmesh.messaging.email.models",
-    "opsmesh.messaging.email.smtp",
-]
-forbidden_modules = [
-    "opsmesh.bootstrap",
-    "opsmesh.runtime",
-    "opsmesh.identity",
-    "opsmesh.workspaces",
-    "opsmesh.orchestration",
-    "fastapi",
-    "starlette",
-]
-
-[[tool.importlinter.contracts]]
-id = "email-model-owner"
-name = "Email persistence is private to its service and registration"
-type = "protected"
-protected_modules = [
-    "opsmesh.messaging.email.models",
-]
-allowed_importers = [
-    "opsmesh.messaging.email.service",
-    "opsmesh.bootstrap.models",
-]
+source_modules = ["opsmesh"]
+forbidden_modules = ["pytest"]
 

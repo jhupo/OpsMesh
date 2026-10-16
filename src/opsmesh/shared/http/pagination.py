@@ -1,11 +1,14 @@
+"""HTTP pagination parameter parsing and stable page responses."""
+
 from typing import Annotated, Generic, TypeVar
 
 from fastapi import Query
 from pydantic import BaseModel, Field
 
 from opsmesh.shared import pagination
+from opsmesh.shared.pagination import MAX_PAGE_LIMIT
 
-LimitQuery = Annotated[int, Query(ge=1, le=100)]
+LimitQuery = Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 T = TypeVar("T")
 

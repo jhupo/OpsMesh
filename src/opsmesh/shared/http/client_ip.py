@@ -1,40 +1,37 @@
-from ipaddress import ip_address
+"""Resolve the client source IP only across a configured, trusted proxy chain."""
+
+from collections.abc import Sequence
+from ipaddress import ip_address, ip_network
 
 from starlette.requests import Request
 
-from opsmesh.shared.http.security_context import SecurityRequestContext
 
-
-def resolve_client_ip(request: Request, *, trusted_proxy_hops: int = 0) -> str | None:
+def resolve_client_ip(
+    request: Request,
+    *,
+    trusted_proxy_hops: int = 0,
+    trusted_proxy_networks: Sequence[str] = (),
+) -> str | None:
+    """Accept forwarded addresses only across the configured, trusted proxy chain."""
     peer = request.client.host if request.client is not None else None
-    if trusted_proxy_hops <= 0:
+    if trusted_proxy_hops <= 0 or peer is None or not trusted_proxy_networks:
         return peer
     forwarded_for = request.headers.get("x-forwarded-for")
     if not forwarded_for:
         return peer
-    chain = [item.strip() for item in forwarded_for.split(",") if item.strip()]
-    if len(chain) < trusted_proxy_hops:
-        return peer
-    candidate = chain[-trusted_proxy_hops]
     try:
-        return str(ip_address(candidate))
+        networks = [ip_network(network) for network in trusted_proxy_networks]
+        peer_address = ip_address(peer)
+        if not any(peer_address in network for network in networks):
+            return peer
+        chain = [ip_address(item.strip()) for item in forwarded_for.split(",")]
+        if len(chain) < trusted_proxy_hops:
+            return peer
+        if any(
+            not any(address in network for network in networks)
+            for address in chain[len(chain) - trusted_proxy_hops + 1 :]
+        ):
+            return peer
+        return str(chain[-trusted_proxy_hops])
     except ValueError:
         return peer
-
-
-def security_request_context(request: Request) -> SecurityRequestContext:
-    app = request.scope.get("app")
-    settings = getattr(getattr(app, "state", None), "settings", None)
-    trusted_proxy_hops = getattr(settings, "trusted_proxy_hops", 0)
-    if not isinstance(trusted_proxy_hops, int) or trusted_proxy_hops < 0:
-        trusted_proxy_hops = 0
-    return SecurityRequestContext(
-        source_ip=resolve_client_ip(
-            request,
-            trusted_proxy_hops=trusted_proxy_hops,
-        ),
-        user_agent=request.headers.get("user-agent"),
-        request_id=getattr(request.state, "request_id", None),
-        path=request.url.path,
-        method=request.method,
-    )

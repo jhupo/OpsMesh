@@ -1,1 +1,1 @@
-"""Application composition and process startup boundaries."""
+"""Process assembly: dependency wiring and explicit route/model/worker registration."""

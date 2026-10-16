@@ -17,22 +17,19 @@ APP = ROOT / "src/opsmesh"
 OUTPUT = ROOT / ".tmp/app-layout-review"
 BUSINESS_ROOTS = {
     "identity",
-    "workspaces",
-    "agents",
-    "teams",
     "capabilities",
     "resources",
-    "orchestration",
-    "runtime",
-    "platform",
-    "messaging",
     "governance",
+    "extensions",
+    "execution",
+    "workspaces",
+    "orchestration",
+    "channels",
+    "platform",
 }
 ENTRYPOINTS = {
     "opsmesh.main",
-    "opsmesh.delivery",
-    "opsmesh.runtime.temporal.cli",
-    "opsmesh.platform.updates.daemon",
+    "opsmesh.bootstrap.worker_cli",
 }
 
 
@@ -50,17 +47,36 @@ def check_architecture() -> None:
     for path in files:
         module = module_name(path)
         relative = path.relative_to(APP)
-        if relative.parts[0] not in BUSINESS_ROOTS | {"shared", "bootstrap"} and path.name not in {
+        if relative.parts[0] not in BUSINESS_ROOTS | {
+            "shared",
+            "telemetry",
+            "temporal",
+            "bootstrap",
+        } and path.name not in {
             "__init__.py",
             "main.py",
-            "delivery.py",
+            "config.py",
         }:
             violations.append(f"Unclassified application file: {relative}")
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+        if path.name == "__init__.py" and not is_package_marker(tree):
+            violations.append(f"Package initializer is not an empty marker: {relative}")
         dependencies = []
+        imported_modules: dict[str, str] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
                 dependencies.append(node.module)
+                for alias in node.names:
+                    imported_modules[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+                    if (
+                        node.module.startswith("opsmesh.")
+                        and node.module.split(".")[1] != relative.parts[0]
+                        and alias.name.startswith("_")
+                    ):
+                        violations.append(
+                            f"Cross-feature private import: {module}:{node.lineno} -> "
+                            f"{node.module}.{alias.name}"
+                        )
             elif isinstance(node, ast.Import):
                 dependencies.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ClassDef):
@@ -80,8 +96,6 @@ def check_architecture() -> None:
                     if node.name in handlers:
                         violations.append(f"Duplicate job handler: {node.name}")
                     handlers[node.name] = module
-                    if module.startswith("opsmesh.runtime.workers."):
-                        violations.append(f"Business job handler retained in worker: {module}")
         for dependency in dependencies:
             if dependency.startswith(
                 tuple("opsmesh." + name for name in ("api", "domains", "core", "observability"))
@@ -92,6 +106,25 @@ def check_architecture() -> None:
             owner = dependency.split(".")[1]
             if relative.parts[0] == "shared" and owner != "shared":
                 violations.append(f"Shared imports business: {module} -> {dependency}")
+            if relative.parts[0] == "telemetry" and owner not in {"telemetry", "shared"}:
+                violations.append(f"Telemetry imports application: {module} -> {dependency}")
+            if relative.parts[0] == "temporal" and owner not in {"temporal", "shared", "telemetry"}:
+                violations.append(f"Temporal imports application: {module} -> {dependency}")
+            if relative.parts[0] == "execution" and owner not in {
+                "execution",
+                "shared",
+                "temporal",
+                "telemetry",
+                "identity",
+                "governance",
+            }:
+                violations.append(f"Execution imports business: {module} -> {dependency}")
+            if (
+                relative.parts[0] == "governance"
+                and owner not in {"governance", "shared", "temporal", "telemetry"}
+                and "models" in dependency.split(".")[2:]
+            ):
+                violations.append(f"Governance imports foreign ORM: {module} -> {dependency}")
             if (
                 owner == "bootstrap"
                 and relative.parts[0] != "bootstrap"
@@ -102,15 +135,103 @@ def check_architecture() -> None:
                 is_http_route(module) or relative.parts[0] == "bootstrap" or module in ENTRYPOINTS
             ):
                 violations.append(f"Business imports HTTP route: {module} -> {dependency}")
-    for name in ("api", "domains", "core", "observability", "runtime/workers/handlers"):
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr.startswith("_")
+                and not node.attr.startswith("__")
+            ):
+                target = node.value
+                if isinstance(target, ast.Call):
+                    target = target.func
+                if isinstance(target, ast.Name):
+                    imported = imported_modules.get(target.id, "")
+                    if (
+                        imported.startswith("opsmesh.")
+                        and imported.split(".")[1] != relative.parts[0]
+                    ):
+                        violations.append(
+                            f"Cross-feature private access: {module}:{node.lineno} -> "
+                            f"{imported}.{node.attr}"
+                        )
+    for name in (
+        "agents",
+        "teams",
+        "messaging",
+        "runtime",
+        "delivery",
+        "core",
+        "domains",
+        "api",
+        "observability",
+    ):
         if (APP / name).exists():
             violations.append(f"Superseded directory remains: {name}")
+    graph = grimp.build_graph("opsmesh", exclude_type_checking_imports=True, cache_dir=None)
+    for component in runtime_import_cycles(graph):
+        violations.append(
+            "Runtime import cycle requires a boundary change: " + ", ".join(component)
+        )
     if violations:
         raise SystemExit("\n".join(violations))
     print(
         f"Architecture verified: {len(files)} source files, {len(tables)} unique table owners, "
         f"{len(handlers)} uniquely owned job handlers."
     )
+
+
+def is_package_marker(tree: ast.Module) -> bool:
+    """A package initializer carries only a module docstring, if any."""
+    statements = tree.body
+    return not statements or (
+        len(statements) == 1
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    )
+
+
+def runtime_import_cycles(graph: grimp.ImportGraph) -> list[tuple[str, ...]]:
+    """Find actual module cycles; package dependencies are checked by import-linter."""
+    modules = set(graph.modules)
+    adjacency = {
+        module: graph.find_modules_directly_imported_by(module) & modules for module in modules
+    }
+    index = 0
+    indices: dict[str, int] = {}
+    lowlinks: dict[str, int] = {}
+    stack: list[str] = []
+    active: set[str] = set()
+    components: list[tuple[str, ...]] = []
+
+    def visit(module: str) -> None:
+        nonlocal index
+        indices[module] = lowlinks[module] = index
+        index += 1
+        stack.append(module)
+        active.add(module)
+        for dependency in sorted(adjacency[module]):
+            if dependency not in indices:
+                visit(dependency)
+                lowlinks[module] = min(lowlinks[module], lowlinks[dependency])
+            elif dependency in active:
+                lowlinks[module] = min(lowlinks[module], indices[dependency])
+        if lowlinks[module] != indices[module]:
+            return
+        component = []
+        while True:
+            dependency = stack.pop()
+            active.remove(dependency)
+            component.append(dependency)
+            if dependency == module:
+                break
+        if len(component) > 1 or module in adjacency[module]:
+            components.append(tuple(sorted(component)))
+
+    for module in sorted(modules):
+        if module not in indices:
+            visit(module)
+    return sorted(components)
 
 
 def expression(node: ast.AST | None) -> str:

@@ -1,10 +1,14 @@
+"""Redis client creation, closing and pool snapshots."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from redis import Redis
 
-from opsmesh.shared.config import Settings, get_settings
+DEFAULT_SOCKET_TIMEOUT_SECONDS = 5.0
+DEFAULT_SOCKET_CONNECT_TIMEOUT_SECONDS = 5.0
+DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -23,14 +27,21 @@ class RedisPoolSnapshot:
         }
 
 
-def create_redis_client(settings: Settings) -> Redis[str]:
+def create_redis_client(
+    url: str,
+    *,
+    max_connections: int,
+    socket_timeout_seconds: float = DEFAULT_SOCKET_TIMEOUT_SECONDS,
+    socket_connect_timeout_seconds: float = DEFAULT_SOCKET_CONNECT_TIMEOUT_SECONDS,
+    health_check_interval_seconds: int = DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+) -> Redis[str]:
     return Redis.from_url(
-        settings.redis_url,
+        url,
         decode_responses=True,
-        max_connections=settings.redis_max_connections,
-        socket_timeout=settings.redis_socket_timeout_seconds,
-        socket_connect_timeout=settings.redis_socket_connect_timeout_seconds,
-        health_check_interval=settings.redis_health_check_interval_seconds,
+        max_connections=max_connections,
+        socket_timeout=socket_timeout_seconds,
+        socket_connect_timeout=socket_connect_timeout_seconds,
+        health_check_interval=float(health_check_interval_seconds),
     )
 
 
@@ -64,6 +75,3 @@ def _pool_list_size(pool: object, attr_name: str) -> int | None:
 def _pool_set_size(pool: object, attr_name: str) -> int | None:
     value = getattr(pool, attr_name, None)
     return len(value) if isinstance(value, set) else None
-
-
-redis_client = create_redis_client(get_settings())

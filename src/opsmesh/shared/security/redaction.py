@@ -1,4 +1,7 @@
+"""Structured value, credential and URL redaction for logs, events and responses."""
+
 import re
+from collections.abc import Collection
 from typing import Literal, overload
 
 _SENSITIVE_EXACT_KEYS = {
@@ -12,9 +15,8 @@ _SENSITIVE_EXACT_KEYS = {
     "external_ref",
     "remote_url",
     "storage_key",
-}
-_SAFE_EXACT_KEYS = {
-    "authorization_snapshot_version",
+    "session_id",
+    "invitation_code",
 }
 _SENSITIVE_KEY_PARTS = {
     "api_key",
@@ -31,7 +33,9 @@ _SENSITIVE_VALUE_PATTERNS = (
     re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b"),
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{6,}\b", re.IGNORECASE),
     re.compile(
-        r"\b(?:api[_ -]?key|apikey|authorization|password|secret|token|base[_ -]?url)\s*[:=]\s*"
+        r"\b(?:api[_ -]?key|authorization|password|(?:client[_ -]?)?secret|"
+        r"(?:(?:access|refresh)[_ -]?)?token|base[_ -]?url|"
+        r"(?:x[_ -]?)?session[_ -]?id|invitation[_ -]?code)\s*[:=]\s*"
         r"['\"]?[^\s,'\";}]+['\"]?",
         re.IGNORECASE,
     ),
@@ -41,25 +45,36 @@ REDACTED_VALUE = "[redacted]"
 
 
 def redact_sensitive_payload(
-    payload: dict[str, object], *, text_mode: Literal["whole", "fragments"] = "whole"
+    payload: dict[str, object],
+    *,
+    text_mode: Literal["whole", "fragments"] = "whole",
+    sensitive_keys: Collection[str] = (),
 ) -> dict[str, object]:
     redacted: dict[str, object] = {}
     for key, value in payload.items():
         key_text = str(key)
-        if is_sensitive_payload_key(key_text):
+        if is_sensitive_payload_key(key_text) or key_text in sensitive_keys:
             redacted[key_text] = REDACTED_VALUE
             continue
-        redacted[key_text] = redact_sensitive_payload_item(value, text_mode=text_mode)
+        redacted[key_text] = redact_sensitive_payload_item(
+            value, text_mode=text_mode, sensitive_keys=sensitive_keys
+        )
     return redacted
 
 
 def redact_sensitive_payload_item(
-    value: object, *, text_mode: Literal["whole", "fragments"] = "whole"
+    value: object,
+    *,
+    text_mode: Literal["whole", "fragments"] = "whole",
+    sensitive_keys: Collection[str] = (),
 ) -> object:
     if isinstance(value, dict):
-        return redact_sensitive_payload(value, text_mode=text_mode)
-    if isinstance(value, list):
-        return [redact_sensitive_payload_item(item, text_mode=text_mode) for item in value]
+        return redact_sensitive_payload(value, text_mode=text_mode, sensitive_keys=sensitive_keys)
+    if isinstance(value, list | tuple):
+        return [
+            redact_sensitive_payload_item(item, text_mode=text_mode, sensitive_keys=sensitive_keys)
+            for item in value
+        ]
     if isinstance(value, str):
         return (
             redact_text_fragments(value)
@@ -70,9 +85,10 @@ def redact_sensitive_payload_item(
 
 
 def is_sensitive_payload_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    if normalized in _SAFE_EXACT_KEYS:
-        return False
+    # Split both camelCase and acronym boundaries before matching key parts.
+    normalized = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
+    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized.lower()).strip("_")
     if normalized in _SENSITIVE_EXACT_KEYS:
         return True
     if normalized in _SENSITIVE_KEY_PARTS:
@@ -84,6 +100,11 @@ def is_sensitive_payload_key(key: str) -> bool:
 
 def is_sensitive_payload_value(value: str) -> bool:
     return any(pattern.search(value) is not None for pattern in _SENSITIVE_VALUE_PATTERNS)
+
+
+def contains_embedded_secret(value: str) -> bool:
+    """Reject configuration payloads that carry credential-shaped text."""
+    return is_sensitive_payload_value(value)
 
 
 def redact_sensitive_text(value: str) -> str:

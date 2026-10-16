@@ -1,3 +1,5 @@
+"""Build stable paginated HTTP responses from domain items."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable

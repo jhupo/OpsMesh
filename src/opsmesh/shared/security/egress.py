@@ -1,3 +1,5 @@
+"""Validate outbound URLs and resolve egress-safe connection addresses."""
+
 from __future__ import annotations
 
 import ipaddress
@@ -31,14 +33,6 @@ class EgressURLPolicy:
     allow_private_addresses: bool = False
 
 
-MCP_EGRESS_URL_POLICY = EgressURLPolicy(
-    allowed_schemes=frozenset({"http", "https"}),
-)
-MODEL_PROVIDER_BASE_URL_POLICY = EgressURLPolicy(
-    allowed_schemes=frozenset({"https"}),
-)
-
-
 class EgressURLValidationError(ValueError):
     pass
 
@@ -55,7 +49,7 @@ def validate_egress_url(url: str, *, policy: EgressURLPolicy) -> str:
     if hostname is None:
         raise EgressURLValidationError("URL host is required")
     host = _normalized_hostname(hostname)
-    if _is_blocked_hostname(host):
+    if not policy.allow_private_addresses and _is_blocked_hostname(host):
         raise EgressURLValidationError("URL host is not allowed")
 
     literal_address = _ip_address(host)
@@ -93,6 +87,37 @@ def validate_url_shape(url: str, *, allowed_schemes: frozenset[str]) -> str:
         ):
             raise EgressURLValidationError("URL query must not contain credentials")
     return url
+
+
+def resolve_egress_address(url: str, *, policy: EgressURLPolicy) -> str:
+    """Resolve once and return a validated IP for the transport to connect to.
+
+    Configuration may allow unresolved hosts; an actual connection never does.
+    Every returned DNS address must satisfy the policy before one is selected.
+    """
+    validate_url_shape(url, allowed_schemes=policy.allowed_schemes)
+    parsed = urlparse(url)
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise EgressURLValidationError("URL port is invalid") from exc
+    host = _normalized_hostname(parsed.hostname or "")
+    if not policy.allow_private_addresses and _is_blocked_hostname(host):
+        raise EgressURLValidationError("URL host is not allowed")
+    literal = _ip_address(host)
+    addresses = (
+        {literal}
+        if literal is not None
+        else _resolve_host(
+            host,
+            policy=EgressURLPolicy(policy.allowed_schemes, False, policy.allow_private_addresses),
+        )
+    )
+    if not addresses:
+        raise EgressURLValidationError("URL host could not be resolved")
+    for address in addresses:
+        _validate_address(address, policy=policy)
+    return str(sorted(addresses, key=lambda address: (address.version, int(address)))[0])
 
 
 def url_host(url: str) -> str | None:
@@ -155,9 +180,5 @@ def _validate_address(
 ) -> None:
     if policy.allow_private_addresses:
         return
-    if not address.is_global or _is_metadata_address(address):
+    if not address.is_global:
         raise EgressURLValidationError("URL host resolves to a non-public address")
-
-
-def _is_metadata_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return address == ipaddress.ip_address("169.254.169.254")

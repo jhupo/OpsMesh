@@ -1,3 +1,5 @@
+"""ORM base with UUID primary keys, timestamps and stable constraint names."""
+
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 

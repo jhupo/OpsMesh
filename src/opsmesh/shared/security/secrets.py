@@ -1,17 +1,13 @@
-from __future__ import annotations
+"""Authenticated encryption with explicit, externally supplied Fernet keys."""
 
 import base64
-import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
-_SAFE_METADATA_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
-)
+from opsmesh.shared.serialization import canonical_json, json_safe_value
 
 
 @dataclass(frozen=True)
@@ -19,65 +15,55 @@ class EncryptedSecret:
     ciphertext: str
     fingerprint: str
     key_id: str
-    secret_version: str = "v1"
-    rotation_state: str = "current"
 
 
-@dataclass(frozen=True)
-class SecretMetadata:
-    storage: str
-    provider: str
-    configured: bool
-    reference_kind: str | None = None
-    reference_version: str | None = None
-    encryption_key_id: str | None = None
-    fingerprint_configured: bool = False
-    rotation_state: str = "not_configured"
-    raw_secret_exposed: bool = False
-
-    def to_api_dict(self) -> dict[str, object]:
-        return {
-            "storage": self.storage,
-            "provider": self.provider,
-            "configured": self.configured,
-            "reference_kind": self.reference_kind,
-            "reference_version": self.reference_version,
-            "encryption_key_id": self.encryption_key_id,
-            "fingerprint_configured": self.fingerprint_configured,
-            "rotation_state": self.rotation_state,
-            "raw_secret_exposed": self.raw_secret_exposed,
-        }
-
-
-class SecretEncryptionService:
+class SecretCipher:
     def __init__(
-        self,
-        *,
-        secret: str,
-        key_id: str,
-        previous_secrets: dict[str, str] | None = None,
+        self, *, key: str, key_id: str, previous_keys: dict[str, str] | None = None
     ) -> None:
-        self._secret = secret
+        if not key_id.strip() or key_id != key_id.strip():
+            raise ValueError("Encryption key ID must be non-empty and have no surrounding spaces")
+        keys = {key_id: key}
+        for previous_id, previous_key in (previous_keys or {}).items():
+            if (
+                not previous_id.strip()
+                or previous_id != previous_id.strip()
+                or previous_id == key_id
+            ):
+                raise ValueError("Previous encryption keys must use distinct, non-empty IDs")
+            keys[previous_id] = previous_key
+        try:
+            self._fernets = {}
+            for identifier, value in keys.items():
+                raw_key = base64.b64decode(value.encode("ascii"), altchars=b"-_", validate=True)
+                if len(raw_key) != 32 or base64.urlsafe_b64encode(raw_key).decode("ascii") != value:
+                    raise ValueError("Invalid Fernet key encoding")
+                self._fernets[identifier] = Fernet(value.encode("ascii"))
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError(
+                "Encryption keys must be URL-safe base64 encoded 32-byte keys"
+            ) from exc
         self._key_id = key_id
-        self._fernet = self._fernet_for_secret(secret)
-        self._previous_fernets = {
-            previous_key_id: self._fernet_for_secret(previous_secret)
-            for previous_key_id, previous_secret in (previous_secrets or {}).items()
-            if previous_key_id and previous_secret
-        }
+        self._fingerprint_key = base64.urlsafe_b64decode(key.encode("ascii"))
+        self._keyring = MultiFernet(list(self._fernets.values()))
 
     def encrypt_payload(self, payload: dict[str, object]) -> EncryptedSecret:
-        normalized = self._normalize(payload)
-        ciphertext = self._fernet.encrypt(normalized.encode("utf-8")).decode("utf-8")
+        normalized = canonical_json(payload).encode("utf-8")
         return EncryptedSecret(
-            ciphertext=ciphertext,
-            fingerprint=self._fingerprint(normalized),
+            ciphertext=self._fernets[self._key_id].encrypt(normalized).decode("ascii"),
+            fingerprint=f"sha256:{hmac.digest(self._fingerprint_key, normalized, 'sha256').hex()}",
             key_id=self._key_id,
         )
 
     def decrypt_payload(self, ciphertext: str, *, key_id: str | None = None) -> dict[str, object]:
-        plaintext = self._decrypt(ciphertext, key_id=key_id)
-        value = json.loads(plaintext)
+        if key_id is not None and key_id not in self._fernets:
+            raise ValueError("Secret payload uses an unknown encryption key ID")
+        cipher = self._keyring if key_id is None else self._fernets[key_id]
+        try:
+            plaintext = cipher.decrypt(ciphertext.encode("ascii"))
+        except (InvalidToken, UnicodeError) as exc:
+            raise ValueError("Secret payload could not be decrypted") from exc
+        value = json_safe_value(json.loads(plaintext))
         if not isinstance(value, dict):
             raise ValueError("Secret payload must decrypt to an object")
         return value
@@ -85,119 +71,3 @@ class SecretEncryptionService:
     @property
     def current_key_id(self) -> str:
         return self._key_id
-
-    def _fingerprint(self, normalized_payload: str) -> str:
-        # Keyed payload fingerprint, not a password verifier. Preserve the existing
-        # HMAC-SHA256 bytes so stored credential fingerprints remain compatible.
-        digest = hmac.digest(
-            self._secret.encode("utf-8"),
-            normalized_payload.encode("utf-8"),
-            "sha256",
-        ).hex()
-        return f"sha256:{digest}"
-
-    @staticmethod
-    def _normalize(payload: dict[str, object]) -> str:
-        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-
-    @staticmethod
-    def _fernet_for_secret(secret: str) -> Fernet:
-        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
-        return Fernet(key)
-
-    def _decrypt(self, ciphertext: str, *, key_id: str | None) -> str:
-        token = ciphertext.encode("utf-8")
-        candidates: list[Fernet] = []
-        if key_id is not None and key_id in self._previous_fernets:
-            candidates.append(self._previous_fernets[key_id])
-        candidates.append(self._fernet)
-        candidates.extend(
-            fernet
-            for previous_key_id, fernet in self._previous_fernets.items()
-            if previous_key_id != key_id
-        )
-        last_error: InvalidToken | None = None
-        for fernet in candidates:
-            try:
-                return fernet.decrypt(token).decode("utf-8")
-            except InvalidToken as exc:
-                last_error = exc
-        raise ValueError("Secret payload could not be decrypted") from last_error
-
-
-def hosted_secret_metadata(
-    *,
-    provider: str = "hosted",
-    encryption_key_id: str | None,
-    secret_fingerprint: str | None,
-) -> SecretMetadata:
-    return SecretMetadata(
-        storage="hosted_encrypted",
-        provider=provider,
-        configured=bool(secret_fingerprint),
-        encryption_key_id=encryption_key_id,
-        fingerprint_configured=bool(secret_fingerprint),
-        rotation_state="current" if secret_fingerprint else "not_configured",
-    )
-
-
-def external_vault_reference_metadata(
-    *,
-    provider: str,
-    external_ref: str,
-) -> SecretMetadata:
-    configured = bool(external_ref)
-    return SecretMetadata(
-        storage="external_vault",
-        provider=provider,
-        configured=configured,
-        reference_kind=vault_reference_kind(external_ref) if configured else None,
-        reference_version=vault_reference_version(external_ref) if configured else None,
-        rotation_state="provider_managed" if configured else "not_configured",
-    )
-
-
-def vault_reference_kind(external_ref: str) -> str | None:
-    if not external_ref:
-        return None
-    parsed = urlparse(external_ref)
-    if parsed.scheme:
-        return _safe_metadata_token(parsed.scheme)
-    if ":" in external_ref:
-        return _safe_metadata_token(external_ref.split(":", 1)[0])
-    if "/" in external_ref:
-        return _safe_metadata_token(external_ref.split("/", 1)[0])
-    return "reference"
-
-
-def vault_reference_version(external_ref: str) -> str | None:
-    parsed = urlparse(external_ref)
-    query = parse_qs(parsed.query)
-    for key in ("version", "version_id", "secret_version"):
-        values = query.get(key)
-        if values:
-            return _safe_metadata_token(values[-1])
-    if parsed.fragment:
-        fragment = parsed.fragment
-        if "=" in fragment:
-            _, fragment = fragment.split("=", 1)
-        return _safe_metadata_token(fragment)
-    path_parts = [part for part in parsed.path.split("/") if part]
-    for marker in ("versions", "version"):
-        if marker in path_parts:
-            index = path_parts.index(marker)
-            if index + 1 < len(path_parts):
-                return _safe_metadata_token(path_parts[index + 1])
-    leaf = path_parts[-1] if path_parts else external_ref.rsplit("/", 1)[-1]
-    if "@" in leaf:
-        return _safe_metadata_token(leaf.rsplit("@", 1)[1])
-    return None
-
-
-def _safe_metadata_token(value: str) -> str:
-    stripped = value.strip()
-    if not stripped:
-        return "configured"
-    if all(char in _SAFE_METADATA_CHARS for char in stripped):
-        return stripped[:120]
-    return "configured"

@@ -1,17 +1,44 @@
+"""Public error envelope and HTTP exception handlers for neutral errors."""
+
 from collections.abc import Mapping, Sequence
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette import status
 
+from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.errors import DomainError
+
+
+class ErrorInfo(BaseModel):
+    code: str
+    message: str
+    request_id: str | None
+    details: dict[str, object] | list[dict[str, object]] | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorInfo
 
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(DomainError, domain_exception_handler)
+    app.add_exception_handler(DatabaseConflictError, database_conflict_handler)
+
+
+async def database_conflict_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, DatabaseConflictError):
+        raise exc
+    return error_response(
+        status_code=409,
+        code="conflict",
+        message=exc.message,
+        request_id=getattr(request.state, "request_id", None),
+    )
 
 
 async def validation_exception_handler(

@@ -1,0 +1,328 @@
+"""Register intents in business transactions and flush them to the native client."""
+
+import asyncio
+import logging
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol, cast
+from uuid import UUID, uuid4
+
+from pydantic import JsonValue
+from sqlalchemy import Table, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session
+from temporalio.client import Client
+
+from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.temporal.dispatch.contracts import (
+    DispatchOperation,
+    DispatchRequest,
+    WorkflowStartOptions,
+)
+from opsmesh.temporal.dispatch.delivery import dispatch_workflow
+from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
+
+logger = logging.getLogger(__name__)
+DISPATCH_NOTIFICATION_CHANNEL = "opsmesh_temporal_dispatch"
+DEFAULT_DISPATCH_CONCURRENCY = 16
+DEFAULT_PUBLISH_LIMIT = 100
+_CLAIM_LEASE_SECONDS = 60
+_MAX_BACKOFF_SECONDS = 300
+
+
+class WorkflowRequest(Protocol):
+    @property
+    def execution_id(self) -> UUID: ...
+
+    @property
+    def workflow_name(self) -> str: ...
+
+    @property
+    def workflow_id(self) -> str: ...
+
+    def model_dump(self, *, mode: str) -> dict[str, Any]: ...
+
+
+def stage_execution(
+    session: Session,
+    execution: WorkflowRequest,
+    *,
+    dispatch_id: UUID | None = None,
+    start_options: WorkflowStartOptions | None = None,
+) -> str:
+    if not execution.workflow_name:
+        raise ValueError("The feature must declare its workflow name")
+    stage_dispatch(
+        session,
+        DispatchRequest(
+            # The product execution is the idempotency identity for a start command.
+            dispatch_id=dispatch_id or execution.execution_id,
+            workflow_id=execution.workflow_id,
+            operation=DispatchOperation.START,
+            execution=execution.model_dump(mode="json"),
+            workflow_name=execution.workflow_name,
+            start_options=start_options or WorkflowStartOptions(),
+        ),
+    )
+    return execution.workflow_id
+
+
+def stage_signal(
+    session: Session,
+    *,
+    dispatch_id: UUID,
+    workflow_id: str,
+    signal_name: str,
+    signal_args: tuple[JsonValue, ...],
+) -> None:
+    stage_dispatch(
+        session,
+        DispatchRequest(
+            dispatch_id=dispatch_id,
+            workflow_id=workflow_id,
+            operation=DispatchOperation.SIGNAL,
+            signal_name=signal_name,
+            signal_args=signal_args,
+        ),
+    )
+
+
+def stage_cancellation(session: Session, *, dispatch_id: UUID, workflow_id: str) -> None:
+    stage_dispatch(
+        session,
+        DispatchRequest(
+            dispatch_id=dispatch_id,
+            workflow_id=workflow_id,
+            operation=DispatchOperation.CANCEL,
+        ),
+    )
+
+
+def stage_dispatch(session: Session, request: DispatchRequest) -> None:
+    cipher = session.info.get("dispatch_cipher")
+    if not isinstance(cipher, SecretCipher):
+        raise RuntimeError("Dispatch encryption must be supplied by the session owner")
+    capture_context = session.info.get("dispatch_trace_context")
+    # Match ORM execute autoflush. Mapper listeners can stage on this same connection.
+    session.flush()
+    persist_dispatch(
+        session.connection(),
+        request,
+        cipher=cipher,
+        trace_context=capture_context() if callable(capture_context) else None,
+    )
+
+
+def persist_dispatch(
+    connection: Connection,
+    request: DispatchRequest,
+    *,
+    cipher: SecretCipher,
+    trace_context: Mapping[str, str] | None = None,
+) -> None:
+    """Stage a sealed command on the caller's transaction, including during ORM flush."""
+    if trace_context is not None and request.traceparent is None:
+        request = DispatchRequest.model_validate(
+            request.model_dump(mode="json")
+            | {
+                "traceparent": trace_context.get("traceparent"),
+                "tracestate": trace_context.get("tracestate"),
+            }
+        )
+    sealed = cipher.encrypt_payload(request.model_dump(mode="json"))
+    table = cast(Table, TemporalOutboxEntry.__table__)
+    inserted = connection.scalar(
+        insert(table)
+        .values(
+            id=request.dispatch_id,
+            workflow_id=request.workflow_id,
+            operation=request.operation.value,
+            sealed_payload=sealed.ciphertext,
+            encryption_key_id=sealed.key_id,
+            available_at=datetime.now(UTC),
+            attempts=0,
+        )
+        .on_conflict_do_nothing(index_elements=[table.c.id])
+        .returning(table.c.id)
+    )
+    if inserted is None:
+        existing = (
+            connection.execute(select(table).where(table.c.id == request.dispatch_id))
+            .mappings()
+            .one_or_none()
+        )
+        # Delivery identity belongs to the business command, not its retry's trace.
+        if existing is None or DispatchRequest.model_validate(
+            cipher.decrypt_payload(existing["sealed_payload"], key_id=existing["encryption_key_id"])
+        ).model_dump(mode="json", exclude={"traceparent", "tracestate"}) != request.model_dump(
+            mode="json", exclude={"traceparent", "tracestate"}
+        ):
+            raise ValueError("Dispatch identity is already bound to a different operation")
+    # PostgreSQL releases NOTIFY only after the encompassing business transaction commits.
+    connection.execute(select(func.pg_notify(DISPATCH_NOTIFICATION_CHANNEL, "")))
+
+
+class TemporalOutboxPublisher:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        client: Client,
+        *,
+        task_queue: str,
+        concurrency: int = DEFAULT_DISPATCH_CONCURRENCY,
+        cipher: SecretCipher,
+        restore_context: Callable[[Mapping[str, str]], AbstractContextManager[None]] | None = None,
+    ) -> None:
+        if concurrency < 1:
+            raise ValueError("Temporal dispatch concurrency must be positive")
+        self._cipher = cipher
+        self._restore_context = restore_context
+        self._sessions = sessions
+        self._client = client
+        self._task_queue = task_queue
+        self._concurrency = concurrency
+
+    async def publish_pending(self, *, limit: int = DEFAULT_PUBLISH_LIMIT) -> int:
+        delivered = 0
+        remaining = max(0, limit)
+        while remaining:
+            requests = await self._claim(min(remaining, self._concurrency))
+            if not requests:
+                break
+            remaining -= len(requests)
+            # Network delivery never holds a PostgreSQL connection. The bound is
+            # per publisher; other nodes claim independently through SKIP LOCKED.
+            async with asyncio.TaskGroup() as group:
+                tasks = [group.create_task(self._deliver(*item)) for item in requests]
+            delivered += sum(task.result() for task in tasks)
+        return delivered
+
+    async def _claim(self, limit: int) -> list[tuple[UUID, UUID, DispatchRequest]]:
+        claimed: list[tuple[UUID, UUID, DispatchRequest]] = []
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.scalars(
+                    select(TemporalOutboxEntry)
+                    .where(
+                        TemporalOutboxEntry.published_at.is_(None),
+                        TemporalOutboxEntry.available_at <= now,
+                        (TemporalOutboxEntry.claim_until.is_(None))
+                        | (TemporalOutboxEntry.claim_until < now),
+                    )
+                    .order_by(TemporalOutboxEntry.available_at, TemporalOutboxEntry.id)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+            for row in rows:
+                try:
+                    request = DispatchRequest.model_validate(
+                        self._cipher.decrypt_payload(
+                            row.sealed_payload, key_id=row.encryption_key_id
+                        )
+                    )
+                    if (
+                        request.dispatch_id != row.id
+                        or request.workflow_id != row.workflow_id
+                        or request.operation.value != row.operation
+                    ):
+                        raise ValueError("Dispatch reference differs from its durable record")
+                except Exception as exc:
+                    row.attempts += 1
+                    row.available_at = now + timedelta(
+                        seconds=min(2 ** min(row.attempts, 8), _MAX_BACKOFF_SECONDS)
+                    )
+                    row.claim_token = None
+                    row.claim_until = None
+                    row.last_error_code = type(exc).__name__[:100]
+                    continue
+                token = uuid4()
+                row.claim_token = token
+                row.claim_until = now + timedelta(seconds=_CLAIM_LEASE_SECONDS)
+                claimed.append((row.id, token, request))
+        return claimed
+
+    async def _deliver(self, dispatch_id: UUID, token: UUID, request: DispatchRequest) -> int:
+        try:
+            carrier = {
+                key: value
+                for key, value in (
+                    ("traceparent", request.traceparent),
+                    ("tracestate", request.tracestate),
+                )
+                if value is not None
+            }
+            context = self._restore_context(carrier) if self._restore_context else nullcontext()
+            with context:
+                await dispatch_workflow(self._client, request, task_queue=self._task_queue)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._record_failure(dispatch_id, token, type(exc).__name__[:100])
+            return 0
+        await self._record_published(dispatch_id, token)
+        return 1
+
+    async def _record_published(self, dispatch_id: UUID, token: UUID) -> None:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.id == dispatch_id, TemporalOutboxEntry.claim_token == token
+                )
+                .with_for_update()
+            )
+            if row is not None:
+                row.published_at = datetime.now(UTC)
+                row.claim_token = None
+                row.claim_until = None
+                row.last_error_code = None
+
+    async def _record_failure(self, dispatch_id: UUID, token: UUID, error_code: str) -> None:
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(TemporalOutboxEntry)
+                .where(
+                    TemporalOutboxEntry.id == dispatch_id, TemporalOutboxEntry.claim_token == token
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return
+            row.attempts += 1
+            row.available_at = datetime.now(UTC) + timedelta(
+                seconds=min(2 ** min(row.attempts, 8), _MAX_BACKOFF_SECONDS)
+            )
+            row.claim_token = None
+            row.claim_until = None
+            row.last_error_code = error_code
+            logger.error(
+                "Temporal dispatch failed",
+                extra={
+                    "dispatch_id": str(row.id),
+                    "error_code": error_code,
+                },
+            )
+
+    async def next_delivery_at(self) -> datetime | None:
+        async with self._sessions() as session:
+            return cast(
+                datetime | None,
+                await session.scalar(
+                    select(
+                        func.min(
+                            func.greatest(
+                                TemporalOutboxEntry.available_at,
+                                func.coalesce(
+                                    TemporalOutboxEntry.claim_until,
+                                    TemporalOutboxEntry.available_at,
+                                ),
+                            )
+                        )
+                    ).where(TemporalOutboxEntry.published_at.is_(None))
+                ),
+            )
