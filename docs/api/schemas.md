@@ -1357,6 +1357,112 @@ One immutable-or-draft version with its full declared content.
 }
 ```
 
+<a id="schema-CapacityKindView"></a>
+
+## CapacityKindView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `kind` | string | 是 | — |
+| `limit_value` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `reserved_value` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "kind": {
+      "title": "Kind",
+      "type": "string"
+    },
+    "limit_value": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Limit Value"
+    },
+    "reserved_value": {
+      "title": "Reserved Value",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "limit_value",
+    "reserved_value"
+  ],
+  "title": "CapacityKindView",
+  "type": "object"
+}
+```
+
+<a id="schema-CapacityLimitUpdateRequest"></a>
+
+## CapacityLimitUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `limit_value` | integer anyOf null | 否 | `anyOf=[{"minimum": 0.0, "type": "integer"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit_value": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Limit Value"
+    }
+  },
+  "title": "CapacityLimitUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-CapacitySnapshotView"></a>
+
+## CapacitySnapshotView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 是 | — |
+| `kinds` | array&lt;[CapacityKindView](schemas.md#schema-CapacityKindView)&gt; | 是 | — |
+
+```json
+{
+  "properties": {
+    "kinds": {
+      "items": {
+        "$ref": "#/components/schemas/CapacityKindView"
+      },
+      "title": "Kinds",
+      "type": "array"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "kinds"
+  ],
+  "title": "CapacitySnapshotView",
+  "type": "object"
+}
+```
+
 <a id="schema-ChangePasswordRequest"></a>
 
 ## ChangePasswordRequest
@@ -1645,6 +1751,278 @@ One adapter operation with its identifier and typed I/O schemas.
     "email"
   ],
   "title": "CreateInvitationRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-CredentialCreateRequest"></a>
+
+## CredentialCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `kind` | string | 是 | `maxLength=32` |
+| `secret` | object | 是 | `additionalProperties={"maxLength": 4096, "type": "string"}`; `maxProperties=16`; `minProperties=1`; `propertyNames={"maxLength": 100}` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "maxLength": 32,
+      "title": "Kind",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "secret": {
+      "additionalProperties": {
+        "maxLength": 4096,
+        "type": "string"
+      },
+      "maxProperties": 16,
+      "minProperties": 1,
+      "propertyNames": {
+        "maxLength": 100
+      },
+      "title": "Secret",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "secret"
+  ],
+  "title": "CredentialCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-CredentialPage"></a>
+
+## CredentialPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `credentials` | array&lt;[CredentialView](schemas.md#schema-CredentialView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "credentials": {
+      "items": {
+        "$ref": "#/components/schemas/CredentialView"
+      },
+      "title": "Credentials",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "credentials",
+    "total"
+  ],
+  "title": "CredentialPage",
+  "type": "object"
+}
+```
+
+<a id="schema-CredentialRotateRequest"></a>
+
+## CredentialRotateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `secret` | object | 是 | `additionalProperties={"maxLength": 4096, "type": "string"}`; `maxProperties=16`; `minProperties=1`; `propertyNames={"maxLength": 100}` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "secret": {
+      "additionalProperties": {
+        "maxLength": 4096,
+        "type": "string"
+      },
+      "maxProperties": 16,
+      "minProperties": 1,
+      "propertyNames": {
+        "maxLength": 100
+      },
+      "title": "Secret",
+      "type": "object"
+    }
+  },
+  "required": [
+    "secret"
+  ],
+  "title": "CredentialRotateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-CredentialView"></a>
+
+## CredentialView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `credential_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `kind` | string | 是 | — |
+| `fingerprint` | string | 是 | — |
+| `key_id` | string | 是 | — |
+| `revision` | integer | 是 | — |
+| `status` | string | 是 | — |
+| `created_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+| `revoked_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by_user_id": {
+      "format": "uuid",
+      "title": "Created By User Id",
+      "type": "string"
+    },
+    "credential_id": {
+      "format": "uuid",
+      "title": "Credential Id",
+      "type": "string"
+    },
+    "fingerprint": {
+      "title": "Fingerprint",
+      "type": "string"
+    },
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "kind": {
+      "title": "Kind",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "integer"
+    },
+    "revoked_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Revoked At"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "credential_id",
+    "workspace_id",
+    "name",
+    "kind",
+    "fingerprint",
+    "key_id",
+    "revision",
+    "status",
+    "created_by_user_id",
+    "created_at",
+    "updated_at",
+    "revoked_at"
+  ],
+  "title": "CredentialView",
+  "type": "object"
+}
+```
+
+<a id="schema-DefaultModelView"></a>
+
+## DefaultModelView
+
+The resolved default model of one workspace; no secret is part of it.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `connection_id` | string (uuid) | 是 | `format="uuid"` |
+| `provider` | string | 是 | — |
+| `default_model` | string | 是 | — |
+| `base_url` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "description": "The resolved default model of one workspace; no secret is part of it.",
+  "properties": {
+    "base_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Base Url"
+    },
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "default_model": {
+      "title": "Default Model",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connection_id",
+    "provider",
+    "default_model",
+    "base_url"
+  ],
+  "title": "DefaultModelView",
   "type": "object"
 }
 ```
@@ -2772,6 +3150,51 @@ One directed handoff edge between two member slots.
 }
 ```
 
+<a id="schema-InvitationCreateRequest"></a>
+
+## InvitationCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `invitee_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `role` | string | 是 | `enum=["admin", "member", "viewer"]` |
+| `ttl_seconds` | integer | 否 | `default=604800`; `maximum=2592000.0`; `minimum=3600.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "invitee_user_id": {
+      "format": "uuid",
+      "title": "Invitee User Id",
+      "type": "string"
+    },
+    "role": {
+      "enum": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "ttl_seconds": {
+      "default": 604800,
+      "maximum": 2592000.0,
+      "minimum": 3600.0,
+      "title": "Ttl Seconds",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "invitee_user_id",
+    "role"
+  ],
+  "title": "InvitationCreateRequest",
+  "type": "object"
+}
+```
+
 <a id="schema-InvitationPage"></a>
 
 ## InvitationPage
@@ -3131,6 +3554,63 @@ One durable send intent and its confirmed or unconfirmed outcome.
 }
 ```
 
+<a id="schema-MarkReadRequest"></a>
+
+## MarkReadRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `notification_ids` | array&lt;string (uuid)&gt; | 否 | `maxItems=200` |
+| `mark_all` | boolean | 否 | `default=false` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "mark_all": {
+      "default": false,
+      "title": "Mark All",
+      "type": "boolean"
+    },
+    "notification_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Notification Ids",
+      "type": "array"
+    }
+  },
+  "title": "MarkReadRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-MarkReadView"></a>
+
+## MarkReadView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `marked_count` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "marked_count": {
+      "title": "Marked Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "marked_count"
+  ],
+  "title": "MarkReadView",
+  "type": "object"
+}
+```
+
 <a id="schema-McpConfiguration"></a>
 
 ## McpConfiguration
@@ -3359,6 +3839,363 @@ One advertised tool with its parameter schema; discovery is runtime.
 }
 ```
 
+<a id="schema-MemberRoleUpdateRequest"></a>
+
+## MemberRoleUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `role` | string | 是 | `enum=["admin", "member", "viewer"]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "enum": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "title": "Role",
+      "type": "string"
+    }
+  },
+  "required": [
+    "role"
+  ],
+  "title": "MemberRoleUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ModelProviderCreateRequest"></a>
+
+## ModelProviderCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `credential_id` | string (uuid) | 是 | `format="uuid"` |
+| `base_url` | string anyOf null | 否 | `anyOf=[{"maxLength": 500, "type": "string"}, {"type": "null"}]` |
+| `default_model` | string | 是 | `maxLength=200`; `minLength=1` |
+| `models` | array&lt;string&gt; | 否 | `maxItems=256` |
+| `is_default` | boolean | 否 | `default=false` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "base_url": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Base Url"
+    },
+    "credential_id": {
+      "format": "uuid",
+      "title": "Credential Id",
+      "type": "string"
+    },
+    "default_model": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Default Model",
+      "type": "string"
+    },
+    "is_default": {
+      "default": false,
+      "title": "Is Default",
+      "type": "boolean"
+    },
+    "models": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Models",
+      "type": "array"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "credential_id",
+    "default_model"
+  ],
+  "title": "ModelProviderCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ModelProviderPage"></a>
+
+## ModelProviderPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `connections` | array&lt;[ModelProviderView](schemas.md#schema-ModelProviderView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "connections": {
+      "items": {
+        "$ref": "#/components/schemas/ModelProviderView"
+      },
+      "title": "Connections",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "connections",
+    "total"
+  ],
+  "title": "ModelProviderPage",
+  "type": "object"
+}
+```
+
+<a id="schema-ModelProviderUpdateRequest"></a>
+
+## ModelProviderUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `base_url` | string anyOf null | 否 | `anyOf=[{"maxLength": 500, "type": "string"}, {"type": "null"}]` |
+| `default_model` | string anyOf null | 否 | `anyOf=[{"maxLength": 200, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `models` | array&lt;string&gt; anyOf null | 否 | `anyOf=[{"items": {"type": "string"}, "maxItems": 256, "type": "array"}, {"type": "null"}]` |
+| `is_default` | boolean anyOf null | 否 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "base_url": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Base Url"
+    },
+    "default_model": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Default Model"
+    },
+    "is_default": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Is Default"
+    },
+    "models": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Models"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Name"
+    }
+  },
+  "title": "ModelProviderUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ModelProviderView"></a>
+
+## ModelProviderView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `connection_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `credential_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `provider` | string | 是 | — |
+| `base_url` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `default_model` | string | 是 | — |
+| `models` | array&lt;string&gt; | 是 | — |
+| `is_default` | boolean | 是 | — |
+| `status` | string | 是 | — |
+| `last_probe_status` | string | 是 | — |
+| `last_probe_detail` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `last_probe_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "base_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Base Url"
+    },
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "credential_id": {
+      "format": "uuid",
+      "title": "Credential Id",
+      "type": "string"
+    },
+    "default_model": {
+      "title": "Default Model",
+      "type": "string"
+    },
+    "is_default": {
+      "title": "Is Default",
+      "type": "boolean"
+    },
+    "last_probe_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Probe At"
+    },
+    "last_probe_detail": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Probe Detail"
+    },
+    "last_probe_status": {
+      "title": "Last Probe Status",
+      "type": "string"
+    },
+    "models": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Models",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connection_id",
+    "workspace_id",
+    "credential_id",
+    "name",
+    "provider",
+    "base_url",
+    "default_model",
+    "models",
+    "is_default",
+    "status",
+    "last_probe_status",
+    "last_probe_detail",
+    "last_probe_at",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ModelProviderView",
+  "type": "object"
+}
+```
+
 <a id="schema-ModelRequirements"></a>
 
 ## ModelRequirements
@@ -3398,6 +4235,255 @@ The model an expert expects; selection itself belongs to execution.
     "model"
   ],
   "title": "ModelRequirements",
+  "type": "object"
+}
+```
+
+<a id="schema-NotificationPage"></a>
+
+## NotificationPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `notifications` | array&lt;[NotificationView](schemas.md#schema-NotificationView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+| `unread_count` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "notifications": {
+      "items": {
+        "$ref": "#/components/schemas/NotificationView"
+      },
+      "title": "Notifications",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    },
+    "unread_count": {
+      "title": "Unread Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "notifications",
+    "total",
+    "unread_count"
+  ],
+  "title": "NotificationPage",
+  "type": "object"
+}
+```
+
+<a id="schema-NotificationPreferenceUpdateRequest"></a>
+
+## NotificationPreferenceUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `in_app_enabled` | boolean anyOf null | 否 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
+| `email_enabled` | boolean anyOf null | 否 | `anyOf=[{"type": "boolean"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "email_enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Email Enabled"
+    },
+    "in_app_enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "In App Enabled"
+    }
+  },
+  "title": "NotificationPreferenceUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-NotificationPreferenceView"></a>
+
+## NotificationPreferenceView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `user_id` | string (uuid) | 是 | `format="uuid"` |
+| `in_app_enabled` | boolean | 是 | — |
+| `email_enabled` | boolean | 是 | — |
+
+```json
+{
+  "properties": {
+    "email_enabled": {
+      "title": "Email Enabled",
+      "type": "boolean"
+    },
+    "in_app_enabled": {
+      "title": "In App Enabled",
+      "type": "boolean"
+    },
+    "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "user_id",
+    "in_app_enabled",
+    "email_enabled"
+  ],
+  "title": "NotificationPreferenceView",
+  "type": "object"
+}
+```
+
+<a id="schema-NotificationView"></a>
+
+## NotificationView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `notification_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `recipient_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `notification_type` | string | 是 | — |
+| `severity` | string | 是 | — |
+| `source_type` | string | 是 | — |
+| `source_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `title` | string | 是 | — |
+| `body` | string | 是 | — |
+| `payload` | object | 是 | `additionalProperties=true` |
+| `read_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `archived_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "archived_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Archived At"
+    },
+    "body": {
+      "title": "Body",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "notification_id": {
+      "format": "uuid",
+      "title": "Notification Id",
+      "type": "string"
+    },
+    "notification_type": {
+      "title": "Notification Type",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "read_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Read At"
+    },
+    "recipient_user_id": {
+      "format": "uuid",
+      "title": "Recipient User Id",
+      "type": "string"
+    },
+    "severity": {
+      "title": "Severity",
+      "type": "string"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Id"
+    },
+    "source_type": {
+      "title": "Source Type",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "notification_id",
+    "workspace_id",
+    "recipient_user_id",
+    "notification_type",
+    "severity",
+    "source_type",
+    "source_id",
+    "title",
+    "body",
+    "payload",
+    "read_at",
+    "archived_at",
+    "created_at"
+  ],
+  "title": "NotificationView",
   "type": "object"
 }
 ```
@@ -3452,6 +4538,450 @@ a persisted declaration is later resolved against a storage root.
     "path"
   ],
   "title": "OutputDeclaration",
+  "type": "object"
+}
+```
+
+<a id="schema-ProbeView"></a>
+
+## ProbeView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `connection_id` | string (uuid) | 是 | `format="uuid"` |
+| `status` | string | 是 | — |
+| `detail` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `probed_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "connection_id": {
+      "format": "uuid",
+      "title": "Connection Id",
+      "type": "string"
+    },
+    "detail": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Detail"
+    },
+    "probed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Probed At"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "connection_id",
+    "status",
+    "detail",
+    "probed_at"
+  ],
+  "title": "ProbeView",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectCreateRequest"></a>
+
+## ProjectCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "ProjectCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectInvitationPage"></a>
+
+## ProjectInvitationPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `invitations` | array&lt;[ProjectInvitationView](schemas.md#schema-ProjectInvitationView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "invitations": {
+      "items": {
+        "$ref": "#/components/schemas/ProjectInvitationView"
+      },
+      "title": "Invitations",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "invitations",
+    "total"
+  ],
+  "title": "ProjectInvitationPage",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectInvitationView"></a>
+
+## ProjectInvitationView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `invitation_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `project_id` | string (uuid) | 是 | `format="uuid"` |
+| `invitee_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `invited_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `role` | string | 是 | — |
+| `state` | string | 是 | — |
+| `expires_at` | string (date-time) | 是 | `format="date-time"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "invitation_id": {
+      "format": "uuid",
+      "title": "Invitation Id",
+      "type": "string"
+    },
+    "invited_by_user_id": {
+      "format": "uuid",
+      "title": "Invited By User Id",
+      "type": "string"
+    },
+    "invitee_user_id": {
+      "format": "uuid",
+      "title": "Invitee User Id",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "state": {
+      "title": "State",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "invitation_id",
+    "workspace_id",
+    "project_id",
+    "invitee_user_id",
+    "invited_by_user_id",
+    "role",
+    "state",
+    "expires_at",
+    "created_at"
+  ],
+  "title": "ProjectInvitationView",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectMemberPage"></a>
+
+## ProjectMemberPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `members` | array&lt;[ProjectMemberView](schemas.md#schema-ProjectMemberView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "members": {
+      "items": {
+        "$ref": "#/components/schemas/ProjectMemberView"
+      },
+      "title": "Members",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "members",
+    "total"
+  ],
+  "title": "ProjectMemberPage",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectMemberView"></a>
+
+## ProjectMemberView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `project_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `user_id` | string (uuid) | 是 | `format="uuid"` |
+| `role` | string | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "workspace_id",
+    "user_id",
+    "role",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ProjectMemberView",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectPage"></a>
+
+## ProjectPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `projects` | array&lt;[ProjectView](schemas.md#schema-ProjectView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "projects": {
+      "items": {
+        "$ref": "#/components/schemas/ProjectView"
+      },
+      "title": "Projects",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "projects",
+    "total"
+  ],
+  "title": "ProjectPage",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectUpdateRequest"></a>
+
+## ProjectUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Description"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Name"
+    }
+  },
+  "title": "ProjectUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ProjectView"></a>
+
+## ProjectView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `project_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `description` | string | 是 | — |
+| `status` | string | 是 | — |
+| `created_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by_user_id": {
+      "format": "uuid",
+      "title": "Created By User Id",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "workspace_id",
+    "name",
+    "description",
+    "status",
+    "created_by_user_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ProjectView",
   "type": "object"
 }
 ```
@@ -4296,6 +5826,196 @@ The stored configuration; the password is never rendered back.
 }
 ```
 
+<a id="schema-SpaceInvitationPage"></a>
+
+## SpaceInvitationPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `invitations` | array&lt;[SpaceInvitationView](schemas.md#schema-SpaceInvitationView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "invitations": {
+      "items": {
+        "$ref": "#/components/schemas/SpaceInvitationView"
+      },
+      "title": "Invitations",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "invitations",
+    "total"
+  ],
+  "title": "SpaceInvitationPage",
+  "type": "object"
+}
+```
+
+<a id="schema-SpaceInvitationView"></a>
+
+## SpaceInvitationView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `invitation_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `invitee_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `invited_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `role` | string | 是 | — |
+| `state` | string | 是 | — |
+| `expires_at` | string (date-time) | 是 | `format="date-time"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "invitation_id": {
+      "format": "uuid",
+      "title": "Invitation Id",
+      "type": "string"
+    },
+    "invited_by_user_id": {
+      "format": "uuid",
+      "title": "Invited By User Id",
+      "type": "string"
+    },
+    "invitee_user_id": {
+      "format": "uuid",
+      "title": "Invitee User Id",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "state": {
+      "title": "State",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "invitation_id",
+    "workspace_id",
+    "invitee_user_id",
+    "invited_by_user_id",
+    "role",
+    "state",
+    "expires_at",
+    "created_at"
+  ],
+  "title": "SpaceInvitationView",
+  "type": "object"
+}
+```
+
+<a id="schema-SpaceMemberPage"></a>
+
+## SpaceMemberPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `members` | array&lt;[SpaceMemberView](schemas.md#schema-SpaceMemberView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "members": {
+      "items": {
+        "$ref": "#/components/schemas/SpaceMemberView"
+      },
+      "title": "Members",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "members",
+    "total"
+  ],
+  "title": "SpaceMemberPage",
+  "type": "object"
+}
+```
+
+<a id="schema-SpaceMemberView"></a>
+
+## SpaceMemberView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `user_id` | string (uuid) | 是 | `format="uuid"` |
+| `role` | string | 是 | — |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "user_id",
+    "role",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "SpaceMemberView",
+  "type": "object"
+}
+```
+
 <a id="schema-TeamConfiguration"></a>
 
 ## TeamConfiguration
@@ -4760,6 +6480,32 @@ One callable operation with its schemas, effects and approval demand.
 }
 ```
 
+<a id="schema-TransferOwnershipRequest"></a>
+
+## TransferOwnershipRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `new_owner_user_id` | string (uuid) | 是 | `format="uuid"` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "new_owner_user_id": {
+      "format": "uuid",
+      "title": "New Owner User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "new_owner_user_id"
+  ],
+  "title": "TransferOwnershipRequest",
+  "type": "object"
+}
+```
+
 <a id="schema-UpdateDefinitionRequest"></a>
 
 ## UpdateDefinitionRequest
@@ -5115,6 +6861,181 @@ One account profile; avatar bytes are fetched from their own route.
     "size_delta"
   ],
   "title": "VersionDiffView",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceCreateRequest"></a>
+
+## WorkspaceCreateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | `maxLength=120`; `minLength=1` |
+| `description` | string | 否 | `default=""`; `maxLength=2000` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "WorkspaceCreateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspacePage"></a>
+
+## WorkspacePage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspaces` | array&lt;[WorkspaceView](schemas.md#schema-WorkspaceView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    },
+    "workspaces": {
+      "items": {
+        "$ref": "#/components/schemas/WorkspaceView"
+      },
+      "title": "Workspaces",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workspaces",
+    "total"
+  ],
+  "title": "WorkspacePage",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceUpdateRequest"></a>
+
+## WorkspaceUpdateRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 120, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Description"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Name"
+    }
+  },
+  "title": "WorkspaceUpdateRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-WorkspaceView"></a>
+
+## WorkspaceView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `name` | string | 是 | — |
+| `description` | string | 是 | — |
+| `status` | string | 是 | — |
+| `created_by_user_id` | string (uuid) | 是 | `format="uuid"` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by_user_id": {
+      "format": "uuid",
+      "title": "Created By User Id",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "name",
+    "description",
+    "status",
+    "created_by_user_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "WorkspaceView",
   "type": "object"
 }
 ```

@@ -218,7 +218,13 @@ class CapabilityDefinitionPage(BaseModel):
 
 
 class ChannelConfiguration(BaseModel):
-    """The vendor protocol one channel definition speaks."""
+    """The vendor protocol one channel definition speaks.
+
+A channel declares one vendor protocol and the adapter operations
+that speak it. The declaration is static: an entrypoint is an
+identifier the package must carry as a declared resource, and no
+vendor client is constructed, no signature is verified and no
+message is exchanged at publish time."""
 
     operations: list[ChannelOperation]
     parameters_schema: dict[str, object] | None = None
@@ -238,7 +244,12 @@ class ExpertConfiguration(BaseModel):
 
 
 class ExtensionConfiguration(BaseModel):
-    """The export contract one extension definition publishes."""
+    """The export contract one extension definition publishes.
+
+An extension declares the exports its package installs with — typed
+operations with their effects, hooks bound to fixed stages, and event
+consumers — plus the permissions those exports need. The declaration
+is frozen at publish; nothing is imported, registered or run here."""
 
     events: list[ExtensionEvent] | None = None
     hooks: list[ExtensionHook] | None = None

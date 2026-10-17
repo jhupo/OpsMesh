@@ -7,8 +7,10 @@ consumer remains the only durable component the base process requires.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import AsyncExitStack, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from temporalio.client import Client
@@ -21,11 +23,14 @@ from opsmesh.config import Settings
 from opsmesh.governance.audit.activities import AuditActivities
 from opsmesh.governance.audit.workflow import AuditVerificationWorkflow
 from opsmesh.platform.mail.activities import MailActivities
+from opsmesh.platform.mail.service import MailAuthorization
 from opsmesh.platform.mail.workflow import MailSendWorkflow
 from opsmesh.shared.security.secrets import SecretCipher
 from opsmesh.telemetry.context import restore_trace_context
 from opsmesh.temporal.dispatch.dispatcher import TemporalOutboxDispatcher
 from opsmesh.temporal.dispatch.outbox import TemporalOutboxPublisher
+from opsmesh.workspaces.model_providers.activities import ModelProviderActivities
+from opsmesh.workspaces.model_providers.workflow import ModelProviderProbeWorkflow
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,46 @@ class DispatchWorker:
 
     dispatcher: TemporalOutboxDispatcher
     worker: Worker
+
+
+@dataclass(frozen=True)
+class FeatureRegistrations:
+    """The feature Workflows and Activities one step registers on the Worker.
+
+    The registration set is a fact of its own: a Workflow a service stages
+    must be registered here or its durable execution never runs, so the
+    set is assembled as data the assembly and the tests both read.
+    """
+
+    workflows: list[type] = field(default_factory=list)
+    activities: list[Callable[..., Any]] = field(default_factory=list)
+
+
+def feature_registrations(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    cipher: SecretCipher,
+    mail_authorizations: dict[str, MailAuthorization],
+) -> FeatureRegistrations:
+    """Assemble the Workflows and Activities of every delivered step."""
+    audit_activities = AuditActivities(sessions)
+    mail_activities = MailActivities(cipher, sessions, mail_authorizations)
+    model_provider_activities = ModelProviderActivities(cipher, sessions)
+    return FeatureRegistrations(
+        workflows=[
+            AuditVerificationWorkflow,
+            MailSendWorkflow,
+            ModelProviderProbeWorkflow,
+        ],
+        activities=[
+            audit_activities.verify_audit_segment,
+            audit_activities.record_audit_verification_progress,
+            audit_activities.complete_audit_verification,
+            mail_activities.deliver_mail_intent,
+            mail_activities.record_mail_cancellation,
+            model_provider_activities.probe_connection,
+        ],
+    )
 
 
 async def build_dispatch_worker(settings: Settings, resources: AsyncExitStack) -> DispatchWorker:
@@ -63,20 +108,15 @@ def build_feature_worker(
     *,
     cipher: SecretCipher,
 ) -> Worker:
-    """Register the feature Workflows and Activities of the current step."""
-    audit_activities = AuditActivities(sessions)
-    mail_activities = MailActivities(cipher, sessions, mail_source_authorizations())
+    """Build the Worker over the registration set of every delivered step."""
+    registrations = feature_registrations(
+        sessions, cipher=cipher, mail_authorizations=mail_source_authorizations()
+    )
     return Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[AuditVerificationWorkflow, MailSendWorkflow],
-        activities=[
-            audit_activities.verify_audit_segment,
-            audit_activities.record_audit_verification_progress,
-            audit_activities.complete_audit_verification,
-            mail_activities.deliver_mail_intent,
-            mail_activities.record_mail_cancellation,
-        ],
+        workflows=registrations.workflows,
+        activities=registrations.activities,
         max_concurrent_workflow_tasks=settings.temporal_workflow_concurrency,
         max_concurrent_activities=settings.temporal_activity_concurrency,
     )

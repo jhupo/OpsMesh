@@ -38,6 +38,20 @@ from opsmesh.resources.files.models import (
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.idempotency import CreationReceipt
 from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
+from opsmesh.workspaces.capacity.models import (
+    WorkspaceCapacityAccount,
+    WorkspaceCapacityReservation,
+)
+from opsmesh.workspaces.credentials.models import WorkspaceCredential
+from opsmesh.workspaces.members.models import WorkspaceInvitation, WorkspaceMember
+from opsmesh.workspaces.model_providers.models import ModelProviderConnection
+from opsmesh.workspaces.models import Workspace
+from opsmesh.workspaces.notifications.models import (
+    NotificationPreference,
+    WorkspaceNotification,
+)
+from opsmesh.workspaces.projects.members.models import ProjectInvitation, ProjectMember
+from opsmesh.workspaces.projects.models import Project
 
 
 def register_models() -> MetaData:
@@ -55,6 +69,11 @@ def register_models() -> MetaData:
         CreationReceipt,
         LoginSession,
         MailIntent,
+        ModelProviderConnection,
+        NotificationPreference,
+        Project,
+        ProjectInvitation,
+        ProjectMember,
         ResourceArtifact,
         ResourceDirectory,
         ResourceFile,
@@ -72,5 +91,12 @@ def register_models() -> MetaData:
         UserQuotaLimit,
         UserStorageAccount,
         UserTokenAccount,
+        Workspace,
+        WorkspaceCapacityAccount,
+        WorkspaceCapacityReservation,
+        WorkspaceCredential,
+        WorkspaceInvitation,
+        WorkspaceMember,
+        WorkspaceNotification,
     )
     return Base.metadata

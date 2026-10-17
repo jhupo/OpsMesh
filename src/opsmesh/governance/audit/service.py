@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
@@ -18,8 +18,15 @@ from opsmesh.governance.audit.models import (
     AuditEvent,
     AuditVerification,
 )
-from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.errors import (
+    ConflictError,
+    ForbiddenError,
+    InvalidArgumentError,
+    NotFoundError,
+)
 from opsmesh.temporal.dispatch.outbox import stage_execution
+
+PLATFORM_ADMINISTRATOR = "admin"
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -38,6 +45,86 @@ class AuditSubject(Protocol):
 
     @property
     def user_id(self) -> UUID: ...
+
+
+class AuditReader(Protocol):
+    """The verified subject that reads audit facts.
+
+    Platform roles travel with the subject exactly like the approval
+    reader: governance decides what an administrator may read without
+    importing identity, and the workspace owner decides the rest through
+    the injected scope admission.
+    """
+
+    @property
+    def user_id(self) -> UUID: ...
+
+    def has_platform_role(self, role: str) -> bool: ...
+
+
+@runtime_checkable
+class AuditScopeAdmission(Protocol):
+    """Whether one reader may read audit facts inside one named scope."""
+
+    def admit(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        workspace_id: UUID | None,
+        project_id: UUID | None,
+    ) -> None:
+        """Raise a domain error when the scope is not admitted for the reader."""
+        ...
+
+
+class RejectingAuditScopeAdmission:
+    """The default admission: every external scope is refused.
+
+    The workspace owner replaces this in the workspace step; until then a
+    scoped audit read fails closed instead of being treated as a platform
+    read.
+    """
+
+    def admit(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        workspace_id: UUID | None,
+        project_id: UUID | None,
+    ) -> None:
+        _ = session, user_id
+        raise ForbiddenError(
+            "The audit scope is not admitted",
+            details={
+                "workspace_id": str(workspace_id) if workspace_id else None,
+                "project_id": str(project_id) if project_id else None,
+            },
+        )
+
+
+def authorize_audit_read(
+    session: Session,
+    *,
+    reader: AuditReader,
+    admission: AuditScopeAdmission,
+    workspace_id: UUID | None,
+    project_id: UUID | None,
+) -> None:
+    """Authorize one audit read: administrators read every scope, everyone
+    else is admitted inside a named scope by its owner.
+
+    An unscoped read stays platform-administrator only, so the workspace
+    step can widen scoped access without widening platform access.
+    """
+    if reader.has_platform_role(PLATFORM_ADMINISTRATOR):
+        return
+    if workspace_id is None and project_id is None:
+        raise ForbiddenError("Platform audit administration is required for unscoped reads")
+    admission.admit(
+        session, user_id=reader.user_id, workspace_id=workspace_id, project_id=project_id
+    )
 
 
 @dataclass(frozen=True)

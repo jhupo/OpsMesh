@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from opsmesh.resources.files.access import (
     RejectingScopeAdmission,
@@ -61,12 +62,13 @@ def test_permissions_are_validated() -> None:
 def test_the_default_scope_admission_refuses_every_external_scope() -> None:
     admission = RejectingScopeAdmission()
     reader = ResourceReader(user_id=uuid4())
-    admission.admit(reader=reader, scope=ScopeRef())
+    # The refusing path never touches the session; an unbound one is enough.
+    admission.admit(Session(), reader=reader, scope=ScopeRef())
     assert ScopeRef().is_user_scope
     with pytest.raises(ForbiddenError):
-        admission.admit(reader=reader, scope=ScopeRef(workspace_id=uuid4()))
+        admission.admit(Session(), reader=reader, scope=ScopeRef(workspace_id=uuid4()))
     with pytest.raises(ForbiddenError):
-        admission.admit(reader=reader, scope=ScopeRef(project_id=uuid4()))
+        admission.admit(Session(), reader=reader, scope=ScopeRef(project_id=uuid4()))
 
 
 def test_download_response_sanitizes_the_filename() -> None:

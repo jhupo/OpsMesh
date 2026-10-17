@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     # Built-in capability release root (S5)
     bundled_root: str = Field(default="bundled")
 
+    # Workspace capacity defaults (S6); a null limit means unlimited
+    default_workspace_concurrency_limit: int | None = Field(default=None, ge=0)
+    default_workspace_environment_limit: int | None = Field(default=None, ge=0)
+
     @model_validator(mode="after")
     def validate_security_configuration(self) -> "Settings":
         SecretCipher(
@@ -246,6 +250,8 @@ class Settings(BaseSettings):
             "default_user_token_limit": self.default_user_token_limit,
             "default_user_storage_limit_bytes": self.default_user_storage_limit_bytes,
             "mail_daily_source_limit": self.mail_daily_source_limit,
+            "default_workspace_concurrency_limit": self.default_workspace_concurrency_limit,
+            "default_workspace_environment_limit": self.default_workspace_environment_limit,
             "credential_encryption_key_id": self.credential_encryption_key_id,
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_keys

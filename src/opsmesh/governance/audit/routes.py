@@ -1,9 +1,10 @@
-"""Restricted extension append plus admin audit query and verification APIs.
+"""Restricted extension append plus scope-aware audit query and verification APIs.
 
 The module never imports identity: the reader and the extension actor are
 declared as placeholder dependencies that bootstrap replaces with the
-assembled identity channels. Until then every route answers 503 instead of
-trusting an unauthenticated caller.
+assembled identity channels, and the scope admission is read from the
+assembled application state. Until then every route answers 503 instead
+of trusting an unauthenticated caller.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from opsmesh.governance.audit.models import AuditEvent, AuditVerification
@@ -27,7 +28,10 @@ from opsmesh.governance.audit.service import (
     DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
     AuditActor,
-    AuditSubject,
+    AuditReader,
+    AuditScopeAdmission,
+    RejectingAuditScopeAdmission,
+    authorize_audit_read,
     get_event,
     get_verification,
     list_events,
@@ -42,8 +46,8 @@ router = APIRouter(prefix="/governance/audit", tags=["governance"])
 DbSession = Annotated[Session, Depends(get_db_session)]
 
 
-def require_audit_reader() -> AuditSubject:
-    """Placeholder for the platform audit reader; bootstrap injects identity."""
+def require_audit_reader() -> AuditReader:
+    """Placeholder for the verified audit reader; bootstrap injects identity."""
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Audit reading is not assembled",
@@ -58,8 +62,22 @@ def require_extension_actor() -> AuditActor:
     )
 
 
-ReaderDep = Annotated[AuditSubject, Depends(require_audit_reader)]
+ReaderDep = Annotated[AuditReader, Depends(require_audit_reader)]
 ExtensionActorDep = Annotated[AuditActor, Depends(require_extension_actor)]
+
+
+def _scope_admission(request: Request) -> AuditScopeAdmission:
+    admission = getattr(request.app.state, "audit_scope_admission", None)
+    if isinstance(admission, AuditScopeAdmission):
+        return admission
+    return RejectingAuditScopeAdmission()
+
+
+AdmissionDep = Annotated[AuditScopeAdmission, Depends(_scope_admission)]
+
+# Verification is a platform-wide operation: the admission is never reached,
+# because an unscoped read refuses every non-administrator before it.
+_UNSCOPED_ADMISSION = RejectingAuditScopeAdmission()
 
 
 @router.post(
@@ -93,6 +111,7 @@ def record_event(
 def list_audit_events(
     session: DbSession,
     reader: ReaderDep,
+    admission: AdmissionDep,
     after_sequence: Annotated[int | None, Query(ge=0)] = None,
     actor_type: Annotated[str | None, Query(max_length=20)] = None,
     action: Annotated[str | None, Query(max_length=200)] = None,
@@ -103,6 +122,13 @@ def list_audit_events(
     limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
 ) -> AuditEventPage:
     """One cursor page ordered by chain sequence; filters are ANDed."""
+    authorize_audit_read(
+        session,
+        reader=reader,
+        admission=admission,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
     events = list_events(
         session,
         after_sequence=after_sequence,
@@ -126,8 +152,21 @@ def list_audit_events(
     response_model=AuditEventView,
     operation_id="governance.audit.events.read",
 )
-def get_audit_event(event_id: UUID, session: DbSession, reader: ReaderDep) -> AuditEventView:
-    return _event_view(get_event(session, event_id))
+def get_audit_event(
+    event_id: UUID,
+    session: DbSession,
+    reader: ReaderDep,
+    admission: AdmissionDep,
+) -> AuditEventView:
+    event = get_event(session, event_id)
+    authorize_audit_read(
+        session,
+        reader=reader,
+        admission=admission,
+        workspace_id=event.workspace_id,
+        project_id=event.project_id,
+    )
+    return _event_view(event)
 
 
 @router.post(
@@ -142,6 +181,13 @@ def create_verification(
     reader: ReaderDep,
 ) -> AuditVerificationView:
     """Register one verification run and stage its durable execution."""
+    authorize_audit_read(
+        session,
+        reader=reader,
+        admission=_UNSCOPED_ADMISSION,
+        workspace_id=None,
+        project_id=None,
+    )
     with session_transaction(session):
         verification = start_verification(
             session,
@@ -160,6 +206,13 @@ def create_verification(
 def get_audit_verification(
     verification_id: UUID, session: DbSession, reader: ReaderDep
 ) -> AuditVerificationView:
+    authorize_audit_read(
+        session,
+        reader=reader,
+        admission=_UNSCOPED_ADMISSION,
+        workspace_id=None,
+        project_id=None,
+    )
     return _verification_view(get_verification(session, verification_id))
 
 

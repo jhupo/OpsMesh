@@ -3,6 +3,9 @@
 Governance modules never import identity: this assembly point replaces their
 placeholder dependencies with the real identity channels, and resolves the
 restricted delegation subject that extension-reserved operations require.
+The workspace step registers the real scope owners here: the resource and
+audit scope admissions delegate to the one space and project access paths,
+so no module keeps a fixed allow or deny callback of its own.
 """
 
 from __future__ import annotations
@@ -46,8 +49,18 @@ from opsmesh.platform.mail.service import (
 )
 from opsmesh.resources.artifacts import routes as artifact_routes
 from opsmesh.resources.files import routes as file_routes
-from opsmesh.resources.files.access import ResourceReader
+from opsmesh.resources.files.access import ResourceReader, ScopeRef
 from opsmesh.shared.errors import ForbiddenError
+from opsmesh.workspaces import routes as workspace_routes
+from opsmesh.workspaces.capacity import routes as capacity_routes
+from opsmesh.workspaces.credentials import routes as credential_routes
+from opsmesh.workspaces.members import access as space_access
+from opsmesh.workspaces.members import routes as member_routes
+from opsmesh.workspaces.model_providers import routes as model_provider_routes
+from opsmesh.workspaces.notifications import routes as notification_routes
+from opsmesh.workspaces.projects import routes as project_routes
+from opsmesh.workspaces.projects.members import access as project_access
+from opsmesh.workspaces.projects.members import routes as project_member_routes
 
 
 class RejectingMailAuthorization:
@@ -60,9 +73,85 @@ class RejectingMailAuthorization:
         )
 
 
+class WorkspaceScopeAdmission:
+    """The real resource scope admission: space and project membership.
+
+    The user scope needs no external owner — the file-level owner and grant
+    checks authorize it. A workspace scope requires membership of that
+    workspace, a project scope a project role, which space leadership holds
+    everywhere and everyone else holds seat by seat. A project scope without
+    its workspace is malformed and refused.
+    """
+
+    def admit(self, session: Session, *, reader: ResourceReader, scope: ScopeRef) -> None:
+        if scope.is_user_scope:
+            return
+        workspace_id = scope.workspace_id
+        if workspace_id is None:
+            raise ForbiddenError(
+                "The resource scope is not admitted",
+                details={"project_id": str(scope.project_id) if scope.project_id else None},
+            )
+        if scope.project_id is None:
+            admitted = space_access.space_role(
+                session, workspace_id=workspace_id, user_id=reader.user_id
+            )
+        else:
+            admitted = project_access.project_role(
+                session,
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
+                user_id=reader.user_id,
+            )
+        if admitted is None:
+            raise ForbiddenError(
+                "The resource scope is not admitted",
+                details={
+                    "workspace_id": str(workspace_id),
+                    "project_id": str(scope.project_id) if scope.project_id else None,
+                },
+            )
+
+
+class WorkspaceAuditScopeAdmission:
+    """The real audit scope admission, resolved through the same access paths."""
+
+    def admit(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        workspace_id: UUID | None,
+        project_id: UUID | None,
+    ) -> None:
+        admitted = False
+        if project_id is not None and workspace_id is not None:
+            admitted = (
+                project_access.project_role(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    user_id=user_id,
+                )
+                is not None
+            )
+        elif workspace_id is not None:
+            admitted = (
+                space_access.space_role(session, workspace_id=workspace_id, user_id=user_id)
+                is not None
+            )
+        if not admitted:
+            raise ForbiddenError(
+                "The audit scope is not admitted",
+                details={
+                    "workspace_id": str(workspace_id) if workspace_id else None,
+                    "project_id": str(project_id) if project_id else None,
+                },
+            )
+
+
 def _audit_reader(user: CurrentUserDep) -> CurrentUser:
-    """Audit reads are platform-administrator only; space roles never qualify."""
-    require_platform_admin(user)
+    """Audit reads are authorized per scope by the audit routes themselves."""
     return user
 
 
@@ -145,6 +234,16 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
         tool_routes.router,
         file_routes.router,
         artifact_routes.router,
+        workspace_routes.router,
+        capacity_routes.router,
+        credential_routes.router,
+        member_routes.router,
+        member_routes.invitation_router,
+        model_provider_routes.router,
+        notification_routes.router,
+        project_routes.router,
+        project_member_routes.router,
+        project_member_routes.invitation_router,
     ):
         app.include_router(router, prefix=prefix)
     app.dependency_overrides[audit_routes.require_audit_reader] = _audit_reader

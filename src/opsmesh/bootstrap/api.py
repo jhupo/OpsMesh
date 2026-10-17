@@ -20,7 +20,11 @@ from opsmesh.bootstrap.resources import (
     build_database_resources,
     build_json_cache,
 )
-from opsmesh.bootstrap.routers import register_routers
+from opsmesh.bootstrap.routers import (
+    WorkspaceAuditScopeAdmission,
+    WorkspaceScopeAdmission,
+    register_routers,
+)
 from opsmesh.bootstrap.telemetry import configure_api_telemetry, flush_process_telemetry
 from opsmesh.config import Settings, get_settings
 from opsmesh.governance.approvals.targets import NoApprovalTargetNotifier
@@ -34,7 +38,6 @@ from opsmesh.identity.provisioning import (
     UserIdentityDirectory,
 )
 from opsmesh.resources.artifacts.service import RejectingArtifactAuthorization
-from opsmesh.resources.files.access import RejectingScopeAdmission
 from opsmesh.shared.http.errors import ErrorResponse, register_error_handlers
 from opsmesh.shared.http.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from opsmesh.shared.redis.client import close_redis_client
@@ -80,11 +83,13 @@ def assemble_feature_services(app: FastAPI, settings: Settings, cipher: SecretCi
         cipher=cipher,
         daily_source_limit=settings.mail_daily_source_limit,
     )
-    # The storage ledger has its identity owner today; the resource scope
-    # admission and the artifact record authorization keep their rejecting
-    # defaults until the workspace and execution steps register real owners.
+    # The storage ledger has its identity owner; the workspace step registers
+    # the real resource and audit scope admissions, resolved through the one
+    # space and project access paths. The artifact record authorization keeps
+    # its rejecting default until the execution step registers a real owner.
     app.state.storage_quota_ledger = assemble_storage_quota_ledger()
-    app.state.scope_admission = RejectingScopeAdmission()
+    app.state.scope_admission = WorkspaceScopeAdmission()
+    app.state.audit_scope_admission = WorkspaceAuditScopeAdmission()
     app.state.artifact_authorization = RejectingArtifactAuthorization()
 
 
@@ -131,6 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.json_cache = None
                 app.state.storage_quota_ledger = None
                 app.state.scope_admission = None
+                app.state.audit_scope_admission = None
                 app.state.artifact_authorization = None
                 if redis_client is not None:
                     close_redis_client(redis_client)
@@ -162,6 +168,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.json_cache = None
     app.state.storage_quota_ledger = None
     app.state.scope_admission = None
+    app.state.audit_scope_admission = None
     app.state.artifact_authorization = None
     app.state.settings = None
     app.state.auth_service = None

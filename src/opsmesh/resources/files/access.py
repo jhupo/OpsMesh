@@ -39,8 +39,9 @@ class ResourceReader:
 class ScopeRef:
     """One external scope a resource request may name.
 
-    S5 stores user-scope resources only; a workspace or project scope is
-    admitted by the injected owner (S6) and refused until then.
+    A workspace or project scope is admitted by the injected owner: the
+    assembled application delegates to the real space and project
+    membership checks, and the default refuses until that assembly.
     """
 
     workspace_id: UUID | None = None
@@ -53,9 +54,14 @@ class ScopeRef:
 
 @runtime_checkable
 class ScopeAdmission(Protocol):
-    """Whether one reader may act inside one external scope."""
+    """Whether one reader may act inside one external scope.
 
-    def admit(self, *, reader: ResourceReader, scope: ScopeRef) -> None:
+    The admission runs inside the caller's session, exactly like the
+    storage ledger: the real owner checks membership in the same
+    transaction that writes the resource fact.
+    """
+
+    def admit(self, session: Session, *, reader: ResourceReader, scope: ScopeRef) -> None:
         """Raise a domain error when the scope is not admitted for the reader."""
         ...
 
@@ -69,10 +75,10 @@ class RejectingScopeAdmission:
     owner: the file-level owner and grant checks authorize it.
     """
 
-    def admit(self, *, reader: ResourceReader, scope: ScopeRef) -> None:
+    def admit(self, session: Session, *, reader: ResourceReader, scope: ScopeRef) -> None:
         if scope.is_user_scope:
             return
-        _ = reader
+        _ = session, reader
         raise ForbiddenError(
             "The resource scope is not admitted",
             details={

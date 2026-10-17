@@ -580,12 +580,25 @@ def render_method(operation: Operation) -> list[str]:
     writer.line("            self._channel.context(),")
     writer.line("        )")
     if operation.response_kind == "model":
-        writer.line(f"        return {operation.response_model}.model_validate(response.body)")
+        single = f"        return {operation.response_model}.model_validate(response.body)"
+        if len(single) <= MAX_LINE:
+            writer.line(single)
+        else:
+            writer.line(f"        return {operation.response_model}.model_validate(")
+            writer.line("            response.body")
+            writer.line("        )")
     elif operation.response_kind == "array":
-        writer.line(
+        single = (
             f"        return [{operation.response_model}.model_validate(item) "
             "for item in decode_array(response)]"
         )
+        if len(single) <= MAX_LINE:
+            writer.line(single)
+        else:
+            writer.line("        return [")
+            writer.line(f"            {operation.response_model}.model_validate(item)")
+            writer.line("            for item in decode_array(response)")
+            writer.line("        ]")
     elif operation.response_kind == "binary":
         writer.line("        return decode_binary(response)")
     return writer.lines
@@ -599,7 +612,13 @@ def render_sub_client(node: SubClient) -> list[str]:
     writer.line("    def __init__(self, channel: GroupChannel) -> None:")
     writer.line("        self._channel = channel")
     for child in node.children:
-        writer.line(f"        self.{child.name} = {child.class_name}(channel)")
+        single = f"        self.{child.name} = {child.class_name}(channel)"
+        if len(single) <= MAX_LINE:
+            writer.line(single)
+        else:
+            writer.line(f"        self.{child.name} = {child.class_name}(")
+            writer.line("            channel")
+            writer.line("        )")
     for operation in node.operations:
         writer.blank()
         writer.extend(render_method(operation))

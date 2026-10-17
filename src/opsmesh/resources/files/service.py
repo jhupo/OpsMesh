@@ -65,7 +65,7 @@ def create_directory(
     scope: ScopeRef,
 ) -> ResourceDirectory:
     """Create one user directory at a validated relative path."""
-    admission.admit(reader=reader, scope=scope)
+    admission.admit(session, reader=reader, scope=scope)
     try:
         validated = validate_relative_path(path)
     except ValueError as exc:

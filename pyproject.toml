@@ -284,6 +284,83 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "v4-workspaces-boundaries"
+name = "Workspaces use shared, temporal, identity, capabilities, resources, extensions, execution and governance only"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces"]
+forbidden_modules = [
+    "opsmesh.platform", "opsmesh.orchestration", "opsmesh.channels",
+    "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-members-isolated"
+name = "Space membership never reaches project or sibling workspace modules"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.members"]
+forbidden_modules = [
+    "opsmesh.workspaces.projects",
+    "opsmesh.workspaces.credentials",
+    "opsmesh.workspaces.capacity",
+    "opsmesh.workspaces.model_providers",
+    "opsmesh.workspaces.notifications",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-credentials-isolated"
+name = "Credentials stay on membership access and shared security"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.credentials"]
+forbidden_modules = [
+    "opsmesh.workspaces.projects",
+    "opsmesh.workspaces.capacity",
+    "opsmesh.workspaces.model_providers",
+    "opsmesh.workspaces.notifications",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-capacity-isolated"
+name = "Capacity stays on membership access and shared database mechanisms"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.capacity"]
+forbidden_modules = [
+    "opsmesh.workspaces.projects",
+    "opsmesh.workspaces.credentials",
+    "opsmesh.workspaces.model_providers",
+    "opsmesh.workspaces.notifications",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-model-providers-isolated"
+name = "Model providers stay on membership, credentials and temporal without projects"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.model_providers"]
+forbidden_modules = [
+    "opsmesh.workspaces.projects",
+    "opsmesh.workspaces.capacity",
+    "opsmesh.workspaces.notifications",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-notifications-isolated"
+name = "Notifications stay on membership and shared database mechanisms"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.notifications"]
+forbidden_modules = [
+    "opsmesh.workspaces.projects",
+    "opsmesh.workspaces.credentials",
+    "opsmesh.workspaces.capacity",
+    "opsmesh.workspaces.model_providers",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-workspaces-project-members-isolated"
+name = "Project membership never imports the project service"
+type = "forbidden"
+source_modules = ["opsmesh.workspaces.projects.members"]
+forbidden_modules = ["opsmesh.workspaces.projects.service"]
+
+[[tool.importlinter.contracts]]
 id = "v4-identity-auth-isolated"
 name = "Authentication reaches the profile owner only through injected contracts"
 type = "forbidden"

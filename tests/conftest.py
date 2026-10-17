@@ -32,6 +32,11 @@ FEATURE_TABLES = (
     "capability_versions",
     "login_sessions",
     "mail_intents",
+    "model_provider_connections",
+    "notification_preferences",
+    "project_invitations",
+    "project_members",
+    "projects",
     "resource_artifacts",
     "resource_directories",
     "resource_file_contents",
@@ -48,6 +53,13 @@ FEATURE_TABLES = (
     "user_storage_accounts",
     "user_token_accounts",
     "users",
+    "workspace_capacity_accounts",
+    "workspace_capacity_reservations",
+    "workspace_credentials",
+    "workspace_invitations",
+    "workspace_members",
+    "workspace_notifications",
+    "workspaces",
 )
 
 
