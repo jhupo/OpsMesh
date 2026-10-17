@@ -124,7 +124,9 @@ _CODE_ALIASES: Final[dict[str, type[OpsMeshError]]] = {
     "idempotency_resource_missing": ConflictError,
     "quota_exceeded": RateLimitError,
     "idempotency_in_progress": RateLimitError,
+    "budget_exceeded": RateLimitError,
     "service_unavailable": TransportError,
+    "budget_revision": ConflictError,
 }
 
 _ERROR_BY_CODE: Final[dict[str, type[OpsMeshError]]] = {

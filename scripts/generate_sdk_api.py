@@ -146,6 +146,23 @@ def ref_name(reference: str) -> str:
     return reference.rsplit("/", 1)[-1]
 
 
+def model_name(openapi_name: str) -> str:
+    """Render one OpenAPI component name as a Python class identifier.
+
+    FastAPI splits a model used in both request and response positions into
+    ``<Name>-Input`` and ``<Name>-Output`` components; the hyphen is legal in
+    the document but not in a Python identifier, so the suffix becomes a camel
+    suffix. Any other non-identifier component name is a generation error
+    rather than silently broken output.
+    """
+    for suffix in ("-Input", "-Output"):
+        if openapi_name.endswith(suffix):
+            return openapi_name[: -len(suffix)] + suffix[1:]
+    if not openapi_name.isidentifier():
+        raise GenerationError(f"the schema name {openapi_name!r} is not a Python identifier")
+    return openapi_name
+
+
 def _relative_path(path: str, prefix: str, *, where: str) -> str:
     """Strip the exported API prefix so the path stays relative.
 
@@ -167,7 +184,7 @@ def python_type(schema: Mapping[str, Any], shared: Mapping[str, str], *, where: 
     """Render one JSON schema as a Python annotation."""
     if "$ref" in schema:
         name = ref_name(schema["$ref"])
-        return shared.get(name, name)
+        return shared.get(name, model_name(name))
     variants = schema.get("anyOf")
     if variants is not None:
         nullable = any(variant.get("type") == "null" for variant in variants)
@@ -255,13 +272,13 @@ def response_shape(
         )
     if "$ref" in schema:
         name = ref_name(schema["$ref"])
-        return "model", shared.get(name, name)
+        return "model", shared.get(name, model_name(name))
     if schema.get("type") == "array":
         item = schema.get("items", {})
         if "$ref" not in item:
             raise GenerationError(f"{where}: the response array items are not a component model")
         name = ref_name(item["$ref"])
-        return "array", shared.get(name, name)
+        return "array", shared.get(name, model_name(name))
     raise GenerationError(
         f"{where}: the success response is neither a component model nor an array of one"
     )
@@ -330,7 +347,7 @@ def collect_operations(document: Mapping[str, Any], config: CodegenConfig) -> li
                 if "$ref" not in body_schema:
                     raise GenerationError(f"{where}: the request body is not a component model")
                 name = ref_name(body_schema["$ref"])
-                body_model = shared.get(name, name)
+                body_model = shared.get(name, model_name(name))
                 body_dump = body_dump_expression(name, schemas, where=where)
             response_kind, response_model = response_shape(
                 operation, where, shared, binary_direction
@@ -391,6 +408,9 @@ def collect_models(
             raise GenerationError(f"the schema {name!r} is not defined in the OpenAPI document")
         collected[name] = schema
         pending.extend(sorted(schema_references(schema) - set(collected)))
+    rendered = [model_name(name) for name in collected if name not in shared]
+    if len(rendered) != len(set(rendered)):
+        raise GenerationError("two component schemas render to the same Python class name")
     return collected
 
 
@@ -478,7 +498,7 @@ def render_models(
             writer.blank()
             writer.blank()
         schema = models[name]
-        writer.line(f"class {name}(BaseModel):")
+        writer.line(f"class {model_name(name)}(BaseModel):")
         description = schema.get("description")
         if description:
             writer.line(f'    """{sanitize(description)}"""')
@@ -741,7 +761,12 @@ def render_group_module(
     writer.blank()
     writer.blank()
     exported = sorted(
-        [*ordered, *(node.class_name for node in classes), group_class, f"create_{group}_client"]
+        [
+            *(model_name(name) for name in ordered),
+            *(node.class_name for node in classes),
+            group_class,
+            f"create_{group}_client",
+        ]
     )
     writer.line("__all__ = [")
     writer.extend(f'    "{name}",' for name in exported)

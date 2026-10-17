@@ -13,6 +13,12 @@
 | GET | `/api/v1/governance/audit/events/{event_id}` | Get Audit Event |
 | POST | `/api/v1/governance/audit/verifications` | Create Verification |
 | GET | `/api/v1/governance/audit/verifications/{verification_id}` | Get Audit Verification |
+| GET | `/api/v1/governance/costs/pricing/versions` | List Pricing Versions |
+| POST | `/api/v1/governance/costs/pricing/versions` | Publish Pricing Version |
+| GET | `/api/v1/governance/costs/workspaces/{workspace_id}/budget` | Read Budget |
+| PUT | `/api/v1/governance/costs/workspaces/{workspace_id}/budget` | Upsert Budget |
+| GET | `/api/v1/governance/costs/workspaces/{workspace_id}/reservations` | List Reservations |
+| GET | `/api/v1/governance/costs/workspaces/{workspace_id}/usage` | List Usage |
 | GET | `/api/v1/governance/security-events` | List Security Events |
 | GET | `/api/v1/governance/security-events/{event_id}` | Read Security Event |
 
@@ -342,6 +348,231 @@ Operation ID：`governance.audit.verifications.read`。
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [AuditVerificationView](schemas.md#schema-AuditVerificationView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/governance/costs/pricing/versions`
+
+List Pricing Versions
+
+Operation ID：`governance.costs.pricing.list`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `list_pricing_versions`。
+
+List the published price sheets, newest version first per subject.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `subject_kind` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 16, "type": "string"}, {"type": "null"}]` |
+| `subject_key` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 255, "type": "string"}, {"type": "null"}]` |
+| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
+| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [PricingVersionPage](schemas.md#schema-PricingVersionPage) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## POST `/api/v1/governance/costs/pricing/versions`
+
+Publish Pricing Version
+
+Operation ID：`governance.costs.pricing.publish`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `publish_pricing_version`。
+
+Publish one immutable price sheet for one model or tool subject.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+参数：无显式路径、查询或 Header 参数。
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/PricingVersionPublishRequest"
+}
+```
+
+模型：[PricingVersionPublishRequest](schemas.md#schema-PricingVersionPublishRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 201 | Successful Response | application/json | [PricingVersionView](schemas.md#schema-PricingVersionView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/governance/costs/workspaces/{workspace_id}/budget`
+
+Read Budget
+
+Operation ID：`governance.costs.budget.read`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `read_budget`。
+
+Read one workspace budget; no budget is the unconfigured state.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `currency` | query | 是 | string | `maxLength=8`; `minLength=1` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [BudgetView](schemas.md#schema-BudgetView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/governance/costs/workspaces/{workspace_id}/budget`
+
+Upsert Budget
+
+Operation ID：`governance.costs.budget.upsert`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `upsert_budget`。
+
+Create or change one workspace budget under its expected revision.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/BudgetUpsertRequest"
+}
+```
+
+模型：[BudgetUpsertRequest](schemas.md#schema-BudgetUpsertRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [BudgetView](schemas.md#schema-BudgetView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/governance/costs/workspaces/{workspace_id}/reservations`
+
+List Reservations
+
+Operation ID：`governance.costs.reservations.list`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `list_reservations`。
+
+List one workspace's reservations; the uncertain set is the pending work.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `status` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 16, "type": "string"}, {"type": "null"}]` |
+| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
+| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [ReservationPage](schemas.md#schema-ReservationPage) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/governance/costs/workspaces/{workspace_id}/usage`
+
+List Usage
+
+Operation ID：`governance.costs.usage.list`。
+
+实现：[src/opsmesh/governance/costs/routes.py](../../src/opsmesh/governance/costs/routes.py) · `list_usage`。
+
+List one workspace's settled usage, newest first.
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
+| `offset` | query | 否 | integer | `default=0`; `minimum=0` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [UsagePage](schemas.md#schema-UsagePage) |
 | 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |

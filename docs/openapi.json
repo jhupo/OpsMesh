@@ -762,6 +762,180 @@
         "title": "AuthenticatedUser",
         "type": "object"
       },
+      "BudgetUpsertRequest": {
+        "additionalProperties": false,
+        "description": "Create or change one workspace budget; a change states its revision.",
+        "properties": {
+          "currency": {
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Currency",
+            "type": "string"
+          },
+          "enforcement": {
+            "default": "block",
+            "maxLength": 16,
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "limit_amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Amount"
+          },
+          "period": {
+            "default": "monthly",
+            "maxLength": 16,
+            "title": "Period",
+            "type": "string"
+          },
+          "unlimited": {
+            "default": false,
+            "title": "Unlimited",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "title": "BudgetUpsertRequest",
+        "type": "object"
+      },
+      "BudgetView": {
+        "properties": {
+          "budget_id": {
+            "format": "uuid",
+            "title": "Budget Id",
+            "type": "string"
+          },
+          "budget_state": {
+            "title": "Budget State",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "current_window_key": {
+            "title": "Current Window Key",
+            "type": "string"
+          },
+          "enforcement": {
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "limit_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Amount"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "unlimited": {
+            "title": "Unlimited",
+            "type": "boolean"
+          },
+          "unlimited_decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unlimited Decided At"
+          },
+          "unlimited_decided_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unlimited Decided By User Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "window_reserved": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Window Reserved",
+            "type": "string"
+          },
+          "window_used": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Window Used",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "budget_id",
+          "workspace_id",
+          "currency",
+          "budget_state",
+          "limit_amount",
+          "unlimited",
+          "period",
+          "enforcement",
+          "revision",
+          "current_window_key",
+          "window_used",
+          "window_reserved",
+          "unlimited_decided_by_user_id",
+          "unlimited_decided_at",
+          "updated_at"
+        ],
+        "title": "BudgetView",
+        "type": "object"
+      },
       "CapabilityDefinitionPage": {
         "additionalProperties": false,
         "properties": {
@@ -3116,6 +3290,38 @@
         "title": "ModelRequirements",
         "type": "object"
       },
+      "NormalizedUsage": {
+        "additionalProperties": false,
+        "description": "The standard usage snapshot of one priced operation.\n\nOne shape serves models (token counts) and tools (invocation count);\na model operation leaves the tool fields zero and vice versa.",
+        "properties": {
+          "cached_input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Cached Input Tokens",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "tool_invocations": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Tool Invocations",
+            "type": "integer"
+          }
+        },
+        "title": "NormalizedUsage",
+        "type": "object"
+      },
       "NotificationPage": {
         "properties": {
           "notifications": {
@@ -3336,6 +3542,116 @@
           "path"
         ],
         "title": "OutputDeclaration",
+        "type": "object"
+      },
+      "PricingVersionPage": {
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PricingVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions",
+          "total"
+        ],
+        "title": "PricingVersionPage",
+        "type": "object"
+      },
+      "PricingVersionPublishRequest": {
+        "additionalProperties": false,
+        "description": "Publish one immutable price sheet for one model or tool subject.",
+        "properties": {
+          "prices": {
+            "$ref": "#/components/schemas/UnitPrices-Input"
+          },
+          "subject_key": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Subject Key",
+            "type": "string"
+          },
+          "subject_kind": {
+            "maxLength": 16,
+            "title": "Subject Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_kind",
+          "subject_key",
+          "prices"
+        ],
+        "title": "PricingVersionPublishRequest",
+        "type": "object"
+      },
+      "PricingVersionView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/UnitPrices-Output"
+          },
+          "pricing_version_id": {
+            "format": "uuid",
+            "title": "Pricing Version Id",
+            "type": "string"
+          },
+          "published_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By User Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          },
+          "subject_kind": {
+            "title": "Subject Kind",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pricing_version_id",
+          "subject_kind",
+          "subject_key",
+          "version",
+          "prices",
+          "digest",
+          "status",
+          "published_by_user_id",
+          "created_at"
+        ],
+        "title": "PricingVersionView",
         "type": "object"
       },
       "ProbeView": {
@@ -3821,6 +4137,207 @@
           "password"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ReservationPage": {
+        "properties": {
+          "reservations": {
+            "items": {
+              "$ref": "#/components/schemas/ReservationView"
+            },
+            "title": "Reservations",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reservations",
+          "total"
+        ],
+        "title": "ReservationPage",
+        "type": "object"
+      },
+      "ReservationView": {
+        "description": "One held or closed cost reservation; the pending set reads this.",
+        "properties": {
+          "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "budget_state": {
+            "title": "Budget State",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "max_cost": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Max Cost",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "overage_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overage Amount"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/UnitPrices-Output"
+          },
+          "pricing_version_id": {
+            "format": "uuid",
+            "title": "Pricing Version Id",
+            "type": "string"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "released_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released Reason"
+          },
+          "run_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Ref"
+          },
+          "settled_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled Amount"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          },
+          "subject_kind": {
+            "title": "Subject Kind",
+            "type": "string"
+          },
+          "uncertain_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncertain Reason"
+          },
+          "window_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Key"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "operation_id",
+          "workspace_id",
+          "currency",
+          "budget_state",
+          "window_key",
+          "subject_kind",
+          "subject_key",
+          "pricing_version_id",
+          "prices",
+          "max_cost",
+          "amount",
+          "status",
+          "run_ref",
+          "uncertain_reason",
+          "settled_amount",
+          "overage_amount",
+          "created_at",
+          "settled_at",
+          "released_at",
+          "released_reason"
+        ],
+        "title": "ReservationView",
         "type": "object"
       },
       "RuntimePolicyRequest": {
@@ -4735,6 +5252,136 @@
         "title": "TransferOwnershipRequest",
         "type": "object"
       },
+      "UnitPrices-Input": {
+        "additionalProperties": false,
+        "description": "The pinned price sheet of one subject, per single unit.",
+        "properties": {
+          "cached_input_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Input Price"
+          },
+          "currency": {
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Currency",
+            "type": "string"
+          },
+          "input_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Input Price"
+          },
+          "output_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Output Price"
+          },
+          "tool_unit_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Unit Price"
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "title": "UnitPrices",
+        "type": "object"
+      },
+      "UnitPrices-Output": {
+        "additionalProperties": false,
+        "description": "The pinned price sheet of one subject, per single unit.",
+        "properties": {
+          "cached_input_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Input Price"
+          },
+          "currency": {
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Currency",
+            "type": "string"
+          },
+          "input_price": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Input Price",
+            "type": "string"
+          },
+          "output_price": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Output Price",
+            "type": "string"
+          },
+          "tool_unit_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Unit Price"
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "title": "UnitPrices",
+        "type": "object"
+      },
       "UpdateDefinitionRequest": {
         "additionalProperties": false,
         "description": "The definition-level metadata an author may change.",
@@ -4836,6 +5483,78 @@
           }
         },
         "title": "UpdateProfileRequest",
+        "type": "object"
+      },
+      "UsagePage": {
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "usages": {
+            "items": {
+              "$ref": "#/components/schemas/UsageView"
+            },
+            "title": "Usages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "usages",
+          "total"
+        ],
+        "title": "UsagePage",
+        "type": "object"
+      },
+      "UsageView": {
+        "properties": {
+          "actual_cost": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Actual Cost",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "overage_amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Overage Amount",
+            "type": "string"
+          },
+          "pricing_version_id": {
+            "format": "uuid",
+            "title": "Pricing Version Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "subject_key": {
+            "title": "Subject Key",
+            "type": "string"
+          },
+          "subject_kind": {
+            "title": "Subject Kind",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/NormalizedUsage"
+          }
+        },
+        "required": [
+          "operation_id",
+          "subject_kind",
+          "subject_key",
+          "usage",
+          "actual_cost",
+          "overage_amount",
+          "pricing_version_id",
+          "recorded_at"
+        ],
+        "title": "UsageView",
         "type": "object"
       },
       "UserPage": {
@@ -12301,6 +13020,695 @@
           }
         },
         "summary": "Get Audit Verification",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/costs/pricing/versions": {
+      "get": {
+        "description": "List the published price sheets, newest version first per subject.",
+        "operationId": "governance.costs.pricing.list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingVersionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List Pricing Versions",
+        "tags": [
+          "governance"
+        ]
+      },
+      "post": {
+        "description": "Publish one immutable price sheet for one model or tool subject.",
+        "operationId": "governance.costs.pricing.publish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricingVersionPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Publish Pricing Version",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/costs/workspaces/{workspace_id}/budget": {
+      "get": {
+        "description": "Read one workspace budget; no budget is the unconfigured state.",
+        "operationId": "governance.costs.budget.read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": true,
+            "schema": {
+              "maxLength": 8,
+              "minLength": 1,
+              "title": "Currency",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Read Budget",
+        "tags": [
+          "governance"
+        ]
+      },
+      "put": {
+        "description": "Create or change one workspace budget under its expected revision.",
+        "operationId": "governance.costs.budget.upsert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Upsert Budget",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/costs/workspaces/{workspace_id}/reservations": {
+      "get": {
+        "description": "List one workspace's reservations; the uncertain set is the pending work.",
+        "operationId": "governance.costs.reservations.list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List Reservations",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/costs/workspaces/{workspace_id}/usage": {
+      "get": {
+        "description": "List one workspace's settled usage, newest first.",
+        "operationId": "governance.costs.usage.list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List Usage",
         "tags": [
           "governance"
         ]

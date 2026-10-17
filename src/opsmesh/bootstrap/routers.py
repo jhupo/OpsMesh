@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import FastAPI, Header
+from fastapi import Depends, FastAPI, Header, Path
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.experts import routes as expert_routes
@@ -25,6 +25,7 @@ from opsmesh.capabilities.tools import routes as tool_routes
 from opsmesh.governance.approvals import routes as approval_routes
 from opsmesh.governance.audit import routes as audit_routes
 from opsmesh.governance.audit.service import AuditActor
+from opsmesh.governance.costs import routes as cost_routes
 from opsmesh.governance.security_events import routes as security_routes
 from opsmesh.identity.access import require_platform_admin
 from opsmesh.identity.auth.dependencies import (
@@ -51,11 +52,13 @@ from opsmesh.resources.artifacts import routes as artifact_routes
 from opsmesh.resources.files import routes as file_routes
 from opsmesh.resources.files.access import ResourceReader, ScopeRef
 from opsmesh.shared.errors import ForbiddenError
+from opsmesh.shared.http.dependencies import get_db_session
 from opsmesh.workspaces import routes as workspace_routes
 from opsmesh.workspaces.capacity import routes as capacity_routes
 from opsmesh.workspaces.credentials import routes as credential_routes
 from opsmesh.workspaces.members import access as space_access
 from opsmesh.workspaces.members import routes as member_routes
+from opsmesh.workspaces.members.models import SPACE_ROLE_ADMIN, SPACE_ROLE_OWNER
 from opsmesh.workspaces.model_providers import routes as model_provider_routes
 from opsmesh.workspaces.notifications import routes as notification_routes
 from opsmesh.workspaces.projects import routes as project_routes
@@ -155,6 +158,24 @@ def _audit_reader(user: CurrentUserDep) -> CurrentUser:
     return user
 
 
+class WorkspaceBudgetScopeAdmission:
+    """The real budget scope admission: the workspace's owner or admin.
+
+    A platform administrator gets no tenant data permission from this
+    path — pricing administration is the only platform-level cost
+    surface, and a workspace's budget and usage stay with its own
+    leadership.
+    """
+
+    def admit(self, session: Session, *, user_id: UUID, workspace_id: UUID) -> None:
+        role = space_access.space_role(session, workspace_id=workspace_id, user_id=user_id)
+        if role not in (SPACE_ROLE_OWNER, SPACE_ROLE_ADMIN):
+            raise ForbiddenError(
+                "The budget scope is not admitted",
+                details={"workspace_id": str(workspace_id)},
+            )
+
+
 def _extension_audit_actor(
     user: DelegatedUserDep,
     x_installation_id: Annotated[str | None, Header(alias=INSTALLATION_HEADER)],
@@ -179,6 +200,24 @@ def _approval_subject(user: CurrentUserDep) -> CurrentUser:
 
 def _security_reader(user: CurrentUserDep) -> CurrentUser:
     require_platform_admin(user)
+    return user
+
+
+def _cost_admin_subject(user: CurrentUserDep) -> CurrentUser:
+    """Pricing administration is the platform-level cost surface."""
+    require_platform_admin(user)
+    return user
+
+
+def _budget_subject(
+    user: CurrentUserDep,
+    session: Annotated[Session, Depends(get_db_session)],
+    workspace_id: Annotated[UUID, Path()],
+) -> CurrentUser:
+    """The verified session identity, admitted to the workspace's budget scope."""
+    WorkspaceBudgetScopeAdmission().admit(
+        session, user_id=user.user_id, workspace_id=workspace_id
+    )
     return user
 
 
@@ -224,6 +263,7 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
         invitation_router,
         audit_routes.router,
         approval_routes.router,
+        cost_routes.router,
         security_routes.router,
         mail_routes.router,
         capability_router,
@@ -249,6 +289,8 @@ def register_routers(app: FastAPI, *, prefix: str) -> None:
     app.dependency_overrides[audit_routes.require_audit_reader] = _audit_reader
     app.dependency_overrides[audit_routes.require_extension_actor] = _extension_audit_actor
     app.dependency_overrides[approval_routes.require_approval_subject] = _approval_subject
+    app.dependency_overrides[cost_routes.require_admin_subject] = _cost_admin_subject
+    app.dependency_overrides[cost_routes.require_budget_subject] = _budget_subject
     app.dependency_overrides[security_routes.require_security_reader] = _security_reader
     app.dependency_overrides[mail_routes.require_delegated_mail_send] = _delegated_mail_send
     app.dependency_overrides[file_routes.require_resource_reader] = _resource_reader

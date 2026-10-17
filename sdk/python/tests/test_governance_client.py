@@ -13,17 +13,22 @@ import pytest
 from opsmesh_sdk.api.governance import (
     ApprovalDecisionRequest,
     AuditVerificationRequest,
+    BudgetUpsertRequest,
     ExtensionAuditAppend,
+    PricingVersionPublishRequest,
     create_governance_client,
 )
 from opsmesh_sdk.client import PlatformClient
-from opsmesh_sdk.errors import AuthorizationError
+from opsmesh_sdk.errors import AuthorizationError, RateLimitError
 from opsmesh_sdk.transport.http import HttpTransport
 
 EVENT_ID = UUID("11111111-2222-3333-4444-555555555555")
 APPROVAL_ID = UUID("66666666-7777-8888-9999-aaaaaaaaaaaa")
 APPROVER_ID = UUID("99999999-8888-7777-6666-555555555555")
 VERIFICATION_ID = UUID("bbbbbbbb-cccc-dddd-eeee-ffff00001111")
+WORKSPACE_ID = UUID("12121212-3434-5656-7878-909090909090")
+PRICING_VERSION_ID = UUID("abcdabcd-1111-2222-3333-444444444444")
+BUDGET_ID = UUID("deadbeef-1111-2222-3333-444444444444")
 
 
 def governance_client(handler: Any) -> Any:
@@ -231,3 +236,231 @@ def test_security_event_list_filters_server_side() -> None:
     )
     assert captured["params"]["severity"] == "warning"
     assert page.events[0].kind == "login.invalid_credentials"
+
+
+def pricing_version_payload() -> dict[str, Any]:
+    return {
+        "pricing_version_id": str(PRICING_VERSION_ID),
+        "subject_kind": "model",
+        "subject_key": "gpt-test-model",
+        "version": 1,
+        "prices": {
+            "currency": "USD",
+            "input_price": "0.001",
+            "output_price": "0.002",
+            "cached_input_price": "0.0001",
+            "tool_unit_price": None,
+        },
+        "digest": "a" * 64,
+        "status": "active",
+        "published_by_user_id": None,
+        "created_at": "2026-10-16T00:00:00Z",
+    }
+
+
+def budget_payload() -> dict[str, Any]:
+    return {
+        "budget_id": str(BUDGET_ID),
+        "workspace_id": str(WORKSPACE_ID),
+        "currency": "USD",
+        "budget_state": "limited",
+        "limit_amount": "1.5",
+        "unlimited": False,
+        "period": "monthly",
+        "enforcement": "block",
+        "revision": 2,
+        "current_window_key": "2026-10",
+        "window_used": "0.200000000000",
+        "window_reserved": "0.000000000000",
+        "unlimited_decided_by_user_id": None,
+        "unlimited_decided_at": None,
+        "updated_at": "2026-10-16T00:00:00Z",
+    }
+
+
+def test_pricing_publish_and_list_round_trip_the_price_sheet() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["params"] = dict(request.url.params)
+        if request.content:
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(201, json=pricing_version_payload())
+        return httpx.Response(
+            200,
+            json={"versions": [pricing_version_payload()], "total": 1},
+        )
+
+    client = governance_client(handler)
+    published = asyncio.run(
+        client.costs.pricing.publish(
+            PricingVersionPublishRequest(
+                subject_kind="model",
+                subject_key="gpt-test-model",
+                prices={
+                    "currency": "USD",
+                    "input_price": "0.001",
+                    "output_price": "0.002",
+                    "cached_input_price": "0.0001",
+                },
+            )
+        )
+    )
+    assert captured["path"] == "/api/v1/governance/costs/pricing/versions"
+    assert captured["method"] == "POST"
+    assert captured["body"]["prices"]["input_price"] == "0.001"
+    assert published.version == 1
+    assert published.prices.output_price == "0.002"
+
+    listed = asyncio.run(
+        client.costs.pricing.list(subject_kind="model", subject_key="gpt-test-model")
+    )
+    assert captured["params"]["subject_kind"] == "model"
+    assert captured["params"]["subject_key"] == "gpt-test-model"
+    assert listed.total == 1
+    assert listed.versions[0].digest == "a" * 64
+
+
+def test_budget_upsert_carries_the_expected_revision() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=budget_payload())
+
+    budget = asyncio.run(
+        governance_client(handler).costs.budget.upsert(
+            WORKSPACE_ID,
+            BudgetUpsertRequest(
+                currency="USD", limit_amount="1.5", expected_version=1
+            ),
+        )
+    )
+    assert captured["path"] == f"/api/v1/governance/costs/workspaces/{WORKSPACE_ID}/budget"
+    assert captured["method"] == "PUT"
+    assert captured["body"] == {
+        "currency": "USD",
+        "limit_amount": "1.5",
+        "unlimited": False,
+        "period": "monthly",
+        "enforcement": "block",
+        "expected_version": 1,
+    }
+    assert budget.budget_state == "limited"
+    assert budget.revision == 2
+
+
+def test_budget_read_queries_the_currency() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json=budget_payload())
+
+    budget = asyncio.run(
+        governance_client(handler).costs.budget.read(WORKSPACE_ID, currency="USD")
+    )
+    assert captured["params"]["currency"] == "USD"
+    assert budget.window_used == "0.200000000000"
+
+
+def test_usage_and_reservations_pages_parse_the_money_strings() -> None:
+    usage_payload_page = {
+        "usages": [
+            {
+                "operation_id": "op-1",
+                "subject_kind": "model",
+                "subject_key": "gpt-test-model",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cached_input_tokens": 0,
+                    "tool_invocations": 0,
+                },
+                "actual_cost": "0.200000000000",
+                "overage_amount": "0.000000000000",
+                "pricing_version_id": str(PRICING_VERSION_ID),
+                "recorded_at": "2026-10-16T00:00:00Z",
+            }
+        ],
+        "total": 1,
+    }
+    reservations_payload_page = {
+        "reservations": [
+            {
+                "operation_id": "op-2",
+                "workspace_id": str(WORKSPACE_ID),
+                "currency": "USD",
+                "budget_state": "limited",
+                "window_key": "2026-10",
+                "subject_kind": "model",
+                "subject_key": "gpt-test-model",
+                "pricing_version_id": str(PRICING_VERSION_ID),
+                "prices": {
+                    "currency": "USD",
+                    "input_price": "0.001",
+                    "output_price": "0.002",
+                    "cached_input_price": None,
+                    "tool_unit_price": None,
+                },
+                "max_cost": "0.200000000000",
+                "amount": "0.200000000000",
+                "status": "uncertain",
+                "run_ref": "run-1",
+                "uncertain_reason": "provider timeout",
+                "settled_amount": None,
+                "overage_amount": None,
+                "created_at": "2026-10-16T00:00:00Z",
+                "settled_at": None,
+                "released_at": None,
+                "released_reason": None,
+            }
+        ],
+        "total": 1,
+    }
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["params"] = dict(request.url.params)
+        if request.url.path.endswith("/usage"):
+            return httpx.Response(200, json=usage_payload_page)
+        return httpx.Response(200, json=reservations_payload_page)
+
+    client = governance_client(handler)
+    usage = asyncio.run(client.costs.usage.list(WORKSPACE_ID))
+    assert captured["path"] == f"/api/v1/governance/costs/workspaces/{WORKSPACE_ID}/usage"
+    assert usage.usages[0].actual_cost == "0.200000000000"
+    assert usage.usages[0].usage.input_tokens == 100
+
+    reservations = asyncio.run(
+        client.costs.reservations.list(WORKSPACE_ID, status="uncertain")
+    )
+    assert captured["params"]["status"] == "uncertain"
+    assert reservations.reservations[0].uncertain_reason == "provider timeout"
+    assert reservations.reservations[0].max_cost == "0.200000000000"
+
+
+def test_a_refused_budget_reservation_maps_to_the_rate_limit_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={
+                "error": {
+                    "code": "budget_exceeded",
+                    "message": "The cost budget cannot admit this reservation",
+                }
+            },
+        )
+
+    with pytest.raises(RateLimitError):
+        asyncio.run(
+            governance_client(handler).costs.budget.upsert(
+                WORKSPACE_ID,
+                BudgetUpsertRequest(currency="USD", limit_amount="1.5"),
+            )
+        )

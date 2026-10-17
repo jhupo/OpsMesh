@@ -250,6 +250,18 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "v4-governance-costs-boundaries"
+name = "Costs uses audit and shared only; no other owner ledgers"
+type = "forbidden"
+source_modules = ["opsmesh.governance.costs"]
+forbidden_modules = [
+    "opsmesh.identity", "opsmesh.platform", "opsmesh.capabilities",
+    "opsmesh.resources", "opsmesh.extensions", "opsmesh.execution",
+    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
+    "opsmesh.bootstrap", "opsmesh.config", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
 id = "v4-platform-boundaries"
 name = "Platform uses shared, telemetry, temporal, identity and governance only"
 type = "forbidden"

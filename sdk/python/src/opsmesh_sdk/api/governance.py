@@ -13,6 +13,12 @@ Stable operation ids of this group:
 - ``governance.audit.events.read``
 - ``governance.audit.verifications.create``
 - ``governance.audit.verifications.read``
+- ``governance.costs.pricing.list``
+- ``governance.costs.pricing.publish``
+- ``governance.costs.budget.read``
+- ``governance.costs.budget.upsert``
+- ``governance.costs.reservations.list``
+- ``governance.costs.usage.list``
 - ``governance.security_events.list``
 - ``governance.security_events.read``
 """
@@ -107,6 +113,35 @@ class AuditVerificationView(BaseModel):
     verification_id: UUID
 
 
+class BudgetUpsertRequest(BaseModel):
+    """Create or change one workspace budget; a change states its revision."""
+
+    currency: str
+    enforcement: str = 'block'
+    expected_version: int | None = None
+    limit_amount: float | str | None = None
+    period: str = 'monthly'
+    unlimited: bool = False
+
+
+class BudgetView(BaseModel):
+    budget_id: UUID
+    budget_state: str
+    currency: str
+    current_window_key: str
+    enforcement: str
+    limit_amount: str | None
+    period: str
+    revision: int
+    unlimited: bool
+    unlimited_decided_at: datetime | None
+    unlimited_decided_by_user_id: UUID | None
+    updated_at: datetime
+    window_reserved: str
+    window_used: str
+    workspace_id: UUID
+
+
 class ExtensionAuditAppend(BaseModel):
     """One extension-reported fact; actor and scope come from the verified call."""
 
@@ -117,6 +152,18 @@ class ExtensionAuditAppend(BaseModel):
     summary: str
     target_id: str
     target_type: str
+
+
+class NormalizedUsage(BaseModel):
+    """The standard usage snapshot of one priced operation.
+
+One shape serves models (token counts) and tools (invocation count);
+a model operation leaves the tool fields zero and vice versa."""
+
+    cached_input_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    tool_invocations: int = 0
 
 
 class SecurityEventView(BaseModel):
@@ -132,6 +179,26 @@ class SecurityEventView(BaseModel):
     user_id: UUID | None
 
 
+class UnitPricesInput(BaseModel):
+    """The pinned price sheet of one subject, per single unit."""
+
+    cached_input_price: float | str | None = None
+    currency: str
+    input_price: float | str = '0'
+    output_price: float | str = '0'
+    tool_unit_price: float | str | None = None
+
+
+class UnitPricesOutput(BaseModel):
+    """The pinned price sheet of one subject, per single unit."""
+
+    cached_input_price: str | None = None
+    currency: str
+    input_price: str = '0'
+    output_price: str = '0'
+    tool_unit_price: str | None = None
+
+
 class ApprovalPage(BaseModel):
     approvals: list[ApprovalRequestView]
     total: int
@@ -144,9 +211,80 @@ class AuditEventPage(BaseModel):
     next_after_sequence: int | None
 
 
+class PricingVersionPublishRequest(BaseModel):
+    """Publish one immutable price sheet for one model or tool subject."""
+
+    prices: UnitPricesInput
+    subject_key: str
+    subject_kind: str
+
+
+class PricingVersionView(BaseModel):
+    created_at: datetime
+    digest: str
+    prices: UnitPricesOutput
+    pricing_version_id: UUID
+    published_by_user_id: UUID | None
+    status: str
+    subject_key: str
+    subject_kind: str
+    version: int
+
+
+class ReservationView(BaseModel):
+    """One held or closed cost reservation; the pending set reads this."""
+
+    amount: str
+    budget_state: str
+    created_at: datetime
+    currency: str
+    max_cost: str
+    operation_id: str
+    overage_amount: str | None
+    prices: UnitPricesOutput
+    pricing_version_id: UUID
+    released_at: datetime | None
+    released_reason: str | None
+    run_ref: str | None
+    settled_amount: str | None
+    settled_at: datetime | None
+    status: str
+    subject_key: str
+    subject_kind: str
+    uncertain_reason: str | None
+    window_key: str | None
+    workspace_id: UUID | None
+
+
 class SecurityEventPage(BaseModel):
     events: list[SecurityEventView]
     total: int
+
+
+class UsageView(BaseModel):
+    actual_cost: str
+    operation_id: str
+    overage_amount: str
+    pricing_version_id: UUID
+    recorded_at: datetime
+    subject_key: str
+    subject_kind: str
+    usage: NormalizedUsage
+
+
+class PricingVersionPage(BaseModel):
+    total: int
+    versions: list[PricingVersionView]
+
+
+class ReservationPage(BaseModel):
+    reservations: list[ReservationView]
+    total: int
+
+
+class UsagePage(BaseModel):
+    total: int
+    usages: list[UsageView]
 
 
 class GovernanceApprovalsClient:
@@ -327,6 +465,165 @@ class GovernanceAuditClient:
         self.verifications = GovernanceAuditVerificationsClient(channel)
 
 
+class GovernanceCostsBudgetClient:
+    """Generated client for the ``governance.costs.budget`` operations."""
+
+    def __init__(self, channel: GroupChannel) -> None:
+        self._channel = channel
+
+    async def read(self, workspace_id: UUID, *, currency: str) -> BudgetView:
+        """Read one workspace budget; no budget is the unconfigured state."""
+        query = {
+            name: str(value)
+            for name, value in (
+                ("currency", currency),
+            )
+            if value is not None
+        }
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/costs/workspaces/{workspace_id}/budget",
+                query=query,
+            ),
+            self._channel.context(),
+        )
+        return BudgetView.model_validate(response.body)
+
+    async def upsert(self, workspace_id: UUID, request: BudgetUpsertRequest) -> BudgetView:
+        """Create or change one workspace budget under its expected revision."""
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="PUT",
+                path=f"{self._channel.api_root}/governance/costs/workspaces/{workspace_id}/budget",
+                body=request.model_dump(mode="json", exclude_none=True),
+            ),
+            self._channel.context(),
+        )
+        return BudgetView.model_validate(response.body)
+
+
+class GovernanceCostsPricingClient:
+    """Generated client for the ``governance.costs.pricing`` operations."""
+
+    def __init__(self, channel: GroupChannel) -> None:
+        self._channel = channel
+
+    async def list(
+        self,
+        *,
+        subject_kind: str | None = None,
+        subject_key: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PricingVersionPage:
+        """List the published price sheets, newest version first per subject."""
+        query = {
+            name: str(value)
+            for name, value in (
+                ("subject_kind", subject_kind),
+                ("subject_key", subject_key),
+                ("limit", limit),
+                ("offset", offset),
+            )
+            if value is not None
+        }
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/costs/pricing/versions",
+                query=query,
+            ),
+            self._channel.context(),
+        )
+        return PricingVersionPage.model_validate(response.body)
+
+    async def publish(self, request: PricingVersionPublishRequest) -> PricingVersionView:
+        """Publish one immutable price sheet for one model or tool subject."""
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="POST",
+                path=f"{self._channel.api_root}/governance/costs/pricing/versions",
+                body=request.model_dump(mode="json"),
+            ),
+            self._channel.context(),
+        )
+        return PricingVersionView.model_validate(response.body)
+
+
+class GovernanceCostsReservationsClient:
+    """Generated client for the ``governance.costs.reservations`` operations."""
+
+    def __init__(self, channel: GroupChannel) -> None:
+        self._channel = channel
+
+    async def list(
+        self,
+        workspace_id: UUID,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ReservationPage:
+        """List one workspace's reservations; the uncertain set is the pending work."""
+        query = {
+            name: str(value)
+            for name, value in (
+                ("status", status),
+                ("limit", limit),
+                ("offset", offset),
+            )
+            if value is not None
+        }
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/costs/workspaces/{workspace_id}/reservations",
+                query=query,
+            ),
+            self._channel.context(),
+        )
+        return ReservationPage.model_validate(response.body)
+
+
+class GovernanceCostsUsageClient:
+    """Generated client for the ``governance.costs.usage`` operations."""
+
+    def __init__(self, channel: GroupChannel) -> None:
+        self._channel = channel
+
+    async def list(self, workspace_id: UUID, *, limit: int = 50, offset: int = 0) -> UsagePage:
+        """List one workspace's settled usage, newest first."""
+        query = {
+            name: str(value)
+            for name, value in (
+                ("limit", limit),
+                ("offset", offset),
+            )
+            if value is not None
+        }
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/governance/costs/workspaces/{workspace_id}/usage",
+                query=query,
+            ),
+            self._channel.context(),
+        )
+        return UsagePage.model_validate(response.body)
+
+
+class GovernanceCostsClient:
+    """Generated client for the ``governance.costs`` operations."""
+
+    def __init__(self, channel: GroupChannel) -> None:
+        self._channel = channel
+        self.budget = GovernanceCostsBudgetClient(channel)
+        self.pricing = GovernanceCostsPricingClient(channel)
+        self.reservations = GovernanceCostsReservationsClient(channel)
+        self.usage = GovernanceCostsUsageClient(channel)
+
+
 class GovernanceSecurityEventsClient:
     """Generated client for the ``governance.security_events`` operations."""
 
@@ -381,6 +678,7 @@ class GovernanceClient:
     def __init__(self, channel: GroupChannel) -> None:
         self.approvals = GovernanceApprovalsClient(channel)
         self.audit = GovernanceAuditClient(channel)
+        self.costs = GovernanceCostsClient(channel)
         self.security_events = GovernanceSecurityEventsClient(channel)
 
 
@@ -398,14 +696,31 @@ __all__ = [
     "AuditEventView",
     "AuditVerificationRequest",
     "AuditVerificationView",
+    "BudgetUpsertRequest",
+    "BudgetView",
     "ExtensionAuditAppend",
     "GovernanceApprovalsClient",
     "GovernanceAuditClient",
     "GovernanceAuditEventsClient",
     "GovernanceAuditVerificationsClient",
     "GovernanceClient",
+    "GovernanceCostsBudgetClient",
+    "GovernanceCostsClient",
+    "GovernanceCostsPricingClient",
+    "GovernanceCostsReservationsClient",
+    "GovernanceCostsUsageClient",
     "GovernanceSecurityEventsClient",
+    "NormalizedUsage",
+    "PricingVersionPage",
+    "PricingVersionPublishRequest",
+    "PricingVersionView",
+    "ReservationPage",
+    "ReservationView",
     "SecurityEventPage",
     "SecurityEventView",
+    "UnitPricesInput",
+    "UnitPricesOutput",
+    "UsagePage",
+    "UsageView",
     "create_governance_client",
 ]

@@ -300,7 +300,9 @@ def test_server_error_codes_map_to_one_typed_error_per_failure_class() -> None:
     assert error_for_code("invalid_avatar") is ValidationError
     assert error_for_code("duplicate_user") is ConflictError
     assert error_for_code("idempotency_key_reused") is ConflictError
+    assert error_for_code("budget_revision") is ConflictError
     assert error_for_code("quota_exceeded") is RateLimitError
+    assert error_for_code("budget_exceeded") is RateLimitError
     assert error_for_code("service_unavailable") is TransportError
     assert error_for_code("a_future_code") is OpsMeshError
 

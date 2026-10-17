@@ -1008,6 +1008,223 @@ One sanitized audit fact; the digest columns prove its chain position.
 }
 ```
 
+<a id="schema-BudgetUpsertRequest"></a>
+
+## BudgetUpsertRequest
+
+Create or change one workspace budget; a change states its revision.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `currency` | string | 是 | `maxLength=8`; `minLength=1` |
+| `limit_amount` | number anyOf string anyOf null | 否 | `anyOf=[{"exclusiveMinimum": 0.0, "type": "number"}, {"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `unlimited` | boolean | 否 | `default=false` |
+| `period` | string | 否 | `default="monthly"`; `maxLength=16` |
+| `enforcement` | string | 否 | `default="block"`; `maxLength=16` |
+| `expected_version` | integer anyOf null | 否 | `anyOf=[{"minimum": 1.0, "type": "integer"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Create or change one workspace budget; a change states its revision.",
+  "properties": {
+    "currency": {
+      "maxLength": 8,
+      "minLength": 1,
+      "title": "Currency",
+      "type": "string"
+    },
+    "enforcement": {
+      "default": "block",
+      "maxLength": 16,
+      "title": "Enforcement",
+      "type": "string"
+    },
+    "expected_version": {
+      "anyOf": [
+        {
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Expected Version"
+    },
+    "limit_amount": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Limit Amount"
+    },
+    "period": {
+      "default": "monthly",
+      "maxLength": 16,
+      "title": "Period",
+      "type": "string"
+    },
+    "unlimited": {
+      "default": false,
+      "title": "Unlimited",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "currency"
+  ],
+  "title": "BudgetUpsertRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-BudgetView"></a>
+
+## BudgetView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `budget_id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `currency` | string | 是 | — |
+| `budget_state` | string | 是 | — |
+| `limit_amount` | string anyOf null | 是 | `anyOf=[{"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `unlimited` | boolean | 是 | — |
+| `period` | string | 是 | — |
+| `enforcement` | string | 是 | — |
+| `revision` | integer | 是 | — |
+| `current_window_key` | string | 是 | — |
+| `window_used` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `window_reserved` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `unlimited_decided_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `unlimited_decided_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `updated_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "budget_id": {
+      "format": "uuid",
+      "title": "Budget Id",
+      "type": "string"
+    },
+    "budget_state": {
+      "title": "Budget State",
+      "type": "string"
+    },
+    "currency": {
+      "title": "Currency",
+      "type": "string"
+    },
+    "current_window_key": {
+      "title": "Current Window Key",
+      "type": "string"
+    },
+    "enforcement": {
+      "title": "Enforcement",
+      "type": "string"
+    },
+    "limit_amount": {
+      "anyOf": [
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Limit Amount"
+    },
+    "period": {
+      "title": "Period",
+      "type": "string"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "integer"
+    },
+    "unlimited": {
+      "title": "Unlimited",
+      "type": "boolean"
+    },
+    "unlimited_decided_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Unlimited Decided At"
+    },
+    "unlimited_decided_by_user_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Unlimited Decided By User Id"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "window_reserved": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Window Reserved",
+      "type": "string"
+    },
+    "window_used": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Window Used",
+      "type": "string"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "budget_id",
+    "workspace_id",
+    "currency",
+    "budget_state",
+    "limit_amount",
+    "unlimited",
+    "period",
+    "enforcement",
+    "revision",
+    "current_window_key",
+    "window_used",
+    "window_reserved",
+    "unlimited_decided_by_user_id",
+    "unlimited_decided_at",
+    "updated_at"
+  ],
+  "title": "BudgetView",
+  "type": "object"
+}
+```
+
 <a id="schema-CapabilityDefinitionPage"></a>
 
 ## CapabilityDefinitionPage
@@ -4239,6 +4456,57 @@ The model an expert expects; selection itself belongs to execution.
 }
 ```
 
+<a id="schema-NormalizedUsage"></a>
+
+## NormalizedUsage
+
+The standard usage snapshot of one priced operation.
+
+One shape serves models (token counts) and tools (invocation count);
+a model operation leaves the tool fields zero and vice versa.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `input_tokens` | integer | 否 | `default=0`; `minimum=0.0` |
+| `output_tokens` | integer | 否 | `default=0`; `minimum=0.0` |
+| `cached_input_tokens` | integer | 否 | `default=0`; `minimum=0.0` |
+| `tool_invocations` | integer | 否 | `default=0`; `minimum=0.0` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The standard usage snapshot of one priced operation.\n\nOne shape serves models (token counts) and tools (invocation count);\na model operation leaves the tool fields zero and vice versa.",
+  "properties": {
+    "cached_input_tokens": {
+      "default": 0,
+      "minimum": 0.0,
+      "title": "Cached Input Tokens",
+      "type": "integer"
+    },
+    "input_tokens": {
+      "default": 0,
+      "minimum": 0.0,
+      "title": "Input Tokens",
+      "type": "integer"
+    },
+    "output_tokens": {
+      "default": 0,
+      "minimum": 0.0,
+      "title": "Output Tokens",
+      "type": "integer"
+    },
+    "tool_invocations": {
+      "default": 0,
+      "minimum": 0.0,
+      "title": "Tool Invocations",
+      "type": "integer"
+    }
+  },
+  "title": "NormalizedUsage",
+  "type": "object"
+}
+```
+
 <a id="schema-NotificationPage"></a>
 
 ## NotificationPage
@@ -4538,6 +4806,162 @@ a persisted declaration is later resolved against a storage root.
     "path"
   ],
   "title": "OutputDeclaration",
+  "type": "object"
+}
+```
+
+<a id="schema-PricingVersionPage"></a>
+
+## PricingVersionPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `versions` | array&lt;[PricingVersionView](schemas.md#schema-PricingVersionView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    },
+    "versions": {
+      "items": {
+        "$ref": "#/components/schemas/PricingVersionView"
+      },
+      "title": "Versions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "versions",
+    "total"
+  ],
+  "title": "PricingVersionPage",
+  "type": "object"
+}
+```
+
+<a id="schema-PricingVersionPublishRequest"></a>
+
+## PricingVersionPublishRequest
+
+Publish one immutable price sheet for one model or tool subject.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `subject_kind` | string | 是 | `maxLength=16` |
+| `subject_key` | string | 是 | `maxLength=255`; `minLength=1` |
+| `prices` | [UnitPrices-Input](schemas.md#schema-UnitPrices-Input) | 是 | — |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "Publish one immutable price sheet for one model or tool subject.",
+  "properties": {
+    "prices": {
+      "$ref": "#/components/schemas/UnitPrices-Input"
+    },
+    "subject_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Subject Key",
+      "type": "string"
+    },
+    "subject_kind": {
+      "maxLength": 16,
+      "title": "Subject Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject_kind",
+    "subject_key",
+    "prices"
+  ],
+  "title": "PricingVersionPublishRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-PricingVersionView"></a>
+
+## PricingVersionView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `pricing_version_id` | string (uuid) | 是 | `format="uuid"` |
+| `subject_kind` | string | 是 | — |
+| `subject_key` | string | 是 | — |
+| `version` | integer | 是 | — |
+| `prices` | [UnitPrices-Output](schemas.md#schema-UnitPrices-Output) | 是 | — |
+| `digest` | string | 是 | — |
+| `status` | string | 是 | — |
+| `published_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "prices": {
+      "$ref": "#/components/schemas/UnitPrices-Output"
+    },
+    "pricing_version_id": {
+      "format": "uuid",
+      "title": "Pricing Version Id",
+      "type": "string"
+    },
+    "published_by_user_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Published By User Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "subject_key": {
+      "title": "Subject Key",
+      "type": "string"
+    },
+    "subject_kind": {
+      "title": "Subject Kind",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "pricing_version_id",
+    "subject_kind",
+    "subject_key",
+    "version",
+    "prices",
+    "digest",
+    "status",
+    "published_by_user_id",
+    "created_at"
+  ],
+  "title": "PricingVersionView",
   "type": "object"
 }
 ```
@@ -5211,6 +5635,251 @@ The operator's confirmation of one unconfirmed send.
     "password"
   ],
   "title": "RegisterRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-ReservationPage"></a>
+
+## ReservationPage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `reservations` | array&lt;[ReservationView](schemas.md#schema-ReservationView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "reservations": {
+      "items": {
+        "$ref": "#/components/schemas/ReservationView"
+      },
+      "title": "Reservations",
+      "type": "array"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "reservations",
+    "total"
+  ],
+  "title": "ReservationPage",
+  "type": "object"
+}
+```
+
+<a id="schema-ReservationView"></a>
+
+## ReservationView
+
+One held or closed cost reservation; the pending set reads this.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 是 | — |
+| `workspace_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `currency` | string | 是 | — |
+| `budget_state` | string | 是 | — |
+| `window_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `subject_kind` | string | 是 | — |
+| `subject_key` | string | 是 | — |
+| `pricing_version_id` | string (uuid) | 是 | `format="uuid"` |
+| `prices` | [UnitPrices-Output](schemas.md#schema-UnitPrices-Output) | 是 | — |
+| `max_cost` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `amount` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `status` | string | 是 | — |
+| `run_ref` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `uncertain_reason` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `settled_amount` | string anyOf null | 是 | `anyOf=[{"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `overage_amount` | string anyOf null | 是 | `anyOf=[{"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+| `settled_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `released_at` | string (date-time) anyOf null | 是 | `anyOf=[{"format": "date-time", "type": "string"}, {"type": "null"}]` |
+| `released_reason` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "description": "One held or closed cost reservation; the pending set reads this.",
+  "properties": {
+    "amount": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Amount",
+      "type": "string"
+    },
+    "budget_state": {
+      "title": "Budget State",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "currency": {
+      "title": "Currency",
+      "type": "string"
+    },
+    "max_cost": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Max Cost",
+      "type": "string"
+    },
+    "operation_id": {
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "overage_amount": {
+      "anyOf": [
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Overage Amount"
+    },
+    "prices": {
+      "$ref": "#/components/schemas/UnitPrices-Output"
+    },
+    "pricing_version_id": {
+      "format": "uuid",
+      "title": "Pricing Version Id",
+      "type": "string"
+    },
+    "released_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Released At"
+    },
+    "released_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Released Reason"
+    },
+    "run_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Run Ref"
+    },
+    "settled_amount": {
+      "anyOf": [
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Settled Amount"
+    },
+    "settled_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Settled At"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "subject_key": {
+      "title": "Subject Key",
+      "type": "string"
+    },
+    "subject_kind": {
+      "title": "Subject Kind",
+      "type": "string"
+    },
+    "uncertain_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Uncertain Reason"
+    },
+    "window_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Window Key"
+    },
+    "workspace_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Workspace Id"
+    }
+  },
+  "required": [
+    "operation_id",
+    "workspace_id",
+    "currency",
+    "budget_state",
+    "window_key",
+    "subject_kind",
+    "subject_key",
+    "pricing_version_id",
+    "prices",
+    "max_cost",
+    "amount",
+    "status",
+    "run_ref",
+    "uncertain_reason",
+    "settled_amount",
+    "overage_amount",
+    "created_at",
+    "settled_at",
+    "released_at",
+    "released_reason"
+  ],
+  "title": "ReservationView",
   "type": "object"
 }
 ```
@@ -6506,6 +7175,170 @@ One callable operation with its schemas, effects and approval demand.
 }
 ```
 
+<a id="schema-UnitPrices-Input"></a>
+
+## UnitPrices-Input
+
+The pinned price sheet of one subject, per single unit.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `currency` | string | 是 | `maxLength=8`; `minLength=1` |
+| `input_price` | number anyOf string | 否 | `anyOf=[{"minimum": 0.0, "type": "number"}, {"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}]`; `default="0"` |
+| `output_price` | number anyOf string | 否 | `anyOf=[{"minimum": 0.0, "type": "number"}, {"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}]`; `default="0"` |
+| `cached_input_price` | number anyOf string anyOf null | 否 | `anyOf=[{"minimum": 0.0, "type": "number"}, {"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `tool_unit_price` | number anyOf string anyOf null | 否 | `anyOf=[{"minimum": 0.0, "type": "number"}, {"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The pinned price sheet of one subject, per single unit.",
+  "properties": {
+    "cached_input_price": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Cached Input Price"
+    },
+    "currency": {
+      "maxLength": 8,
+      "minLength": 1,
+      "title": "Currency",
+      "type": "string"
+    },
+    "input_price": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Input Price"
+    },
+    "output_price": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Output Price"
+    },
+    "tool_unit_price": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Unit Price"
+    }
+  },
+  "required": [
+    "currency"
+  ],
+  "title": "UnitPrices",
+  "type": "object"
+}
+```
+
+<a id="schema-UnitPrices-Output"></a>
+
+## UnitPrices-Output
+
+The pinned price sheet of one subject, per single unit.
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `currency` | string | 是 | `maxLength=8`; `minLength=1` |
+| `input_price` | string | 否 | `default="0"`; `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `output_price` | string | 否 | `default="0"`; `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `cached_input_price` | string anyOf null | 否 | `anyOf=[{"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+| `tool_unit_price` | string anyOf null | 否 | `anyOf=[{"pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$", "type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "additionalProperties": false,
+  "description": "The pinned price sheet of one subject, per single unit.",
+  "properties": {
+    "cached_input_price": {
+      "anyOf": [
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Cached Input Price"
+    },
+    "currency": {
+      "maxLength": 8,
+      "minLength": 1,
+      "title": "Currency",
+      "type": "string"
+    },
+    "input_price": {
+      "default": "0",
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Input Price",
+      "type": "string"
+    },
+    "output_price": {
+      "default": "0",
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Output Price",
+      "type": "string"
+    },
+    "tool_unit_price": {
+      "anyOf": [
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Unit Price"
+    }
+  },
+  "required": [
+    "currency"
+  ],
+  "title": "UnitPrices",
+  "type": "object"
+}
+```
+
 <a id="schema-UpdateDefinitionRequest"></a>
 
 ## UpdateDefinitionRequest
@@ -6655,6 +7488,108 @@ The fields an account may change on its own profile.
     }
   },
   "title": "UpdateProfileRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-UsagePage"></a>
+
+## UsagePage
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `usages` | array&lt;[UsageView](schemas.md#schema-UsageView)&gt; | 是 | — |
+| `total` | integer | 是 | — |
+
+```json
+{
+  "properties": {
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    },
+    "usages": {
+      "items": {
+        "$ref": "#/components/schemas/UsageView"
+      },
+      "title": "Usages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "usages",
+    "total"
+  ],
+  "title": "UsagePage",
+  "type": "object"
+}
+```
+
+<a id="schema-UsageView"></a>
+
+## UsageView
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 是 | — |
+| `subject_kind` | string | 是 | — |
+| `subject_key` | string | 是 | — |
+| `usage` | [NormalizedUsage](schemas.md#schema-NormalizedUsage) | 是 | — |
+| `actual_cost` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `overage_amount` | string | 是 | `pattern="^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"` |
+| `pricing_version_id` | string (uuid) | 是 | `format="uuid"` |
+| `recorded_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "actual_cost": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Actual Cost",
+      "type": "string"
+    },
+    "operation_id": {
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "overage_amount": {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "title": "Overage Amount",
+      "type": "string"
+    },
+    "pricing_version_id": {
+      "format": "uuid",
+      "title": "Pricing Version Id",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "subject_key": {
+      "title": "Subject Key",
+      "type": "string"
+    },
+    "subject_kind": {
+      "title": "Subject Kind",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/components/schemas/NormalizedUsage"
+    }
+  },
+  "required": [
+    "operation_id",
+    "subject_kind",
+    "subject_key",
+    "usage",
+    "actual_cost",
+    "overage_amount",
+    "pricing_version_id",
+    "recorded_at"
+  ],
+  "title": "UsageView",
   "type": "object"
 }
 ```

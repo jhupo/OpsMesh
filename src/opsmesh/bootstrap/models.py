@@ -14,6 +14,13 @@ from opsmesh.governance.audit.models import (
     AuditEvent,
     AuditVerification,
 )
+from opsmesh.governance.costs.models import (
+    CostBudget,
+    CostBudgetReservation,
+    CostBudgetWindow,
+    CostPricingRuleVersion,
+    CostUsageRecord,
+)
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.identity.auth.models import LoginSession, UserCredential
 from opsmesh.identity.invitations.models import AccountInvitation
@@ -66,6 +73,11 @@ def register_models() -> MetaData:
         CapabilityDefinition,
         CapabilityPackage,
         CapabilityVersion,
+        CostBudget,
+        CostBudgetReservation,
+        CostBudgetWindow,
+        CostPricingRuleVersion,
+        CostUsageRecord,
         CreationReceipt,
         LoginSession,
         MailIntent,
