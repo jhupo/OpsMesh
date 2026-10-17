@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from opsmesh.shared.errors import InvalidArgumentError
 from opsmesh.workspaces.credentials.models import (
     CREDENTIAL_KINDS,
     MAX_NAME_LENGTH,
@@ -65,7 +66,15 @@ class CredentialPage(BaseModel):
 
 
 def validated_kind(kind: str) -> str:
-    """The one place a stated credential kind is checked before storage."""
+    """The one place a stated credential kind is checked before storage.
+
+    An unknown kind is a request argument problem, so it surfaces as the
+    domain ``InvalidArgumentError`` the HTTP boundary maps to 400; a raw
+    ``ValueError`` here would escape as a 500.
+    """
     if kind not in CREDENTIAL_KINDS:
-        raise ValueError(f"Unknown credential kind: {kind}")
+        raise InvalidArgumentError(
+            "The credential kind is unknown",
+            details={"kind": kind, "known_kinds": list(CREDENTIAL_KINDS)},
+        )
     return kind

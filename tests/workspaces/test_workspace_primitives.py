@@ -13,7 +13,8 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from opsmesh.workspaces.credentials.schemas import CredentialCreateRequest
+from opsmesh.shared.errors import InvalidArgumentError
+from opsmesh.workspaces.credentials.schemas import CredentialCreateRequest, validated_kind
 from opsmesh.workspaces.members.models import (
     INVITATION_EXPIRED,
     INVITATION_PENDING,
@@ -119,6 +120,13 @@ class TestRequestContracts:
             CredentialCreateRequest.model_validate(
                 {"name": "k", "kind": "capability", "secret": {"a": "x" * 5000}}
             )
+
+    def test_unknown_credential_kind_is_a_request_argument_error(self) -> None:
+        """A stated kind the platform does not define must reach the HTTP
+        boundary as the domain error it maps to 400, not a raw ValueError."""
+        with pytest.raises(InvalidArgumentError):
+            validated_kind("nonsense")
+        assert validated_kind("capability") == "capability"
 
     def test_model_provider_default_model_must_be_declared(self) -> None:
         with pytest.raises(ValidationError):

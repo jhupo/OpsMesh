@@ -239,3 +239,41 @@ model_providers/projects.members）就位；Space*/Project* 视图与 WorkspaceV
    Delivery 与通知分批投递。
 5. operator/deploy/scripts 与 V4 的合同同步（现存脚本仍含参考实现的工程
    合同，属未提交的迁移清理，不随本步提交）。
+
+## 12. S5-S6 复审关闭（2026-10-17）
+
+复审记录 `docs/s5-s6-code-review.md`（未跟踪，随用户决策处理）对本分支提出
+两个 P1 与一个 P2，本轮全部关闭：
+
+| # | 问题 | 修复 |
+| --- | --- | --- |
+| P1 | `credentials/schemas.py` 的 `validated_kind` 对未知类型抛原生 `ValueError`，HTTP 层未映射，客户端得 500 | 改抛领域 `InvalidArgumentError`（含 `known_kinds` details），走统一 400 错误信封 |
+| P1 | `model_providers/service.py` 的 provider URL 校验抛 `EgressURLValidationError(ValueError)`，同样泄漏 500 | 新增 `_validated_base_url` 边界转换（create 与 update 两个写入路径都经它），egress 拒绝转为 `InvalidArgumentError` 400 |
+| P2 | `notifications/service.py` 并发同 `source_id` 插入竞争的失败事务直接抛 `ConflictError`，不满足"重试返回同一条通知"合同 | 插入改走保存点（`begin_nested`，pending 对象随保存点回滚被剥离）；冲突后按同一 `_source_statement` 重读竞争事务已提交的行并重放；仅重读不到才落 `ConflictError` |
+
+新增测试（本轮 +8 项，服务端全量 356→**364 passed / 3 skipped / 0 failed**）：
+
+- `tests/workspaces/test_workspace_primitives.py`：未知 kind 抛
+  `InvalidArgumentError` 且已知 kind 通过（无 DB）。
+- `tests/workspaces/test_workspace_routes.py`（新建 6 项，真实 PG 驱动装配
+  应用）：未知 kind 创建凭据得 400 `invalid_argument`；三类被拒 provider
+  URL（非 HTTPS scheme、localhost、URL 内嵌凭据）创建连接得 400；update
+  路径同样得 400；合法 HTTPS URL 仍 201（转换不误拒合法端点）。
+- `tests/workspaces/test_workspaces_postgres.py`：`test_concurrent_notification_
+  sources_replay_one_row`——holder 事务持有未提交插入，contender 被
+  `wait_for_lock_waits` 确认在源约束上等待后释放 holder；断言双方得到同一
+  id、库内仅一行、仅一条创建审计事件。
+
+反向实证（脚本 `/tmp/s6fix-reverse.sh`，变异前 truncate、finally 还原）：
+
+| 变异 | 结果 |
+| --- | --- |
+| `validated_kind` 恢复抛 `ValueError` | CAUGHT：路由测试得 500 非 400 |
+| 移除 provider URL 边界转换 | CAUGHT：路由测试得 500 非 400 |
+| 通知插入移除保存点改直接抛 `ConflictError` | CAUGHT：并发竞争方未重放同行 |
+
+服务器复核（`/tmp/s6fix-server-verify.sh`）：干净库迁移至 0005 且
+`alembic check` 零漂移；本地与服务器 239 个源码/测试文件 SHA256 逐一一致
+（delta 同步完整性）；本地全量 367 项 0 失败、ruff/mypy/lint-imports/架构
+审计/接口与 SDK 生成检查通过。复审的两个 blocked 项（P1 500 泄漏、P2 并发
+重放）随之关闭；第 10 节 unverified 范围不变。

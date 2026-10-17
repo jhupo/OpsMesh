@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from opsmesh.governance.audit.service import AuditActor, append_platform_event
 from opsmesh.identity.context import CurrentUser
@@ -45,7 +46,9 @@ def record_notification(
 
     The unique source constraint is the deduplication contract: a producer
     that retries its source reference reuses the existing inbox row instead
-    of notifying the member twice.
+    of notifying the member twice. The contract holds under concurrency as
+    well — the producer that loses the insert race reads back the row the
+    winner committed and replays it.
     """
     if severity not in NOTIFICATION_SEVERITIES:
         raise InvalidArgumentError(
@@ -55,12 +58,12 @@ def record_notification(
     if access.space_role(session, workspace_id=workspace_id, user_id=recipient_user_id) is None:
         raise InvalidArgumentError("The recipient is not a workspace member")
     existing = session.scalar(
-        select(WorkspaceNotification).where(
-            WorkspaceNotification.workspace_id == workspace_id,
-            WorkspaceNotification.recipient_user_id == recipient_user_id,
-            WorkspaceNotification.source_type == source_type,
-            WorkspaceNotification.source_id == source_id,
-            WorkspaceNotification.notification_type == notification_type,
+        _source_statement(
+            workspace_id=workspace_id,
+            recipient_user_id=recipient_user_id,
+            notification_type=notification_type,
+            source_type=source_type,
+            source_id=source_id,
         )
     )
     if existing is not None:
@@ -76,17 +79,31 @@ def record_notification(
         body=body,
         payload=payload,
     )
-    session.add(notification)
     try:
-        session.flush()
+        # The savepoint keeps this transaction usable when a concurrent
+        # producer of the same source lands the row first: the constraint
+        # refuses the insert, the savepoint rolls back only that insert
+        # (the pending object is expunged with it), and the committed row
+        # is read back and replayed instead of failing the retry.
+        with session.begin_nested():
+            session.add(notification)
+            session.flush()
     except IntegrityError as exc:
-        # The source constraint is the final guard: a concurrent producer of
-        # the same source already landed the row, which is a conflict, not a
-        # second notification.
-        raise ConflictError(
-            "The notification source already exists",
-            details={"source_type": source_type, "source_id": str(source_id)},
-        ) from exc
+        replayed = session.scalar(
+            _source_statement(
+                workspace_id=workspace_id,
+                recipient_user_id=recipient_user_id,
+                notification_type=notification_type,
+                source_type=source_type,
+                source_id=source_id,
+            )
+        )
+        if replayed is None:
+            raise ConflictError(
+                "The notification source already exists",
+                details={"source_type": source_type, "source_id": str(source_id)},
+            ) from exc
+        return replayed
     append_platform_event(
         session,
         actor=actor,
@@ -212,6 +229,28 @@ def update_preferences(
     if email_enabled is not None:
         preference.email_enabled = email_enabled
     return preference
+
+
+def _source_statement(
+    *,
+    workspace_id: UUID,
+    recipient_user_id: UUID,
+    notification_type: str,
+    source_type: str,
+    source_id: UUID | None,
+) -> Select[tuple[WorkspaceNotification]]:
+    """The one row identity a source reference maps to.
+
+    The pre-insert lookup and the post-conflict replay must select the same
+    row the unique constraint protects, so both share this statement.
+    """
+    return select(WorkspaceNotification).where(
+        WorkspaceNotification.workspace_id == workspace_id,
+        WorkspaceNotification.recipient_user_id == recipient_user_id,
+        WorkspaceNotification.source_type == source_type,
+        WorkspaceNotification.source_id == source_id,
+        WorkspaceNotification.notification_type == notification_type,
+    )
 
 
 def _unread_count(session: Session, *, workspace_id: UUID, user_id: UUID) -> int:

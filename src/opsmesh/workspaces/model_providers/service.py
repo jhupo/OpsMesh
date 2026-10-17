@@ -22,7 +22,11 @@ from opsmesh.identity.context import CurrentUser
 from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.egress import EgressURLPolicy, validate_egress_url
+from opsmesh.shared.security.egress import (
+    EgressURLPolicy,
+    EgressURLValidationError,
+    validate_egress_url,
+)
 from opsmesh.temporal.dispatch.outbox import stage_execution
 from opsmesh.workspaces.credentials.models import (
     CREDENTIAL_KIND_MODEL_PROVIDER,
@@ -74,9 +78,7 @@ def create_connection(
         session, workspace_id=workspace_id, user_id=actor.user_id, permission="manage", lock=True
     )
     _require_provider_credential(session, workspace_id=workspace_id, credential_id=credential_id)
-    validated_base_url = (
-        None if base_url is None else validate_egress_url(base_url, policy=BASE_URL_POLICY)
-    )
+    validated_base_url = _validated_base_url(base_url)
     validated_models = _validated_models(models)
     if default_model not in validated_models:
         raise InvalidArgumentError(
@@ -161,7 +163,7 @@ def update_connection(
     if name is not None:
         connection.name = name
     if base_url is not None:
-        connection.base_url = validate_egress_url(base_url, policy=BASE_URL_POLICY)
+        connection.base_url = _validated_base_url(base_url)
     next_models = _validated_models(models) if models is not None else list(connection.models)
     next_default = default_model if default_model is not None else connection.default_model
     if next_default not in next_models:
@@ -346,6 +348,24 @@ def _require_provider_credential(
             "The connection requires an active model provider credential",
             details={"credential_id": str(credential_id)},
         )
+
+
+def _validated_base_url(base_url: str | None) -> str | None:
+    """Check one provider endpoint against the HTTPS egress policy.
+
+    The egress policy speaks in ``EgressURLValidationError``, a ``ValueError``
+    the HTTP boundary does not map; a rejected endpoint is a request
+    argument problem, so it is converted to the domain error here, at the
+    service edge every write passes through.
+    """
+    if base_url is None:
+        return None
+    try:
+        return validate_egress_url(base_url, policy=BASE_URL_POLICY)
+    except EgressURLValidationError as exc:
+        raise InvalidArgumentError(
+            "The provider base URL is not allowed", details={"reason": str(exc)}
+        ) from exc
 
 
 def _validated_models(models: list[str]) -> list[str]:

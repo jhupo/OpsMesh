@@ -15,7 +15,7 @@ import asyncio
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy.ext.asyncio
@@ -62,6 +62,7 @@ from opsmesh.workspaces.model_providers.models import (
 )
 from opsmesh.workspaces.models import Workspace
 from opsmesh.workspaces.notifications import service as notification_service
+from opsmesh.workspaces.notifications.models import WorkspaceNotification
 from opsmesh.workspaces.projects import service as project_service
 from opsmesh.workspaces.projects.members import service as project_member_service
 
@@ -1399,3 +1400,99 @@ def test_concurrent_reservations_admit_exactly_one(
     holder_thread.join(timeout=15)
     contender_thread.join(timeout=15)
     assert sorted(outcomes.values()) == ["CapacityExceededError", "reserved"]
+
+
+def test_concurrent_notification_sources_replay_one_row(
+    database_engine, clean_concurrency_tables
+) -> None:
+    """Two concurrent producers of one source land one inbox row.
+
+    The interleaving is forced, not raced: the first producer holds its
+    insert uncommitted until the second is observed waiting on the source
+    constraint, so the loser of the race must replay the winner's committed
+    row — the same id, one row, one creation event — instead of failing the
+    retry with a conflict.
+    """
+    sessions = concurrent_sessions(database_engine)
+    owner = open_account(sessions, email="note-race-owner@example.com", display_name="O")
+    member = open_account(sessions, email="note-race-member@example.com", display_name="M")
+    with sessions() as session:
+        workspace = workspace_service.create_workspace(
+            session,
+            actor=as_user(owner),
+            name="NoteRace",
+            description="",
+            capacity_limits={"concurrency": None, "environment": None},
+        )
+        session.commit()
+        workspace_id = workspace.id
+        recipient_id = member.id
+    invite(sessions=sessions, workspace_id=workspace_id, inviter=owner, invitee=member)
+    accept_latest_invitation(sessions, workspace_id=workspace_id, invitee=member)
+    actor = AuditActor(actor_type="user", actor_id=str(owner.id), workspace_id=workspace_id)
+    source_id = uuid4()
+    outcomes: dict[str, str] = {}
+    landed: dict[str, UUID] = {}
+    holding = threading.Event()
+    release = threading.Event()
+
+    def record(key: str, *, hold: bool) -> None:
+        with sessions() as session, session.begin():
+            notification = notification_service.record_notification(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                recipient_user_id=recipient_id,
+                notification_type="workspace.invitation",
+                severity="info",
+                source_type="workspace_invitation",
+                source_id=source_id,
+                title="You were invited",
+                body="",
+                payload={},
+            )
+            landed[key] = notification.id
+            if hold:
+                holding.set()
+                release.wait(timeout=10)
+
+    def holder() -> None:
+        try:
+            record("holder", hold=True)
+            outcomes["holder"] = "recorded"
+        except Exception as exc:  # noqa: BLE001 - recorded for the assertion
+            outcomes["holder"] = type(exc).__name__
+
+    def contender() -> None:
+        try:
+            record("contender", hold=False)
+            outcomes["contender"] = "recorded"
+        except Exception as exc:  # noqa: BLE001 - recorded for the assertion
+            outcomes["contender"] = type(exc).__name__
+
+    holder_thread = threading.Thread(target=holder)
+    holder_thread.start()
+    assert holding.wait(timeout=10)
+    contender_thread = threading.Thread(target=contender)
+    contender_thread.start()
+    wait_for_lock_waits(database_engine, expected=1)
+    release.set()
+    holder_thread.join(timeout=15)
+    contender_thread.join(timeout=15)
+    assert outcomes == {"holder": "recorded", "contender": "recorded"}
+    assert landed["holder"] == landed["contender"]
+    with sessions() as session:
+        rows = session.scalars(
+            select(WorkspaceNotification).where(
+                WorkspaceNotification.workspace_id == workspace_id,
+                WorkspaceNotification.source_id == source_id,
+            )
+        ).all()
+        assert len(rows) == 1
+        events = session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.target_type == "workspace_notification",
+                AuditEvent.target_id == str(landed["holder"]),
+            )
+        ).all()
+        assert len(events) == 1, "the replayed producer must not record a second creation"
