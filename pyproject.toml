@@ -373,6 +373,43 @@ source_modules = ["opsmesh.workspaces.projects.members"]
 forbidden_modules = ["opsmesh.workspaces.projects.service"]
 
 [[tool.importlinter.contracts]]
+id = "v4-execution-boundaries"
+name = "Execution uses shared, telemetry, temporal, identity and governance only"
+type = "forbidden"
+source_modules = [
+    "opsmesh.execution",
+]
+forbidden_modules = [
+    "opsmesh.platform", "opsmesh.capabilities", "opsmesh.resources",
+    "opsmesh.extensions", "opsmesh.workspaces", "opsmesh.orchestration",
+    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh.config",
+    "opsmesh.main", "opsmesh_sdk",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-execution-contracts-isolated"
+name = "Execution contracts never import the runs, sessions or runtime implementations"
+type = "forbidden"
+source_modules = ["opsmesh.execution.contracts"]
+forbidden_modules = [
+    "opsmesh.execution.runs", "opsmesh.execution.sessions", "opsmesh.execution.runtime",
+]
+
+[[tool.importlinter.contracts]]
+id = "v4-execution-sessions-isolated"
+name = "Model sessions never import runs or runtime"
+type = "forbidden"
+source_modules = ["opsmesh.execution.sessions"]
+forbidden_modules = ["opsmesh.execution.runs", "opsmesh.execution.runtime"]
+
+[[tool.importlinter.contracts]]
+id = "v4-execution-runtime-isolated"
+name = "Runtime never imports runs or sessions"
+type = "forbidden"
+source_modules = ["opsmesh.execution.runtime"]
+forbidden_modules = ["opsmesh.execution.runs", "opsmesh.execution.sessions"]
+
+[[tool.importlinter.contracts]]
 id = "v4-identity-auth-isolated"
 name = "Authentication reaches the profile owner only through injected contracts"
 type = "forbidden"

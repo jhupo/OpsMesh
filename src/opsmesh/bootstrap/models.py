@@ -7,6 +7,14 @@ from opsmesh.capabilities.models import (
     CapabilityPackage,
     CapabilityVersion,
 )
+from opsmesh.execution.runs.models import OperationReceipt, Run, RunApproval, RunEvent
+from opsmesh.execution.runtime.models import (
+    Environment,
+    EnvironmentOperationReceipt,
+    MCPConnection,
+    MCPOperationReceipt,
+)
+from opsmesh.execution.sessions.models import SessionOperationReceipt, SessionRecord
 from opsmesh.governance.approvals.models import ApprovalRequest
 from opsmesh.governance.audit.models import (
     AuditAppendReceipt,
@@ -79,10 +87,15 @@ def register_models() -> MetaData:
         CostPricingRuleVersion,
         CostUsageRecord,
         CreationReceipt,
+        Environment,
+        EnvironmentOperationReceipt,
         LoginSession,
         MailIntent,
+        MCPConnection,
+        MCPOperationReceipt,
         ModelProviderConnection,
         NotificationPreference,
+        OperationReceipt,
         Project,
         ProjectInvitation,
         ProjectMember,
@@ -93,7 +106,12 @@ def register_models() -> MetaData:
         ResourceFileGrant,
         ResourceFileVersion,
         ResourceRuntimePolicy,
+        Run,
+        RunApproval,
+        RunEvent,
         SecurityEvent,
+        SessionOperationReceipt,
+        SessionRecord,
         SmtpConfiguration,
         StorageReservation,
         TemporalOutboxEntry,
