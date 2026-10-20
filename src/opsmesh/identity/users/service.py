@@ -17,18 +17,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor, append_platform_event
 from opsmesh.identity.access import PlatformRole
 from opsmesh.identity.context import CurrentUser
 from opsmesh.identity.errors import DuplicateUserError
 from opsmesh.identity.users.avatars import normalize_avatar
-from opsmesh.identity.users.models import (
-    USER_STATUS_ACTIVE,
-    USER_STATUSES,
-    UserProfile,
-)
+from opsmesh.identity.users.models import USER_STATUS_ACTIVE, USER_STATUSES, UserProfile
+from opsmesh.shared.audit import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
+from opsmesh.shared.serialization import canonical_json
 
 PLATFORM_ADMINISTRATOR = str(PlatformRole.ADMIN)
 PLATFORM_MEMBER = str(PlatformRole.MEMBER)
@@ -57,14 +54,18 @@ def create_user(
         session.flush()
     except IntegrityError as exc:
         raise DuplicateUserError() from exc
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor or AuditActor(actor_type="platform"),
-        action="user.created",
-        target_type="user",
-        target_id=str(profile.id),
-        summary=f"Account opened for {email}",
-        details={"platform_roles": sorted(roles)},
+        AuditRecord(
+            category="operation",
+            action="user.created",
+            actor=actor or AuditActor(actor_type="platform"),
+            source="platform",
+            target_type="user",
+            target_id=str(profile.id),
+            summary=f"Account opened for {email}",
+            payload_json=canonical_json({"platform_roles": sorted(roles)}),
+        ),
     )
     return profile
 
@@ -246,14 +247,18 @@ def _apply_profile_fields(
         profile.work_root = work_root
         changed.append("work_root")
     if changed:
-        append_platform_event(
+        record_audit(
             session,
-            actor=actor,
-            action="user.profile_updated",
-            target_type="user",
-            target_id=str(profile.id),
-            summary="User profile updated",
-            details={"changed": changed},
+            AuditRecord(
+                category="operation",
+                action="user.profile_updated",
+                actor=actor,
+                source="platform",
+                target_type="user",
+                target_id=str(profile.id),
+                summary="User profile updated",
+                payload_json=canonical_json({"changed": changed}),
+            ),
         )
     return profile
 
@@ -275,17 +280,23 @@ def _apply_roles(
         administrators, profile=profile, keeps_admin=PLATFORM_ADMINISTRATOR in validated
     )
     profile.platform_roles = sorted(validated)
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="user.roles_updated",
-        target_type="user",
-        target_id=str(profile.id),
-        summary="Platform roles updated",
-        details={
-            "previous_roles": sorted(previous),
-            "platform_roles": sorted(validated),
-        },
+        AuditRecord(
+            category="operation",
+            action="user.roles_updated",
+            actor=actor,
+            source="platform",
+            target_type="user",
+            target_id=str(profile.id),
+            summary="Platform roles updated",
+            payload_json=canonical_json(
+                {
+                    "previous_roles": sorted(previous),
+                    "platform_roles": sorted(validated),
+                }
+            ),
+        ),
     )
     return profile
 
@@ -310,14 +321,18 @@ def _apply_status(
     if status != USER_STATUS_ACTIVE:
         _guard_last_administrator(administrators, profile=profile, keeps_admin=False)
     profile.status = status
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="user.status_updated",
-        target_type="user",
-        target_id=str(profile.id),
-        summary=f"User status set to {status}",
-        details={"previous_status": previous_status, "status": status},
+        AuditRecord(
+            category="operation",
+            action="user.status_updated",
+            actor=actor,
+            source="platform",
+            target_type="user",
+            target_id=str(profile.id),
+            summary=f"User status set to {status}",
+            payload_json=canonical_json({"previous_status": previous_status, "status": status}),
+        ),
     )
     return profile
 
@@ -339,18 +354,24 @@ def set_avatar(
     profile.avatar_content = normalized.content
     profile.avatar_content_type = normalized.content_type
     profile.avatar_updated_at = datetime.now(UTC)
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="user.avatar_updated",
-        target_type="user",
-        target_id=str(profile.id),
-        summary="User avatar updated",
-        details={
-            "width": normalized.width,
-            "height": normalized.height,
-            "bytes": len(normalized.content),
-        },
+        AuditRecord(
+            category="operation",
+            action="user.avatar_updated",
+            actor=actor,
+            source="platform",
+            target_type="user",
+            target_id=str(profile.id),
+            summary="User avatar updated",
+            payload_json=canonical_json(
+                {
+                    "width": normalized.width,
+                    "height": normalized.height,
+                    "bytes": len(normalized.content),
+                }
+            ),
+        ),
     )
     return profile
 
@@ -362,14 +383,18 @@ def clear_avatar(session: Session, *, user_id: UUID, actor: AuditActor) -> UserP
     profile.avatar_content = None
     profile.avatar_content_type = None
     profile.avatar_updated_at = None
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="user.avatar_cleared",
-        target_type="user",
-        target_id=str(profile.id),
-        summary="User avatar cleared",
-        details={},
+        AuditRecord(
+            category="operation",
+            action="user.avatar_cleared",
+            actor=actor,
+            source="platform",
+            target_type="user",
+            target_id=str(profile.id),
+            summary="User avatar cleared",
+            payload_json=canonical_json({}),
+        ),
     )
     return profile
 
@@ -386,9 +411,7 @@ def identity_of(profile: UserProfile) -> CurrentUser:
 
 
 def _locked_profile(session: Session, user_id: UUID) -> UserProfile:
-    profile = session.scalar(
-        select(UserProfile).where(UserProfile.id == user_id).with_for_update()
-    )
+    profile = session.scalar(select(UserProfile).where(UserProfile.id == user_id).with_for_update())
     if profile is None:
         raise NotFoundError("The user does not exist")
     return profile
@@ -468,10 +491,7 @@ def _guard_last_administrator(
     for admin in administrators:
         if admin.id == profile.id:
             continue
-        if (
-            admin.status == USER_STATUS_ACTIVE
-            and PLATFORM_ADMINISTRATOR in admin.platform_roles
-        ):
+        if admin.status == USER_STATUS_ACTIVE and PLATFORM_ADMINISTRATOR in admin.platform_roles:
             return
     raise ConflictError(
         "The platform keeps at least one active administrator",

@@ -69,46 +69,30 @@ files = ["src/opsmesh_sdk"]
 root_package = "opsmesh_sdk"
 include_external_packages = true
 
-# V4 section 12.2 SDK rows: api, extensions, transport, host and the composing
-# client/context/development layers form an acyclic graph.
+# V4 section 12: independent SDK, static declarations and production runtime.
 
 [[tool.importlinter.contracts]]
-id = "v4-sdk-transport-no-api"
-name = "Transport implements the contracts without importing generated business clients"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.transport"]
-forbidden_modules = ["opsmesh_sdk.api", "opsmesh_sdk.client", "opsmesh_sdk.context"]
-
-[[tool.importlinter.contracts]]
-id = "v4-sdk-extensions-pure"
-name = "Extension declarations are pure contracts over values, errors and manifest"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.extensions"]
-forbidden_modules = [
-    "opsmesh_sdk.transport", "opsmesh_sdk.host",
-    "opsmesh_sdk.client", "opsmesh_sdk.context", "opsmesh_sdk.development",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-sdk-api-no-client"
-name = "Generated business clients never import the composing client or context"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.api"]
-forbidden_modules = ["opsmesh_sdk.client", "opsmesh_sdk.context", "opsmesh_sdk.development"]
-
-[[tool.importlinter.contracts]]
-id = "v4-sdk-host-no-context"
-name = "Host clients reuse generated orchestration types without importing the context"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.host"]
-forbidden_modules = ["opsmesh_sdk.context", "opsmesh_sdk.client", "opsmesh_sdk.development"]
-
-[[tool.importlinter.contracts]]
-id = "v4-sdk-no-server"
-name = "The independent SDK never imports the server or reference sources"
+id = "sdk-no-server"
+name = "The independent SDK does not import server or historical implementations"
 type = "forbidden"
 source_modules = ["opsmesh_sdk"]
 forbidden_modules = [
-    "opsmesh", "backup", "backup_2",
-    "fastapi", "sqlalchemy", "temporalio", "redis",
+    "opsmesh", "backup", "backup_2", "fastapi", "sqlalchemy", "temporalio", "redis",
 ]
+
+[[tool.importlinter.contracts]]
+id = "sdk-static-declarations"
+name = "Extension declarations can be read without creating clients or loading packages"
+type = "forbidden"
+source_modules = ["opsmesh_sdk.extensions"]
+forbidden_modules = [
+    "opsmesh_sdk.transport", "opsmesh_sdk.host", "opsmesh_sdk.client",
+    "opsmesh_sdk.context", "opsmesh_sdk.development", "opsmesh_sdk.runtime",
+]
+
+[[tool.importlinter.contracts]]
+id = "sdk-runtime-no-development"
+name = "Production extension execution does not depend on development tools"
+type = "forbidden"
+source_modules = ["opsmesh_sdk.runtime"]
+forbidden_modules = ["opsmesh_sdk.development"]

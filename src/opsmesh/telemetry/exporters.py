@@ -12,7 +12,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, Spa
 from opentelemetry.trace import Link, Status
 from opentelemetry.util.types import Attributes, AttributeValue
 
-from opsmesh.shared.security.redaction import redact_sensitive_text
+from opsmesh.shared.security.redaction import RedactionRules, redact_sensitive_text
 
 
 class SpanProcessorTarget(Protocol):
@@ -32,13 +32,14 @@ def configure_trace_export(
     max_export_batch_size: int,
     schedule_delay_ms: int,
     attribute_filter: Callable[[Attributes], dict[str, AttributeValue]],
+    redaction: RedactionRules,
 ) -> None:
     exporter = OTLPSpanExporter(
         endpoint=endpoint, headers=headers, insecure=insecure, timeout=timeout_seconds
     )
     provider.add_span_processor(
         BatchSpanProcessor(
-            RedactingSpanExporter(exporter, attribute_filter=attribute_filter),
+            RedactingSpanExporter(exporter, attribute_filter=attribute_filter, redaction=redaction),
             max_queue_size=max_queue_size,
             max_export_batch_size=max_export_batch_size,
             schedule_delay_millis=schedule_delay_ms,
@@ -80,7 +81,9 @@ class RedactingSpanExporter(SpanExporter):
         exporter: SpanExporter,
         *,
         attribute_filter: Callable[[Attributes], dict[str, AttributeValue]],
+        redaction: RedactionRules,
     ) -> None:
+        self._redaction = redaction
         self._exporter = exporter
         self._attribute_filter = attribute_filter
 
@@ -88,14 +91,14 @@ class RedactingSpanExporter(SpanExporter):
         return self._exporter.export(
             [
                 ReadableSpan(
-                    name=redact_sensitive_text(span.name)[:1_024],
+                    name=redact_sensitive_text(span.name, rules=self._redaction)[:1_024],
                     context=span.context,
                     parent=span.parent,
                     resource=span.resource,
                     attributes=self._attribute_filter(span.attributes),
                     events=[
                         Event(
-                            redact_sensitive_text(event.name)[:1_024],
+                            redact_sensitive_text(event.name, rules=self._redaction)[:1_024],
                             self._attribute_filter(event.attributes),
                             event.timestamp,
                         )

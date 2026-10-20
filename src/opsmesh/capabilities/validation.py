@@ -1,11 +1,11 @@
-"""Common manifest validation shared by all seven capability types.
+"""Common static manifest validation for all five capability types.
 
 These checks are pure: they read declared values and package bytes and
 never import user code, connect to a server or start a process. The
 type-specific configuration contracts of the five sub-packaged types live
-in their own services; what is common to every type — resource manifests,
-fixed dependencies, flow template declarations, parameter schemas and
-secret slots — is validated here, and so are the channel and extension
+in their own validators; what is common to every type — resource manifests,
+fixed dependencies, flow template declarations and parameter schemas —
+is validated here, and so are the channel and extension
 type checks, which the V4 target tree keeps in the root modules instead
 of a sub-package. Publish therefore cannot trust an unvalidated draft.
 """
@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from opsmesh_sdk.composition.parameters import ParameterLimits, normalize
+from opsmesh_sdk.errors import ValidationError as ParameterError
 from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.models import (
@@ -35,8 +37,6 @@ from opsmesh.shared.serialization import payload_digest
 MAX_SCHEMA_BYTES = 65_536
 MAX_MANIFEST_ENTRIES = 512
 MAX_DEPENDENCIES = 128
-MAX_SECRET_SLOTS = 64
-MAX_SECRET_NAME_LENGTH = 100
 DIGEST_LENGTH = 64
 
 
@@ -209,8 +209,23 @@ def validate_parameter_schema(schema: object) -> dict[str, object]:
         return {"type": "object", "properties": {}, "required": []}
     if not isinstance(schema, dict):
         raise InvalidArgumentError("A parameter schema must be a JSON object")
-    if len(json.dumps(schema, sort_keys=True, ensure_ascii=False)) > MAX_SCHEMA_BYTES:
-        raise InvalidArgumentError("A parameter schema exceeds the permitted size")
+    try:
+        normalize(schema, limits=ParameterLimits(max_bytes=MAX_SCHEMA_BYTES))
+    except ParameterError as exc:
+        raise InvalidArgumentError("A parameter schema exceeds the JSON limits") from exc
+    pending: list[object] = [schema]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
+                reference = item.get(keyword)
+                if isinstance(reference, str) and not reference.startswith("#"):
+                    raise InvalidArgumentError(
+                        "Parameter schemas cannot reference remote resources"
+                    )
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
     try:
         Draft202012Validator.check_schema(schema)
     except SchemaError as exc:
@@ -219,28 +234,6 @@ def validate_parameter_schema(schema: object) -> dict[str, object]:
             details={"reason": exc.message},
         ) from exc
     return schema
-
-
-def validate_secret_slots(slots: object) -> list[str]:
-    """Validate declared secret slot names; values never travel in a manifest."""
-    if slots is None:
-        return []
-    if not isinstance(slots, list):
-        raise InvalidArgumentError("The secret slots must be a list")
-    if len(slots) > MAX_SECRET_SLOTS:
-        raise InvalidArgumentError("A version declares too many secret slots")
-    names: list[str] = []
-    for raw in slots:
-        if not isinstance(raw, str) or not raw.strip():
-            raise InvalidArgumentError("Every secret slot name must be non-empty text")
-        if len(raw) > MAX_SECRET_NAME_LENGTH:
-            raise InvalidArgumentError("A secret slot name is too long")
-        if raw in names:
-            raise InvalidArgumentError(
-                "A version declares the same secret slot twice", details={"slot": raw}
-            )
-        names.append(raw)
-    return names
 
 
 def verify_declared_resources(

@@ -1,19 +1,28 @@
 """Compose the native Client, payload codec and Activity execution context."""
 
+import asyncio
+from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from agents import ModelProvider
+from agents.mcp import MCPServer
 from temporalio import activity
 from temporalio.client import Client
+from temporalio.common import RetryPolicy
 from temporalio.contrib.opentelemetry import OpenTelemetryPlugin
 from temporalio.converter import DataConverter, DefaultFailureConverterWithEncodedAttributes
 from temporalio.exceptions import ApplicationError
+from temporalio.openai_agents import ModelActivityParameters, OpenAIAgentsPlugin
 from temporalio.plugin import SimplePlugin
 from temporalio.worker import ActivityInboundInterceptor, ExecuteActivityInput, Interceptor
+from temporalio.workflow import ActivityCancellationType
 
 from opsmesh.config import Settings
 from opsmesh.shared.errors import DomainError
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.telemetry.context import bind_log_context
 from opsmesh.temporal.codec import EncryptedPayloadCodec
 
@@ -44,19 +53,50 @@ class _ExecutionActivityContext(ActivityInboundInterceptor):
                 values.update(argument.log_attributes())
                 break
         with bind_log_context(replace=True, **values):
+            heartbeat = None
+            if info.heartbeat_timeout is not None:
+                heartbeat = asyncio.create_task(
+                    self.heartbeat(info.heartbeat_timeout.total_seconds() / 4)
+                )
             try:
                 return await super().execute_activity(input)
             except DomainError as exc:
                 raise ApplicationError(exc.message, type=exc.code, non_retryable=True) from exc
+            finally:
+                if heartbeat is not None:
+                    heartbeat.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await heartbeat
+
+    async def heartbeat(self, interval: float) -> None:
+        while True:
+            activity.heartbeat()
+            await asyncio.sleep(interval)
 
 
-async def connect_temporal(settings: Settings) -> Client:
+async def connect_temporal(
+    settings: Settings,
+    *,
+    model_provider: ModelProvider | None = None,
+    mcp_servers: Mapping[str, Callable[..., MCPServer]] | None = None,
+) -> Client:
     return await Client.connect(
         settings.temporal_address,
         namespace=settings.temporal_namespace,
         tls=settings.temporal_tls_enabled,
         api_key=settings.temporal_api_key,
         plugins=[
+            OpenAIAgentsPlugin(
+                model_provider=model_provider,
+                mcp_servers=mcp_servers,
+                register_activities=model_provider is not None,
+                model_params=ModelActivityParameters(
+                    start_to_close_timeout=timedelta(minutes=5),
+                    heartbeat_timeout=timedelta(seconds=10),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                    cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+                ),
+            ),
             OpenTelemetryPlugin(add_temporal_spans=True),
             SimplePlugin("OpsMeshExecutionContext", interceptors=[ExecutionContextInterceptor()]),
         ],

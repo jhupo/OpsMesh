@@ -82,17 +82,13 @@ def list_artifacts(
     return [_artifact_view(artifact) for artifact in artifacts]
 
 
-@router.get(
-    "/{artifact_id}", response_model=ArtifactView, operation_id="resources.artifacts.read"
-)
+@router.get("/{artifact_id}", response_model=ArtifactView, operation_id="resources.artifacts.read")
 def read_artifact(artifact_id: UUID, session: DbSession, reader: ReaderDep) -> ArtifactView:
     artifact = service.get_artifact(session, artifact_id=artifact_id, reader=reader)
     return _artifact_view(artifact)
 
 
-@router.get(
-    "/{artifact_id}/content", operation_id="resources.artifacts.content.read"
-)
+@router.get("/{artifact_id}/content", operation_id="resources.artifacts.content.read")
 def read_artifact_content(
     artifact_id: UUID, session: DbSession, reader: ReaderDep, request: Request
 ) -> Response:

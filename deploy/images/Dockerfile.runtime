@@ -7,7 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm git 
 COPY deploy/images/compute-requirements.txt /tmp/compute-requirements.txt
 RUN uv pip install --system --no-cache --require-hashes -r /tmp/compute-requirements.txt \
     && rm /tmp/compute-requirements.txt
-RUN useradd --create-home --uid 1000 sandbox \
+ARG SANDBOX_UID=10001
+ARG SANDBOX_GID=10001
+RUN groupadd --gid "$SANDBOX_GID" sandbox \
+    && useradd --create-home --uid "$SANDBOX_UID" --gid "$SANDBOX_GID" sandbox \
     && mkdir /workspace && chown sandbox:sandbox /workspace
 USER sandbox
 WORKDIR /workspace

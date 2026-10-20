@@ -16,6 +16,7 @@ from opsmesh.bootstrap.telemetry import (
 )
 from opsmesh.bootstrap.worker import run_dispatch_worker
 from opsmesh.config import get_settings
+from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
 from opsmesh.telemetry.logging import configure_logging, shutdown_logging
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ async def run_worker() -> None:
         queue_capacity=settings.log_queue_capacity,
         service_name=settings.service_name,
         environment=settings.environment,
+        redaction=PLATFORM_REDACTION,
     )
     register_models()
     stop = asyncio.Event()

@@ -46,15 +46,15 @@ class HttpTransport:
         self,
         base_url: str,
         *,
-        session_id: str,
+        session_id: str | None = None,
         timeout_seconds: float = 30.0,
         max_connections: int = 20,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if max_connections < 1:
             raise ValueError("max_connections must be positive")
-        if not session_id:
-            raise ValidationError("a platform session id is required")
+        if session_id == "":
+            raise ValidationError("a platform session id cannot be empty")
         self._session_id = session_id
         # The transport owns URL joining so an injected client without its own
         # base_url behaves exactly like the client it creates itself.
@@ -67,7 +67,7 @@ class HttpTransport:
         self._stream_reader = EventStreamReader(
             self._client,
             base_url=self._base_url,
-            identity_headers={SESSION_HEADER: session_id},
+            identity_headers={SESSION_HEADER: session_id} if session_id else {},
             protected_headers=frozenset({SESSION_HEADER}),
             overridable_headers=frozenset({SESSION_HEADER}),
         )
@@ -77,7 +77,7 @@ class HttpTransport:
         headers = build_call_headers(
             request,
             context,
-            identity={SESSION_HEADER: self._session_id},
+            identity={SESSION_HEADER: self._session_id} if self._session_id else {},
             protected=frozenset({SESSION_HEADER}),
             overridable=frozenset({SESSION_HEADER}),
         )

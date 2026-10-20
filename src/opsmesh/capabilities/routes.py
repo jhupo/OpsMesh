@@ -1,13 +1,4 @@
-"""Public capability catalog: definitions, versions, publishing and packages.
-
-These routes serve all seven definition types. The common catalog,
-publishing and package resources live here, and so do the channel and
-extension type routes: per the V4 target tree those two types keep their
-configuration creation and draft editing in this root router, while the
-other five types own a sub-package router for theirs. Authentication
-reuses the identity session contract, and every read is scoped by the
-viewer the route builds from it.
-"""
+"""Common static catalog, draft, version and package API for all five capability types."""
 
 from __future__ import annotations
 
@@ -20,8 +11,6 @@ from sqlalchemy.orm import Session
 
 from opsmesh.capabilities import lifecycle
 from opsmesh.capabilities.models import (
-    CAPABILITY_TYPE_CHANNEL,
-    CAPABILITY_TYPE_EXTENSION,
     CAPABILITY_TYPES,
     SOURCES,
     VISIBILITIES,
@@ -32,19 +21,17 @@ from opsmesh.capabilities.schemas import (
     CapabilityDefinitionPage,
     CapabilityDefinitionView,
     CapabilityVersionView,
-    ChannelCreateRequest,
-    ChannelDraftRequest,
-    ExtensionCreateRequest,
-    ExtensionDraftRequest,
+    DefinitionInput,
+    DraftInput,
     UpdateDefinitionRequest,
     UpdateDefinitionStatusRequest,
     UpdateDefinitionVisibilityRequest,
     version_view,
 )
-from opsmesh.governance.audit.service import AuditActor
-from opsmesh.identity.access import PlatformRole
+from opsmesh.identity.access import PlatformRole, require_platform_admin
 from opsmesh.identity.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.identity.context import CurrentUser
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import InvalidArgumentError
 from opsmesh.shared.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageParams
@@ -53,13 +40,9 @@ router = APIRouter(prefix="/capabilities", tags=["capabilities"])
 
 
 def get_storage_root(request: Request) -> Path:
-    """The process storage root the capability packages live under."""
     root = getattr(request.app.state, "storage_root", None)
     if not isinstance(root, str) or not root:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Capability storage is not assembled",
-        )
+        raise HTTPException(status_code=503, detail="Capability storage is not assembled")
     return Path(root)
 
 
@@ -71,6 +54,16 @@ def _viewer(user: CurrentUser) -> lifecycle.Viewer:
         user_id=user.user_id,
         is_platform_admin=user.has_platform_role(PlatformRole.ADMIN),
     )
+
+
+def _write_actor(session: Session, definition_id: UUID, user: CurrentUser) -> AuditActor:
+    definition = lifecycle.get_definition(
+        session, definition_id=definition_id, viewer=_viewer(user)
+    )
+    if definition.source == "system":
+        require_platform_admin(user)
+        return AuditActor(actor_type="platform", actor_id=str(user.user_id))
+    return AuditActor.from_user(user)
 
 
 def _definition_view(
@@ -94,17 +87,16 @@ def _definition_view(
 
 
 def _summarized_view(
-    session: Session,
-    definition: CapabilityDefinition,
-    viewer: lifecycle.Viewer,
+    session: Session, definition: CapabilityDefinition, viewer: lifecycle.Viewer
 ) -> CapabilityDefinitionView:
-    """One definition with its version summary read after the mutation."""
     if definition.status == "deleted":
         return _definition_view(definition, latest_version=0, published=False)
     versions = lifecycle.list_versions(session, definition_id=definition.id, viewer=viewer)
-    latest = max((version.version for version in versions), default=0)
-    published = any(version.status == "published" for version in versions)
-    return _definition_view(definition, latest_version=latest, published=published)
+    return _definition_view(
+        definition,
+        latest_version=max((version.version for version in versions), default=0),
+        published=any(version.status == "published" for version in versions),
+    )
 
 
 def _stored_version_view(session: Session, version: CapabilityVersion) -> CapabilityVersionView:
@@ -129,38 +121,76 @@ def list_definitions(
     source_filter: Annotated[str | None, Query(alias="source", max_length=16)] = None,
     status_filter: Annotated[str | None, Query(alias="status", max_length=16)] = None,
     key_query: Annotated[str | None, Query(max_length=100)] = None,
+    owned_only: bool = False,
 ) -> CapabilityDefinitionPage:
-    """One page of the catalog: public definitions plus the caller's own."""
     for name, value, allowed in (
         ("type", type_filter, CAPABILITY_TYPES),
         ("visibility", visibility_filter, VISIBILITIES),
         ("source", source_filter, SOURCES),
     ):
         if value is not None and value not in allowed:
-            raise InvalidArgumentError(
-                f"The {name} filter is unknown", details={"known_values": list(allowed)}
-            )
-    page = PageParams(limit=limit, offset=offset)
+            raise InvalidArgumentError(f"The {name} filter is unknown")
     definitions, total = lifecycle.list_definitions(
         session,
-        page=page,
+        page=PageParams(limit=limit, offset=offset),
         viewer=_viewer(user),
         capability_type=type_filter,
         visibility=visibility_filter,
         source=source_filter,
         status=status_filter,
         key_query=key_query,
+        owned_only=owned_only,
     )
-    summaries = lifecycle.definition_summaries(session, definitions=definitions)
-    items = [
-        _definition_view(
-            definition,
-            latest_version=summaries.get(definition.id, (0, False))[0],
-            published=summaries.get(definition.id, (0, False))[1],
+    summaries = lifecycle.definition_summaries(
+        session, definitions=definitions, viewer=_viewer(user)
+    )
+    return CapabilityDefinitionPage(
+        items=[
+            _definition_view(
+                definition,
+                latest_version=summaries.get(definition.id, (0, False))[0],
+                published=summaries.get(definition.id, (0, False))[1],
+            )
+            for definition in definitions
+        ],
+        total=total,
+    )
+
+
+@router.post(
+    "/definitions",
+    response_model=CapabilityVersionView,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="capabilities.definitions.create",
+)
+def create_definition(
+    payload: DefinitionInput,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    actor = AuditActor.from_user(user)
+    if payload.source == "system":
+        require_platform_admin(user)
+        actor = AuditActor(actor_type="platform", actor_id=str(user.user_id))
+    configuration = payload.declaration.configuration
+    with session_transaction(session):
+        _, version = lifecycle.create_definition(
+            session,
+            capability_type=payload.declaration.type,
+            key=payload.key,
+            name=payload.name,
+            description=payload.description,
+            visibility=payload.visibility,
+            source=payload.source,
+            configuration=configuration.model_dump(mode="json") if configuration else None,
+            resource_manifest=payload.resource_manifest,
+            dependencies=payload.dependencies,
+            flow_templates=payload.flow_templates,
+            actor=actor,
+            storage_root=storage_root,
         )
-        for definition in definitions
-    ]
-    return CapabilityDefinitionPage(items=items, total=total)
+    return _stored_version_view(session, version)
 
 
 @router.get(
@@ -174,7 +204,7 @@ def read_definition(
     definition = lifecycle.get_definition(
         session, definition_id=definition_id, viewer=_viewer(user)
     )
-    return _summarized_view(session, definition, viewer=_viewer(user))
+    return _summarized_view(session, definition, _viewer(user))
 
 
 @router.patch(
@@ -183,10 +213,7 @@ def read_definition(
     operation_id="capabilities.definitions.update",
 )
 def update_definition(
-    definition_id: UUID,
-    payload: UpdateDefinitionRequest,
-    session: DbSession,
-    user: CurrentUserDep,
+    definition_id: UUID, payload: UpdateDefinitionRequest, session: DbSession, user: CurrentUserDep
 ) -> CapabilityDefinitionView:
     with session_transaction(session):
         definition = lifecycle.update_definition_metadata(
@@ -194,9 +221,9 @@ def update_definition(
             definition_id=definition_id,
             name=payload.name,
             description=payload.description,
-            actor=AuditActor.from_user(user),
+            actor=_write_actor(session, definition_id, user),
         )
-    return _summarized_view(session, definition, viewer=_viewer(user))
+    return _summarized_view(session, definition, _viewer(user))
 
 
 @router.post(
@@ -215,9 +242,9 @@ def update_definition_visibility(
             session,
             definition_id=definition_id,
             visibility=payload.visibility,
-            actor=AuditActor.from_user(user),
+            actor=_write_actor(session, definition_id, user),
         )
-    return _summarized_view(session, definition, viewer=_viewer(user))
+    return _summarized_view(session, definition, _viewer(user))
 
 
 @router.post(
@@ -236,10 +263,63 @@ def update_definition_status(
             session,
             definition_id=definition_id,
             status=payload.status,
-            actor=AuditActor.from_user(user),
+            actor=_write_actor(session, definition_id, user),
             actor_is_platform_admin=user.has_platform_role(PlatformRole.ADMIN),
         )
-    return _summarized_view(session, definition, viewer=_viewer(user))
+    return _summarized_view(session, definition, _viewer(user))
+
+
+@router.put(
+    "/definitions/{definition_id}/draft",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.definitions.update_draft",
+)
+def update_draft(
+    definition_id: UUID,
+    payload: DraftInput,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+) -> CapabilityVersionView:
+    configuration = payload.declaration.configuration
+    with session_transaction(session):
+        version = lifecycle.update_draft(
+            session,
+            definition_id=definition_id,
+            capability_type=payload.declaration.type,
+            configuration=configuration.model_dump(mode="json") if configuration else None,
+            resource_manifest=payload.resource_manifest,
+            dependencies=payload.dependencies,
+            flow_templates=payload.flow_templates,
+            actor=_write_actor(session, definition_id, user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
+
+
+@router.put(
+    "/definitions/{definition_id}/draft/package",
+    response_model=CapabilityVersionView,
+    operation_id="capabilities.definitions.package.attach",
+)
+def attach_package(
+    definition_id: UUID,
+    session: DbSession,
+    user: CurrentUserDep,
+    storage_root: StorageRootDep,
+    body: Annotated[bytes, Body(media_type="application/octet-stream")],
+    filename: Annotated[str, Query(min_length=1, max_length=260)] = "package.zip",
+) -> CapabilityVersionView:
+    with session_transaction(session):
+        version = lifecycle.attach_package(
+            session,
+            definition_id=definition_id,
+            package=body,
+            filename=filename,
+            actor=_write_actor(session, definition_id, user),
+            storage_root=storage_root,
+        )
+    return _stored_version_view(session, version)
 
 
 @router.get(
@@ -250,8 +330,7 @@ def update_definition_status(
 def list_versions(
     definition_id: UUID, session: DbSession, user: CurrentUserDep
 ) -> list[CapabilityVersionView]:
-    viewer = _viewer(user)
-    versions = lifecycle.list_versions(session, definition_id=definition_id, viewer=viewer)
+    versions = lifecycle.list_versions(session, definition_id=definition_id, viewer=_viewer(user))
     return [_stored_version_view(session, version) for version in versions]
 
 
@@ -289,7 +368,7 @@ def publish_version(
             session,
             definition_id=definition_id,
             version_number=version_number,
-            actor=AuditActor.from_user(user),
+            actor=_write_actor(session, definition_id, user),
             storage_root=storage_root,
         )
     return _stored_version_view(session, version)
@@ -306,7 +385,6 @@ def read_version_package(
     user: CurrentUserDep,
     storage_root: StorageRootDep,
 ) -> Response:
-    """Download the immutable package bytes of one published version."""
     version = lifecycle.get_version(
         session,
         definition_id=definition_id,
@@ -314,7 +392,9 @@ def read_version_package(
         viewer=_viewer(user),
     )
     stored, payload = lifecycle.read_version_package(
-        session, version_id=version.id, storage_root=storage_root
+        session,
+        version_id=version.id,
+        storage_root=storage_root,
     )
     return Response(
         content=payload,
@@ -324,165 +404,3 @@ def read_version_package(
             "Cache-Control": "no-store",
         },
     )
-
-
-@router.post(
-    "/channels",
-    response_model=CapabilityVersionView,
-    status_code=status.HTTP_201_CREATED,
-    operation_id="capabilities.channels.create",
-)
-def create_channel(
-    payload: ChannelCreateRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-) -> CapabilityVersionView:
-    """Create one channel definition with its first draft version."""
-    with session_transaction(session):
-        _, version = lifecycle.create_definition(
-            session,
-            capability_type=CAPABILITY_TYPE_CHANNEL,
-            key=payload.key,
-            name=payload.name,
-            description=payload.description,
-            visibility=payload.visibility,
-            configuration=payload.configuration.model_dump(mode="json"),
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)
-
-
-@router.put(
-    "/channels/{definition_id}/draft",
-    response_model=CapabilityVersionView,
-    operation_id="capabilities.channels.update_draft",
-)
-def update_channel_draft(
-    definition_id: UUID,
-    payload: ChannelDraftRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-) -> CapabilityVersionView:
-    """Replace the current draft configuration of one channel definition."""
-    with session_transaction(session):
-        version = lifecycle.update_draft(
-            session,
-            definition_id=definition_id,
-            configuration=payload.configuration.model_dump(mode="json"),
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)
-
-
-@router.put(
-    "/channels/{definition_id}/draft/package",
-    response_model=CapabilityVersionView,
-    operation_id="capabilities.channels.package.attach",
-)
-def attach_channel_package(
-    definition_id: UUID,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-    body: Annotated[bytes, Body()],
-) -> CapabilityVersionView:
-    """Attach a channel adapter package to the current draft.
-
-    Every adapter entrypoint must name a module the package declares and
-    carries. Nothing is imported or executed.
-    """
-    with session_transaction(session):
-        version = lifecycle.attach_package(
-            session,
-            definition_id=definition_id,
-            package=body,
-            filename=f"channel-{definition_id}.zip",
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)
-
-
-@router.post(
-    "/extensions",
-    response_model=CapabilityVersionView,
-    status_code=status.HTTP_201_CREATED,
-    operation_id="capabilities.extensions.create",
-)
-def create_extension(
-    payload: ExtensionCreateRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-) -> CapabilityVersionView:
-    """Create one extension definition with its first draft version."""
-    with session_transaction(session):
-        _, version = lifecycle.create_definition(
-            session,
-            capability_type=CAPABILITY_TYPE_EXTENSION,
-            key=payload.key,
-            name=payload.name,
-            description=payload.description,
-            visibility=payload.visibility,
-            configuration=payload.configuration.model_dump(mode="json"),
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)
-
-
-@router.put(
-    "/extensions/{definition_id}/draft",
-    response_model=CapabilityVersionView,
-    operation_id="capabilities.extensions.update_draft",
-)
-def update_extension_draft(
-    definition_id: UUID,
-    payload: ExtensionDraftRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-) -> CapabilityVersionView:
-    """Replace the current draft configuration of one extension definition."""
-    with session_transaction(session):
-        version = lifecycle.update_draft(
-            session,
-            definition_id=definition_id,
-            configuration=payload.configuration.model_dump(mode="json"),
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)
-
-
-@router.put(
-    "/extensions/{definition_id}/draft/package",
-    response_model=CapabilityVersionView,
-    operation_id="capabilities.extensions.package.attach",
-)
-def attach_extension_package(
-    definition_id: UUID,
-    session: DbSession,
-    user: CurrentUserDep,
-    storage_root: StorageRootDep,
-    body: Annotated[bytes, Body()],
-) -> CapabilityVersionView:
-    """Attach an extension package to the current draft.
-
-    The declared resources and flow templates must exist in the package
-    with their digests. Nothing is imported or executed.
-    """
-    with session_transaction(session):
-        version = lifecycle.attach_package(
-            session,
-            definition_id=definition_id,
-            package=body,
-            filename=f"extension-{definition_id}.zip",
-            actor=AuditActor.from_user(user),
-            storage_root=storage_root,
-        )
-    return _stored_version_view(session, version)

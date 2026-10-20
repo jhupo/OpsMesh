@@ -7,8 +7,8 @@ PostgreSQL owns product data; Temporal owns durable execution history and task q
 Redis provides caches and short-lived coordination, not a second execution queue.
 
 The Temporal refactor is undergoing integration acceptance on this branch. Code changes,
-local verification and production deployment are distinct states; consult the acceptance
-ledger in [the architecture document](../../docs/architecture.md).
+local verification and production deployment are distinct states. Source responsibilities
+and verification commands are documented in [the repository README](../../README.md).
 
 ## Deployment components
 
@@ -49,12 +49,17 @@ to port 8000; Temporal gRPC is bound to loopback port 7233. Initialization jobs 
 completion. Runtime records select a native backend and validated options; they do not hold
 old connector credentials, allocation slots or pool metadata.
 
+Local Compose initializes `OPSMESH_DOCKER_STORAGE_ROOT` (default
+`/var/lib/opsmesh-local/storage`) for UID/GID 10001. API and Worker mount this directory at
+the same absolute host path, allowing native sandbox containers to bind it through the
+Docker daemon. Server Compose applies the same rule to `${OPSMESH_ROOT}/data/storage`.
+
 To run code directly, provision PostgreSQL, Redis and persistent Temporal first:
 
 ```sh
 uv run alembic upgrade head
-uv run uvicorn opsmesh.main:create_app --factory --host 127.0.0.1 --port 8000
-uv run python -m opsmesh.runtime.temporal.cli
+uv run uvicorn opsmesh.bootstrap.api:create_app --factory --no-proxy-headers --host 127.0.0.1 --port 8000
+uv run python -m opsmesh.bootstrap.worker_cli
 ```
 
 The Worker is a long-running process. Retired `worker --once`, Redis consumers and
@@ -77,13 +82,11 @@ sudo opsmesh --root /opt/opsmesh install --version <release-tag> --origin https:
 | `/opt/opsmesh/releases/` | Immutable, attested server releases |
 | `/opt/opsmesh/current` | Atomically selected release |
 | `/opt/opsmesh/data/storage` | Persistent product files |
-| `/opt/opsmesh/updater` | Independently provisioned updater runtime |
-| `/opt/opsmesh/updates` | Durable upgrade journals |
 
 `opsmesh-api.service` runs as `opsmesh-api`; `opsmesh-worker.service` runs as `opsmesh-worker`.
 Only the Worker receives Docker authority. The API process must not be able to control the
-Docker daemon. Do not make immutable release directories writable. The root updater uses
-the explicit update plan, backup and drain flow.
+Docker daemon. Do not make immutable release directories writable. Host release operations
+run only when an administrator invokes the independent operator CLI.
 
 ## Production Compose
 
@@ -98,9 +101,8 @@ volumes. Temporal schema management is separate from Alembic.
 
 ## Configuration and capacity
 
-Start from [env.example](env.example). Set unique `OPSMESH_INTERNAL_API_TOKEN`,
-`OPSMESH_PLATFORM_ADMIN_TOKEN`, `OPSMESH_TOKEN_HASH_PEPPER` and
-`OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`, configure CORS and keep
+Start from [env.example](env.example). Set unique `OPSMESH_INVITATION_HASH_PEPPER` and
+`OPSMESH_CREDENTIAL_ENCRYPTION_KEY`, configure CORS and keep
 `OPSMESH_ENABLE_API_DOCS=false` in production. Approve the release's compute image in
 Runtime policy before using sandbox-backed tools.
 
@@ -109,12 +111,11 @@ Runtime policy before using sandbox-backed tools.
 | `OPSMESH_TEMPORAL_ADDRESS` | `localhost:7233` | Host Temporal endpoint; Compose uses `temporal:7233` |
 | `OPSMESH_TEMPORAL_NAMESPACE` | `default` | Provisioned namespace |
 | `OPSMESH_TEMPORAL_TASK_QUEUE` | `opsmesh` | Queue for compatible Workers |
-| `OPSMESH_TEMPORAL_WORKER_IDENTITY` | SDK default | Explicit installation identity required for host-managed updates |
+| `OPSMESH_TEMPORAL_WORKER_IDENTITY` | SDK default | Explicit installation identity for each Worker |
 | `OPSMESH_TEMPORAL_TLS_ENABLED` | `false` | Native Temporal TLS |
 | `OPSMESH_TEMPORAL_API_KEY` | empty | Optional connection secret |
 | `OPSMESH_TEMPORAL_WORKFLOW_CONCURRENCY` | 128 | Workflow task concurrency |
 | `OPSMESH_TEMPORAL_ACTIVITY_CONCURRENCY` | 64 | Concurrent Activities |
-| `OPSMESH_TEMPORAL_ARCHIVE_ACTIVITY_CONCURRENCY` | 4 | ZIP and object storage Activities on `<queue>-archives` |
 | `OPSMESH_TEMPORAL_BLOCKING_ACTIVITY_WORKERS` | 64 | Lazy thread capacity; must cover the Activity concurrency budget |
 | `OPSMESH_TEMPORAL_DISPATCH_CONCURRENCY` | 16 | Concurrent Outbox deliveries |
 | `OPSMESH_TEMPORAL_OUTBOX_DATABASE_POOL_SIZE` | 4 | Short-transaction async dispatch pool |
@@ -123,54 +124,53 @@ Runtime policy before using sandbox-backed tools.
 | `OPSMESH_MCP_TOOL_TIMEOUT_SECONDS` | 30 | MCP operation timeout |
 
 Async Activities run as asyncio tasks; blocking Activities use the bounded thread executor.
-Channel connectors run as independently deployed remote services. OpsMesh does not host
-plugin processes or reserve a separate plugin Worker queue; Temporal handles event admission
-and reply delivery through the main execution Worker.
-Archive export, verification and restore drills use another bounded Activity Worker in the
-same process. Their authorization, dispatch and failure settlement use the main queue;
-ZIP and storage work use the archive queue. Queued capacity waiting does not start the
-archive Activity's execution timeout. These Workers do not add application containers.
+Channel account/identity routing, durable Inbox/Delivery and delegated adapter contracts
+are available. Vendor protocols come from separately installed extension-center packages.
+Logical state export, verification and restore use the shared platform operation Workflow
+and owner callbacks on the normal Worker queue; they have no separate job table or queue.
 Durable Workflow waiting holds no Activity slot. Tune using model rate limits, database
 pools, tool latency and measured workloads. Multiple machines register compatible Workers
 on the same queue; there is no custom Worker lease or heartbeat table. Unknown external
 write outcomes require explicit reconciliation.
 
 Keep each host's `OPSMESH_TEMPORAL_WORKER_IDENTITY` unique. The installer generates it once.
-Host updates inspect native pollers on all three queues and reject unmanaged Worker identities.
-This is an ownership check, not a cluster-wide write barrier: stop the whole fleet before
-distributed backups, schema changes or restoration. A new remote Worker can register after
-the poller query, and stopped pollers may remain visible briefly in Temporal metadata.
+Stop the whole fleet before distributed backups, schema changes or restoration. A new remote
+Worker can register during an operator action, and stopped pollers may remain visible briefly
+in Temporal metadata.
 
 ## Migrations, shutdown and recovery
 
-Apply `opsmesh-server migrate` before starting the release. The execution migration requires
-old active work to be settled before dropping retired tables. Do not run old Workers against
-the new schema. Alembic provides explicit downgrade paths; production rollback follows an
-approved release plan and backups, since downgrade can discard newly introduced data.
+Apply `opsmesh-server migrate` before starting the release. V4 creates a new product schema;
+the archived reference implementation is not an upgrade source. Do not run incompatible
+Workers against the new schema. Host deployment checks the release manifest's accepted
+source revision before migration and verifies the resulting head. Rollback restores the
+verified snapshot and previous attested release, with explicit data-loss acknowledgement.
 
 SIGTERM stops dispatch and uses Temporal's native Worker shutdown grace period. Completed
 Activity history survives restarts. Approval decisions are durable signals. SDK Session
 receipts protect committed mutations from duplicate retries without storing a second history.
 
-The audit timestamp migration interprets old timestamps using the database's historical
-`TimeZone`. Preserve that setting during migration; audit hashes are not rewritten. Validate
-hashes against real historical data as well as empty-schema upgrade and downgrade.
+Host snapshots coordinate business PostgreSQL, Temporal persistence/visibility, product
+files and configuration. Stop every application writer and the dedicated Temporal Server
+for the snapshot boundary. Systemd recovery requires a configured dedicated Temporal unit
+and its two database URLs; unmanaged shared services are rejected. See
+[host operations](delivery-operations.md) for offline journals and recovery commands.
 
 ## Logs, health and optional monitoring
 
 ```sh
 opsmesh --root /opt/opsmesh logs --service api
 opsmesh --root /opt/opsmesh logs --service worker
-opsmesh --root /opt/opsmesh logs --service updater
 curl --fail http://127.0.0.1:8000/api/v1/health/ready
 ```
 
 Systemd uses journald. Compose API/Worker logs rotate at 10 MiB with three files. Readiness
-checks business PostgreSQL, Redis, storage and the Temporal namespace; it does not certify a
+checks business PostgreSQL, Redis and native Temporal service health; it does not certify a
 model, MCP or sandbox execution. Use authenticated product diagnostics for those stages.
 
 The pinned observability stack is optional and managed separately under
 `deploy/server/monitoring`. OTLP tracing and logs may use an existing receiver instead.
+See [logs, metrics and tracing](observability.md) for the supported metrics and alerts.
 `scripts/server-smoke-test.sh` checks native installation; optional monitoring checks use
 `OPSMESH_SMOKE_MONITORING=true`.
 
@@ -178,3 +178,63 @@ The pinned observability stack is optional and managed separately under
 round trip on a disposable Docker host. External inference is opt-in: inspect
 `scripts/openai_gateway_smoke.py --dry-run` before `--allow-external-provider-call`.
 The `openai_smoke` tests do not prove a real provider-dispatching runner when skipped.
+
+### Credential encryption keys and proxy trust
+
+`OPSMESH_CREDENTIAL_ENCRYPTION_KEY` contains a URL-safe base64 encoded random 32-byte
+Fernet key. Generate a new installation key with
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+`OPSMESH_CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` maps key IDs to native Fernet keys.
+Keep historical keys until their ciphertexts have been explicitly re-encrypted.
+
+The platform operation owners `platform.model_connections` and `orchestration.webhooks`
+support `rotate` for administrator model keys and Webhook secrets in checkpointed batches.
+Keep old keys for unresolved encrypted payloads, Temporal history and retained backups.
+Finishing these batches does not authorize deleting all historical keys.
+
+Forwarded client IPs require both `OPSMESH_TRUSTED_PROXY_HOPS` and
+`OPSMESH_TRUSTED_PROXY_NETWORKS` (a JSON list of exact proxy IPs/CIDRs).
+Only include actual reverse proxy addresses. A direct peer or intermediary outside
+those networks makes the application ignore the forwarded chain.
+Uvicorn proxy-header rewriting is disabled so the application validates the original
+socket peer itself.
+
+### Extension Packages
+
+Build the approved offline package builder from the same source and lockfile:
+
+```bash
+docker build --target extension-builder -f deploy/images/Dockerfile -t opsmesh-extension-builder:s8 .
+docker image inspect opsmesh-extension-builder:s8 --format '{{.Id}}'
+```
+
+Set `OPSMESH_EXTENSION_BUILDER_IMAGE` to that approved image ID on the Worker's Docker
+daemon. `OPSMESH_EXTENSION_SDK_WHEEL` points to the matching SDK wheel on the Worker;
+the Worker image includes it under `/opt/opsmesh-extension-sdk`. Native host installations
+must build the SDK wheel and configure its absolute path explicitly. Installation fails
+when either artifact is missing. Only administrators may install executable packages.
+
+Published packages carry standard `opsmesh.extensions` PyPA entry points and hashed offline
+dependency wheels. Builds and entry point discovery run without network access as UID 65534.
+Sandbox instances require an explicitly created native environment for the installed image;
+managed_worker instances require an explicit resident deployment, with no environment ID.
+CPU, memory and process limits are applied before invoking it. Package processes receive
+no Docker socket, platform Session or database credentials. Keep the Docker daemon on a
+dedicated sandbox host with the isolation policy required by the deployment.
+
+Runtime containers and native sandboxes use their underlying default network behavior.
+OpsMesh currently does not configure network rules, DNS pinning or target allowlists.
+
+Start a managed instance with `POST /api/v1/extensions/instances/{id}/deployments`, passing
+`expected_revision` and a stable `operation_id`; poll `GET /api/v1/extensions/deployments/{id}`
+until ready. Stop with `POST /api/v1/extensions/deployments/{id}/stop` and `expected_revision`.
+Installing, configuring or invoking an instance never implicitly starts a resident process.
+The manifest bounds `execution.max_concurrency` (1–64); admission and effect receipts remain
+in PostgreSQL. A lost process requires explicit stop/reconciliation and a new deployment;
+it is never automatically restarted. Canceling one call does not stop other calls.
+
+Platform drain and usage configuration close wait for resident deployments to stop. Resume does not
+restart them. Uninstall also waits for stopped deployments and reconciled effects.
+`host.jobs` and event subscriptions use the unique orchestration owner.
+Uninstall drains unresolved calls and preserves state. Export state and request a cleanup
+preview before explicitly deleting a namespace; unknown external effects require evidence.

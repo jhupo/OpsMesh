@@ -5,7 +5,7 @@ and its author; every content change creates a new version. A published
 version is frozen forever: publishing computes one digest over the version
 content and refuses to overwrite anything. Capability definitions never
 store installation, binding or execution state — those belong to later
-owners (extensions, workspaces, execution).
+owners (extensions, orchestration, execution).
 """
 
 from __future__ import annotations
@@ -19,16 +19,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-CAPABILITY_TYPE_EXPERT = "expert"
-CAPABILITY_TYPE_TEAM = "team"
 CAPABILITY_TYPE_MCP = "mcp"
 CAPABILITY_TYPE_SKILL = "skill"
 CAPABILITY_TYPE_TOOL = "tool"
 CAPABILITY_TYPE_CHANNEL = "channel"
 CAPABILITY_TYPE_EXTENSION = "extension"
 CAPABILITY_TYPES = (
-    CAPABILITY_TYPE_EXPERT,
-    CAPABILITY_TYPE_TEAM,
     CAPABILITY_TYPE_MCP,
     CAPABILITY_TYPE_SKILL,
     CAPABILITY_TYPE_TOOL,
@@ -69,14 +65,11 @@ class CapabilityDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """One capability definition; the type-specific content lives in versions.
 
     ``key`` is the stable machine name inside its type and is unique across
-    sources: a user definition cannot shadow a system built-in, and the
-    release index addresses built-ins by the same key.
+    sources: a user definition cannot shadow an administrator-published definition.
     """
 
     __tablename__ = "capability_definitions"
-    __table_args__ = (
-        UniqueConstraint("type", "key", name="uq_capability_definitions_type_key"),
-    )
+    __table_args__ = (UniqueConstraint("type", "key", name="uq_capability_definitions_type_key"),)
 
     type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(MAX_KEY_LENGTH), nullable=False)
@@ -84,9 +77,7 @@ class CapabilityDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(
         String(MAX_DESCRIPTION_LENGTH), nullable=False, default=""
     )
-    visibility: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=VISIBILITY_PRIVATE
-    )
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default=VISIBILITY_PRIVATE)
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=DEFINITION_STATUS_ACTIVE, index=True
     )

@@ -1,9 +1,8 @@
 """Invitation service: create, resend, revoke and accept platform invitations.
 
-The invitation fact, its state transitions and the rendered mail content are
-owned here; the account opening and the mail registration are injected
-contracts assembled by bootstrap. Every transition is audited inside the
-caller's transaction.
+Invitation issuance and consumption share the caller's transaction with audit.
+Only token digests are stored; delivery belongs to the invoking client or an
+extension. Account opening is injected by bootstrap.
 """
 
 from __future__ import annotations
@@ -12,14 +11,12 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor, append_platform_event
 from opsmesh.identity.errors import InvitationStateError
 from opsmesh.identity.invitations.contracts import (
     InvitationAccountOpening,
-    InvitationMailSender,
     OpenedInvitationAccount,
 )
 from opsmesh.identity.invitations.models import (
@@ -29,13 +26,14 @@ from opsmesh.identity.invitations.models import (
     INVITATION_REVOKED,
     AccountInvitation,
 )
+from opsmesh.shared.audit import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
+from opsmesh.shared.serialization import canonical_json
 
 DEFAULT_INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60
 MIN_INVITATION_TTL_SECONDS = 60 * 60
 MAX_INVITATION_TTL_SECONDS = 30 * 24 * 60 * 60
-INVITATION_MAIL_SUBJECT = "You are invited to OpsMesh"
 
 
 def token_digest(token: UUID) -> str:
@@ -48,13 +46,15 @@ def create_invitation(
     *,
     email: str,
     invited_by: AuditActor,
-    sender: InvitationMailSender,
     ttl_seconds: int = DEFAULT_INVITATION_TTL_SECONDS,
-    platform_base_url: str | None = None,
 ) -> tuple[AccountInvitation, UUID]:
-    """Create one pending invitation and register its mail in the same transaction."""
+    """Create a pending invitation and return its token once for caller delivery."""
     if ttl_seconds < MIN_INVITATION_TTL_SECONDS or ttl_seconds > MAX_INVITATION_TTL_SECONDS:
         raise InvalidArgumentError("The invitation lifetime is out of range")
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"account-invitation:{email}"},
+    )
     if session.scalar(
         select(AccountInvitation).where(
             AccountInvitation.email == email,
@@ -74,31 +74,23 @@ def create_invitation(
         status=INVITATION_PENDING,
         invited_by_user_id=UUID(invited_by.actor_id) if invited_by.actor_id else None,
         expires_at=now + timedelta(seconds=ttl_seconds),
-        send_count=1,
-        last_sent_at=now,
+        token_revision=1,
+        token_issued_at=now,
     )
     session.add(invitation)
     session.flush()
-    sender.send_account_invitation(
+    record_audit(
         session,
-        invitation_id=invitation.id,
-        recipient=email,
-        subject=INVITATION_MAIL_SUBJECT,
-        body=render_invitation_body(
-            token=token,
-            expires_at=invitation.expires_at,
-            base_url=platform_base_url,
+        AuditRecord(
+            category="operation",
+            action="invitation.created",
+            actor=invited_by,
+            source="platform",
+            target_type="account_invitation",
+            target_id=str(invitation.id),
+            summary=f"Account invitation created for {email}",
+            payload_json=canonical_json({"expires_at": invitation.expires_at.isoformat()}),
         ),
-        idempotency_key=f"invitation-mail:{invitation.id}:1",
-    )
-    append_platform_event(
-        session,
-        actor=invited_by,
-        action="invitation.created",
-        target_type="account_invitation",
-        target_id=str(invitation.id),
-        summary=f"Account invitation created for {email}",
-        details={"expires_at": invitation.expires_at.isoformat()},
     )
     return invitation, token
 
@@ -108,16 +100,13 @@ def resend_invitation(
     *,
     invitation_id: UUID,
     invited_by: AuditActor,
-    sender: InvitationMailSender,
-    platform_base_url: str | None = None,
-) -> AccountInvitation:
-    """Send the invitation again with a freshly issued token.
+) -> tuple[AccountInvitation, UUID]:
+    """Issue a replacement token for a pending invitation.
 
     The stored form is a one-way digest, so a resend rotates the code: the
-    previously delivered token stops working the moment the new one is sent.
-    A closed or expired invitation is never resent. The row is locked for the
-    whole transition, exactly like acceptance, so a resend can never register
-    a send for a state that changed while it waited.
+    previous token stops working when the replacement commits. A closed or
+    expired invitation cannot be reissued. Acceptance and reissuance lock the
+    same invitation row to serialize these transitions.
     """
     invitation = _locked_invitation(session, invitation_id)
     if invitation.status != INVITATION_PENDING:
@@ -128,30 +117,24 @@ def resend_invitation(
         )
     token = uuid4()
     invitation.token_hash = token_digest(token)
-    invitation.send_count += 1
-    invitation.last_sent_at = datetime.now(UTC)
-    sender.send_account_invitation(
+    invitation.token_revision += 1
+    invitation.token_issued_at = datetime.now(UTC)
+    record_audit(
         session,
-        invitation_id=invitation.id,
-        recipient=invitation.email,
-        subject=INVITATION_MAIL_SUBJECT,
-        body=render_invitation_body(
-            token=token,
-            expires_at=invitation.expires_at,
-            base_url=platform_base_url,
+        AuditRecord(
+            category="operation",
+            action="invitation.resent",
+            actor=invited_by,
+            source="platform",
+            target_type="account_invitation",
+            target_id=str(invitation.id),
+            summary=f"Account invitation token reissued for {invitation.email}",
+            payload_json=canonical_json(
+                {"token_revision": invitation.token_revision, "token_rotated": True}
+            ),
         ),
-        idempotency_key=f"invitation-mail:{invitation.id}:{invitation.send_count}",
     )
-    append_platform_event(
-        session,
-        actor=invited_by,
-        action="invitation.resent",
-        target_type="account_invitation",
-        target_id=str(invitation.id),
-        summary=f"Account invitation resent to {invitation.email}",
-        details={"send_count": invitation.send_count, "token_rotated": True},
-    )
-    return invitation
+    return invitation, token
 
 
 def revoke_invitation(
@@ -167,14 +150,18 @@ def revoke_invitation(
     if invitation.status != INVITATION_PENDING:
         raise InvitationStateError(details={"status": invitation.status})
     invitation.status = INVITATION_REVOKED
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="invitation.revoked",
-        target_type="account_invitation",
-        target_id=str(invitation.id),
-        summary=f"Account invitation revoked for {invitation.email}",
-        details={},
+        AuditRecord(
+            category="operation",
+            action="invitation.revoked",
+            actor=actor,
+            source="platform",
+            target_type="account_invitation",
+            target_id=str(invitation.id),
+            summary=f"Account invitation revoked for {invitation.email}",
+            payload_json=canonical_json({}),
+        ),
     )
     return invitation
 
@@ -192,6 +179,7 @@ def accept_invitation(
         select(AccountInvitation)
         .where(AccountInvitation.token_hash == token_digest(token))
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if invitation is None:
         raise NotFoundError("The invitation does not exist")
@@ -207,14 +195,18 @@ def accept_invitation(
     invitation.status = INVITATION_ACCEPTED
     invitation.accepted_at = datetime.now(UTC)
     invitation.accepted_user_id = opened.user_id
-    append_platform_event(
+    record_audit(
         session,
-        actor=AuditActor(actor_type="user", actor_id=str(opened.user_id)),
-        action="invitation.accepted",
-        target_type="account_invitation",
-        target_id=str(invitation.id),
-        summary=f"Account invitation accepted for {invitation.email}",
-        details={"user_id": str(opened.user_id)},
+        AuditRecord(
+            category="operation",
+            action="invitation.accepted",
+            actor=AuditActor(actor_type="user", actor_id=str(opened.user_id)),
+            source="platform",
+            target_type="account_invitation",
+            target_id=str(invitation.id),
+            summary=f"Account invitation accepted for {invitation.email}",
+            payload_json=canonical_json({"user_id": str(opened.user_id)}),
+        ),
     )
     return opened
 
@@ -237,6 +229,7 @@ def _locked_invitation(session: Session, invitation_id: UUID) -> AccountInvitati
         select(AccountInvitation)
         .where(AccountInvitation.id == invitation_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if invitation is None:
         raise NotFoundError("The invitation does not exist")
@@ -253,15 +246,25 @@ def list_invitations(
     query = select(AccountInvitation)
     count_query = select(func.count()).select_from(AccountInvitation)
     if status is not None:
+        now = datetime.now(UTC)
         if status == INVITATION_EXPIRED:
             # Expiry is computed, not stored: pending rows past their validity.
             query = query.where(
                 AccountInvitation.status == INVITATION_PENDING,
-                AccountInvitation.expires_at <= datetime.now(UTC),
+                AccountInvitation.expires_at <= now,
             )
             count_query = count_query.where(
                 AccountInvitation.status == INVITATION_PENDING,
-                AccountInvitation.expires_at <= datetime.now(UTC),
+                AccountInvitation.expires_at <= now,
+            )
+        elif status == INVITATION_PENDING:
+            query = query.where(
+                AccountInvitation.status == INVITATION_PENDING,
+                AccountInvitation.expires_at > now,
+            )
+            count_query = count_query.where(
+                AccountInvitation.status == INVITATION_PENDING,
+                AccountInvitation.expires_at > now,
             )
         else:
             query = query.where(AccountInvitation.status == status)
@@ -284,15 +287,3 @@ def effective_status(invitation: AccountInvitation, *, now: datetime | None = No
     if invitation.expires_at <= (now or datetime.now(UTC)):
         return INVITATION_EXPIRED
     return INVITATION_PENDING
-
-
-def render_invitation_body(*, token: UUID, expires_at: datetime, base_url: str | None) -> str:
-    """Render the invitation mail body owned by identity, not by the mail module."""
-    lines = [
-        "You have been invited to open an OpsMesh account.",
-        f"Invitation code: {token}",
-        f"This invitation expires at {expires_at.isoformat()}.",
-    ]
-    if base_url:
-        lines.append(f"Accept it at {base_url.rstrip('/')}/accept-invitation?token={token}")
-    return "\n".join(lines)

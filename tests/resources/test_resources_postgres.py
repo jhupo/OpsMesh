@@ -18,8 +18,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from opsmesh.bootstrap.approvals import build_approvals
 from opsmesh.bootstrap.capabilities import IdentityStorageQuotaLedger
-from opsmesh.governance.audit.service import AuditActor
+from opsmesh.bootstrap.platform import transaction_dependencies
 from opsmesh.identity.errors import QuotaExceededError
 from opsmesh.identity.quotas import service as quotas
 from opsmesh.identity.users import service as users
@@ -27,17 +28,14 @@ from opsmesh.identity.users.models import UserProfile
 from opsmesh.resources.artifacts import service as artifact_service
 from opsmesh.resources.artifacts.service import RejectingArtifactAuthorization
 from opsmesh.resources.files import service as file_service
-from opsmesh.resources.files.access import (
-    RejectingScopeAdmission,
-    ResourceReader,
-    ScopeRef,
-)
+from opsmesh.resources.files.access import RejectingScopeAdmission, ResourceReader, ScopeRef
 from opsmesh.resources.files.models import ResourceFile
 from opsmesh.resources.storage.filesystem import content_storage_key, new_content_id
 from opsmesh.resources.storage.transactions import stage_content, stage_content_removal
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 from tests.conftest import FEATURE_TABLES
 
 
@@ -616,6 +614,8 @@ def concurrent_sessions(engine) -> sessionmaker[Session]:
         autoflush=False,
         expire_on_commit=False,
         info={
+            **transaction_dependencies(),
+            "approvals": build_approvals(),
             "dispatch_cipher": SecretCipher(key=TEST_CIPHER_KEY, key_id="test"),
             "dispatch_trace_context": lambda: {},
         },

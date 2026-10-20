@@ -15,6 +15,10 @@ class Installation(Contract):
     repository: str = "jhupo/OpsMesh"
     health_url: str = "http://127.0.0.1:8000/api/v1/health/ready"
     timeout_seconds: int = Field(default=900, ge=30, le=7200)
+    compose_project: str = Field(default="opsmesh", pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    temporal_service_unit: str | None = Field(
+        default=None, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.@-]*\.service$"
+    )
 
     @classmethod
     def load(cls, root: Path) -> Installation:

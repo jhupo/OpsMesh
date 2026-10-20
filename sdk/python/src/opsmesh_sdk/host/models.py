@@ -19,7 +19,7 @@ from opsmesh_sdk.transport.contracts import (
     TransportRequest,
     TransportResponse,
 )
-from opsmesh_sdk.values import ContentBlock, Usage
+from opsmesh_sdk.values import ContentBlock, ReasoningEffort, Usage
 
 MAX_PROMPT_BLOCKS: Final = 512
 MAX_PROMPT_BYTES: Final = 262_144
@@ -40,6 +40,7 @@ class ModelPrompt(BaseModel):
     blocks: tuple[ContentBlock, ...] = Field(min_length=1, max_length=MAX_PROMPT_BLOCKS)
     max_output_tokens: int | None = Field(default=None, ge=1)
     temperature: float | None = Field(default=None, ge=0, le=2)
+    reasoning_effort: ReasoningEffort | None = None
 
 
 class ModelResult(BaseModel):

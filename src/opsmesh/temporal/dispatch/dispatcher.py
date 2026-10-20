@@ -7,10 +7,7 @@ from datetime import UTC, datetime
 from psycopg import AsyncConnection, sql
 from sqlalchemy.engine import make_url
 
-from opsmesh.temporal.dispatch.outbox import (
-    DISPATCH_NOTIFICATION_CHANNEL,
-    TemporalOutboxPublisher,
-)
+from opsmesh.temporal.dispatch.outbox import DISPATCH_NOTIFICATION_CHANNEL, TemporalOutboxPublisher
 
 logger = logging.getLogger(__name__)
 DEFAULT_RECOVERY_INTERVAL_SECONDS = 60

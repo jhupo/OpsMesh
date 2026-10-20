@@ -19,13 +19,13 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor, append_platform_event
 from opsmesh.resources.files.access import (
     ResourceReader,
     ScopeAdmission,
     ScopeRef,
     StorageQuotaLedger,
     authorize_delete,
+    authorize_execution,
     authorize_manage,
     authorize_read,
     authorize_write,
@@ -48,9 +48,11 @@ from opsmesh.resources.storage.filesystem import (
     write_content,
 )
 from opsmesh.resources.storage.transactions import stage_content, stage_content_removal
+from opsmesh.shared.audit import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.db.idempotency import run_idempotent_create
-from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.files import validate_relative_path
+from opsmesh.shared.serialization import canonical_json
 
 STORAGE_IDEMPOTENCY_SCOPE = "resource-file-content"
 
@@ -63,6 +65,7 @@ def create_directory(
     admission: ScopeAdmission,
     reader: ResourceReader,
     scope: ScopeRef,
+    parent_id: UUID | None = None,
 ) -> ResourceDirectory:
     """Create one user directory at a validated relative path."""
     admission.admit(session, reader=reader, scope=scope)
@@ -78,7 +81,33 @@ def create_directory(
     )
     if existing is not None:
         raise ConflictError("The directory already exists", details={"path": validated})
-    directory = ResourceDirectory(owner_user_id=owner_id, path=validated)
+    if reader.user_id != owner_id:
+        raise ForbiddenError("A directory must be created by its owner")
+    parent_path = validated.rpartition("/")[0]
+    parent = session.get(ResourceDirectory, parent_id) if parent_id else None
+    if parent_id is not None and (
+        parent is None or parent.owner_user_id != owner_id or parent.path != parent_path
+    ):
+        raise ForbiddenError("The directory parent is unavailable or differs from its path")
+    if parent is None and parent_path:
+        parent = session.scalar(
+            select(ResourceDirectory).where(
+                ResourceDirectory.owner_user_id == owner_id,
+                ResourceDirectory.path == parent_path,
+            )
+        )
+        if parent is None:
+            parent = create_directory(
+                session,
+                owner_id=owner_id,
+                path=parent_path,
+                admission=admission,
+                reader=reader,
+                scope=scope,
+            )
+    directory = ResourceDirectory(
+        owner_user_id=owner_id, path=validated, parent_id=parent.id if parent else None
+    )
     session.add(directory)
     session.flush()
     return directory
@@ -105,16 +134,12 @@ def delete_directory(
     if directory is None or directory.owner_user_id != reader.user_id:
         raise NotFoundError("The directory does not exist")
     child = session.scalar(
-        select(ResourceFile.id)
-        .where(ResourceFile.directory_id == directory_id)
-        .limit(1)
+        select(ResourceFile.id).where(ResourceFile.directory_id == directory_id).limit(1)
     )
     if child is not None:
         raise ConflictError("The directory still contains files")
     child_directory = session.scalar(
-        select(ResourceDirectory.id)
-        .where(ResourceDirectory.parent_id == directory_id)
-        .limit(1)
+        select(ResourceDirectory.id).where(ResourceDirectory.parent_id == directory_id).limit(1)
     )
     if child_directory is not None:
         raise ConflictError("The directory still contains directories")
@@ -144,32 +169,29 @@ def create_file(
         )
     )
     if existing is not None:
-        raise ConflictError(
-            "The file already exists", details={"name": name}
-        )
-    resource = ResourceFile(
-        owner_user_id=owner_id, directory_id=directory_id, name=name
-    )
+        raise ConflictError("The file already exists", details={"name": name})
+    resource = ResourceFile(owner_user_id=owner_id, directory_id=directory_id, name=name)
     session.add(resource)
     session.flush()
     return resource
 
 
-def list_files(session: Session, *, reader: ResourceReader) -> list[ResourceFile]:
+def list_files(
+    session: Session,
+    *,
+    reader: ResourceReader,
+    directory_id: UUID | None = None,
+) -> list[ResourceFile]:
     """The files the reader owns or holds a grant on."""
     granted = select(ResourceFileGrant.file_id).where(
         ResourceFileGrant.grantee_user_id == reader.user_id
     )
-    return list(
-        session.scalars(
-            select(ResourceFile)
-            .where(
-                (ResourceFile.owner_user_id == reader.user_id)
-                | ResourceFile.id.in_(granted)
-            )
-            .order_by(ResourceFile.created_at.desc())
-        )
+    query = select(ResourceFile).where(
+        (ResourceFile.owner_user_id == reader.user_id) | ResourceFile.id.in_(granted)
     )
+    if directory_id is not None:
+        query = query.where(ResourceFile.directory_id == directory_id)
+    return list(session.scalars(query.order_by(ResourceFile.created_at.desc())))
 
 
 def get_file(
@@ -200,9 +222,7 @@ def _lock_file_row(session: Session, *, file_id: UUID) -> None:
     give that ordering inside one transaction, and the loser observes the
     winner's committed version instead of a unique constraint error.
     """
-    session.execute(
-        select(ResourceFile.id).where(ResourceFile.id == file_id).with_for_update()
-    )
+    session.execute(select(ResourceFile.id).where(ResourceFile.id == file_id).with_for_update())
 
 
 def upload_version(
@@ -307,17 +327,21 @@ def _store_version(
     )
     session.add(version)
     session.flush()
-    ledger.settle_storage(
-        session, reservation_id=reservation_id, actual_amount=len(content)
-    )
-    append_platform_event(
+    ledger.settle_storage(session, reservation_id=reservation_id, actual_amount=len(content))
+    record_audit(
         session,
-        actor=actor,
-        action="resource.file_version_created",
-        target_type="resource_file",
-        target_id=str(resource.id),
-        summary=f"Stored version {version.version} of a file",
-        details={"version": version.version, "size": len(content), "digest": stored_digest},
+        AuditRecord(
+            category="operation",
+            action="resource.file_version_created",
+            actor=actor,
+            source="platform",
+            target_type="resource_file",
+            target_id=str(resource.id),
+            summary=f"Stored version {version.version} of a file",
+            payload_json=canonical_json(
+                {"version": version.version, "size": len(content), "digest": stored_digest}
+            ),
+        ),
     )
     return version
 
@@ -391,17 +415,13 @@ def delete_file(
             .where(ResourceFileVersion.file_id == resource.id)
         )
     )
-    session.execute(
-        delete(ResourceFileVersion).where(ResourceFileVersion.file_id == resource.id)
-    )
+    session.execute(delete(ResourceFileVersion).where(ResourceFileVersion.file_id == resource.id))
     session.execute(delete(ResourceFileGrant).where(ResourceFileGrant.file_id == resource.id))
     session.execute(
         delete(ResourceRuntimePolicy).where(ResourceRuntimePolicy.file_id == resource.id)
     )
     session.execute(delete(ResourceFile).where(ResourceFile.id == resource.id))
-    session.execute(
-        delete(ResourceFileContent).where(ResourceFileContent.id.in_(content_ids))
-    )
+    session.execute(delete(ResourceFileContent).where(ResourceFileContent.id.in_(content_ids)))
     session.flush()
     for content_id in content_ids:
         # The blob leaves the storage root only once the deletion commits;
@@ -456,14 +476,20 @@ def grant_access(
         )
         session.add(grant)
     session.flush()
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="resource.file_granted",
-        target_type="resource_file",
-        target_id=str(resource.id),
-        summary="Granted file permissions",
-        details={"grantee_user_id": str(grantee_id), "permissions": validated},
+        AuditRecord(
+            category="operation",
+            action="resource.file_granted",
+            actor=actor,
+            source="platform",
+            target_type="resource_file",
+            target_id=str(resource.id),
+            summary="Granted file permissions",
+            payload_json=canonical_json(
+                {"grantee_user_id": str(grantee_id), "permissions": validated}
+            ),
+        ),
     )
     return grant
 
@@ -534,9 +560,7 @@ def _validated_output_declarations(
     return validated
 
 
-def _reject_declared_file_collision(
-    session: Session, *, resource: ResourceFile, path: str
-) -> None:
+def _reject_declared_file_collision(session: Session, *, resource: ResourceFile, path: str) -> None:
     """Refuse an output declaration whose resolved path another file occupies.
 
     Output paths resolve inside the owning file's directory; if another
@@ -625,14 +649,20 @@ def set_runtime_policy(
         policy.use_in_execution = use_in_execution
         policy.updated_by_user_id = reader.user_id
     session.flush()
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="resource.runtime_policy_updated",
-        target_type="resource_file",
-        target_id=str(resource.id),
-        summary="Updated the file runtime policy",
-        details={"use_in_execution": use_in_execution, "frozen_versions": frozen},
+        AuditRecord(
+            category="operation",
+            action="resource.runtime_policy_updated",
+            actor=actor,
+            source="platform",
+            target_type="resource_file",
+            target_id=str(resource.id),
+            summary="Updated the file runtime policy",
+            payload_json=canonical_json(
+                {"use_in_execution": use_in_execution, "frozen_versions": frozen}
+            ),
+        ),
     )
     return policy
 
@@ -647,15 +677,9 @@ def get_runtime_policy(
     )
 
 
-def read_version_content(
-    session: Session,
-    *,
-    file_id: UUID,
-    version_number: int,
-    reader: ResourceReader,
-    storage_root: Path,
-) -> tuple[ResourceFileVersion, bytes]:
-    """Read one version's content, verifying the blob against its digest."""
+def authorize_version_reference(
+    session: Session, *, file_id: UUID, version_number: int, reader: ResourceReader
+) -> ResourceFileVersion:
     resource, grant = get_file(session, file_id=file_id, reader=reader)
     authorize_read(resource, reader=reader, grant=grant)
     version = session.scalar(
@@ -666,10 +690,75 @@ def read_version_content(
     )
     if version is None:
         raise NotFoundError("The file version does not exist")
+    return version
+
+
+def read_version_content(
+    session: Session,
+    *,
+    file_id: UUID,
+    version_number: int,
+    reader: ResourceReader,
+    storage_root: Path,
+) -> tuple[ResourceFileVersion, bytes]:
+    """Read one version's content, verifying the blob against its digest."""
+    version = authorize_version_reference(
+        session, file_id=file_id, version_number=version_number, reader=reader
+    )
     payload = read_content(
         storage_root, content_id=version.content_id, expected_digest=version.digest
     )
     return version, payload
+
+
+def read_execution_input(
+    session: Session,
+    *,
+    file_id: UUID,
+    version_number: int,
+    destination: str,
+    reader: ResourceReader,
+    scope: ScopeRef,
+    admission: ScopeAdmission,
+    storage_root: Path,
+) -> tuple[ResourceFileVersion, bytes]:
+    """Authorize the current grant and policy before exposing a frozen input's bytes.
+
+    Empty policy allowlists permit no inputs. An execution grant does not expose
+    the file through ordinary read APIs, and a read grant does not permit execution.
+    """
+    admission.admit(session, reader=reader, scope=scope)
+    resource = session.get(ResourceFile, file_id)
+    if resource is None:
+        raise NotFoundError("The file does not exist")
+    grant = session.scalar(
+        select(ResourceFileGrant).where(
+            ResourceFileGrant.file_id == file_id,
+            ResourceFileGrant.grantee_user_id == reader.user_id,
+        )
+    )
+    authorize_execution(resource, reader=reader, grant=grant)
+    policy = session.scalar(
+        select(ResourceRuntimePolicy).where(ResourceRuntimePolicy.file_id == file_id)
+    )
+    if (
+        policy is None
+        or not policy.use_in_execution
+        or version_number not in policy.frozen_input_versions
+        or validate_relative_path(destination) not in policy.relative_paths
+    ):
+        raise ForbiddenError("The input version and destination are not allowed for execution")
+    version = session.scalar(
+        select(ResourceFileVersion).where(
+            ResourceFileVersion.file_id == file_id,
+            ResourceFileVersion.version == version_number,
+        )
+    )
+    if version is None:
+        raise NotFoundError("The file version does not exist")
+    return version, read_content(
+        storage_root, content_id=version.content_id, expected_digest=version.digest
+    )
 
 
 def latest_version_number(session: Session, *, file_id: UUID) -> int:
@@ -699,6 +788,7 @@ __all__ = [
     "list_directories",
     "list_files",
     "list_grants",
+    "read_execution_input",
     "read_version_content",
     "revoke_access",
     "set_runtime_policy",

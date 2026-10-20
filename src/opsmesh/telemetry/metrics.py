@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import Lock, Thread
 from typing import Literal, cast
 from weakref import WeakKeyDictionary
+from wsgiref.simple_server import WSGIServer
 
-from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
+from prometheus_client import (
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    start_http_server,
+)
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.gc_collector import GCCollector
 from prometheus_client.platform_collector import PlatformCollector
 from prometheus_client.process_collector import ProcessCollector
 from prometheus_client.registry import Collector
 
-MetricKind = Literal["counter", "histogram"]
-PrometheusMetric = Counter | Histogram
+MetricKind = Literal["counter", "histogram", "gauge"]
+PrometheusMetric = Counter | Histogram | Gauge
 MetricKey = tuple[MetricKind, str, tuple[str, ...]]
 
 
@@ -55,6 +63,38 @@ class SnapshotGaugeCollector(Collector):
             yield family
 
 
+class LiveGaugeCollector(Collector):
+    """The producer owns snapshot collection and its failure semantics."""
+
+    def __init__(self, producer: Callable[[], Iterable[GaugeMetric]]) -> None:
+        self.producer = producer
+
+    def collect(self) -> Iterable[GaugeMetricFamily]:
+        yield from SnapshotGaugeCollector(self.producer()).collect()
+
+
+@dataclass
+class MetricsServer:
+    server: WSGIServer
+    thread: Thread
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
+def start_metrics_server(
+    *, host: str, port: int, producer: Callable[[], Iterable[GaugeMetric]]
+) -> MetricsServer:
+    """Bind a deployment-only listener, separate from the public application API."""
+    registry = CollectorRegistry(auto_describe=False)
+    registry.register(_registry)
+    registry.register(LiveGaugeCollector(producer))
+    server, thread = start_http_server(port, addr=host, registry=registry)
+    return MetricsServer(server, thread)
+
+
 def create_metrics_registry() -> CollectorRegistry:
     registry = CollectorRegistry(auto_describe=True)
     GCCollector(registry=registry)
@@ -74,7 +114,7 @@ def increment_counter(
     name: str,
     *,
     labels: Mapping[str, object] | None = None,
-    amount: int = 1,
+    amount: float = 1,
     help_text: str | None = None,
     registry: CollectorRegistry | None = None,
 ) -> None:
@@ -100,6 +140,19 @@ def observe_histogram(
     )
     target = metric.labels(**normalized) if normalized else metric
     target.observe(float(value))
+
+
+def set_gauge(
+    name: str,
+    value: float,
+    *,
+    labels: Mapping[str, object] | None = None,
+    registry: CollectorRegistry | None = None,
+) -> None:
+    normalized = _string_labels(labels or {})
+    metric = cast(Gauge, _metric("gauge", name, normalized, None, registry=registry))
+    target = metric.labels(**normalized) if normalized else metric
+    target.set(value)
 
 
 def render_prometheus(
@@ -143,6 +196,8 @@ def _metric(
             metric: PrometheusMetric = Counter(
                 name, description, labelnames=label_names, registry=target
             )
+        elif kind == "gauge":
+            metric = Gauge(name, description, labelnames=label_names, registry=target)
         else:
             metric = Histogram(
                 name, description, labelnames=label_names, buckets=buckets, registry=target

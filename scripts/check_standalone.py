@@ -25,7 +25,7 @@ def check_cli(directory: Path, tag: str) -> None:
         if not key.startswith(("PYTHON", "UV_", "VIRTUAL_ENV", "OPSMESH_"))
     }
     environment["PATH"] = str(directory)
-    environment["OPSMESH_PLATFORM_ADMIN_TOKEN"] = secrets.token_hex(16)
+    environment["OPSMESH_SESSION_ID"] = secrets.token_hex(16)
 
     def run(*args: str) -> object:
         return json.loads(
@@ -45,9 +45,8 @@ def check_cli(directory: Path, tag: str) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             if (
-                self.headers.get("Authorization")
-                != ("Bearer " + environment["OPSMESH_PLATFORM_ADMIN_TOKEN"])
-                or self.path != "/api/v1/admin/system/version"
+                self.headers.get("X-Session-ID") != environment["OPSMESH_SESSION_ID"]
+                or self.path != "/api/v1/platform/system/version"
             ):
                 self.send_error(403)
                 return
@@ -134,11 +133,6 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
     assert (state / "opsmesh/alerts.yml").is_file()
     run("migrate")
     run("migrate", "check")
-    # A real no-job updater tick must load its bundled SQLAlchemy/driver and persistent config.
-    (state / "opsmesh/installation.json").write_text(
-        json.dumps({"root": "/work/opsmesh", "mode": "systemd"})
-    )
-    run("updater", "--root", "/work/opsmesh", "--once")
     worker_container = container + "-worker"
     started: list[str] = []
     try:

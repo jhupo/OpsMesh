@@ -12,6 +12,7 @@ from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from pythonjsonlogger.json import JsonFormatter
 
 from opsmesh.shared.security.redaction import (
+    RedactionRules,
     redact_sensitive_payload,
     redact_sensitive_payload_item,
 )
@@ -52,10 +53,12 @@ class RequestContextFilter(logging.Filter):
     def __init__(
         self,
         *,
+        redaction: RedactionRules,
         service_name: str | None = None,
         environment: str | None = None,
     ) -> None:
         super().__init__()
+        self._redaction = redaction
         self._service_name = service_name
         self._environment = environment
 
@@ -71,20 +74,26 @@ class RequestContextFilter(logging.Filter):
             rendered_message = record.getMessage()
         except (TypeError, ValueError):
             rendered_message = str(record.msg)
-        record.msg = redact_sensitive_payload_item(rendered_message)
+        record.msg = redact_sensitive_payload_item(rendered_message, rules=self._redaction)
         record.args = ()
         if record.exc_info is not None:
             exception_text = "".join(format_exception(*record.exc_info))
-            redacted_exception = redact_sensitive_payload_item(exception_text)
+            redacted_exception = redact_sensitive_payload_item(
+                exception_text, rules=self._redaction
+            )
             record.exc_info = None
             record.exc_text = str(redacted_exception)
         if record.stack_info is not None:
-            record.stack_info = str(redact_sensitive_payload_item(record.stack_info))
+            record.stack_info = str(
+                redact_sensitive_payload_item(record.stack_info, rules=self._redaction)
+            )
         extra_values = {
             field: getattr(record, field)
             for field in set(record.__dict__) - _STANDARD_LOG_RECORD_FIELDS
         }
-        for field, redacted_value in redact_sensitive_payload(extra_values).items():
+        for field, redacted_value in redact_sensitive_payload(
+            extra_values, rules=self._redaction
+        ).items():
             setattr(record, field, redacted_value)
         size = len(json.dumps(record.__dict__, default=str).encode())
         if size > _MAX_LOG_RECORD_BYTES:
@@ -123,7 +132,13 @@ class RequestContextFilter(logging.Filter):
 
 
 def configure_logging(
-    *, level: str, format: str, queue_capacity: int, service_name: str, environment: str
+    *,
+    redaction: RedactionRules,
+    level: str,
+    format: str,
+    queue_capacity: int,
+    service_name: str,
+    environment: str,
 ) -> None:
     global _listener
     instrumentor = LoggingInstrumentor()
@@ -142,6 +157,7 @@ def configure_logging(
     queue_handler = BoundedLogHandler(Queue(maxsize=queue_capacity))
     queue_handler.addFilter(
         RequestContextFilter(
+            redaction=redaction,
             service_name=service_name,
             environment=environment,
         )

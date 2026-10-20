@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 from opsmesh_operator.commands import host_environment, run_command
 from opsmesh_operator.files import atomic_write, sync_directory
 from opsmesh_operator.installation import Installation
+from opsmesh_operator.temporal_backup import DATABASES, TemporalBackup
 
 
 def postgres_env(installation: Installation) -> dict[str, str]:
@@ -40,6 +41,23 @@ def digest(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def database_revision(installation: Installation) -> str:
+    import psycopg
+
+    env = postgres_env(installation)
+    with psycopg.connect(
+        host=env["PGHOST"],
+        port=env["PGPORT"],
+        user=env["PGUSER"],
+        password=env["PGPASSWORD"],
+        dbname=env["PGDATABASE"],
+    ) as connection:
+        row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    if row is None:
+        raise RuntimeError("The database migration revision is unknown")
+    return str(row[0])
+
+
 class BackupStore:
     def __init__(self, installation: Installation) -> None:
         self.installation = installation
@@ -49,24 +67,19 @@ class BackupStore:
 
     def create(self, *, database_revision: str) -> str:
         """Caller must hold maintenance and stop API/workers for a coordinated snapshot."""
+        temporal = TemporalBackup(self.installation)
+        temporal.validate()
         self._check_capacity()
         backup_id = str(uuid4())
         directory = self.path(backup_id)
         directory.mkdir(parents=True, mode=0o700)
         dump = directory / "database.dump"
-        with dump.open("wb") as stream:
-            result = subprocess.run(
-                ["pg_dump", "--format=custom", "--no-owner", "--no-acl"],
-                env=host_environment(postgres_env(self.installation)),
-                stdout=stream,
-                stderr=subprocess.PIPE,
-                timeout=1800,
-                check=False,
-            )
-            stream.flush()
-            os.fsync(stream.fileno())
-        if result.returncode:
-            raise RuntimeError("Database backup failed; incomplete backup retained for inspection")
+        temporal.stop()
+        try:
+            temporal.snapshot(directory)
+            self._dump_database(dump)
+        finally:
+            temporal.start()
         archive_path = directory / "storage.tar.gz"
         with tarfile.open(archive_path, "w:gz") as archive:
             storage = self.installation.root / "data/storage"
@@ -80,16 +93,40 @@ class BackupStore:
         config = directory / "configuration.env"
         atomic_write(config, (self.installation.root / ".env").read_text("utf-8"))
         metadata = {
+            "format": 2,
             "id": backup_id,
             "created_at": datetime.now(UTC).isoformat(),
             "database_revision": database_revision,
             "release": self.installation.current().model_dump(mode="json"),
-            "files": {path.name: digest(path) for path in (dump, archive_path, config)},
+            "files": {
+                path.name: digest(path)
+                for path in (
+                    dump,
+                    archive_path,
+                    config,
+                    *(directory / n for n in DATABASES.values()),
+                )
+            },
         }
         atomic_write(directory / "backup.json", json.dumps(metadata, indent=2))
         self.verify(backup_id, restore_check=True)
         sync_directory(directory.parent)
         return backup_id
+
+    def _dump_database(self, dump: Path) -> None:
+        with dump.open("wb") as stream:
+            result = subprocess.run(
+                ["pg_dump", "--format=custom", "--no-owner", "--no-acl"],
+                env=host_environment(postgres_env(self.installation)),
+                stdout=stream,
+                stderr=subprocess.PIPE,
+                timeout=1800,
+                check=False,
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        if result.returncode:
+            raise RuntimeError("Database backup failed; incomplete backup retained for inspection")
 
     def _check_capacity(self) -> None:
         import psycopg
@@ -110,7 +147,8 @@ class BackupStore:
             for path in (self.installation.root / "data/storage").rglob("*")
             if path.is_file()
         )
-        required = int(row[0]) * 3 + storage_size * 2 + 512_000_000
+        required = (int(row[0]) + TemporalBackup(self.installation).size()) * 3
+        required += storage_size * 2 + 512_000_000
         if shutil.disk_usage(self.installation.root).free < required:
             raise ValueError("Insufficient space for snapshot and restore verification")
 
@@ -118,11 +156,17 @@ class BackupStore:
         directory = self.path(backup_id)
         metadata: dict[str, object] = json.loads((directory / "backup.json").read_text("utf-8"))
         files = metadata.get("files")
-        if not isinstance(files, dict) or set(files) != {
-            "database.dump",
-            "storage.tar.gz",
-            "configuration.env",
-        }:
+        if (
+            metadata.get("format") != 2
+            or not isinstance(files, dict)
+            or set(files)
+            != {
+                "database.dump",
+                "storage.tar.gz",
+                "configuration.env",
+                *DATABASES.values(),
+            }
+        ):
             raise ValueError("Invalid backup inventory")
         for name, expected in files.items():
             if digest(directory / name) != expected:
@@ -139,11 +183,12 @@ class BackupStore:
                 ):
                     raise ValueError("Unsafe backup archive")
         if restore_check:
-            self._restore_probe(directory)
+            self._restore_probe(directory, expected_revision=str(metadata["database_revision"]))
+            TemporalBackup(self.installation).restore(directory, probe=True)
             atomic_write(directory / "verified", datetime.now(UTC).isoformat())
         return metadata
 
-    def _restore_probe(self, directory: Path) -> None:
+    def _restore_probe(self, directory: Path, *, expected_revision: str) -> None:
         import psycopg
         from psycopg import sql
 
@@ -172,6 +217,16 @@ class BackupStore:
                     env=env,
                     timeout=1800,
                 )
+                with psycopg.connect(
+                    host=env["PGHOST"],
+                    port=env["PGPORT"],
+                    user=env["PGUSER"],
+                    password=env["PGPASSWORD"],
+                    dbname=database,
+                ) as restored:
+                    row = restored.execute("SELECT version_num FROM alembic_version").fetchone()
+                    if row is None or str(row[0]) != expected_revision:
+                        raise ValueError("Restored schema differs from the backup revision")
             finally:
                 connection.execute(
                     sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database))
@@ -181,8 +236,11 @@ class BackupStore:
         """Called only by explicit host recovery, while admission is closed and services stopped."""
         if not acknowledge_data_loss:
             raise ValueError("Database restoration requires explicit data-loss acknowledgement")
-        self.verify(backup_id, restore_check=True)
         directory = self.path(backup_id)
+        self._validate_restore_connections(directory)
+        self.verify(backup_id, restore_check=True)
+        temporal = TemporalBackup(self.installation)
+        temporal.stop()
         root = self.installation.root
         staging = root / "data" / ("restore-" + uuid4().hex)
         staging.mkdir(mode=0o700)
@@ -220,6 +278,7 @@ class BackupStore:
             env=env,
             timeout=1800,
         )
+        temporal.restore(directory)
         storage = root / "data/storage"
         # Preserve the post-backup filesystem for manual salvage; never recursively delete it.
         storage.rename(root / "data" / ("before-restore-" + uuid4().hex))
@@ -237,3 +296,24 @@ class BackupStore:
             mode=stat.S_IMODE(identity.st_mode),
         )
         os.chown(config, identity.st_uid, identity.st_gid)
+
+    def _validate_restore_connections(self, directory: Path) -> None:
+        from dotenv import dotenv_values
+
+        current = dotenv_values(self.installation.root / ".env")
+        saved = dotenv_values(directory / "configuration.env")
+        for key in (
+            "OPSMESH_DATABASE_URL",
+            "OPSMESH_POSTGRES_PASSWORD",
+            "OPSMESH_TEMPORAL_ADDRESS",
+            "OPSMESH_TEMPORAL_NAMESPACE",
+            "OPSMESH_TEMPORAL_DATABASE_URL",
+            "OPSMESH_TEMPORAL_VISIBILITY_DATABASE_URL",
+            "OPSMESH_TEMPORAL_POSTGRES_PASSWORD",
+            "OPSMESH_REDIS_URL",
+        ):
+            if current.get(key) != saved.get(key):
+                raise ValueError(
+                    f"Restore connection configuration differs for {key}; "
+                    "reconcile the installation and snapshot before recovery"
+                )

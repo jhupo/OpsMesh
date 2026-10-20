@@ -18,10 +18,10 @@ scrape_configs:
           - 127.0.0.1:9090
 
   - job_name: opsmesh-api
-    metrics_path: /api/v1/metrics
+    metrics_path: /metrics
     static_configs:
       - targets:
-          - 127.0.0.1:8000
+          - 127.0.0.1:9000
         labels:
           service: opsmesh-api
 

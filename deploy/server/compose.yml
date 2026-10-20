@@ -8,11 +8,14 @@ x-api: &api
     OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:?Set database password}@postgres:5432/opsmesh
     OPSMESH_REDIS_URL: redis://redis:6379/0
     OPSMESH_TEMPORAL_ADDRESS: temporal:7233
-    OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+    OPSMESH_STORAGE_ROOT: ${OPSMESH_ROOT}/data/storage
     OPSMESH_RUN_MIGRATIONS: 'false'
-    OPSMESH_RUNTIME_ALLOWED_IMAGES: ${OPSMESH_RUNTIME_ALLOWED_IMAGES:?Set attested runtime images}
+    OPSMESH_EXECUTION_SANDBOX_IMAGES: ${OPSMESH_RUNTIME_ALLOWED_IMAGES:?Set attested runtime images}
+    OPSMESH_BUILD_COMMIT: ${OPSMESH_BUILD_COMMIT:?Set attested build commit}
   volumes:
-    - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+    - type: bind
+      source: ${OPSMESH_ROOT}/data/storage
+      target: ${OPSMESH_ROOT}/data/storage
   restart: unless-stopped
   logging:
     driver: json-file
@@ -30,11 +33,15 @@ services:
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-api
-    ports: ['${OPSMESH_API_BIND:-127.0.0.1}:${OPSMESH_API_PORT:-8000}:8000']
+      OPSMESH_METRICS_HOST: '0.0.0.0'
+      OPSMESH_METRICS_PORT: '9000'
+    ports:
+      - '${OPSMESH_API_BIND:-127.0.0.1}:${OPSMESH_API_PORT:-8000}:8000'
+      - '127.0.0.1:${OPSMESH_METRICS_PORT:-9000}:9000'
     healthcheck:
-      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=3).read()']
+      test: [CMD, python, -c, 'import os,urllib.request; prefix=os.environ.get("OPSMESH_API_PREFIX","/api/v1"); urllib.request.urlopen("http://127.0.0.1:8000"+prefix+"/health/ready", timeout=8).read()']
       interval: 5s
-      timeout: 4s
+      timeout: 10s
       retries: 24
   worker:
     <<: *api
@@ -44,10 +51,13 @@ services:
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-worker
+      OPSMESH_EXTENSION_SDK_WHEEL: ${OPSMESH_EXTENSION_SDK_WHEEL:-/opt/opsmesh-extension-sdk/opsmesh_sdk-0.1.0rc23-py3-none-any.whl}
     # Only the SDK sandbox Worker has daemon authority. Never expose this to API/runtimes.
     group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
     volumes:
-      - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+      - type: bind
+        source: ${OPSMESH_ROOT}/data/storage
+        target: ${OPSMESH_ROOT}/data/storage
       - /var/run/docker.sock:/var/run/docker.sock
   migrate:
     <<: *api

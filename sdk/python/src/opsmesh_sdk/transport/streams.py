@@ -108,8 +108,9 @@ class EventStreamReader:
             headers=headers,
             timeout=httpx.Timeout(idle, read=idle),
         )
-        response = await send_cancellable(context.scope, stream.__aenter__)
+        response: httpx.Response | None = None
         try:
+            response = await send_cancellable(context.scope, stream.__aenter__)
             if response.status_code >= 400:
                 await response.aread()
                 raise TransportError(
@@ -143,7 +144,8 @@ class EventStreamReader:
                 "The event stream failed", details={"error_code": type(exc).__name__}
             ) from exc
         finally:
-            await stream.__aexit__(None, None, None)
+            if response is not None:
+                await stream.__aexit__(None, None, None)
 
     def _idle_bound(self, scope: CancellationScope) -> float:
         """The smaller of the idle bound and the scope's remaining deadline."""

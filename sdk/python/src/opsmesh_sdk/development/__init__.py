@@ -6,9 +6,9 @@ approved environments and the official integration.
 """
 
 from opsmesh_sdk.development.build import build_package, export_schemas
-from opsmesh_sdk.development.runner import ContractRunner
 from opsmesh_sdk.development.testing import (
     ContractFixtures,
+    ContractRunner,
     RecordingHostClient,
     hook_input,
     invocation_context,

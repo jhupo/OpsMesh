@@ -219,14 +219,13 @@ def test_hook_input_carries_stage_and_occurrence() -> None:
     assert hook.occurrence == 3
 
 
-def test_event_envelope_deduplication_key_is_stable() -> None:
+def test_event_envelope_occurrence_identity_and_detached_payload() -> None:
     envelope = EventEnvelope(
-        source_type="run",
-        source_id="run-1",
-        event_id="evt-1",
-        event_version="1",
+        event_type="run.completed", source="platform", payload_json='{"result": "ok"}'
     )
-    assert envelope.deduplication_key() == "run:evt-1:1"
+    copy = envelope.payload
+    copy["result"] = "changed"
+    assert envelope.payload == {"result": "ok"}
 
 
 SECRET = b"vendor-shared-secret"
@@ -316,5 +315,5 @@ def test_package_manifest_freezes_declarations() -> None:
 
 
 def test_permission_namespace_is_derived() -> None:
-    permission = Permission(name="governance.audit.append", reason="audit")
-    assert permission.namespace == "governance"
+    permission = Permission(name="platform.audit.append", reason="audit")
+    assert permission.namespace == "platform"

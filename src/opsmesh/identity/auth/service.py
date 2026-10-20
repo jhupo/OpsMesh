@@ -11,11 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.identity.access import ensure_active_user
-from opsmesh.identity.auth.contracts import (
-    AccountOpening,
-    SecurityEventRecorder,
-    UserDirectory,
-)
+from opsmesh.identity.auth.contracts import AccountOpening, SecurityEventRecorder, UserDirectory
 from opsmesh.identity.auth.models import LoginSession, UserCredential
 from opsmesh.identity.auth.passwords import hash_password, verify_password
 from opsmesh.identity.context import CurrentUser
@@ -77,9 +73,7 @@ class AuthService:
         account = self._account_opening.open_account(
             session, email=email, display_name=display_name
         )
-        session.add(
-            UserCredential(user_id=account.user_id, password_hash=password_hash)
-        )
+        session.add(UserCredential(user_id=account.user_id, password_hash=password_hash))
         user = CurrentUser(
             user_id=account.user_id,
             email=account.email,
@@ -178,9 +172,7 @@ class AuthService:
         self, session: Session, *, user_id: UUID, current_password: str, new_password: str
     ) -> None:
         """Rotate the verifier; every existing session of the user is revoked."""
-        credential = session.scalar(
-            select(UserCredential).where(UserCredential.user_id == user_id)
-        )
+        credential = session.scalar(select(UserCredential).where(UserCredential.user_id == user_id))
         if credential is None or not verify_password(current_password, credential.password_hash):
             raise InvalidCredentialsError()
         if verify_password(new_password, credential.password_hash):
@@ -209,9 +201,7 @@ class AuthService:
                 expires_at=expires_at,
             )
         )
-        return LoginResult(
-            session_id=session_id, token=token, user=user, expires_at=expires_at
-        )
+        return LoginResult(session_id=session_id, token=token, user=user, expires_at=expires_at)
 
     def _touch(self, session: Session, *, login_session: LoginSession, now: datetime) -> None:
         if (

@@ -43,15 +43,22 @@ class StateBatch(BaseModel):
     event_drafts: tuple[Mapping[str, JsonValue], ...] = ()
 
 
+class StateValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    value: JsonValue = None
+    version: int = Field(ge=0)
+    exists: bool
+
+
 class StateStore:
     """The host state client for the current invocation."""
 
     def __init__(self, transport: Transport) -> None:
         self._transport = transport
 
-    async def get(self, key: str) -> JsonValue:
-        response = await self._send("GET", f"/host/state/{key}")
-        return response.body
+    async def get(self, key: str) -> StateValue:
+        response = await self._send("GET", "/host/state/entries", query={"key": key})
+        return StateValue.model_validate(response.body)
 
     async def list(self, *, prefix: str = "", cursor: str | None = None) -> dict[str, JsonValue]:
         response = await self._send(
@@ -61,12 +68,13 @@ class StateStore:
         return body if isinstance(body, dict) else {}
 
     async def set(self, key: str, value: JsonValue) -> None:
-        await self._send("PUT", f"/host/state/{key}", body={"value": value})
+        await self._send("PUT", "/host/state/entries", query={"key": key}, body={"value": value})
 
     async def compare_and_swap(self, key: str, value: JsonValue, *, expected_version: int) -> bool:
         response = await self._send(
             "POST",
-            f"/host/state/{key}/cas",
+            "/host/state/entries",
+            query={"key": key},
             body={"value": value, "expected_version": expected_version},
         )
         body = response.body
@@ -94,4 +102,4 @@ class StateStore:
         return await self._transport.send(request, TransportContext(scope=CancellationScope()))
 
 
-__all__ = ["MAX_BATCH_ENTRIES", "StateBatch", "StateEntry", "StateStore"]
+__all__ = ["MAX_BATCH_ENTRIES", "StateBatch", "StateEntry", "StateStore", "StateValue"]

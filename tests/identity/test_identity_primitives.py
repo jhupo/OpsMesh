@@ -84,26 +84,6 @@ def test_a_closed_invitation_keeps_its_stored_status(status: str) -> None:
     assert invitations.effective_status(row, now=now) == status
 
 
-def test_the_invitation_body_carries_the_token_and_expiry() -> None:
-    token = uuid4()
-    expires_at = datetime(2026, 10, 23, tzinfo=UTC)
-    body = invitations.render_invitation_body(
-        token=token, expires_at=expires_at, base_url="https://opsmesh.example.com/"
-    )
-    assert str(token) in body
-    assert expires_at.isoformat() in body
-    assert f"https://opsmesh.example.com/accept-invitation?token={token}" in body
-
-
-def test_the_invitation_body_works_without_a_base_url() -> None:
-    token = uuid4()
-    body = invitations.render_invitation_body(
-        token=token, expires_at=datetime(2026, 10, 23, tzinfo=UTC), base_url=None
-    )
-    assert str(token) in body
-    assert "accept-invitation" not in body
-
-
 def test_the_default_lifetime_is_inside_the_accepted_range() -> None:
     assert (
         invitations.MIN_INVITATION_TTL_SECONDS

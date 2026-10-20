@@ -4,43 +4,34 @@ Produced by scripts/generate_sdk_api.py from docs/openapi.json and
 sdk/python/codegen.toml; the platform OpenAPI is the HTTP contract.
 Stable operation ids of this group:
 
-- ``capabilities.channels.create``
-- ``capabilities.channels.update_draft``
-- ``capabilities.channels.package.attach``
 - ``capabilities.definitions.list``
+- ``capabilities.definitions.create``
 - ``capabilities.definitions.read``
 - ``capabilities.definitions.update``
+- ``capabilities.definitions.update_draft``
+- ``capabilities.definitions.package.attach``
 - ``capabilities.definitions.update_status``
 - ``capabilities.versions.list``
 - ``capabilities.versions.read``
 - ``capabilities.versions.package.read``
+- ``capabilities.publication_reviews.submit``
 - ``capabilities.versions.publish``
 - ``capabilities.definitions.update_visibility``
-- ``capabilities.experts.create``
-- ``capabilities.experts.update_draft``
-- ``capabilities.experts.package.attach``
-- ``capabilities.extensions.create``
-- ``capabilities.extensions.update_draft``
-- ``capabilities.extensions.package.attach``
-- ``capabilities.mcp.create``
-- ``capabilities.mcp.update_draft``
-- ``capabilities.mcp.package.attach``
-- ``capabilities.skills.create``
-- ``capabilities.skills.package.attach``
-- ``capabilities.teams.create``
-- ``capabilities.teams.update_draft``
-- ``capabilities.teams.package.attach``
-- ``capabilities.tools.create``
-- ``capabilities.tools.update_draft``
-- ``capabilities.tools.package.attach``
+- ``capabilities.publication_reviews.admin_list``
+- ``capabilities.publication_reviews.decide``
+- ``capabilities.publication_reviews.mine``
+- ``capabilities.publication_reviews.read``
+- ``capabilities.publication_reviews.withdraw``
 """
 
 from __future__ import annotations
 
+import builtins
 from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from opsmesh_sdk.transport.contracts import (
     GroupChannel,
@@ -48,13 +39,6 @@ from opsmesh_sdk.transport.contracts import (
     decode_array,
     decode_binary,
 )
-
-
-class AgentAsTool(BaseModel):
-    """One member exposed to another member as a callable tool."""
-
-    source: str
-    tool: str
 
 
 class CapabilityDefinitionView(BaseModel):
@@ -75,13 +59,6 @@ class CapabilityDefinitionView(BaseModel):
     visibility: str
 
 
-class CapabilitySlot(BaseModel):
-    """One named capability slot an expert fills through fixed dependencies."""
-
-    kind: str
-    slot: str
-
-
 class CapabilityVersionView(BaseModel):
     """One immutable-or-draft version with its full declared content."""
 
@@ -99,6 +76,7 @@ class CapabilityVersionView(BaseModel):
     resource_manifest: list[dict[str, object]]
     status: str
     version: int
+    version_id: UUID
 
 
 class ChannelOperation(BaseModel):
@@ -131,7 +109,9 @@ class ExtensionHook(BaseModel):
     failure_policy: str = 'block'
     input_schema: dict[str, object] | None = None
     patch_fields: list[str] | None = None
+    permissions: list[str] | None = None
     stages: list[str]
+    timeout_seconds: int = 60
 
 
 class ExtensionOperation(BaseModel):
@@ -146,13 +126,6 @@ class ExtensionOperation(BaseModel):
     timeout_seconds: int = 60
 
 
-class Handoff(BaseModel):
-    """One directed handoff edge between two member slots."""
-
-    source: str
-    target: str
-
-
 class McpToolDeclaration(BaseModel):
     """One advertised tool with its parameter schema; discovery is runtime."""
 
@@ -161,28 +134,21 @@ class McpToolDeclaration(BaseModel):
     parameters_schema: dict[str, object] | None = None
 
 
-class ModelRequirements(BaseModel):
-    """The model an expert expects; selection itself belongs to execution."""
-
-    model: str
-    reasoning: str | None = None
+class PublicationReviewDecision(BaseModel):
+    decision: str
+    decision_note: str = ''
 
 
-class SkillCreateRequest(BaseModel):
-    """Import one skill definition; its configuration comes from the package."""
+class PublicationReviewSubmission(BaseModel):
+    submission_note: str = ''
 
-    description: str = ''
-    key: str
+
+class SkillFrontmatter(BaseModel):
+    """The standard SKILL.md metadata block."""
+
+    description: str
+    license: str | None = None
     name: str
-    visibility: str = 'private'
-
-
-class TeamMember(BaseModel):
-    """One expert member filling one named slot with one unique role."""
-
-    expert_key: str
-    role: str
-    slot: str
 
 
 class ToolOperation(BaseModel):
@@ -229,18 +195,7 @@ message is exchanged at publish time."""
     operations: list[ChannelOperation]
     parameters_schema: dict[str, object] | None = None
     protocol: str
-    secret_slots: list[str] | None = None
-    signature_algorithm: str = 'hmac-sha256'
-
-
-class ExpertConfiguration(BaseModel):
-    capability_slots: list[CapabilitySlot] = []
-    guardrails: list[str] = []
-    instructions: str
-    model_requirements: ModelRequirements | None = None
-    parameters_schema: dict[str, object] = {}
-    prompt: str = ''
-    secret_slots: list[str] = []
+    signature_algorithm: Literal['hmac-sha256'] = 'hmac-sha256'
 
 
 class ExtensionConfiguration(BaseModel):
@@ -261,128 +216,107 @@ class McpConfiguration(BaseModel):
     arguments: list[str] | None = None
     command: list[str] | None = None
     endpoint: str | None = None
-    environment: dict[str, object] | None = None
+    environment: dict[str, str] | None = None
     parameters_schema: dict[str, object] | None = None
-    secret_slots: list[str] | None = None
     tools: list[McpToolDeclaration] | None = None
     transport: str
 
 
-class TeamConfiguration(BaseModel):
-    agents_as_tools: list[AgentAsTool] | None = None
-    entrypoint: str
-    handoffs: list[Handoff] | None = None
-    members: list[TeamMember]
+class PublicationReviewView(BaseModel):
+    capability_type: str
+    created_at: datetime
+    decision_note: str | None
+    definition_id: UUID
+    key: str
+    name: str
+    requested_by_user_id: UUID
+    review_id: UUID
+    reviewed_at: datetime | None
+    reviewed_by_user_id: UUID | None
+    status: str
+    submission_note: str
+    version: CapabilityVersionView
+    version_id: UUID
+    version_number: int
+
+
+class SkillConfiguration(BaseModel):
+    frontmatter: SkillFrontmatter
+    instructions: str
     parameters_schema: dict[str, object] | None = None
-    secret_slots: list[str] | None = None
 
 
-class ToolConfiguration(BaseModel):
+class opsmesh__capabilities__tools__schemas__ToolConfiguration(BaseModel):
     entrypoint: str
     execution_mode: str
     operations: list[ToolOperation]
     parameters_schema: dict[str, object] | None = None
-    secret_slots: list[str] | None = None
 
 
-class ChannelCreateRequest(BaseModel):
-    """Create one channel definition with its first draft version."""
-
+class ChannelDeclaration(BaseModel):
     configuration: ChannelConfiguration
-    description: str = ''
-    key: str
-    name: str
-    visibility: str = 'private'
+    type: Literal['channel']
 
 
-class ChannelDraftRequest(BaseModel):
-    """Replace the current draft configuration of one channel definition."""
-
-    configuration: ChannelConfiguration
-
-
-class ExpertCreateRequest(BaseModel):
-    """Create one expert definition with its first draft version."""
-
-    configuration: ExpertConfiguration
-    description: str = ''
-    key: str
-    name: str
-    visibility: str = 'private'
-
-
-class ExpertDraftRequest(BaseModel):
-    """Replace the current draft configuration of one expert definition."""
-
-    configuration: ExpertConfiguration
-
-
-class ExtensionCreateRequest(BaseModel):
-    """Create one extension definition with its first draft version."""
-
+class ExtensionDeclaration(BaseModel):
     configuration: ExtensionConfiguration
-    description: str = ''
-    key: str
-    name: str
-    visibility: str = 'private'
+    type: Literal['extension']
 
 
-class ExtensionDraftRequest(BaseModel):
-    """Replace the current draft configuration of one extension definition."""
-
-    configuration: ExtensionConfiguration
-
-
-class McpCreateRequest(BaseModel):
-    """Create one MCP definition with its first draft version."""
-
+class McpDeclaration(BaseModel):
     configuration: McpConfiguration
+    type: Literal['mcp']
+
+
+class SkillDeclaration(BaseModel):
+    configuration: SkillConfiguration | None = None
+    type: Literal['skill']
+
+
+class ToolDeclaration(BaseModel):
+    configuration: opsmesh__capabilities__tools__schemas__ToolConfiguration
+    type: Literal['tool']
+
+
+class DefinitionInput(BaseModel):
+    """Common definition metadata; the discriminated declaration chooses its type."""
+
+    declaration: Annotated[
+        McpDeclaration
+        | ToolDeclaration
+        | SkillDeclaration
+        | ChannelDeclaration
+        | ExtensionDeclaration,
+        Field(discriminator='type'),
+    ]
+    dependencies: list[dict[str, object]] | None = None
     description: str = ''
+    flow_templates: list[dict[str, object]] | None = None
     key: str
     name: str
+    resource_manifest: list[dict[str, object]] | None = None
+    source: str = 'user'
     visibility: str = 'private'
 
 
-class McpDraftRequest(BaseModel):
-    """Replace the current draft configuration of one MCP definition."""
+class DraftInput(BaseModel):
+    """Complete static draft input; publishing freezes this validated content."""
 
-    configuration: McpConfiguration
-
-
-class TeamCreateRequest(BaseModel):
-    """Create one team definition with its first draft version."""
-
-    configuration: TeamConfiguration
-    description: str = ''
-    key: str
-    name: str
-    visibility: str = 'private'
-
-
-class TeamDraftRequest(BaseModel):
-    """Replace the current draft configuration of one team definition."""
-
-    configuration: TeamConfiguration
+    declaration: Annotated[
+        McpDeclaration
+        | ToolDeclaration
+        | SkillDeclaration
+        | ChannelDeclaration
+        | ExtensionDeclaration,
+        Field(discriminator='type'),
+    ]
+    dependencies: list[dict[str, object]] | None = None
+    flow_templates: list[dict[str, object]] | None = None
+    resource_manifest: list[dict[str, object]] | None = None
 
 
-class ToolCreateRequest(BaseModel):
-    """Create one tool definition with its first draft version."""
-
-    configuration: ToolConfiguration
-    description: str = ''
-    key: str
-    name: str
-    visibility: str = 'private'
-
-
-class ToolDraftRequest(BaseModel):
-    """Replace the current draft configuration of one tool definition."""
-
-    configuration: ToolConfiguration
-
-
-class CapabilitiesChannelsPackageClient:
-    """Generated client for the ``capabilities.channels.package`` operations."""
+class CapabilitiesDefinitionsPackageClient:
+    """Generated client for the ``capabilities.definitions.package`` operations."""
 
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
@@ -392,54 +326,23 @@ class CapabilitiesChannelsPackageClient:
         definition_id: UUID,
         content: bytes,
         *,
+        filename: str = 'package.zip',
         content_type: str,
     ) -> CapabilityVersionView:
-        """Attach a channel adapter package to the current draft.
-
-Every adapter entrypoint must name a module the package declares and
-carries. Nothing is imported or executed."""
+        query = {
+            name: str(value)
+            for name, value in (
+                ("filename", filename),
+            )
+            if value is not None
+        }
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PUT",
-                path=f"{self._channel.api_root}/capabilities/channels/{definition_id}/draft/package",
+                path=f"{self._channel.api_root}/capabilities/definitions/{definition_id}/draft/package",
+                query=query,
                 headers={"content-type": content_type},
                 content=content,
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesChannelsClient:
-    """Generated client for the ``capabilities.channels`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesChannelsPackageClient(channel)
-
-    async def create(self, request: ChannelCreateRequest) -> CapabilityVersionView:
-        """Create one channel definition with its first draft version."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="POST",
-                path=f"{self._channel.api_root}/capabilities/channels",
-                body=request.model_dump(mode="json", exclude_none=True),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-    async def update_draft(
-        self,
-        definition_id: UUID,
-        request: ChannelDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one channel definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/channels/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
             ),
             self._channel.context(),
         )
@@ -451,6 +354,7 @@ class CapabilitiesDefinitionsClient:
 
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
+        self.package = CapabilitiesDefinitionsPackageClient(channel)
 
     async def list(
         self,
@@ -462,8 +366,8 @@ class CapabilitiesDefinitionsClient:
         source: str | None = None,
         status: str | None = None,
         key_query: str | None = None,
+        owned_only: bool = False,
     ) -> CapabilityDefinitionPage:
-        """One page of the catalog: public definitions plus the caller's own."""
         query = {
             name: str(value)
             for name, value in (
@@ -474,6 +378,7 @@ class CapabilitiesDefinitionsClient:
                 ("source", source),
                 ("status", status),
                 ("key_query", key_query),
+                ("owned_only", owned_only),
             )
             if value is not None
         }
@@ -486,6 +391,17 @@ class CapabilitiesDefinitionsClient:
             self._channel.context(),
         )
         return CapabilityDefinitionPage.model_validate(response.body)
+
+    async def create(self, request: DefinitionInput) -> CapabilityVersionView:
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="POST",
+                path=f"{self._channel.api_root}/capabilities/definitions",
+                body=request.model_dump(mode="json", exclude_none=True),
+            ),
+            self._channel.context(),
+        )
+        return CapabilityVersionView.model_validate(response.body)
 
     async def read(self, definition_id: UUID) -> CapabilityDefinitionView:
         response = await self._channel.transport.send(
@@ -511,6 +427,17 @@ class CapabilitiesDefinitionsClient:
             self._channel.context(),
         )
         return CapabilityDefinitionView.model_validate(response.body)
+
+    async def update_draft(self, definition_id: UUID, request: DraftInput) -> CapabilityVersionView:
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="PUT",
+                path=f"{self._channel.api_root}/capabilities/definitions/{definition_id}/draft",
+                body=request.model_dump(mode="json", exclude_none=True),
+            ),
+            self._channel.context(),
+        )
+        return CapabilityVersionView.model_validate(response.body)
 
     async def update_status(
         self,
@@ -543,380 +470,112 @@ class CapabilitiesDefinitionsClient:
         return CapabilityDefinitionView.model_validate(response.body)
 
 
-class CapabilitiesExpertsPackageClient:
-    """Generated client for the ``capabilities.experts.package`` operations."""
+class CapabilitiesPublicationReviewsClient:
+    """Generated client for the ``capabilities.publication_reviews`` operations."""
 
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
 
-    async def attach(
+    async def submit(
         self,
         definition_id: UUID,
-        content: bytes,
-        *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Attach a resource package to the current expert draft.
-
-The package is verified against the draft's declared manifests and
-stored under its digest; nothing inside it is imported or executed."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/experts/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesExpertsClient:
-    """Generated client for the ``capabilities.experts`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesExpertsPackageClient(channel)
-
-    async def create(self, request: ExpertCreateRequest) -> CapabilityVersionView:
-        """Create one expert definition with its first draft version."""
+        version_number: int,
+        request: PublicationReviewSubmission,
+    ) -> PublicationReviewView:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"{self._channel.api_root}/capabilities/experts",
+                path=f"{self._channel.api_root}/capabilities/definitions/{definition_id}/versions/{version_number}/publication-review",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
         )
-        return CapabilityVersionView.model_validate(response.body)
+        return PublicationReviewView.model_validate(response.body)
 
-    async def update_draft(
+    async def admin_list(
         self,
-        definition_id: UUID,
-        request: ExpertDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one expert definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/experts/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesExtensionsPackageClient:
-    """Generated client for the ``capabilities.extensions.package`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-
-    async def attach(
-        self,
-        definition_id: UUID,
-        content: bytes,
         *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Attach an extension package to the current draft.
-
-The declared resources and flow templates must exist in the package
-with their digests. Nothing is imported or executed."""
+        status: str = 'pending',
+        limit: int = 50,
+        offset: int = 0,
+    ) -> builtins.list[PublicationReviewView]:
+        query = {
+            name: str(value)
+            for name, value in (
+                ("status", status),
+                ("limit", limit),
+                ("offset", offset),
+            )
+            if value is not None
+        }
         response = await self._channel.transport.send(
             TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/extensions/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
+                method="GET",
+                path=f"{self._channel.api_root}/capabilities/publication-reviews/admin",
+                query=query,
             ),
             self._channel.context(),
         )
-        return CapabilityVersionView.model_validate(response.body)
+        return [PublicationReviewView.model_validate(item) for item in decode_array(response)]
 
-
-class CapabilitiesExtensionsClient:
-    """Generated client for the ``capabilities.extensions`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesExtensionsPackageClient(channel)
-
-    async def create(self, request: ExtensionCreateRequest) -> CapabilityVersionView:
-        """Create one extension definition with its first draft version."""
+    async def decide(
+        self,
+        review_id: UUID,
+        request: PublicationReviewDecision,
+    ) -> PublicationReviewView:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"{self._channel.api_root}/capabilities/extensions",
+                path=f"{self._channel.api_root}/capabilities/publication-reviews/admin/{review_id}/decision",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
         )
-        return CapabilityVersionView.model_validate(response.body)
+        return PublicationReviewView.model_validate(response.body)
 
-    async def update_draft(
+    async def mine(
         self,
-        definition_id: UUID,
-        request: ExtensionDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one extension definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/extensions/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesMcpPackageClient:
-    """Generated client for the ``capabilities.mcp.package`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-
-    async def attach(
-        self,
-        definition_id: UUID,
-        content: bytes,
         *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Attach a local MCP package to the current draft.
-
-The package is verified against the draft's declared manifests; the
-launch command it declares is only recorded, never executed here."""
+        limit: int = 50,
+        offset: int = 0,
+    ) -> builtins.list[PublicationReviewView]:
+        query = {
+            name: str(value)
+            for name, value in (
+                ("limit", limit),
+                ("offset", offset),
+            )
+            if value is not None
+        }
         response = await self._channel.transport.send(
             TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/mcp/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
+                method="GET",
+                path=f"{self._channel.api_root}/capabilities/publication-reviews/mine",
+                query=query,
             ),
             self._channel.context(),
         )
-        return CapabilityVersionView.model_validate(response.body)
+        return [PublicationReviewView.model_validate(item) for item in decode_array(response)]
 
+    async def read(self, review_id: UUID) -> PublicationReviewView:
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/capabilities/publication-reviews/{review_id}",
+            ),
+            self._channel.context(),
+        )
+        return PublicationReviewView.model_validate(response.body)
 
-class CapabilitiesMcpClient:
-    """Generated client for the ``capabilities.mcp`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesMcpPackageClient(channel)
-
-    async def create(self, request: McpCreateRequest) -> CapabilityVersionView:
-        """Create one MCP definition with its first draft version."""
+    async def withdraw(self, review_id: UUID) -> PublicationReviewView:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
-                path=f"{self._channel.api_root}/capabilities/mcp",
-                body=request.model_dump(mode="json", exclude_none=True),
+                path=f"{self._channel.api_root}/capabilities/publication-reviews/{review_id}/withdraw",
             ),
             self._channel.context(),
         )
-        return CapabilityVersionView.model_validate(response.body)
-
-    async def update_draft(
-        self,
-        definition_id: UUID,
-        request: McpDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one MCP definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/mcp/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesSkillsPackageClient:
-    """Generated client for the ``capabilities.skills.package`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-
-    async def attach(
-        self,
-        definition_id: UUID,
-        content: bytes,
-        *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Import the standard skill package that becomes the draft content.
-
-The SKILL.md frontmatter and body become the configuration and every
-other file becomes a declared resource; scripts stay resources and are
-never executed by the import."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/skills/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesSkillsClient:
-    """Generated client for the ``capabilities.skills`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesSkillsPackageClient(channel)
-
-    async def create(self, request: SkillCreateRequest) -> CapabilityVersionView:
-        """Create one skill definition; its content arrives with the package."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="POST",
-                path=f"{self._channel.api_root}/capabilities/skills",
-                body=request.model_dump(mode="json", exclude_none=True),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesTeamsPackageClient:
-    """Generated client for the ``capabilities.teams.package`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-
-    async def attach(
-        self,
-        definition_id: UUID,
-        content: bytes,
-        *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Attach a resource package to the current team draft.
-
-The package is verified against the draft's declared manifests and
-stored under its digest; nothing inside it is imported or executed."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/teams/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesTeamsClient:
-    """Generated client for the ``capabilities.teams`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesTeamsPackageClient(channel)
-
-    async def create(self, request: TeamCreateRequest) -> CapabilityVersionView:
-        """Create one team definition with its first draft version."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="POST",
-                path=f"{self._channel.api_root}/capabilities/teams",
-                body=request.model_dump(mode="json", exclude_none=True),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-    async def update_draft(
-        self,
-        definition_id: UUID,
-        request: TeamDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one team definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/teams/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesToolsPackageClient:
-    """Generated client for the ``capabilities.tools.package`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-
-    async def attach(
-        self,
-        definition_id: UUID,
-        content: bytes,
-        *,
-        content_type: str,
-    ) -> CapabilityVersionView:
-        """Attach a tool package to the current draft.
-
-A script entrypoint must be a file the package declares and carries;
-an SDK export entrypoint is checked as an identifier path. Nothing is
-imported or executed."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/tools/{definition_id}/draft/package",
-                headers={"content-type": content_type},
-                content=content,
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-
-class CapabilitiesToolsClient:
-    """Generated client for the ``capabilities.tools`` operations."""
-
-    def __init__(self, channel: GroupChannel) -> None:
-        self._channel = channel
-        self.package = CapabilitiesToolsPackageClient(channel)
-
-    async def create(self, request: ToolCreateRequest) -> CapabilityVersionView:
-        """Create one tool definition with its first draft version."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="POST",
-                path=f"{self._channel.api_root}/capabilities/tools",
-                body=request.model_dump(mode="json", exclude_none=True),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
-
-    async def update_draft(
-        self,
-        definition_id: UUID,
-        request: ToolDraftRequest,
-    ) -> CapabilityVersionView:
-        """Replace the current draft configuration of one tool definition."""
-        response = await self._channel.transport.send(
-            TransportRequest(
-                method="PUT",
-                path=f"{self._channel.api_root}/capabilities/tools/{definition_id}/draft",
-                body=request.model_dump(mode="json"),
-            ),
-            self._channel.context(),
-        )
-        return CapabilityVersionView.model_validate(response.body)
+        return PublicationReviewView.model_validate(response.body)
 
 
 class CapabilitiesVersionsPackageClient:
@@ -926,7 +585,6 @@ class CapabilitiesVersionsPackageClient:
         self._channel = channel
 
     async def read(self, definition_id: UUID, version_number: int) -> bytes:
-        """Download the immutable package bytes of one published version."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
@@ -944,7 +602,7 @@ class CapabilitiesVersionsClient:
         self._channel = channel
         self.package = CapabilitiesVersionsPackageClient(channel)
 
-    async def list(self, definition_id: UUID) -> list[CapabilityVersionView]:
+    async def list(self, definition_id: UUID) -> builtins.list[CapabilityVersionView]:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
@@ -979,14 +637,8 @@ class CapabilitiesClient:
     """The capabilities API group."""
 
     def __init__(self, channel: GroupChannel) -> None:
-        self.channels = CapabilitiesChannelsClient(channel)
         self.definitions = CapabilitiesDefinitionsClient(channel)
-        self.experts = CapabilitiesExpertsClient(channel)
-        self.extensions = CapabilitiesExtensionsClient(channel)
-        self.mcp = CapabilitiesMcpClient(channel)
-        self.skills = CapabilitiesSkillsClient(channel)
-        self.teams = CapabilitiesTeamsClient(channel)
-        self.tools = CapabilitiesToolsClient(channel)
+        self.publication_reviews = CapabilitiesPublicationReviewsClient(channel)
         self.versions = CapabilitiesVersionsClient(channel)
 
 
@@ -996,59 +648,39 @@ def create_capabilities_client(channel: GroupChannel) -> CapabilitiesClient:
 
 
 __all__ = [
-    "AgentAsTool",
-    "CapabilitiesChannelsClient",
-    "CapabilitiesChannelsPackageClient",
     "CapabilitiesClient",
     "CapabilitiesDefinitionsClient",
-    "CapabilitiesExpertsClient",
-    "CapabilitiesExpertsPackageClient",
-    "CapabilitiesExtensionsClient",
-    "CapabilitiesExtensionsPackageClient",
-    "CapabilitiesMcpClient",
-    "CapabilitiesMcpPackageClient",
-    "CapabilitiesSkillsClient",
-    "CapabilitiesSkillsPackageClient",
-    "CapabilitiesTeamsClient",
-    "CapabilitiesTeamsPackageClient",
-    "CapabilitiesToolsClient",
-    "CapabilitiesToolsPackageClient",
+    "CapabilitiesDefinitionsPackageClient",
+    "CapabilitiesPublicationReviewsClient",
     "CapabilitiesVersionsClient",
     "CapabilitiesVersionsPackageClient",
     "CapabilityDefinitionPage",
     "CapabilityDefinitionView",
-    "CapabilitySlot",
     "CapabilityVersionView",
     "ChannelConfiguration",
-    "ChannelCreateRequest",
-    "ChannelDraftRequest",
+    "ChannelDeclaration",
     "ChannelOperation",
-    "ExpertConfiguration",
-    "ExpertCreateRequest",
-    "ExpertDraftRequest",
+    "DefinitionInput",
+    "DraftInput",
     "ExtensionConfiguration",
-    "ExtensionCreateRequest",
-    "ExtensionDraftRequest",
+    "ExtensionDeclaration",
     "ExtensionEvent",
     "ExtensionHook",
     "ExtensionOperation",
-    "Handoff",
     "McpConfiguration",
-    "McpCreateRequest",
-    "McpDraftRequest",
+    "McpDeclaration",
     "McpToolDeclaration",
-    "ModelRequirements",
-    "SkillCreateRequest",
-    "TeamConfiguration",
-    "TeamCreateRequest",
-    "TeamDraftRequest",
-    "TeamMember",
-    "ToolConfiguration",
-    "ToolCreateRequest",
-    "ToolDraftRequest",
+    "PublicationReviewDecision",
+    "PublicationReviewSubmission",
+    "PublicationReviewView",
+    "SkillConfiguration",
+    "SkillDeclaration",
+    "SkillFrontmatter",
+    "ToolDeclaration",
     "ToolOperation",
     "UpdateDefinitionRequest",
     "UpdateDefinitionStatusRequest",
     "UpdateDefinitionVisibilityRequest",
     "create_capabilities_client",
+    "opsmesh__capabilities__tools__schemas__ToolConfiguration",
 ]

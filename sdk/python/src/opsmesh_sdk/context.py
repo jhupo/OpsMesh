@@ -9,14 +9,14 @@ server re-validates every delegated call.
 from __future__ import annotations
 
 import asyncio
+import copy
 from dataclasses import dataclass, field
-from typing import Final, Protocol, cast, runtime_checkable
+from typing import Any, Final, Protocol, cast, runtime_checkable
 
 from opsmesh_sdk.host.events import EventPublisher
 from opsmesh_sdk.host.jobs import JobSubmitter
 from opsmesh_sdk.host.models import ModelOperator
 from opsmesh_sdk.host.observability import ObservabilityReporter
-from opsmesh_sdk.host.secrets import SecretReader
 from opsmesh_sdk.host.state import StateStore
 from opsmesh_sdk.values import ScopeRef
 
@@ -24,7 +24,6 @@ MAX_NAMESPACE_LENGTH: Final = 100
 
 HostClient = (
     StateStore
-    | SecretReader
     | ModelOperator
     | JobSubmitter
     | EventPublisher
@@ -64,12 +63,12 @@ class InvocationContext:
         scope: ScopeRef | None = None,
         platform: PlatformFacade | None = None,
         host_state: StateStore | None = None,
-        host_secrets: SecretReader | None = None,
         host_models: ModelOperator | None = None,
         host_jobs: JobSubmitter | None = None,
         host_events: EventPublisher | None = None,
         host_observability: ObservabilityReporter | None = None,
         deadline_seconds: float | None = None,
+        configuration: dict[str, Any] | None = None,
     ) -> None:
         if not subject.namespace or len(subject.namespace) > MAX_NAMESPACE_LENGTH:
             raise ValueError("a delegated invocation requires its package namespace")
@@ -80,7 +79,6 @@ class InvocationContext:
         self._platform = platform
         self._host: dict[str, HostClient | None] = {
             "state": host_state,
-            "secrets": host_secrets,
             "models": host_models,
             "jobs": host_jobs,
             "events": host_events,
@@ -88,6 +86,11 @@ class InvocationContext:
         }
         self._deadline_seconds = deadline_seconds
         self._cancelled = asyncio.Event()
+        self._configuration = copy.deepcopy(configuration or {})
+
+    @property
+    def configuration(self) -> dict[str, Any]:
+        return copy.deepcopy(self._configuration)
 
     @property
     def subject(self) -> InvocationSubject:
@@ -123,10 +126,6 @@ class InvocationContext:
     @property
     def state(self) -> StateStore:
         return cast(StateStore, self.host("state"))
-
-    @property
-    def secrets(self) -> SecretReader:
-        return cast(SecretReader, self.host("secrets"))
 
     @property
     def models(self) -> ModelOperator:

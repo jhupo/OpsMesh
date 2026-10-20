@@ -10,6 +10,12 @@
 | POST | `/api/v1/auth/register` | Register |
 | GET | `/api/v1/auth/sessions` | List Sessions |
 | DELETE | `/api/v1/auth/sessions/{session_id}` | Revoke Session |
+| GET | `/api/v1/identity/me/capacity` | Read Current Capacity |
+| GET | `/api/v1/identity/me/quotas` | Read Current Quota |
+| GET | `/api/v1/identity/users/{user_id}/capacity` | Read User Capacity |
+| PUT | `/api/v1/identity/users/{user_id}/capacity/{kind}` | Update Capacity Limit |
+| GET | `/api/v1/identity/users/{user_id}/quotas` | Read User Quota |
+| PUT | `/api/v1/identity/users/{user_id}/quotas` | Update User Quota |
 | GET | `/api/v1/invitations` | List Invitations |
 | POST | `/api/v1/invitations` | Create Invitation |
 | POST | `/api/v1/invitations/accept` | Accept Invitation |
@@ -22,11 +28,8 @@
 | DELETE | `/api/v1/users/me/avatar` | Delete Current Avatar |
 | GET | `/api/v1/users/me/avatar` | Read Current Avatar |
 | PUT | `/api/v1/users/me/avatar` | Upload Current Avatar |
-| GET | `/api/v1/users/me/quotas` | Read Current Quota |
 | GET | `/api/v1/users/{user_id}` | Read User |
 | PATCH | `/api/v1/users/{user_id}` | Admin Update User |
-| GET | `/api/v1/users/{user_id}/quotas` | Read User Quota |
-| PUT | `/api/v1/users/{user_id}/quotas` | Update User Quota |
 
 ## POST `/api/v1/auth/login`
 
@@ -263,6 +266,243 @@ Operation ID：`identity.auth.sessions.revoke`。
 
 所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
 
+## GET `/api/v1/identity/me/capacity`
+
+Read Current Capacity
+
+Operation ID：`identity.quotas.read_current_capacity`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_current_capacity`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapacitySnapshotView](schemas.md#schema-CapacitySnapshotView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/identity/me/quotas`
+
+Read Current Quota
+
+Operation ID：`identity.quotas.read_current`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_current_quota`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/identity/users/{user_id}/capacity`
+
+Read User Capacity
+
+Operation ID：`identity.quotas.read_capacity`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_user_capacity`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapacitySnapshotView](schemas.md#schema-CapacitySnapshotView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/identity/users/{user_id}/capacity/{kind}`
+
+Update Capacity Limit
+
+Operation ID：`identity.quotas.update_capacity`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `update_capacity_limit`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `kind` | path | 是 | string | — |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/CapacityLimitUpdateRequest"
+}
+```
+
+模型：[CapacityLimitUpdateRequest](schemas.md#schema-CapacityLimitUpdateRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [CapacitySnapshotView](schemas.md#schema-CapacitySnapshotView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## GET `/api/v1/identity/users/{user_id}/quotas`
+
+Read User Quota
+
+Operation ID：`identity.quotas.read`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_user_quota`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
+## PUT `/api/v1/identity/users/{user_id}/quotas`
+
+Update User Quota
+
+Operation ID：`identity.quotas.update`。
+
+实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `update_user_quota`。
+
+权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+### 请求体
+
+必填：是。
+
+Content-Type：`application/json`。
+
+```json
+{
+  "$ref": "#/components/schemas/QuotaLimitsRequest"
+}
+```
+
+模型：[QuotaLimitsRequest](schemas.md#schema-QuotaLimitsRequest)
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
+| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
+
 ## GET `/api/v1/invitations`
 
 List Invitations
@@ -308,7 +548,7 @@ Operation ID：`identity.invitations.create`。
 
 实现：[src/opsmesh/identity/invitations/routes.py](../../src/opsmesh/identity/invitations/routes.py) · `create_invitation`。
 
-Create one pending invitation and register its mail in the same transaction.
+Issue one pending invitation for the administrator to deliver.
 
 权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
 
@@ -340,7 +580,7 @@ Content-Type：`application/json`。
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 201 | Successful Response | application/json | [InvitationView](schemas.md#schema-InvitationView) |
+| 201 | Successful Response | application/json | [InvitationIssueView](schemas.md#schema-InvitationIssueView) |
 | 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
@@ -435,7 +675,7 @@ Operation ID：`identity.invitations.resend`。
 
 实现：[src/opsmesh/identity/invitations/routes.py](../../src/opsmesh/identity/invitations/routes.py) · `resend_invitation`。
 
-Resend with a freshly rotated token; the delivered code stops working.
+Issue a replacement token; the previous token stops working.
 
 权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
 
@@ -454,7 +694,7 @@ Resend with a freshly rotated token; the delivered code stops working.
 
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [InvitationView](schemas.md#schema-InvitationView) |
+| 200 | Successful Response | application/json | [InvitationIssueView](schemas.md#schema-InvitationIssueView) |
 | 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
@@ -736,40 +976,6 @@ Content-Type：`application/json`。
 
 所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
 
-## GET `/api/v1/users/me/quotas`
-
-Read Current Quota
-
-Operation ID：`identity.quotas.read_current`。
-
-实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_current_quota`。
-
-权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
-| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
-
 ## GET `/api/v1/users/{user_id}`
 
 Read User
@@ -845,90 +1051,6 @@ Content-Type：`application/json`。
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [UserProfileView](schemas.md#schema-UserProfileView) |
-| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
-
-## GET `/api/v1/users/{user_id}/quotas`
-
-Read User Quota
-
-Operation ID：`identity.quotas.read`。
-
-实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `read_user_quota`。
-
-权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
-| 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 404 | Not Found | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 409 | Conflict | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-| 422 | Unprocessable Content | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
-
-所有错误响应使用统一封装 `{"error": {"code", "message", "request_id", "details"}}`；客户端可传入 `X-Request-ID` 并获得回显，追踪标识见响应头 `X-Trace-ID`、`X-Span-ID` 与 `traceparent`。
-
-## PUT `/api/v1/users/{user_id}/quotas`
-
-Update User Quota
-
-Operation ID：`identity.quotas.update`。
-
-实现：[src/opsmesh/identity/quotas/routes.py](../../src/opsmesh/identity/quotas/routes.py) · `update_user_quota`。
-
-权限依赖：未声明上述认证依赖；签名、注册令牌或其他服务层校验以实现为准。
-
-### 参数
-
-| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
-| --- | --- | --- | --- | --- |
-| `user_id` | path | 是 | string (uuid) | `format="uuid"` |
-| `X-Session-ID` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Installation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Instance-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Invocation-Id` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-| `X-OpsMesh-Namespace` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
-
-### 请求体
-
-必填：是。
-
-Content-Type：`application/json`。
-
-```json
-{
-  "$ref": "#/components/schemas/QuotaLimitsRequest"
-}
-```
-
-模型：[QuotaLimitsRequest](schemas.md#schema-QuotaLimitsRequest)
-
-### 响应
-
-| HTTP | 说明 | Content-Type | 返回类型 |
-| --- | --- | --- | --- |
-| 200 | Successful Response | application/json | [QuotaView](schemas.md#schema-QuotaView) |
 | 400 | Bad Request | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 401 | Unauthorized | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 | 403 | Forbidden | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |

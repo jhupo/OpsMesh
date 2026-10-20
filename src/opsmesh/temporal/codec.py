@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from temporalio.api.common.v1 import Payload
 from temporalio.converter import PayloadCodec
 
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 
 _ENCODING = b"binary/opsmesh-encrypted"
 

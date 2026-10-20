@@ -1,7 +1,7 @@
 """Execution contract tests without a database.
 
 These cover the neutral contracts every later execution step assembles
-against: the bindings require all three ledgers, the injected scope
+against: the bindings require the quantity ledgers, the injected scope
 admission fails closed, the run asset destination is a safe relative
 path, and each ledger protocol mirrors the real owner service signature
 so an adapter can delegate without translation. The check constraint
@@ -21,11 +21,10 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import CheckConstraint
 
-from opsmesh.execution.contracts import (
+from opsmesh.identity.quotas import service as quotas
+from opsmesh.orchestration.contracts import (
     AdmissionTicket,
-    AssetRef,
     CapacityLedger,
-    CostLedger,
     ExecutionBindings,
     ExecutionContext,
     ExecutionScope,
@@ -35,15 +34,10 @@ from opsmesh.execution.contracts import (
     ReservationRef,
     ScopeAdmission,
     TokenLedger,
-    UncertainOperationError,
 )
-from opsmesh.execution.runs.models import (
-    RECEIPT_KINDS,
-    RUN_STATUSES,
-    OperationReceipt,
-    Run,
-)
-from opsmesh.execution.runtime.models import (
+from opsmesh.orchestration.execution.contracts import AssetRef, UncertainOperationError
+from opsmesh.orchestration.runs.models import RECEIPT_KINDS, RUN_STATUSES, OperationReceipt, Run
+from opsmesh.orchestration.runtime.models import (
     ENVIRONMENT_ACTIONS,
     ENVIRONMENT_STATUSES,
     MCP_ACTIONS,
@@ -55,18 +49,15 @@ from opsmesh.execution.runtime.models import (
     MCPConnection,
     MCPOperationReceipt,
 )
-from opsmesh.execution.sessions.models import (
+from opsmesh.orchestration.sessions.models import RECEIPT_STATUSES as SESSION_RECEIPT_STATUSES
+from opsmesh.orchestration.sessions.models import (
     SESSION_METHODS,
     SESSION_STATUSES,
     SessionOperationReceipt,
     SessionRecord,
 )
-from opsmesh.governance.costs import service as costs
-from opsmesh.governance.costs.schemas import NormalizedUsage
-from opsmesh.identity.quotas import service as quotas
 from opsmesh.shared.db.base import Base
 from opsmesh.shared.errors import ForbiddenError
-from opsmesh.workspaces.capacity import service as capacity
 
 DIGEST = "a" * 64
 
@@ -85,9 +76,7 @@ class StubTokens:
     ) -> object:
         raise NotImplementedError
 
-    def settle_tokens(
-        self, session: object, *, reservation_id: UUID, actual_amount: int
-    ) -> None:
+    def settle_tokens(self, session: object, *, reservation_id: UUID, actual_amount: int) -> None:
         raise NotImplementedError
 
     def release_tokens(self, session: object, *, reservation_id: UUID) -> None:
@@ -95,11 +84,11 @@ class StubTokens:
 
 
 class StubCapacity:
-    def reserve(
+    def reserve_capacity(
         self,
         session: object,
         *,
-        workspace_id: UUID,
+        user_id: UUID,
         kind: str,
         amount: int,
         idempotency_scope: str,
@@ -107,46 +96,12 @@ class StubCapacity:
     ) -> object:
         raise NotImplementedError
 
-    def release(self, session: object, *, workspace_id: UUID, reservation_id: UUID) -> None:
-        raise NotImplementedError
-
-
-class StubBudget:
-    def reserve_budget(
-        self,
-        session: object,
-        *,
-        actor: object,
-        operation_id: str,
-        workspace_id: UUID | None,
-        currency: str,
-        subject_kind: str,
-        subject_key: str,
-        usage_upper_bound: NormalizedUsage,
-        run_ref: str | None = None,
-    ) -> object:
-        raise NotImplementedError
-
-    def settle_budget(
-        self,
-        session: object,
-        *,
-        actor: object,
-        operation_id: str,
-        actual_usage: NormalizedUsage,
-    ) -> None:
-        raise NotImplementedError
-
-    def release_budget(
-        self, session: object, *, actor: object, operation_id: str, reason: str
-    ) -> None:
+    def release_capacity(self, session: object, *, user_id: UUID, reservation_id: UUID) -> None:
         raise NotImplementedError
 
 
 def bindings() -> ExecutionBindings:
-    return ExecutionBindings(
-        tokens=StubTokens(), capacity=StubCapacity(), budget=StubBudget()
-    )
+    return ExecutionBindings(tokens=StubTokens(), capacity=StubCapacity())
 
 
 class TestExecutionBindings:
@@ -154,11 +109,9 @@ class TestExecutionBindings:
         with pytest.raises(TypeError):
             ExecutionBindings()  # type: ignore[call-arg]
         with pytest.raises(TypeError):
-            ExecutionBindings(tokens=StubTokens(), capacity=StubCapacity())  # type: ignore[call-arg]
+            ExecutionBindings(tokens=StubTokens())  # type: ignore[call-arg]
         with pytest.raises(TypeError):
-            ExecutionBindings(tokens=StubTokens(), budget=StubBudget())  # type: ignore[call-arg]
-        with pytest.raises(TypeError):
-            ExecutionBindings(capacity=StubCapacity(), budget=StubBudget())  # type: ignore[call-arg]
+            ExecutionBindings(capacity=StubCapacity())  # type: ignore[call-arg]
 
     def test_the_bindings_are_frozen(self) -> None:
         assembled = bindings()
@@ -169,7 +122,6 @@ class TestExecutionBindings:
         assembled = bindings()
         assert isinstance(assembled.tokens, TokenLedger)
         assert isinstance(assembled.capacity, CapacityLedger)
-        assert isinstance(assembled.budget, CostLedger)
 
 
 class TestReservationRef:
@@ -190,7 +142,7 @@ class TestScopeAdmission:
             admission.admit(
                 None,  # type: ignore[arg-type]
                 subject=subject,
-                scope=ExecutionScope(workspace_id=UUID(int=9)),
+                scope=ExecutionScope(configuration_id=UUID(int=9)),
             )
 
     def test_the_default_admission_satisfies_the_protocol(self) -> None:
@@ -198,14 +150,15 @@ class TestScopeAdmission:
 
     def test_the_scope_reports_the_user_scope(self) -> None:
         assert ExecutionScope().is_user_scope is True
-        assert ExecutionScope(workspace_id=UUID(int=3)).is_user_scope is False
-        assert ExecutionScope(project_id=UUID(int=4)).is_user_scope is False
+        assert ExecutionScope(configuration_id=UUID(int=3)).is_user_scope is False
+        with pytest.raises(TypeError):
+            ExecutionScope(project_id=UUID(int=4))  # type: ignore[call-arg]
 
 
 class TestExecutionContext:
     def test_the_context_defaults_to_no_operation(self) -> None:
         context = ExecutionContext(
-            scope_id=UUID(int=1), principal_id=UUID(int=2), owner_ref="workspace:1"
+            scope_id=UUID(int=1), principal_id=UUID(int=2), owner_ref="configuration:1"
         )
         assert context.operation_id is None
         assert context.run_id is None
@@ -213,7 +166,7 @@ class TestExecutionContext:
 
     def test_the_context_is_frozen_and_forbids_extras(self) -> None:
         context = ExecutionContext(
-            scope_id=UUID(int=1), principal_id=UUID(int=2), owner_ref="workspace:1"
+            scope_id=UUID(int=1), principal_id=UUID(int=2), owner_ref="configuration:1"
         )
         with pytest.raises(ValidationError):
             context.operation_id = "op"  # type: ignore[misc]
@@ -221,7 +174,7 @@ class TestExecutionContext:
             ExecutionContext(  # type: ignore[call-arg]
                 scope_id=UUID(int=1),
                 principal_id=UUID(int=2),
-                owner_ref="workspace:1",
+                owner_ref="configuration:1",
                 unexpected="value",
             )
 
@@ -276,18 +229,14 @@ class TestAdmissionTicket:
         ticket = AdmissionTicket(operation_id="op-1")
         assert ticket.token_reservation_id is None
         assert ticket.capacity_reservation_id is None
-        assert ticket.budget_operation_id is None
 
 
 LEDGER_MIRRORS: tuple[tuple[Callable[..., object], Callable[..., object]], ...] = (
     (TokenLedger.reserve_tokens, quotas.reserve_tokens),
     (TokenLedger.settle_tokens, quotas.settle_tokens),
     (TokenLedger.release_tokens, quotas.release_tokens),
-    (CapacityLedger.reserve, capacity.reserve),
-    (CapacityLedger.release, capacity.release),
-    (CostLedger.reserve_budget, costs.reserve_budget),
-    (CostLedger.settle_budget, costs.settle_budget),
-    (CostLedger.release_budget, costs.release_budget),
+    (CapacityLedger.reserve_capacity, quotas.reserve_capacity),
+    (CapacityLedger.release_capacity, quotas.release_capacity),
 )
 
 
@@ -326,6 +275,7 @@ CHECK_LITERALS: tuple[tuple[type[Base], str, tuple[str, ...]], ...] = (
     (OperationReceipt, "run_receipt_kind", RECEIPT_KINDS),
     (SessionRecord, "valid_status", SESSION_STATUSES),
     (SessionOperationReceipt, "session_receipt_method", SESSION_METHODS),
+    (SessionOperationReceipt, "session_receipt_status", SESSION_RECEIPT_STATUSES),
     (Environment, "valid_status", ENVIRONMENT_STATUSES),
     (MCPConnection, "mcp_connection_transport", MCP_TRANSPORTS),
     (MCPConnection, "valid_status", MCP_CONNECTION_STATUSES),

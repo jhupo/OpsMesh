@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 from temporalio.client import Client
 
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.temporal.dispatch.contracts import (
     DispatchOperation,
     DispatchRequest,
@@ -185,11 +185,13 @@ class TemporalOutboxPublisher:
         concurrency: int = DEFAULT_DISPATCH_CONCURRENCY,
         cipher: SecretCipher,
         restore_context: Callable[[Mapping[str, str]], AbstractContextManager[None]] | None = None,
+        admit_start: Callable[[DispatchRequest], Awaitable[bool]] | None = None,
     ) -> None:
         if concurrency < 1:
             raise ValueError("Temporal dispatch concurrency must be positive")
         self._cipher = cipher
         self._restore_context = restore_context
+        self._admit_start = admit_start
         self._sessions = sessions
         self._client = client
         self._task_queue = task_queue
@@ -304,6 +306,11 @@ class TemporalOutboxPublisher:
         if request.operation == DispatchOperation.SIGNAL:
             await dispatch_workflow(self._client, request, task_queue=self._task_queue)
             return DispatchOutcome.DELIVERED
+        start_admitted = (
+            request.operation != DispatchOperation.START
+            or self._admit_start is None
+            or await self._admit_start(request)
+        )
         async with self._sessions.begin() as session:
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:workflow_id, 0))"),
@@ -331,6 +338,8 @@ class TemporalOutboxPublisher:
                     # Superseded is a terminal decision: nothing will be delivered.
                     row.published_at = datetime.now(UTC)
                     return DispatchOutcome.SUPERSEDED
+                if not start_admitted:
+                    return DispatchOutcome.DEFERRED
             elif request.operation == DispatchOperation.CANCEL:
                 starting = await self._has_sibling(
                     session, request.workflow_id, DispatchOperation.START, confirmed=False

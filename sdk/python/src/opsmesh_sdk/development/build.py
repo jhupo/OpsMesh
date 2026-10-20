@@ -50,7 +50,21 @@ def build_package(source: Path, target: Path) -> Path:
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(MANIFEST_NAME, json.dumps(manifest.model_dump(mode="json"), indent=2))
         archive.writestr(SCHEMAS_NAME, json.dumps(schemas, indent=2))
-        for path in sorted(source.rglob("*.py")):
+        for path in sorted(source.rglob("*")):
+            if not path.is_file() or path.resolve() == target.resolve():
+                continue
+            relative = path.relative_to(source)
+            if any(
+                part.startswith(".")
+                or part in {"__pycache__", "dist", "build"}
+                or part.endswith(".egg-info")
+                for part in relative.parts
+            ):
+                continue
+            if relative.as_posix() in {MANIFEST_NAME, SCHEMAS_NAME}:
+                continue
+            if path.is_symlink() or path.stat().st_size > 32 * 1048576:
+                raise ValueError("Package resources must be bounded regular files")
             archive.write(path, path.relative_to(source).as_posix())
     return target
 

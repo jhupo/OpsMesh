@@ -19,15 +19,16 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 import opsmesh.bootstrap.api as api_module
-import opsmesh.bootstrap.resources as resources_module
+import opsmesh.bootstrap.connections as resources_module
 import opsmesh.bootstrap.telemetry as telemetry_module
+from opsmesh.bootstrap.connections import APIResources, DatabaseResources
 from opsmesh.bootstrap.http_policy import gateway_policy
-from opsmesh.bootstrap.resources import APIResources, DatabaseResources
 from opsmesh.config import Settings
+from opsmesh.orchestration.sessions.history import HistoryGateway
 from opsmesh.shared.db.session import database_pool_snapshot
 from opsmesh.shared.http.errors import register_error_handlers
+from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
-from opsmesh.shared.security.secrets import SecretCipher
 
 TEST_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
 
@@ -109,6 +110,45 @@ def test_startup_failure_disposes_engine_before_exit(
     assert engine.disposed, "the database engine must be released on startup failure"
 
 
+def test_feature_assembly_failure_releases_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = install_fake_assembly(monkeypatch)
+
+    def fail(*args: object) -> None:
+        raise RuntimeError("feature assembly unavailable")
+
+    monkeypatch.setattr(api_module, "assemble_feature_services", fail)
+    app = api_module.create_app(settings())
+    with pytest.raises(RuntimeError, match="feature assembly unavailable"):
+        run_lifespan(app)
+    assert engine.disposed
+
+
+def test_private_metrics_listener_is_closed_with_application(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from opsmesh.telemetry.metrics import GaugeMetric
+
+    engine = install_fake_assembly(monkeypatch)
+    monkeypatch.setattr(
+        api_module, "product_metrics", lambda sessions: [GaugeMetric("opsmesh_test_fact", 1)]
+    )
+    app = api_module.create_app(settings(metrics_port=0))
+    with TestClient(app) as client:
+        exporter = app.state.metrics_server
+        assert exporter.thread.is_alive()
+        response = httpx.get(
+            f"http://127.0.0.1:{exporter.server.server_port}/metrics", trust_env=False
+        )
+        assert response.status_code == 200
+        assert "opsmesh_test_fact 1.0" in response.text
+        assert client.get("/api/v1/metrics").status_code == 404
+    assert engine.disposed
+    assert not exporter.thread.is_alive()
+    assert app.state.metrics_server is None
+
+
 def test_database_startup_failure_stops_the_logging_listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -140,6 +180,7 @@ def test_application_lifespan_sets_state_and_releases_engine(
     engine = install_fake_assembly(monkeypatch)
     app = api_module.create_app(settings())
     lifespan = app.router.lifespan_context
+    gateways: list[HistoryGateway] = []
 
     async def run() -> None:
         async with lifespan(app):
@@ -148,9 +189,13 @@ def test_application_lifespan_sets_state_and_releases_engine(
             assert app.state.database_engine is not None
             assert app.state.rate_limiter is not None
             assert app.state.json_cache is not None
+            assert app.state.history_gateway is not None
+            gateways.append(app.state.history_gateway)
 
     asyncio.run(run())
     assert engine.disposed, "the database engine must be released on shutdown"
+    assert gateways[0].sessions is app.state.database_sessions
+    assert app.state.history_gateway is None
 
 
 def test_application_assembles_without_explicit_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -306,9 +351,9 @@ def test_gateway_policy_classifies_paths() -> None:
     assert policy_for_path("/api/v1/auth/login").limit == 20
     assert policy_for_path("/api/v1/platform/backups").name == "platform"
     assert policy_for_path("/api/v1/platform/backups").limit == 120
-    assert policy_for_path("/api/v1/workspaces").name == "api"
-    assert policy_for_path("/api/v1/workspaces").limit == 600
+    assert policy_for_path("/api/v1/orchestration/configurations").name == "api"
+    assert policy_for_path("/api/v1/orchestration/configurations").limit == 600
     assert policy_for_path("/docs").name == "api"
     assert policy_for_path("/api/v1").name == "api"
     assert policy_for_path("/api/v1/auth/login").fail_closed is True
-    assert policy_for_path("/api/v1/workspaces").fail_closed is False
+    assert policy_for_path("/api/v1/orchestration/configurations").fail_closed is False

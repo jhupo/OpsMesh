@@ -13,7 +13,8 @@ from pydantic import JsonValue
 
 from opsmesh_sdk.context import InvocationContext, InvocationSubject
 from opsmesh_sdk.extensions.hooks import HookInput
-from opsmesh_sdk.extensions.operations import OperationResult
+from opsmesh_sdk.extensions.operations import Operation, OperationResult
+from opsmesh_sdk.extensions.tools import tool_schema_for_operation
 from opsmesh_sdk.manifest import HookStage
 from opsmesh_sdk.values import FlowRunRef, ScopeRef
 
@@ -29,7 +30,6 @@ class RecordingHostClient:
         self.state: dict[str, JsonValue] = {}
         self.published_events: list[dict[str, JsonValue]] = []
         self.submitted_jobs: list[dict[str, JsonValue]] = []
-        self.secret_reads: list[str] = []
         self.observability_records: list[dict[str, JsonValue]] = []
 
     def record_state(self, key: str, value: JsonValue) -> None:
@@ -44,9 +44,6 @@ class RecordingHostClient:
             flow_run_id=f"fixture-flow-{len(self.submitted_jobs)}",
             definition_revision=str(submission.get("definition_revision", "fixture")),
         )
-
-    def record_secret_read(self, slot: str) -> None:
-        self.secret_reads.append(slot)
 
     def record_observability(self, record: dict[str, JsonValue]) -> None:
         self.observability_records.append(record)
@@ -76,6 +73,30 @@ class ContractFixtures:
     @staticmethod
     def operation_result(value: JsonValue = None) -> OperationResult:
         return OperationResult(value=value, effects=())
+
+
+class ContractRunner:
+    """Run explicit local operation fixtures; no production permissions are implied."""
+
+    def __init__(self, operations: dict[str, Operation]) -> None:
+        self._operations = operations
+
+    @property
+    def export_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._operations))
+
+    def tool_schemas(self) -> dict[str, JsonValue]:
+        return {
+            export_id: tool_schema_for_operation(operation).model_dump(mode="json")
+            for export_id, operation in self._operations.items()
+        }
+
+    async def run(self, export_id: str, arguments: dict[str, JsonValue]) -> JsonValue:
+        operation = self._operations.get(export_id)
+        if operation is None:
+            raise KeyError(f"no declared operation {export_id!r}")
+        result = await operation.invoke(arguments)
+        return result.value
 
 
 def hook_input(
@@ -126,6 +147,7 @@ __all__ = [
     "FIXTURE_INSTANCE_ID",
     "FIXTURE_INVOCATION_ID",
     "ContractFixtures",
+    "ContractRunner",
     "RecordingHostClient",
     "fixture_ids",
     "hook_input",

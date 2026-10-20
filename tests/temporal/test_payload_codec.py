@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from temporalio.api.common.v1 import Payload
 
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.temporal.codec import EncryptedPayloadCodec
 
 TEST_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="

@@ -65,9 +65,7 @@ class InvitationStateError(DomainError):
         *,
         details: dict[str, object] | None = None,
     ) -> None:
-        super().__init__(
-            message, code="invitation_state", status_code=409, details=details or {}
-        )
+        super().__init__(message, code="invitation_state", status_code=409, details=details or {})
 
 
 class QuotaExceededError(DomainError):
@@ -91,9 +89,7 @@ class QuotaReservationError(DomainError):
         *,
         details: dict[str, object] | None = None,
     ) -> None:
-        super().__init__(
-            message, code="quota_reservation", status_code=409, details=details or {}
-        )
+        super().__init__(message, code="quota_reservation", status_code=409, details=details or {})
 
 
 class InvalidAvatarError(DomainError):
@@ -105,6 +101,4 @@ class InvalidAvatarError(DomainError):
         *,
         details: dict[str, object] | None = None,
     ) -> None:
-        super().__init__(
-            message, code="invalid_avatar", status_code=400, details=details or {}
-        )
+        super().__init__(message, code="invalid_avatar", status_code=400, details=details or {})

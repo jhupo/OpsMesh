@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Final, NewType
+from typing import Annotated, Final, Literal, NewType, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 _ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _TRACEPARENT_PATTERN: Final = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
+
+ReasoningEffort: TypeAlias = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 class ResourceRef(BaseModel):
@@ -32,12 +34,11 @@ class ResourceRef(BaseModel):
 
 
 class ScopeRef(BaseModel):
-    """The tenant/project scope a call acts in; never forged by the caller."""
+    """The configuration scope a call acts in; never proof of authorization."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    workspace_id: str | None = Field(default=None, max_length=128)
-    project_id: str | None = Field(default=None, max_length=128)
+    configuration_id: str | None = Field(default=None, max_length=128)
 
 
 class Cursor(BaseModel):

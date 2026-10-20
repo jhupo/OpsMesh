@@ -11,14 +11,7 @@ import asyncio
 import contextlib
 import json
 import time
-from collections.abc import (
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    Collection,
-    Mapping,
-    Sequence,
-)
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any, Final, Protocol, TypeVar

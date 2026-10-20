@@ -16,11 +16,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor, append_platform_event
-from opsmesh.resources.artifacts.models import (
-    ARTIFACT_SOURCES,
-    ResourceArtifact,
-)
+from opsmesh.resources.artifacts.models import ARTIFACT_SOURCES, ResourceArtifact
 from opsmesh.resources.files.access import ResourceReader
 from opsmesh.resources.files.models import ResourceFileContent
 from opsmesh.resources.storage.filesystem import (
@@ -31,7 +27,9 @@ from opsmesh.resources.storage.filesystem import (
     write_content,
 )
 from opsmesh.resources.storage.transactions import stage_content
+from opsmesh.shared.audit import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.errors import ForbiddenError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.serialization import canonical_json
 
 
 class ArtifactRecordAuthorization(Protocol):
@@ -119,19 +117,25 @@ def record_artifact(
     )
     session.add(artifact)
     session.flush()
-    append_platform_event(
+    record_audit(
         session,
-        actor=actor,
-        action="resource.artifact_recorded",
-        target_type="resource_artifact",
-        target_id=str(artifact.id),
-        summary=f"Recorded artifact {name}",
-        details={
-            "source_kind": source_kind,
-            "source_id": str(source_id),
-            "digest": digest,
-            "size": len(content),
-        },
+        AuditRecord(
+            category="operation",
+            action="resource.artifact_recorded",
+            actor=actor,
+            source="platform",
+            target_type="resource_artifact",
+            target_id=str(artifact.id),
+            summary=f"Recorded artifact {name}",
+            payload_json=canonical_json(
+                {
+                    "source_kind": source_kind,
+                    "source_id": str(source_id),
+                    "digest": digest,
+                    "size": len(content),
+                }
+            ),
+        ),
     )
     return artifact
 
@@ -151,9 +155,7 @@ def list_artifacts(
         query = query.where(ResourceArtifact.source_id == source_id)
     return list(
         session.scalars(
-            query.order_by(
-                ResourceArtifact.created_at.desc(), ResourceArtifact.id.desc()
-            )
+            query.order_by(ResourceArtifact.created_at.desc(), ResourceArtifact.id.desc())
         )
     )
 

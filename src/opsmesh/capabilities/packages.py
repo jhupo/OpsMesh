@@ -118,13 +118,6 @@ def build_package_archive(files: Mapping[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def save_package_files(
-    storage_root: Path, *, filename: str, files: Mapping[str, bytes]
-) -> StoredPackage:
-    """Store one release directory as a deterministic package archive."""
-    return save_package(storage_root, filename=filename, payload=build_package_archive(files))
-
-
 def read_package(
     storage_root: Path, stored: StoredPackage, *, max_bytes: int = MAX_PACKAGE_BYTES
 ) -> bytes:
@@ -134,39 +127,3 @@ def read_package(
     if package_digest(payload) != stored.digest:
         raise UnsafePackageError("The stored package no longer matches its digest")
     return payload
-
-
-def directory_digest(files: dict[str, bytes]) -> str:
-    """Digest one directory tree as its canonical (path, content digest) listing."""
-    listing = [
-        {"path": path, "digest": package_digest(files[path]), "size": len(files[path])}
-        for path in sorted(files)
-    ]
-    canonical = "\n".join(
-        f"{entry['path']}\x00{entry['digest']}\x00{entry['size']}" for entry in listing
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def read_directory(root: Path, *, max_bytes: int = MAX_EXPANDED_BYTES) -> dict[str, bytes]:
-    """Read one release directory into memory under a bounded total size.
-
-    The bundled release source is a trusted read-only tree, but it is still
-    read through the same bounds as an uploaded package so a corrupted
-    release cannot exhaust the process.
-    """
-    resolved = root.resolve()
-    files: dict[str, bytes] = {}
-    total = 0
-    for path in sorted(resolved.rglob("*")):
-        if not path.is_file() or path.is_symlink():
-            continue
-        relative = path.relative_to(resolved).as_posix()
-        payload = read_bytes_bounded(path, max_bytes=max_bytes - total)
-        total += len(payload)
-        if total > max_bytes:
-            raise UnsafePackageError("The release directory exceeds the permitted size")
-        files[relative] = payload
-    if not files:
-        raise UnsafePackageError("The release directory contains no files")
-    return files

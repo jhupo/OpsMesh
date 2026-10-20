@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from opsmesh_sdk.development.build import build_package
-from opsmesh_sdk.development.runner import ContractRunner
+from opsmesh_sdk.development.testing import ContractRunner
 from opsmesh_sdk.extensions.operations import Operation, OperationResult, declare_operation
 from opsmesh_sdk.manifest import PackageManifest, validate_manifest
 

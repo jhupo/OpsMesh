@@ -4,88 +4,47 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 import sqlalchemy.ext.asyncio
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.bootstrap.approvals import build_approvals
 from opsmesh.bootstrap.models import register_models
+from opsmesh.bootstrap.platform import transaction_dependencies
 from opsmesh.config import Settings
 from opsmesh.shared.db.session import create_database_engine
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 
 TEST_DATABASE_URL_ENV = "OPSMESH_TEST_DATABASE_URL"
 TEST_STORAGE_ROOT = ".opsmesh-test-storage"
-FEATURE_TABLES = (
-    "audit_append_receipts",
-    "audit_chain_head",
-    "audit_events",
-    "audit_verifications",
-    "account_invitations",
-    "approval_requests",
-    "capability_definitions",
-    "capability_packages",
-    "capability_versions",
-    "cost_budget_reservations",
-    "cost_budget_windows",
-    "cost_budgets",
-    "cost_pricing_rule_versions",
-    "cost_usage_records",
-    "execution_environments",
-    "execution_environment_operation_receipts",
-    "execution_mcp_connections",
-    "execution_mcp_operation_receipts",
-    "execution_operation_receipts",
-    "execution_run_approvals",
-    "execution_run_events",
-    "execution_runs",
-    "execution_session_operation_receipts",
-    "execution_sessions",
-    "login_sessions",
-    "mail_intents",
-    "model_provider_connections",
-    "notification_preferences",
-    "project_invitations",
-    "project_members",
-    "projects",
-    "resource_artifacts",
-    "resource_directories",
-    "resource_file_contents",
-    "resource_file_grants",
-    "resource_file_versions",
-    "resource_files",
-    "resource_runtime_policies",
-    "security_events",
-    "smtp_configurations",
-    "storage_reservations",
-    "token_reservations",
-    "user_credentials",
-    "user_quota_limits",
-    "user_storage_accounts",
-    "user_token_accounts",
-    "users",
-    "workspace_capacity_accounts",
-    "workspace_capacity_reservations",
-    "workspace_credentials",
-    "workspace_invitations",
-    "workspace_members",
-    "workspace_notifications",
-    "workspaces",
-)
+FEATURE_TABLES = tuple(sorted(table.name for table in register_models().tables.values()))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def postgres_event_loop_policy():
+    if sys.platform != "win32":
+        yield
+        return
+    previous = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        yield
+    finally:
+        asyncio.set_event_loop_policy(previous)
 
 
 def truncate_feature_tables(engine: Engine) -> None:
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                "TRUNCATE temporal_dispatches, http_creation_receipts, "
-                + ", ".join(FEATURE_TABLES)
-            )
-        )
+        connection.execute(text("TRUNCATE " + ", ".join(FEATURE_TABLES)))
 
 
 def test_database_url() -> str | None:
@@ -111,8 +70,13 @@ def database_url() -> str:
 
 @pytest.fixture(scope="session")
 def database_engine(database_url: str) -> Iterator[Engine]:
+    from opsmesh.bootstrap.source_notifications import register_source_events
+
+    register_source_events()
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    command.upgrade(config, "head")
     engine = create_database_engine(database_url, pool_size=2, max_overflow=2)
-    register_models().create_all(engine)
     yield engine
     engine.dispose()
 
@@ -124,6 +88,8 @@ def database_sessions(database_engine: Engine) -> Iterator[sessionmaker]:
         autoflush=False,
         expire_on_commit=False,
         info={
+            **transaction_dependencies(),
+            "approvals": build_approvals(),
             "dispatch_cipher": dispatch_cipher(),
             "dispatch_trace_context": lambda: {},
         },
@@ -145,6 +111,8 @@ def async_database_sessions(database_url: str) -> Iterator[async_sessionmaker[As
         autoflush=False,
         expire_on_commit=False,
         info={
+            **transaction_dependencies(),
+            "approvals": build_approvals(),
             "dispatch_cipher": dispatch_cipher(),
             "dispatch_trace_context": lambda: {},
         },
@@ -153,12 +121,22 @@ def async_database_sessions(database_url: str) -> Iterator[async_sessionmaker[As
 
     async def release() -> None:
         async with engine.begin() as connection:
-            await connection.execute(
-                text("TRUNCATE temporal_dispatches, http_creation_receipts")
-            )
+            await connection.execute(text("TRUNCATE temporal_dispatches, http_creation_receipts"))
         await engine.dispose()
 
     asyncio.run(release())
+
+
+def session_dependency_info() -> dict[str, object]:
+    from opsmesh.bootstrap.source_notifications import register_source_events
+
+    register_source_events()
+    return {
+        **transaction_dependencies(),
+        "approvals": build_approvals(),
+        "dispatch_cipher": dispatch_cipher(),
+        "dispatch_trace_context": lambda: {},
+    }
 
 
 def dispatch_cipher() -> SecretCipher:

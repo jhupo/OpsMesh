@@ -10,6 +10,12 @@ Stable operation ids of this group:
 - ``identity.auth.register``
 - ``identity.auth.sessions.list``
 - ``identity.auth.sessions.revoke``
+- ``identity.quotas.read_current_capacity``
+- ``identity.quotas.read_current``
+- ``identity.quotas.read_capacity``
+- ``identity.quotas.update_capacity``
+- ``identity.quotas.read``
+- ``identity.quotas.update``
 - ``identity.invitations.list``
 - ``identity.invitations.create``
 - ``identity.invitations.accept``
@@ -22,15 +28,13 @@ Stable operation ids of this group:
 - ``identity.users.avatar.delete``
 - ``identity.users.avatar.read``
 - ``identity.users.avatar.upload``
-- ``identity.quotas.read_current``
 - ``identity.users.read``
 - ``identity.users.update``
-- ``identity.quotas.read``
-- ``identity.quotas.update``
 """
 
 from __future__ import annotations
 
+import builtins
 from datetime import datetime
 from uuid import UUID
 
@@ -80,6 +84,16 @@ class AuthenticatedUser(BaseModel):
     user_id: UUID
 
 
+class CapacityKindView(BaseModel):
+    kind: str
+    limit_value: int | None
+    reserved_value: int
+
+
+class CapacityLimitUpdateRequest(BaseModel):
+    limit_value: int | None = None
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -88,6 +102,22 @@ class ChangePasswordRequest(BaseModel):
 class CreateInvitationRequest(BaseModel):
     email: str
     ttl_seconds: int | None = None
+
+
+class InvitationIssueView(BaseModel):
+    """The newly issued token is returned only once to its administrator."""
+
+    acceptance_url: str | None
+    accepted_at: datetime | None
+    created_at: datetime
+    email: str
+    expires_at: datetime
+    invitation_id: UUID
+    invited_by_user_id: UUID | None
+    status: str
+    token: UUID
+    token_issued_at: datetime | None
+    token_revision: int
 
 
 class InvitationView(BaseModel):
@@ -99,9 +129,9 @@ class InvitationView(BaseModel):
     expires_at: datetime
     invitation_id: UUID
     invited_by_user_id: UUID | None
-    last_sent_at: datetime | None
-    send_count: int
     status: str
+    token_issued_at: datetime | None
+    token_revision: int
 
 
 class LoginRequest(BaseModel):
@@ -164,6 +194,11 @@ class UserProfileView(BaseModel):
     work_root: str | None
 
 
+class CapacitySnapshotView(BaseModel):
+    kinds: list[CapacityKindView]
+    user_id: str
+
+
 class InvitationPage(BaseModel):
     invitations: list[InvitationView]
     total: int
@@ -192,7 +227,7 @@ class IdentityAuthSessionsClient:
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
 
-    async def list(self) -> list[SessionInfo]:
+    async def list(self) -> builtins.list[SessionInfo]:
         response = await self._channel.transport.send(
             TransportRequest(method="GET", path=f"{self._channel.api_root}/auth/sessions"),
             self._channel.context(),
@@ -289,8 +324,8 @@ class IdentityInvitationsClient:
         )
         return InvitationPage.model_validate(response.body)
 
-    async def create(self, request: CreateInvitationRequest) -> InvitationView:
-        """Create one pending invitation and register its mail in the same transaction."""
+    async def create(self, request: CreateInvitationRequest) -> InvitationIssueView:
+        """Issue one pending invitation for the administrator to deliver."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
@@ -299,7 +334,7 @@ class IdentityInvitationsClient:
             ),
             self._channel.context(),
         )
-        return InvitationView.model_validate(response.body)
+        return InvitationIssueView.model_validate(response.body)
 
     async def accept(self, request: AcceptInvitationRequest) -> AcceptInvitationResponse:
         """Accept one invitation with its token; no session exists before acceptance."""
@@ -323,8 +358,8 @@ class IdentityInvitationsClient:
         )
         return InvitationView.model_validate(response.body)
 
-    async def resend(self, invitation_id: UUID) -> InvitationView:
-        """Resend with a freshly rotated token; the delivered code stops working."""
+    async def resend(self, invitation_id: UUID) -> InvitationIssueView:
+        """Issue a replacement token; the previous token stops working."""
         response = await self._channel.transport.send(
             TransportRequest(
                 method="POST",
@@ -332,7 +367,7 @@ class IdentityInvitationsClient:
             ),
             self._channel.context(),
         )
-        return InvitationView.model_validate(response.body)
+        return InvitationIssueView.model_validate(response.body)
 
     async def revoke(self, invitation_id: UUID) -> InvitationView:
         response = await self._channel.transport.send(
@@ -351,16 +386,52 @@ class IdentityQuotasClient:
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
 
+    async def read_current_capacity(self) -> CapacitySnapshotView:
+        response = await self._channel.transport.send(
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/identity/me/capacity"),
+            self._channel.context(),
+        )
+        return CapacitySnapshotView.model_validate(response.body)
+
     async def read_current(self) -> QuotaView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/me/quotas"),
+            TransportRequest(method="GET", path=f"{self._channel.api_root}/identity/me/quotas"),
             self._channel.context(),
         )
         return QuotaView.model_validate(response.body)
 
+    async def read_capacity(self, user_id: UUID) -> CapacitySnapshotView:
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/identity/users/{user_id}/capacity",
+            ),
+            self._channel.context(),
+        )
+        return CapacitySnapshotView.model_validate(response.body)
+
+    async def update_capacity(
+        self,
+        user_id: UUID,
+        kind: str,
+        request: CapacityLimitUpdateRequest,
+    ) -> CapacitySnapshotView:
+        response = await self._channel.transport.send(
+            TransportRequest(
+                method="PUT",
+                path=f"{self._channel.api_root}/identity/users/{user_id}/capacity/{kind}",
+                body=request.model_dump(mode="json", exclude_none=True),
+            ),
+            self._channel.context(),
+        )
+        return CapacitySnapshotView.model_validate(response.body)
+
     async def read(self, user_id: UUID) -> QuotaView:
         response = await self._channel.transport.send(
-            TransportRequest(method="GET", path=f"{self._channel.api_root}/users/{user_id}/quotas"),
+            TransportRequest(
+                method="GET",
+                path=f"{self._channel.api_root}/identity/users/{user_id}/quotas",
+            ),
             self._channel.context(),
         )
         return QuotaView.model_validate(response.body)
@@ -369,7 +440,7 @@ class IdentityQuotasClient:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="PUT",
-                path=f"{self._channel.api_root}/users/{user_id}/quotas",
+                path=f"{self._channel.api_root}/identity/users/{user_id}/quotas",
                 body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
@@ -496,6 +567,9 @@ __all__ = [
     "AcceptInvitationResponse",
     "AdminUpdateUserRequest",
     "AuthenticatedUser",
+    "CapacityKindView",
+    "CapacityLimitUpdateRequest",
+    "CapacitySnapshotView",
     "ChangePasswordRequest",
     "CreateInvitationRequest",
     "IdentityAuthClient",
@@ -505,6 +579,7 @@ __all__ = [
     "IdentityQuotasClient",
     "IdentityUsersAvatarClient",
     "IdentityUsersClient",
+    "InvitationIssueView",
     "InvitationPage",
     "InvitationView",
     "LoginRequest",

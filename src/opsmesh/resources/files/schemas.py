@@ -24,6 +24,7 @@ class DirectoryCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     path: str = Field(min_length=1, max_length=1000)
+    parent_id: UUID | None = None
 
 
 class FileView(BaseModel):
@@ -104,9 +105,7 @@ class RuntimePolicyRequest(BaseModel):
 
     frozen_input_versions: list[int] = Field(default_factory=list, max_length=256)
     relative_paths: list[str] = Field(default_factory=list, max_length=256)
-    output_declarations: list[OutputDeclaration] = Field(
-        default_factory=list, max_length=256
-    )
+    output_declarations: list[OutputDeclaration] = Field(default_factory=list, max_length=256)
     use_in_execution: bool = False
 
 

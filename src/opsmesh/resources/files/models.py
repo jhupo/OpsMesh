@@ -140,9 +140,7 @@ class ResourceRuntimePolicy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     file_id: Mapped[UUID] = mapped_column(
         ForeignKey("resource_files.id", ondelete="RESTRICT"), nullable=False, unique=True
     )
-    frozen_input_versions: Mapped[list[int]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    frozen_input_versions: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
     relative_paths: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     output_declarations: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB, nullable=False, default=list

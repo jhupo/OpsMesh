@@ -4,7 +4,7 @@ import asyncio
 
 import httpx2 as httpx
 
-from opsmesh.shared.security.egress import (
+from opsmesh.shared.security.url_validation import (
     EgressURLPolicy,
     resolve_egress_address,
     validate_url_shape,

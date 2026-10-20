@@ -1,39 +1,24 @@
-"""Capability catalog, version and package HTTP contracts.
-
-The contracts shared by all seven definition types live here, and so do
-the channel and extension type configurations: per the V4 target tree
-those two types keep their declarations in the root schemas and
-validation modules instead of owning a sub-package, while the other five
-types validate their configuration in their sub-package.
-"""
+"""Shared capability HTTP contracts and discriminated static declarations."""
 
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Literal
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from opsmesh_sdk.extensions.channels import SUPPORTED_SIGNATURE_ALGORITHMS
+from opsmesh_sdk.manifest import EffectKind, HookFailurePolicy, HookStage
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from opsmesh.capabilities.models import (
-    MAX_DESCRIPTION_LENGTH,
-    CapabilityVersion,
-)
-from opsmesh.capabilities.validation import (
-    validate_parameter_schema,
-    validate_secret_slots,
-)
+from opsmesh.capabilities.mcp.schemas import McpConfiguration
+from opsmesh.capabilities.models import MAX_DESCRIPTION_LENGTH, CapabilityVersion
+from opsmesh.capabilities.skills.schemas import SkillConfiguration
+from opsmesh.capabilities.tools.schemas import ToolConfiguration
+from opsmesh.capabilities.validation import validate_parameter_schema
 from opsmesh.shared.errors import InvalidArgumentError
 
-CapabilityTypeName = Literal["expert", "team", "mcp", "skill", "tool", "channel", "extension"]
+CapabilityTypeName = Literal["mcp", "skill", "tool", "channel", "extension"]
 VisibilityName = Literal["private", "public"]
 DefinitionStatusName = Literal["active", "disabled", "deleted"]
 VersionStatusName = Literal["draft", "published"]
@@ -41,7 +26,7 @@ VersionStatusName = Literal["draft", "published"]
 MAX_OPERATIONS = 4
 MAX_ENTRYPOINT_LENGTH = 300
 MAX_PROTOCOL_LENGTH = 50
-SIGNATURE_ALGORITHMS = ("hmac-sha256",)
+SIGNATURE_ALGORITHMS = SUPPORTED_SIGNATURE_ALGORITHMS
 CHANNEL_OPERATIONS = ("receive", "send", "connect", "disconnect")
 REQUIRED_CHANNEL_OPERATIONS = ("receive", "send")
 CHANNEL_ENTRYPOINT_PATTERN = re.compile(
@@ -53,27 +38,9 @@ MAX_EXPORTS = 256
 MAX_PERMISSIONS = 128
 MAX_PATCH_FIELDS = 32
 MAX_EXPORT_ID_LENGTH = 100
-EXTENSION_EFFECTS = (
-    "none",
-    "read",
-    "write",
-    "network",
-    "model_call",
-    "file_write",
-    "payment",
-)
-HOOK_STAGES = (
-    "context.prepare",
-    "model.before",
-    "model.after",
-    "tool.before",
-    "tool.after",
-    "input_guardrail",
-    "output_guardrail",
-    "on_error",
-    "finalize",
-)
-HOOK_FAILURE_POLICIES = ("block", "observe")
+EXTENSION_EFFECTS = tuple(effect.value for effect in EffectKind)
+HOOK_STAGES = tuple(stage.value for stage in HookStage)
+HOOK_FAILURE_POLICIES = tuple(policy.value for policy in HookFailurePolicy)
 
 
 class CapabilityDefinitionView(BaseModel):
@@ -109,6 +76,7 @@ class CapabilityVersionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     definition_id: UUID
+    version_id: UUID
     version: int
     status: str
     configuration: dict[str, object]
@@ -122,6 +90,39 @@ class CapabilityVersionView(BaseModel):
     published_at: datetime | None
     published_by_user_id: UUID | None
     created_at: datetime
+
+
+class PublicationReviewSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submission_note: str = Field(default="", max_length=4000)
+
+
+class PublicationReviewDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    decision_note: str = Field(default="", max_length=4000)
+
+
+class PublicationReviewView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: UUID
+    definition_id: UUID
+    version_id: UUID
+    version_number: int
+    capability_type: str
+    key: str
+    name: str
+    status: str
+    requested_by_user_id: UUID
+    submission_note: str
+    reviewed_by_user_id: UUID | None
+    decision_note: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+    version: CapabilityVersionView
 
 
 class UpdateDefinitionRequest(BaseModel):
@@ -145,10 +146,13 @@ class UpdateDefinitionVisibilityRequest(BaseModel):
     visibility: VisibilityName
 
 
-def version_view(version: CapabilityVersion, package_filename: str | None) -> CapabilityVersionView:
+def version_view(
+    version: CapabilityVersion, package_filename: str | None = None
+) -> CapabilityVersionView:
     """Map one stored version onto its HTTP contract."""
     return CapabilityVersionView(
         definition_id=version.definition_id,
+        version_id=version.id,
         version=version.version,
         status=version.status,
         configuration=version.configuration,
@@ -159,9 +163,9 @@ def version_view(version: CapabilityVersion, package_filename: str | None) -> Ca
         package_digest=version.package_digest,
         package_size=version.package_size,
         package_filename=package_filename,
-        published_at=version.published_at,
+        published_at=version.published_at.astimezone(UTC) if version.published_at else None,
         published_by_user_id=version.published_by_user_id,
-        created_at=version.created_at,
+        created_at=version.created_at.astimezone(UTC),
     )
 
 
@@ -198,17 +202,11 @@ class ChannelConfiguration(BaseModel):
     signature_algorithm: Literal["hmac-sha256"] = "hmac-sha256"
     operations: list[ChannelOperation] = Field(min_length=1, max_length=MAX_OPERATIONS)
     parameters_schema: dict[str, object] = Field(default_factory=dict)
-    secret_slots: list[str] = Field(default_factory=list)
 
     @field_validator("parameters_schema")
     @classmethod
     def _parameters_schema(cls, value: dict[str, object]) -> dict[str, object]:
         return validate_parameter_schema(value)
-
-    @field_validator("secret_slots")
-    @classmethod
-    def _secret_slots(cls, value: list[str]) -> list[str]:
-        return validate_secret_slots(value)
 
     @field_validator("protocol")
     @classmethod
@@ -242,26 +240,6 @@ def validated_channel_configuration(configuration: object) -> dict[str, object]:
             details={"reason": str(exc)},
         ) from exc
     return model.model_dump(mode="json")
-
-
-class ChannelCreateRequest(BaseModel):
-    """Create one channel definition with its first draft version."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str = Field(min_length=1, max_length=100)
-    name: str = Field(min_length=1, max_length=160)
-    description: str = Field(default="", max_length=MAX_DESCRIPTION_LENGTH)
-    visibility: VisibilityName = "private"
-    configuration: ChannelConfiguration
-
-
-class ChannelDraftRequest(BaseModel):
-    """Replace the current draft configuration of one channel definition."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    configuration: ChannelConfiguration
 
 
 class ExtensionOperation(BaseModel):
@@ -311,6 +289,8 @@ class ExtensionHook(BaseModel):
     input_schema: dict[str, object] = Field(default_factory=dict)
     patch_fields: list[str] = Field(default_factory=list, max_length=MAX_PATCH_FIELDS)
     failure_policy: Literal["block", "observe"] = "block"
+    permissions: list[str] = Field(default_factory=list, max_length=MAX_PERMISSIONS)
+    timeout_seconds: int = Field(default=60, ge=1, le=3600)
 
     @field_validator("input_schema")
     @classmethod
@@ -333,6 +313,12 @@ class ExtensionHook(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError("hook patch fields must be unique")
         return value
+
+    @model_validator(mode="after")
+    def _observer_cannot_patch(self) -> ExtensionHook:
+        if self.failure_policy == HookFailurePolicy.OBSERVE.value and self.patch_fields:
+            raise ValueError("An observer hook cannot declare patches")
+        return self
 
 
 class ExtensionEvent(BaseModel):
@@ -388,7 +374,8 @@ class ExtensionConfiguration(BaseModel):
                     f"{event.operation_export_id!r}"
                 )
         declared = set(self.permissions)
-        for operation in self.operations:
+        callable_exports: list[ExtensionOperation | ExtensionHook] = [*self.operations, *self.hooks]
+        for operation in callable_exports:
             undeclared = sorted(set(operation.permissions) - declared)
             if undeclared:
                 errors.append(
@@ -413,8 +400,8 @@ def validated_extension_configuration(configuration: object) -> dict[str, object
     return model.model_dump(mode="json")
 
 
-class ExtensionCreateRequest(BaseModel):
-    """Create one extension definition with its first draft version."""
+class DefinitionInput(BaseModel):
+    """Common definition metadata; the discriminated declaration chooses its type."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -422,12 +409,58 @@ class ExtensionCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=MAX_DESCRIPTION_LENGTH)
     visibility: VisibilityName = "private"
-    configuration: ExtensionConfiguration
+    source: Literal["user", "system"] = "user"
+    declaration: CapabilityDeclaration
+    resource_manifest: list[dict[str, object]] = Field(default_factory=list, max_length=512)
+    dependencies: list[dict[str, object]] = Field(default_factory=list, max_length=128)
+    flow_templates: list[dict[str, object]] = Field(default_factory=list, max_length=512)
 
 
-class ExtensionDraftRequest(BaseModel):
-    """Replace the current draft configuration of one extension definition."""
+class DraftInput(BaseModel):
+    """Complete static draft input; publishing freezes this validated content."""
 
     model_config = ConfigDict(extra="forbid")
 
+    declaration: CapabilityDeclaration
+    resource_manifest: list[dict[str, object]] = Field(default_factory=list, max_length=512)
+    dependencies: list[dict[str, object]] = Field(default_factory=list, max_length=128)
+    flow_templates: list[dict[str, object]] = Field(default_factory=list, max_length=512)
+
+
+class McpDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["mcp"]
+    configuration: McpConfiguration
+
+
+class ToolDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["tool"]
+    configuration: ToolConfiguration
+
+
+class SkillDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["skill"]
+    configuration: SkillConfiguration | None = None
+
+
+class ChannelDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["channel"]
+    configuration: ChannelConfiguration
+
+
+class ExtensionDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["extension"]
     configuration: ExtensionConfiguration
+
+
+CapabilityDeclaration = Annotated[
+    McpDeclaration | ToolDeclaration | SkillDeclaration | ChannelDeclaration | ExtensionDeclaration,
+    Field(discriminator="type"),
+]
+
+DefinitionInput.model_rebuild()
+DraftInput.model_rebuild()

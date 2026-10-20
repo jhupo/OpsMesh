@@ -17,6 +17,7 @@ from opentelemetry.util.types import Attributes, AttributeValue
 from temporalio.contrib.opentelemetry import ReplaySafeTracerProvider, create_tracer_provider
 
 from opsmesh.config import Settings
+from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
 from opsmesh.shared.security.redaction import is_sensitive_payload_key, redact_sensitive_text
 from opsmesh.telemetry.exporters import configure_log_export, configure_trace_export
 from opsmesh.telemetry.instrumentation import (
@@ -59,16 +60,19 @@ def filter_span_attributes(attributes: Attributes) -> dict[str, AttributeValue]:
     for key, value in (attributes or {}).items():
         if key.startswith(_SUPPRESSED_ATTRIBUTE_PREFIXES):
             continue
-        if is_sensitive_payload_key(key.replace(".", "_")) and not (
+        if is_sensitive_payload_key(key.replace(".", "_"), rules=PLATFORM_REDACTION) and not (
             key.startswith("llm.token_count.")
             and isinstance(value, int | float)
             and not isinstance(value, bool)
         ):
             continue
         if isinstance(value, str):
-            safe[key] = redact_sensitive_text(value)[:1_024]
+            safe[key] = redact_sensitive_text(value, rules=PLATFORM_REDACTION)[:1_024]
         elif isinstance(value, Sequence) and all(isinstance(item, str) for item in value):
-            safe[key] = [redact_sensitive_text(item)[:1_024] for item in cast(Sequence[str], value)]
+            safe[key] = [
+                redact_sensitive_text(item, rules=PLATFORM_REDACTION)[:1_024]
+                for item in cast(Sequence[str], value)
+            ]
         else:
             safe[key] = value
     return safe
@@ -131,6 +135,7 @@ def _configure_process_telemetry(settings: Settings) -> ReplaySafeTracerProvider
                             max_queue_size=settings.otel_batch_max_queue_size,
                             max_export_batch_size=settings.otel_batch_max_export_size,
                             schedule_delay_ms=settings.otel_batch_schedule_delay_ms,
+                            redaction=PLATFORM_REDACTION,
                         )
                 except Exception:
                     provider.shutdown()
@@ -165,7 +170,9 @@ def _configure_process_telemetry(settings: Settings) -> ReplaySafeTracerProvider
             handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
             handler.addFilter(
                 RequestContextFilter(
-                    service_name=settings.service_name, environment=settings.environment
+                    service_name=settings.service_name,
+                    environment=settings.environment,
+                    redaction=PLATFORM_REDACTION,
                 )
             )
             handler.setFormatter(json_log_formatter())

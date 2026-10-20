@@ -22,7 +22,7 @@ def send_admin_request(
     """Send an authenticated admin request and close the owned HTTP client.
 
     Requires HTTPS except for loopback URLs, rejects URL credentials and reads
-    the admin token from the environment. Raises ValueError for unsafe/missing
+    the administrator's user Session from the environment. Raises ValueError for unsafe/missing
     configuration and RuntimeError for an unsuccessful HTTP response.
     """
     url = urlsplit(api_base_url)
@@ -32,11 +32,11 @@ def send_admin_request(
         url.scheme == "http" and url.hostname in {"127.0.0.1", "::1", "localhost"}
     ):
         raise ValueError("Remote administrative connections require HTTPS")
-    token = os.environ.get("OPSMESH_PLATFORM_ADMIN_TOKEN")
-    if not token:
-        raise ValueError("Set OPSMESH_PLATFORM_ADMIN_TOKEN in the environment")
+    session_id = os.environ.get("OPSMESH_SESSION_ID")
+    if not session_id:
+        raise ValueError("Set OPSMESH_SESSION_ID from an administrator login")
     with httpx.Client(
-        base_url=api_base_url, timeout=30, headers={"Authorization": f"Bearer {token}"}
+        base_url=api_base_url, timeout=30, headers={"X-Session-ID": session_id}
     ) as client:
         response = client.request(method, path, json=body)
         if response.is_error:
@@ -49,43 +49,36 @@ def build_argument_parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="opsmesh")
     root.add_argument("--root", type=Path, default=Path("/opt/opsmesh"))
     root.add_argument("--api-url", default="http://127.0.0.1:8000")
+    root.add_argument("--api-prefix", default="/api/v1")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("version")
     commands.add_parser("doctor")
-    commands.add_parser("status")
+    host_status = commands.add_parser("status")
+    host_status.add_argument("--operation-id", type=UUID)
+    release = commands.add_parser("deploy")
+    release.add_argument("--version", required=True)
+    rollback = commands.add_parser("rollback")
+    rollback.add_argument("id", type=UUID)
+    rollback.add_argument("--acknowledge-data-loss", action="store_true")
     logs = commands.add_parser("logs")
-    logs.add_argument("--service", choices=["api", "worker", "updater"], default="updater")
+    logs.add_argument("--service", choices=["api", "worker"], default="api")
     setup = commands.add_parser("install")
     setup.add_argument("--version", required=True)
     setup.add_argument("--origin", required=True)
     setup.add_argument("--mode", choices=["compose", "systemd"], default="systemd")
     setup.add_argument("--repository", default="jhupo/OpsMesh")
+    setup.add_argument("--temporal-service-unit")
     admin = commands.add_parser("admin")
     admin_commands = admin.add_subparsers(dest="admin_action", required=True)
     admin_commands.add_parser("reset-password")
-    updates = commands.add_parser("update").add_subparsers(dest="action", required=True)
-    updates.add_parser("check")
-    for name in ("plan", "rollback"):
-        plan = updates.add_parser(name)
-        plan.add_argument("--version", required=True)
-        plan.add_argument("--idempotency-key", default=None)
-    apply = updates.add_parser("apply")
-    apply.add_argument("--plan", type=UUID, required=True)
-    apply.add_argument("--fingerprint", required=True)
-    status = updates.add_parser("status")
-    status.add_argument("plan", type=UUID)
-    status.add_argument("--local", action="store_true")
-    cancel = updates.add_parser("cancel")
-    cancel.add_argument("--plan", type=UUID, required=True)
-    recover = updates.add_parser("recover")
-    recover.add_argument("--plan", type=UUID, required=True)
-    recover.add_argument("--strategy", choices=["resume", "rollback", "restore"], required=True)
-    recover.add_argument("--ack-data-loss", action="store_true")
     backups = commands.add_parser("backup").add_subparsers(dest="action", required=True)
     backups.add_parser("create")
     verify = backups.add_parser("verify")
     verify.add_argument("id", type=UUID)
     verify.add_argument("--restore-check", action="store_true")
+    restore = backups.add_parser("restore")
+    restore.add_argument("id", type=UUID)
+    restore.add_argument("--acknowledge-data-loss", action="store_true")
     return root
 
 
@@ -96,7 +89,12 @@ def execute(args: argparse.Namespace) -> object:
         return doctor(args.root)
     if args.command == "install":
         credentials = install(
-            Installation(root=args.root, mode=args.mode, repository=args.repository),
+            Installation(
+                root=args.root,
+                mode=args.mode,
+                repository=args.repository,
+                temporal_service_unit=args.temporal_service_unit,
+            ),
             args.version,
             args.origin,
         )
@@ -108,9 +106,31 @@ def execute(args: argparse.Namespace) -> object:
         if args.admin_action == "reset-password":
             return json.loads(deployment_for(installation).reset_admin_password())
     if args.command == "status":
-        return send_admin_request(args.api_url, "GET", "/api/v1/admin/system/version")
+        if args.operation_id:
+            from opsmesh_operator.releases_apply import read_operation
+
+            return read_operation(args.root, str(args.operation_id))
+        return send_admin_request(args.api_url, "GET", f"{args.api_prefix}/platform/system/version")
+    if args.command == "deploy":
+        from opsmesh_operator.releases_apply import apply_release
+
+        return apply_release(
+            Installation.load(args.root),
+            tag=args.version,
+            request=lambda method, path, body: send_admin_request(
+                args.api_url, method, f"{args.api_prefix}{path}", body
+            ),
+        )
+    if args.command == "rollback":
+        from opsmesh_operator.releases_apply import rollback_release
+
+        return rollback_release(
+            Installation.load(args.root),
+            operation_id=str(args.id),
+            acknowledge_data_loss=args.acknowledge_data_loss,
+        )
     if args.command == "logs":
-        if args.service == "updater" or Installation.load(args.root).mode == "systemd":
+        if Installation.load(args.root).mode == "systemd":
             return run_command(
                 ["journalctl", "-u", f"opsmesh-{args.service}", "-n", "100", "--no-pager"]
             )
@@ -122,60 +142,66 @@ def execute(args: argparse.Namespace) -> object:
             + ["logs", "--tail", "100", "--no-color", args.service]
         )
     if args.command == "backup":
-        if args.action == "verify":
-            from opsmesh_operator.backups import BackupStore
+        from opsmesh_operator.backups import BackupStore, database_revision
+        from opsmesh_operator.maintenance import maintenance_lock
+        from opsmesh_operator.releases_apply import change_admission
 
-            return BackupStore(Installation.load(args.root)).verify(
-                str(args.id), restore_check=args.restore_check
-            )
-        current = send_admin_request(args.api_url, "GET", "/api/v1/admin/system/version")
-        if not isinstance(current, dict):
-            raise ValueError("Invalid current release response")
-        return send_admin_request(
-            args.api_url,
-            "POST",
-            "/api/v1/admin/system/updates/plans",
-            {"tag": current["tag"], "action": "backup", "idempotency_key": uuid4().hex},
-        )
-    if args.action == "check":
-        return send_admin_request(args.api_url, "GET", "/api/v1/admin/system/check-updates")
-    if args.action in {"plan", "rollback"}:
-        return send_admin_request(
-            args.api_url,
-            "POST",
-            "/api/v1/admin/system/updates/plans",
-            {
-                "tag": args.version,
-                "action": "rollback" if args.action == "rollback" else "update",
-                "idempotency_key": args.idempotency_key or uuid4().hex,
-            },
-        )
-    if args.action == "status":
-        if args.local:
-            return json.loads((args.root / "updates" / f"{args.plan}.json").read_text("utf-8"))
-        return send_admin_request(args.api_url, "GET", f"/api/v1/admin/system/updates/{args.plan}")
-    if args.action == "recover":
         installation = Installation.load(args.root)
-        if args.strategy == "restore" and not args.ack_data_loss:
-            raise ValueError("Database restoration requires --ack-data-loss")
-        command = [
-            str(installation.root / "updater/opsmesh-server"),
-            "updater",
-            "--root",
-            str(installation.root),
-            "--recover",
-            str(args.plan),
-            "--strategy",
-            args.strategy,
-        ]
-        if args.ack_data_loss:
-            command.append("--ack-data-loss")
-        run_command(command, cwd=installation.root, timeout=7200)
-        return {"recovered": True}
-    body = {"plan_sha256": args.fingerprint} if args.action == "apply" else None
-    return send_admin_request(
-        args.api_url, "POST", f"/api/v1/admin/system/updates/{args.plan}/{args.action}", body
-    )
+        store = BackupStore(installation)
+        if args.action == "verify":
+            return store.verify(str(args.id), restore_check=args.restore_check)
+        if os.name != "posix" or os.geteuid() != 0:
+            raise ValueError("Backup creation and restoration require root on the host")
+        if args.action == "restore" and not args.acknowledge_data_loss:
+            raise ValueError("Restore requires --acknowledge-data-loss")
+        deployment = deployment_for(installation)
+        from opsmesh_operator.temporal_backup import TemporalBackup
+
+        TemporalBackup(installation).validate()
+        from opsmesh_operator.contracts import ReleaseManifest
+
+        manifest = ReleaseManifest.model_validate_json(
+            (installation.root / "current/release-manifest.json").read_bytes()
+        )
+        with maintenance_lock(installation.root):
+            if args.action == "create":
+                operation_id = str(uuid4())
+
+                def admin_request(method: str, path: str, body: dict[str, object] | None) -> object:
+                    return send_admin_request(
+                        args.api_url, method, f"{args.api_prefix}{path}", body
+                    )
+
+                change_admission(
+                    admin_request,
+                    drained=True,
+                    operation_id=operation_id,
+                    timeout=installation.timeout_seconds,
+                )
+                deployment.stop()
+                try:
+                    backup_id = store.create(database_revision=database_revision(installation))
+                finally:
+                    deployment.start(manifest)
+                    deployment.healthy()
+                change_admission(
+                    admin_request,
+                    drained=False,
+                    operation_id=operation_id,
+                    timeout=installation.timeout_seconds,
+                )
+                return {"id": backup_id}
+            if args.action == "restore":
+                metadata = store.verify(str(args.id))
+                if not manifest.accepts_database_revision(str(metadata["database_revision"])):
+                    raise ValueError("The installed release cannot run against the backup schema")
+                deployment.stop()
+                store.restore(str(args.id), acknowledge_data_loss=True)
+                deployment.start(manifest)
+                deployment.healthy()
+                return {"restored": str(args.id), "admission": "retained from backup"}
+        raise ValueError("Unsupported backup command")
+    raise ValueError("Unsupported command")
 
 
 def main() -> None:

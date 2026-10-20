@@ -248,7 +248,7 @@ def build_documents() -> dict[Path, str]:
     index = [
         "# 完整接口参考",
         "",
-        "由 `opsmesh.main` 实际注册的路由和 OpenAPI 自动生成。",
+        "由 `opsmesh.bootstrap.api` 实际注册的路由和 OpenAPI 自动生成。",
         "",
         f"共 **{len(operations)} 个接口**、**{len(document['paths'])} 个路径**、"
         f"**{len(schemas)} 个模型**。默认前缀 `/api/v1`。",

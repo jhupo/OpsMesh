@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
 from opsmesh.shared.security.redaction import redact_text_fragments
 
 
@@ -16,7 +17,7 @@ def main() -> int:
     result = subprocess.run(
         sys.argv[1:], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False
     )
-    output = redact_text_fragments(result.stdout)
+    output = redact_text_fragments(result.stdout, rules=PLATFORM_REDACTION)
     print(output)
     if report_path := os.environ.get("OPSMESH_CI_REPORT_PATH"):
         report = Path(report_path)

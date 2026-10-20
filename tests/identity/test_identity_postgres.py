@@ -18,8 +18,8 @@ import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.governance.audit.service import AuditActor
-from opsmesh.governance.security_events.service import SecurityEventLog
+from opsmesh.bootstrap.approvals import build_approvals
+from opsmesh.bootstrap.platform import transaction_dependencies
 from opsmesh.identity.access import PlatformRole
 from opsmesh.identity.auth.models import LoginSession
 from opsmesh.identity.auth.service import AuthService, token_digest
@@ -42,9 +42,11 @@ from opsmesh.identity.quotas import service as quotas
 from opsmesh.identity.quotas.models import TokenReservation, UserTokenAccount
 from opsmesh.identity.users import service as users
 from opsmesh.identity.users.models import UserProfile
+from opsmesh.platform.audit.service import SecurityAuditRecorder
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
 from tests.conftest import FEATURE_TABLES
 
 ADMIN_EMAIL = "admin@example.com"
@@ -57,7 +59,7 @@ def auth_service() -> AuthService:
     return AuthService(
         account_opening=ProvisionedAccountOpening(AccountDefaults(token_limit=1_000)),
         user_directory=UserIdentityDirectory(),
-        security_events=SecurityEventLog(),
+        security_events=SecurityAuditRecorder(),
     )
 
 
@@ -132,13 +134,17 @@ def test_a_wrong_password_records_its_security_fact(database_sessions) -> None:
         # The failed attempt rolled back; its fact is committed on its own.
         with session.begin():
             service.record_login_failure(session, email=MEMBER_EMAIL)
-    from opsmesh.governance.security_events.models import SecurityEvent
+    from opsmesh.platform.audit.models import AuditEvent
 
     with database_sessions() as session:
         facts = list(
-            session.scalars(select(SecurityEvent).where(SecurityEvent.user_id.is_not(None)))
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.category == "security", AuditEvent.actor_id.is_not(None)
+                )
+            )
         )
-    assert [fact.kind for fact in facts] == ["login.invalid_credentials"]
+    assert [fact.action for fact in facts] == ["login.invalid_credentials"]
 
 
 def test_an_expired_session_is_rejected_immediately(database_sessions) -> None:
@@ -411,33 +417,6 @@ def test_a_reservation_beyond_the_limit_is_refused(database_sessions) -> None:
         )
 
 
-class RecordingSender:
-    """The invitation mail registrar contract, recorded instead of delivered."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
-
-    def send_account_invitation(
-        self,
-        session: Session,
-        *,
-        invitation_id: UUID,
-        recipient: str,
-        subject: str,
-        body: str,
-        idempotency_key: str,
-    ) -> None:
-        self.calls.append(
-            {
-                "invitation_id": invitation_id,
-                "recipient": recipient,
-                "subject": subject,
-                "body": body,
-                "idempotency_key": idempotency_key,
-            }
-        )
-
-
 class RecordingOpening:
     """The account opening contract, recording instead of writing users."""
 
@@ -455,34 +434,25 @@ class RecordingOpening:
 
 def test_an_invitation_rotates_its_token_on_resend(database_sessions) -> None:
     admin = AuditActor(actor_type="platform")
-    sender = RecordingSender()
     with database_sessions() as session, session.begin():
         invitation, token = invitations.create_invitation(
             session,
             email="invitee@example.com",
             invited_by=admin,
-            sender=sender,
-            platform_base_url="https://opsmesh.example.com",
         )
         first_digest = invitation.token_hash
-        resent = invitations.resend_invitation(
+        resent, replacement = invitations.resend_invitation(
             session,
             invitation_id=invitation.id,
             invited_by=admin,
-            sender=sender,
-            platform_base_url="https://opsmesh.example.com",
         )
         assert resent.token_hash != first_digest
-        assert resent.send_count == 2
-        assert [call["idempotency_key"] for call in sender.calls] == [
-            f"invitation-mail:{invitation.id}:1",
-            f"invitation-mail:{invitation.id}:2",
-        ]
-        revoked = invitations.revoke_invitation(
-            session, invitation_id=invitation.id, actor=admin
-        )
+        assert resent.token_revision == 2
+        assert replacement != token
+        assert invitations.token_digest(replacement) == resent.token_hash
+        revoked = invitations.revoke_invitation(session, invitation_id=invitation.id, actor=admin)
         assert invitations.effective_status(revoked) == "revoked"
-        with pytest.raises(InvitationStateError):
+        with pytest.raises(NotFoundError):
             invitations.accept_invitation(
                 session,
                 token=token,
@@ -500,7 +470,6 @@ def test_a_pending_invitation_opens_the_account(database_sessions) -> None:
             session,
             email="invitee@example.com",
             invited_by=admin,
-            sender=RecordingSender(),
         )
         opened = invitations.accept_invitation(
             session,
@@ -513,9 +482,7 @@ def test_a_pending_invitation_opens_the_account(database_sessions) -> None:
         refreshed = invitations.get_invitation(session, invitation.id)
         assert invitations.effective_status(refreshed) == "accepted"
         assert refreshed.accepted_user_id == opened.user_id
-    assert opening.calls == [
-        {"email": "invitee@example.com", "display_name": "Invitee"}
-    ]
+    assert opening.calls == [{"email": "invitee@example.com", "display_name": "Invitee"}]
 
 
 def test_an_unknown_invitation_is_not_found(database_sessions) -> None:
@@ -530,14 +497,12 @@ def test_a_second_pending_invitation_for_one_address_conflicts(database_sessions
             session,
             email="invitee@example.com",
             invited_by=admin,
-            sender=RecordingSender(),
         )
     with database_sessions() as session, pytest.raises(ConflictError), session.begin():
         invitations.create_invitation(
             session,
             email="invitee@example.com",
             invited_by=admin,
-            sender=RecordingSender(),
         )
 
 
@@ -549,12 +514,9 @@ def test_the_invitation_page_reports_its_total(database_sessions) -> None:
                 session,
                 email=f"invitee-{index}@example.com",
                 invited_by=admin,
-                sender=RecordingSender(),
             )
     with database_sessions() as session:
-        rows, total = invitations.list_invitations(
-            session, page=PageParams(limit=2, offset=0)
-        )
+        rows, total = invitations.list_invitations(session, page=PageParams(limit=2, offset=0))
     assert total == 3
     assert len(rows) == 2
 
@@ -567,7 +529,6 @@ def test_an_accepted_invitation_is_never_revoked_or_resent(database_sessions) ->
             session,
             email="invitee@example.com",
             invited_by=admin,
-            sender=RecordingSender(),
         )
         invitations.accept_invitation(
             session,
@@ -583,12 +544,11 @@ def test_an_accepted_invitation_is_never_revoked_or_resent(database_sessions) ->
             session,
             invitation_id=invitation.id,
             invited_by=admin,
-            sender=RecordingSender(),
         )
     with database_sessions() as session:
         refreshed = invitations.get_invitation(session, invitation.id)
         assert invitations.effective_status(refreshed) == "accepted"
-        assert refreshed.send_count == 1
+        assert refreshed.token_revision == 1
 
 
 TEST_CIPHER_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
@@ -615,6 +575,8 @@ def concurrent_sessions(engine) -> sessionmaker[Session]:
         autoflush=False,
         expire_on_commit=False,
         info={
+            **transaction_dependencies(),
+            "approvals": build_approvals(),
             "dispatch_cipher": SecretCipher(key=TEST_CIPHER_KEY, key_id="test"),
             "dispatch_trace_context": lambda: {},
         },
@@ -667,12 +629,18 @@ def test_concurrent_demotion_cannot_empty_the_platform(
     """
     sessions = concurrent_sessions(database_engine)
     first_id, _token = open_account(
-        sessions, email=ADMIN_EMAIL, display_name="First", password="correct-horse",
+        sessions,
+        email=ADMIN_EMAIL,
+        display_name="First",
+        password="correct-horse",
         roles=ADMIN_ROLES,
     )
     second_id, _token = open_account(
-        sessions, email="second-admin@example.com", display_name="Second",
-        password="correct-horse", roles=ADMIN_ROLES,
+        sessions,
+        email="second-admin@example.com",
+        display_name="Second",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
     )
     for round_index in range(3):
         if round_index:
@@ -745,16 +713,25 @@ def test_a_combined_update_and_a_roles_only_update_do_not_deadlock(
         platform_roles=frozenset({"admin", "member"}),
     )
     first_id, _token = open_account(
-        sessions, email=ADMIN_EMAIL, display_name="First", password="correct-horse",
+        sessions,
+        email=ADMIN_EMAIL,
+        display_name="First",
+        password="correct-horse",
         roles=ADMIN_ROLES,
     )
     second_id, _token = open_account(
-        sessions, email="second-admin@example.com", display_name="Second",
-        password="correct-horse", roles=ADMIN_ROLES,
+        sessions,
+        email="second-admin@example.com",
+        display_name="Second",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
     )
     third_id, _token = open_account(
-        sessions, email="third-admin@example.com", display_name="Third",
-        password="correct-horse", roles=ADMIN_ROLES,
+        sessions,
+        email="third-admin@example.com",
+        display_name="Third",
+        password="correct-horse",
+        roles=ADMIN_ROLES,
     )
     # The held row is the largest id: the roles-only request then locks every
     # other administrator before it reaches the row it waits for.
@@ -786,9 +763,7 @@ def test_a_combined_update_and_a_roles_only_update_do_not_deadlock(
         target=apply, args=("combined", first_id), kwargs={"combined": True}
     )
     try:
-        holder.scalar(
-            select(UserProfile).where(UserProfile.id == held_id).with_for_update()
-        )
+        holder.scalar(select(UserProfile).where(UserProfile.id == held_id).with_for_update())
         roles_thread.start()
         wait_for_lock_waits(database_engine, expected=1)
         combined_thread.start()
@@ -849,9 +824,7 @@ def test_concurrent_reservations_of_one_key_replay_one_reservation(
     with sessions() as session:
         rows = list(
             session.scalars(
-                select(TokenReservation).where(
-                    TokenReservation.idempotency_scope == "run:race"
-                )
+                select(TokenReservation).where(TokenReservation.idempotency_scope == "run:race")
             )
         )
         account = session.get(UserTokenAccount, user_id)

@@ -91,6 +91,7 @@ class Operation:
     def method_name(self) -> str:
         return self.segments[-1]
 
+
 @dataclass
 class SubClient:
     name: str
@@ -173,9 +174,7 @@ def _relative_path(path: str, prefix: str, *, where: str) -> str:
     silently wrong URL.
     """
     if not path.startswith(prefix):
-        raise GenerationError(
-            f"{where}: {path!r} is outside the declared API prefix {prefix!r}"
-        )
+        raise GenerationError(f"{where}: {path!r} is outside the declared API prefix {prefix!r}")
     relative = path[len(prefix) :]
     return relative if relative.startswith("/") else f"/{relative}"
 
@@ -185,7 +184,12 @@ def python_type(schema: Mapping[str, Any], shared: Mapping[str, str], *, where: 
     if "$ref" in schema:
         name = ref_name(schema["$ref"])
         return shared.get(name, model_name(name))
-    variants = schema.get("anyOf")
+    if "const" in schema:
+        constant = schema["const"]
+        if constant is not None and not isinstance(constant, (str, int, bool)):
+            raise GenerationError(f"{where}: unsupported literal value {constant!r}")
+        return f"Literal[{constant!r}]"
+    variants = schema.get("anyOf", schema.get("oneOf"))
     if variants is not None:
         nullable = any(variant.get("type") == "null" for variant in variants)
         rendered = [
@@ -194,8 +198,17 @@ def python_type(schema: Mapping[str, Any], shared: Mapping[str, str], *, where: 
             if variant.get("type") != "null"
         ]
         joined = " | ".join(dict.fromkeys(rendered)) if rendered else "object"
-        return f"{joined} | None" if nullable else joined
+        annotation = f"{joined} | None" if nullable else joined
+        discriminator = schema.get("discriminator")
+        if discriminator is not None:
+            property_name = discriminator.get("propertyName")
+            if not isinstance(property_name, str) or not property_name:
+                raise GenerationError(f"{where}: a discriminator requires a property name")
+            return f"Annotated[{annotation}, Field(discriminator={property_name!r})]"
+        return annotation
     kind = schema.get("type")
+    if kind is None and set(schema) <= {"title", "description", "default", "examples"}:
+        return "object"
     if kind == "array":
         return f"list[{python_type(schema.get('items', {}), shared, where=where)}]"
     if kind == "integer":
@@ -214,6 +227,9 @@ def python_type(schema: Mapping[str, Any], shared: Mapping[str, str], *, where: 
     if kind == "object":
         if "properties" in schema:
             raise GenerationError(f"{where}: inline object schemas must become component models")
+        value_schema = schema.get("additionalProperties")
+        if isinstance(value_schema, dict):
+            return f"dict[str, {python_type(value_schema, shared, where=where)}]"
         return "dict[str, object]"
     raise GenerationError(f"{where}: unsupported schema {dict(schema)}")
 
@@ -234,9 +250,7 @@ def render_default(value: Any) -> str:
     raise GenerationError(f"unsupported default value {value!r}")
 
 
-def build_parameter(
-    raw: Mapping[str, Any], shared: Mapping[str, str], *, where: str
-) -> Parameter:
+def build_parameter(raw: Mapping[str, Any], shared: Mapping[str, str], *, where: str) -> Parameter:
     annotation = python_type(raw["schema"], shared, where=f"{where} parameter {raw['name']}")
     if raw.get("required", False):
         return Parameter(name=raw["name"], annotation=annotation, default=None)
@@ -264,6 +278,13 @@ def response_shape(
     success = next((code for code in SUCCESS_CODES if code in responses), None)
     if success is None:
         return "none", None
+    stream = responses[success].get("content", {}).get("text/event-stream")
+    if stream is not None:
+        schema = stream.get("schema", {})
+        if "$ref" not in schema:
+            raise GenerationError(f"{where}: SSE events require a component model")
+        name = ref_name(schema["$ref"])
+        return "stream", shared.get(name, model_name(name))
     schema = json_schema_of(responses[success])
     if schema is None:
         raise GenerationError(
@@ -286,14 +307,10 @@ def response_shape(
 
 def is_nullable(schema: Mapping[str, Any]) -> bool:
     variants = schema.get("anyOf")
-    return isinstance(variants, list) and any(
-        variant.get("type") == "null" for variant in variants
-    )
+    return isinstance(variants, list) and any(variant.get("type") == "null" for variant in variants)
 
 
-def body_dump_expression(
-    model: str, schemas: Mapping[str, Any], *, where: str
-) -> str:
+def body_dump_expression(model: str, schemas: Mapping[str, Any], *, where: str) -> str:
     """Serialize one request body: optional fields are omitted, never nulled.
 
     An absent optional field takes the server-side default, while an explicit
@@ -426,7 +443,9 @@ def order_models(models: Mapping[str, Mapping[str, Any]], shared: Mapping[str, s
             if schema_references(models[name]) - emitted <= set(shared) | emitted
         ]
         if not ready:
-            raise GenerationError(f"the models {remaining} form a reference cycle")
+            # Recursive JSON values use Pydantic's public forward-reference support.
+            ordered.extend(remaining)
+            break
         for name in ready:
             ordered.append(name)
             emitted.add(name)
@@ -511,13 +530,33 @@ def render_models(
         for field, value in properties.items():
             annotation = python_type(value, shared, where=f"{name}.{field}")
             if field in required and "default" not in value:
-                writer.line(f"    {field}: {annotation}")
+                if "discriminator" in value:
+                    variants = value.get("oneOf", value.get("anyOf", []))
+                    writer.line(f"    {field}: Annotated[")
+                    for variant_index, variant in enumerate(variants):
+                        variant_type = python_type(variant, shared, where=f"{name}.{field}")
+                        prefix = "        " if variant_index == 0 else "        | "
+                        suffix = "," if variant_index == len(variants) - 1 else ""
+                        writer.line(f"{prefix}{variant_type}{suffix}")
+                    property_name = value["discriminator"]["propertyName"]
+                    writer.line(f"        Field(discriminator={property_name!r}),")
+                    writer.line("    ]")
+                else:
+                    writer.line(f"    {field}: {annotation}")
                 continue
             default = value.get("default")
             if default is None and not annotation.endswith("None"):
                 annotation = f"{annotation} | None"
             writer.line(f"    {field}: {annotation} = {render_default(default)}")
     return writer.lines
+
+
+def query_variable(operation: Operation) -> str:
+    names = {item.name for item in (*operation.path_params, *operation.query_params)}
+    name = "query"
+    while name in names:
+        name = "_" + name
+    return name
 
 
 def render_request_call(operation: Operation, indent: int) -> list[str]:
@@ -527,7 +566,9 @@ def render_request_call(operation: Operation, indent: int) -> list[str]:
     path_literal = f'f"{{self._channel.api_root}}{operation.path}"'
     arguments = [("method", f'"{operation.method}"'), ("path", path_literal)]
     if operation.query_params:
-        arguments.append(("query", "query"))
+        arguments.append(("query", query_variable(operation)))
+    if operation.response_kind == "stream":
+        arguments.append(("stream", "True"))
     if operation.body_model is not None:
         arguments.append(("body", operation.body_dump))
     if operation.binary_direction == "request":
@@ -559,9 +600,10 @@ def render_signature(operation: Operation) -> list[str]:
         keyword.append("content_type: str")
     returns = {
         "model": operation.response_model or "None",
-        "array": f"list[{operation.response_model}]",
+        "array": f"builtins.list[{operation.response_model}]",
         "binary": "bytes",
         "none": "None",
+        "stream": f"AsyncIterator[{operation.response_model}]",
     }[operation.response_kind]
     parts = ["self", *positional]
     if keyword:
@@ -586,7 +628,7 @@ def render_method(operation: Operation) -> list[str]:
     if operation.description:
         writer.line(f'        """{sanitize(operation.description)}"""')
     if operation.query_params:
-        writer.line("        query = {")
+        writer.line(f"        {query_variable(operation)} = {{")
         writer.line("            name: str(value)")
         writer.line("            for name, value in (")
         for parameter in operation.query_params:
@@ -594,6 +636,13 @@ def render_method(operation: Operation) -> list[str]:
         writer.line("            )")
         writer.line("            if value is not None")
         writer.line("        }")
+    if operation.response_kind == "stream":
+        writer.line("        async for chunk in self._channel.transport.stream(")
+        writer.extend(render_request_call(operation, REQUEST_INDENT))
+        writer.line("            self._channel.context(),")
+        writer.line("        ):")
+        writer.line(f"            yield {operation.response_model}.model_validate(chunk.data)")
+        return writer.lines
     assignment = "" if operation.response_kind == "none" else "response = "
     writer.line(f"        {assignment}await self._channel.transport.send(")
     writer.extend(render_request_call(operation, REQUEST_INDENT))
@@ -676,9 +725,7 @@ def render_group_module(
         for field, value in schema.get("properties", {}).items()
     ]
     annotations = [
-        annotation
-        for operation in operations
-        for annotation in operation_annotations(operation)
+        annotation for operation in operations for annotation in operation_annotations(operation)
     ]
     uses_uuid = any("UUID" in annotation for annotation in (*annotations, *model_annotations))
     uses_datetime = any(
@@ -690,11 +737,7 @@ def render_group_module(
         for operation in operations
     )
     shared_used = sorted(
-        {
-            name
-            for name in (*annotations, *model_annotations)
-            if name is not None and name in shared
-        }
+        {name for name in (*annotations, *model_annotations) if name is not None and name in shared}
     )
 
     writer = Writer()
@@ -710,13 +753,25 @@ def render_group_module(
     writer.blank()
     writer.line("from __future__ import annotations")
     writer.blank()
+    if uses_array:
+        writer.line("import builtins")
+    if any(operation.response_kind == "stream" for operation in operations):
+        writer.line("from collections.abc import AsyncIterator")
     if uses_datetime:
         writer.line("from datetime import datetime")
+    typing_imports = []
+    if any("Annotated[" in annotation for annotation in (*annotations, *model_annotations)):
+        typing_imports.append("Annotated")
+    if any("Literal[" in annotation for annotation in (*annotations, *model_annotations)):
+        typing_imports.append("Literal")
+    if typing_imports:
+        writer.line(f"from typing import {', '.join(typing_imports)}")
     if uses_uuid:
         writer.line("from uuid import UUID")
     if uses_datetime or uses_uuid:
         writer.blank()
-    writer.line("from pydantic import BaseModel")
+    pydantic_imports = "BaseModel, Field" if "Annotated" in typing_imports else "BaseModel"
+    writer.line(f"from pydantic import {pydantic_imports}")
     writer.blank()
     contract_imports = {"GroupChannel", "TransportRequest"}
     if uses_array:
@@ -735,6 +790,16 @@ def render_group_module(
         writer.blank()
         writer.blank()
         writer.extend(render_models(ordered, models, shared))
+        positions = {name: index for index, name in enumerate(ordered)}
+        if any(
+            positions.get(reference, -1) >= positions[name]
+            for name in ordered
+            for reference in schema_references(models[name])
+        ):
+            writer.blank()
+            writer.blank()
+            for name in ordered:
+                writer.line(f"{model_name(name)}.model_rebuild()")
     for node in classes:
         writer.blank()
         writer.blank()

@@ -6,10 +6,7 @@ from temporalio.client import Client, WorkflowExecutionStatus
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 
-from opsmesh.temporal.dispatch.contracts import (
-    DispatchOperation,
-    DispatchRequest,
-)
+from opsmesh.temporal.dispatch.contracts import DispatchOperation, DispatchRequest
 
 DEFAULT_RPC_TIMEOUT = timedelta(seconds=10)
 

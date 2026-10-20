@@ -66,9 +66,7 @@ def version_diff(
     reader: ResourceReader,
 ) -> VersionDiff:
     """Compare two versions by digest and size; contents are never merged here."""
-    source = read_version(
-        session, file_id=file_id, version_number=from_version, reader=reader
-    )
+    source = read_version(session, file_id=file_id, version_number=from_version, reader=reader)
     target = read_version(session, file_id=file_id, version_number=to_version, reader=reader)
     return VersionDiff(
         from_version=source.version,

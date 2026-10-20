@@ -10,22 +10,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Literal
 
 import yaml
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from opsmesh.capabilities.packages import package_digest
-from opsmesh.capabilities.validation import (
-    validate_parameter_schema,
-    validate_secret_slots,
-)
+from opsmesh.capabilities.validation import validate_parameter_schema
 from opsmesh.shared.errors import InvalidArgumentError
 
 MAX_FRONTMATTER_BYTES = 65_536
@@ -50,7 +40,6 @@ class SkillConfiguration(BaseModel):
     frontmatter: SkillFrontmatter
     instructions: str = Field(min_length=1)
     parameters_schema: dict[str, object] = Field(default_factory=dict)
-    secret_slots: list[str] = Field(default_factory=list)
 
     @field_validator("instructions")
     @classmethod
@@ -63,11 +52,6 @@ class SkillConfiguration(BaseModel):
     @classmethod
     def _parameters_schema(cls, value: dict[str, object]) -> dict[str, object]:
         return validate_parameter_schema(value)
-
-    @field_validator("secret_slots")
-    @classmethod
-    def _secret_slots(cls, value: list[str]) -> list[str]:
-        return validate_secret_slots(value)
 
 
 def validated_configuration(configuration: object) -> dict[str, object]:
@@ -93,9 +77,7 @@ def parse_skill_package(
     configuration through :func:`validated_configuration`.
     """
     markdown_paths = [
-        path
-        for path in files
-        if path == SKILL_MARKDOWN or path.endswith(f"/{SKILL_MARKDOWN}")
+        path for path in files if path == SKILL_MARKDOWN or path.endswith(f"/{SKILL_MARKDOWN}")
     ]
     if len(markdown_paths) != 1:
         raise InvalidArgumentError("A skill package must contain exactly one SKILL.md")
@@ -127,7 +109,6 @@ def parse_skill_package(
         "frontmatter": frontmatter,
         "instructions": instructions,
         "parameters_schema": {},
-        "secret_slots": [],
     }
     return configuration, resources
 
@@ -135,9 +116,7 @@ def parse_skill_package(
 def skill_metadata(files: Mapping[str, bytes]) -> tuple[str, str]:
     """The name and description one skill package declares in its SKILL.md."""
     markdown_paths = [
-        path
-        for path in files
-        if path == SKILL_MARKDOWN or path.endswith(f"/{SKILL_MARKDOWN}")
+        path for path in files if path == SKILL_MARKDOWN or path.endswith(f"/{SKILL_MARKDOWN}")
     ]
     if len(markdown_paths) != 1:
         raise InvalidArgumentError("A skill package must contain exactly one SKILL.md")
@@ -187,14 +166,3 @@ def _media_type(path: str) -> str:
     if re.search(r"\.(png|jpe?g|gif|webp)$", path):
         return "image/*"
     return "application/octet-stream"
-
-
-class SkillCreateRequest(BaseModel):
-    """Import one skill definition; its configuration comes from the package."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str = Field(min_length=1, max_length=100)
-    name: str = Field(min_length=1, max_length=160)
-    description: str = Field(default="", max_length=2000)
-    visibility: Literal["private", "public"] = "private"

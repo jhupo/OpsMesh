@@ -8,20 +8,16 @@ unsafe packages, malformed manifests and dependency cycles.
 from __future__ import annotations
 
 import io
-import json
 import zipfile
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from opsmesh.capabilities.experts.schemas import ExpertConfiguration
 from opsmesh.capabilities.mcp.schemas import McpConfiguration
 from opsmesh.capabilities.packages import (
     MAX_PACKAGE_BYTES,
     UnsafePackageError,
     build_package_archive,
-    directory_digest,
     package_digest,
     read_archive,
 )
@@ -32,7 +28,6 @@ from opsmesh.capabilities.schemas import (
     validated_extension_configuration,
 )
 from opsmesh.capabilities.skills.schemas import parse_skill_package, validated_configuration
-from opsmesh.capabilities.teams.schemas import TeamConfiguration
 from opsmesh.capabilities.tools.schemas import ToolConfiguration
 from opsmesh.capabilities.validation import (
     channel_intake_package,
@@ -43,7 +38,6 @@ from opsmesh.capabilities.validation import (
     validate_key,
     validate_parameter_schema,
     validate_resource_manifest,
-    validate_secret_slots,
     version_digest,
 )
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError
@@ -55,17 +49,6 @@ def build_zip(entries: dict[str, bytes]) -> bytes:
         for name, payload in entries.items():
             archive.writestr(name, payload)
     return buffer.getvalue()
-
-
-def expert_configuration() -> dict[str, object]:
-    return {
-        "instructions": "Implement carefully.",
-        "prompt": "Be precise.",
-        "guardrails": ["no-secrets"],
-        "capability_slots": [{"slot": "file-tools", "kind": "tool"}],
-        "parameters_schema": {"type": "object", "properties": {}},
-        "secret_slots": [],
-    }
 
 
 class TestReadArchive:
@@ -139,8 +122,8 @@ class TestManifestValidation:
         with pytest.raises(InvalidArgumentError):
             validate_dependencies(
                 [
-                    {"type": "expert", "key": "x", "version": 1},
-                    {"type": "expert", "key": "x", "version": 1},
+                    {"type": "tool", "key": "x", "version": 1},
+                    {"type": "tool", "key": "x", "version": 1},
                 ]
             )
 
@@ -152,9 +135,11 @@ class TestManifestValidation:
         with pytest.raises(InvalidArgumentError):
             validate_parameter_schema({"type": "not-a-type"})
 
-    def test_secret_slots_refuse_duplicates(self) -> None:
+    def test_parameter_schemas_refuse_remote_references(self) -> None:
         with pytest.raises(InvalidArgumentError):
-            validate_secret_slots(["key", "key"])
+            validate_parameter_schema({"$ref": "https://example.com/schema.json"})
+        with pytest.raises(InvalidArgumentError):
+            validate_parameter_schema({"properties": {"a": {"$dynamicRef": "schema.json"}}})
 
     def test_key_validation(self) -> None:
         assert validate_key("coding") == "coding"
@@ -169,7 +154,7 @@ class TestManifestValidation:
 
     def test_version_digest_is_stable_and_content_bound(self) -> None:
         first = version_digest(
-            capability_type="expert",
+            capability_type="tool",
             configuration={"instructions": "x"},
             resource_manifest=[],
             dependencies=[],
@@ -177,7 +162,7 @@ class TestManifestValidation:
             package_digest=None,
         )
         again = version_digest(
-            capability_type="expert",
+            capability_type="tool",
             configuration={"instructions": "x"},
             resource_manifest=[],
             dependencies=[],
@@ -185,7 +170,7 @@ class TestManifestValidation:
             package_digest=None,
         )
         changed = version_digest(
-            capability_type="expert",
+            capability_type="tool",
             configuration={"instructions": "y"},
             resource_manifest=[],
             dependencies=[],
@@ -197,56 +182,6 @@ class TestManifestValidation:
 
 
 class TestTypeContracts:
-    def test_expert_configuration_requires_instructions(self) -> None:
-        with pytest.raises(ValidationError):
-            ExpertConfiguration.model_validate({"instructions": "  "})
-
-    def test_expert_configuration_refuses_duplicate_slots(self) -> None:
-        payload = expert_configuration()
-        payload["capability_slots"] = [
-            {"slot": "s", "kind": "tool"},
-            {"slot": "s", "kind": "mcp"},
-        ]
-        with pytest.raises(ValidationError):
-            ExpertConfiguration.model_validate(payload)
-
-    def test_team_configuration_requires_reachable_entrypoint(self) -> None:
-        with pytest.raises(ValidationError):
-            TeamConfiguration.model_validate(
-                {
-                    "members": [{"slot": "a", "expert_key": "coding", "role": "lead"}],
-                    "entrypoint": "missing",
-                }
-            )
-
-    def test_team_configuration_refuses_handoff_cycle(self) -> None:
-        with pytest.raises(ValidationError):
-            TeamConfiguration.model_validate(
-                {
-                    "members": [
-                        {"slot": "a", "expert_key": "x", "role": "one"},
-                        {"slot": "b", "expert_key": "y", "role": "two"},
-                    ],
-                    "entrypoint": "a",
-                    "handoffs": [
-                        {"source": "a", "target": "b"},
-                        {"source": "b", "target": "a"},
-                    ],
-                }
-            )
-
-    def test_team_configuration_refuses_duplicate_roles(self) -> None:
-        with pytest.raises(ValidationError):
-            TeamConfiguration.model_validate(
-                {
-                    "members": [
-                        {"slot": "a", "expert_key": "x", "role": "same"},
-                        {"slot": "b", "expert_key": "y", "role": "same"},
-                    ],
-                    "entrypoint": "a",
-                }
-            )
-
     def test_mcp_remote_requires_endpoint_and_refuses_command(self) -> None:
         with pytest.raises(ValidationError):
             McpConfiguration.model_validate({"transport": "remote"})
@@ -259,13 +194,13 @@ class TestTypeContracts:
         with pytest.raises(ValidationError):
             McpConfiguration.model_validate({"transport": "stdio"})
 
-    def test_mcp_environment_secret_reference_must_be_declared(self) -> None:
+    def test_mcp_secret_slots_are_not_supported(self) -> None:
         with pytest.raises(ValidationError):
             McpConfiguration.model_validate(
                 {
                     "transport": "stdio",
                     "command": ["server"],
-                    "environment": {"API_KEY": "${undeclared}"},
+                    "secret_slots": ["key"],
                 }
             )
 
@@ -346,7 +281,6 @@ def channel_configuration() -> dict[str, object]:
             {"name": "receive", "entrypoint": "wecom.adapter:receive"},
             {"name": "send", "entrypoint": "wecom.adapter:send"},
         ],
-        "secret_slots": ["wecom-secret"],
     }
 
 
@@ -357,7 +291,7 @@ def extension_configuration() -> dict[str, object]:
                 "export_id": "summarize",
                 "description": "Summarize one run.",
                 "effects": ["read"],
-                "permissions": ["governance.audit.append"],
+                "permissions": ["platform.audit.append"],
             }
         ],
         "hooks": [
@@ -378,7 +312,7 @@ def extension_configuration() -> dict[str, object]:
                 "idempotency_key_fields": ["run_id"],
             }
         ],
-        "permissions": ["governance.audit.append"],
+        "permissions": ["platform.audit.append"],
     }
 
 
@@ -519,7 +453,7 @@ class TestExtensionContracts:
             resource_manifest=manifest,
             flow_templates=[],
         )
-        assert intake.configuration["permissions"] == ["governance.audit.append"]
+        assert intake.configuration["permissions"] == ["platform.audit.append"]
         with pytest.raises(InvalidArgumentError):
             extension_intake_package(
                 {"ext/main.py": b"changed"},
@@ -533,10 +467,12 @@ class TestDeterministicArchives:
     def test_same_content_produces_the_same_digest(self) -> None:
         files = {"b.txt": b"two", "a.txt": b"one"}
         assert build_package_archive(files) == build_package_archive(files)
-        assert directory_digest(files) == directory_digest({"a.txt": b"one", "b.txt": b"two"})
+        assert build_package_archive(files) == build_package_archive(
+            {"a.txt": b"one", "b.txt": b"two"}
+        )
 
     def test_changed_content_changes_the_digest(self) -> None:
-        assert directory_digest({"a.txt": b"one"}) != directory_digest({"a.txt": b"two"})
+        assert build_package_archive({"a.txt": b"one"}) != build_package_archive({"a.txt": b"two"})
 
 
 class TestPublishNeverExecutes:
@@ -568,12 +504,3 @@ class TestPublishNeverExecutes:
         ]
         verify_declared_resources(files, manifest)
         assert configuration["entrypoint"] == "boom.tools:run"
-
-    def test_bundled_release_index_parses(self) -> None:
-        root = Path(__file__).resolve().parents[2] / "bundled"
-        index = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        from opsmesh.capabilities.provisioning import read_release_index
-
-        release, entries = read_release_index(root)
-        assert release == index["release"]
-        assert len(entries) == len(index["packages"])

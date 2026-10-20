@@ -53,10 +53,11 @@ class Deployment(ABC):
                 self.prepare(target, manifest)
                 atomic_write(target / ".prepared", manifest.commit)
             return target
+        architecture = {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]
         record = next(
             file
             for file in manifest.files
-            if file.name == f"opsmesh-server-{manifest.tag}-linux-amd64.tar.gz"
+            if file.name == f"opsmesh-server-{manifest.tag}-linux-{architecture}.tar.gz"
         )
         archive = source.download_file(manifest, record, cache)
         staging = self.root / "releases" / f".{manifest.tag}-{manifest.commit}.staging"
@@ -80,8 +81,8 @@ class Deployment(ABC):
             f"OPSMESH_BUILD_COMMIT={manifest.commit}\n",
             mode=0o644,
         )
-        # The root updater uses UMask=0077. Release code is public and must remain readable
-        # by the unprivileged API/worker; secrets and writable state stay outside this tree.
+        # Release code is public and must remain readable by the unprivileged API/worker;
+        # secrets and writable state stay outside this tree.
         staging.chmod(0o755)
         staging.parent.chmod(0o755)
         for path in staging.rglob("*"):
@@ -137,9 +138,9 @@ class ComposeDeployment(Deployment):
             "docker",
             "compose",
             "--project-name",
-            "opsmesh",
+            self.installation.compose_project,
             "--project-directory",
-            str(self.root),
+            str(directory / "deploy/server"),
             "--env-file",
             str(self.root / ".env"),
             "--env-file",
@@ -203,7 +204,7 @@ class ComposeDeployment(Deployment):
                 "python",
                 "api",
                 "-m",
-                "opsmesh.delivery",
+                "opsmesh.bootstrap.server_cli",
                 "--directory",
                 "/app",
                 command,
@@ -215,6 +216,9 @@ class ComposeDeployment(Deployment):
         run_command(self.command(self.root / "current") + ["stop", "api", "worker"])
 
     def start(self, manifest: ReleaseManifest) -> None:
+        from opsmesh_operator.temporal_backup import TemporalBackup
+
+        TemporalBackup(self.installation).start()
         run_command(
             self.command(self.installation.release_dir(manifest))
             + ["up", "-d", "--no-deps", "--wait", "api", "worker"],
@@ -245,6 +249,10 @@ class SystemdDeployment(Deployment):
         run_command(["systemctl", "stop", "opsmesh-api", "opsmesh-worker"])
 
     def start(self, manifest: ReleaseManifest) -> None:
+        if self.installation.temporal_service_unit:
+            from opsmesh_operator.temporal_backup import TemporalBackup
+
+            TemporalBackup(self.installation).start()
         run_command(["systemctl", "start", "opsmesh-api", "opsmesh-worker"])
 
     def bootstrap_admin(self, manifest: ReleaseManifest) -> str:

@@ -260,6 +260,21 @@ def test_sse_parser_handles_comments_and_multiline_data() -> None:
     assert parse_sse_event([": only a comment"]) is None
 
 
+@pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ConnectTimeout])
+def test_stream_connection_failure_maps_to_sdk_transport_error(failure: type[Exception]) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise failure("Connection failed before stream headers")
+
+    async def read() -> None:
+        async with mock_transport(handler) as client:
+            transport = HttpTransport("https://api.invalid", client=client)
+            request = TransportRequest(method="GET", path="/api/v1/events", stream=True)
+            _ = [chunk async for chunk in transport.stream(request, TransportContext())]
+
+    with pytest.raises(TransportError):
+        asyncio.run(read())
+
+
 def test_stream_rejection_maps_to_transport_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"error": {"code": "unavailable", "message": "later"}})
@@ -300,9 +315,8 @@ def test_server_error_codes_map_to_one_typed_error_per_failure_class() -> None:
     assert error_for_code("invalid_avatar") is ValidationError
     assert error_for_code("duplicate_user") is ConflictError
     assert error_for_code("idempotency_key_reused") is ConflictError
-    assert error_for_code("budget_revision") is ConflictError
     assert error_for_code("quota_exceeded") is RateLimitError
-    assert error_for_code("budget_exceeded") is RateLimitError
+    assert error_for_code("capacity_exceeded") is RateLimitError
     assert error_for_code("service_unavailable") is TransportError
     assert error_for_code("a_future_code") is OpsMeshError
 

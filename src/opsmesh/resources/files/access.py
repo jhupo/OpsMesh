@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from opsmesh.resources.files.models import (
     FILE_PERMISSION_DELETE,
     FILE_PERMISSION_READ,
+    FILE_PERMISSION_USE_IN_EXECUTION,
     FILE_PERMISSION_WRITE,
     FILE_PERMISSIONS,
     ResourceFile,
@@ -44,12 +45,11 @@ class ScopeRef:
     membership checks, and the default refuses until that assembly.
     """
 
-    workspace_id: UUID | None = None
-    project_id: UUID | None = None
+    configuration_id: UUID | None = None
 
     @property
     def is_user_scope(self) -> bool:
-        return self.workspace_id is None and self.project_id is None
+        return self.configuration_id is None
 
 
 @runtime_checkable
@@ -82,8 +82,7 @@ class RejectingScopeAdmission:
         raise ForbiddenError(
             "The resource scope is not admitted",
             details={
-                "workspace_id": str(scope.workspace_id) if scope.workspace_id else None,
-                "project_id": str(scope.project_id) if scope.project_id else None,
+                "configuration_id": str(scope.configuration_id) if scope.configuration_id else None,
             },
         )
 
@@ -141,6 +140,17 @@ def authorize_read(
     raise ForbiddenError("The reader may not access this file")
 
 
+def authorize_execution(
+    file: ResourceFile, *, reader: ResourceReader, grant: ResourceFileGrant | None
+) -> None:
+    """Execution permission is independent of ordinary content read access."""
+    if file.owner_user_id == reader.user_id:
+        return
+    if grant is not None and FILE_PERMISSION_USE_IN_EXECUTION in grant.permissions:
+        return
+    raise ForbiddenError("The reader may not use this file in execution")
+
+
 def authorize_write(
     file: ResourceFile, *, reader: ResourceReader, grant: ResourceFileGrant | None
 ) -> None:
@@ -176,6 +186,7 @@ __all__ = [
     "ScopeRef",
     "StorageQuotaLedger",
     "authorize_delete",
+    "authorize_execution",
     "authorize_manage",
     "authorize_read",
     "authorize_write",

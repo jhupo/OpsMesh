@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
+from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
+from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.redaction import (
     REDACTED_VALUE,
-    contains_embedded_secret,
+    RedactionRules,
     is_sensitive_payload_key,
+    is_sensitive_payload_value,
     redact_sensitive_payload,
     redact_sensitive_text,
+    redact_text_fragments,
 )
-from opsmesh.shared.security.secrets import SecretCipher
 
 TEST_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
 ROTATED_KEY = "Kk7BPplGjc33Pq4FTT7HPYmkukUWuV8EuxFVTMwAEmA="
@@ -56,7 +61,8 @@ def test_sensitive_keys_are_redacted_recursively() -> None:
             "api_key": "sk-live-123",
             "nested": {"password": "hunter2", "safe": "value"},
             "items": [{"token": "abc"}],
-        }
+        },
+        rules=PLATFORM_REDACTION,
     )
     assert redacted["api_key"] == REDACTED_VALUE
     assert redacted["nested"] == {"password": REDACTED_VALUE, "safe": "value"}
@@ -68,12 +74,12 @@ def test_sensitive_keys_are_redacted_recursively() -> None:
     ["apiKey", "client_secret", "authorization", "session_id", "storage_key"],
 )
 def test_sensitive_key_detection(key: str) -> None:
-    assert is_sensitive_payload_key(key)
+    assert is_sensitive_payload_key(key, rules=PLATFORM_REDACTION)
 
 
 @pytest.mark.parametrize("key", ["workflow_id", "attempt", "display_name"])
 def test_plain_keys_are_not_sensitive(key: str) -> None:
-    assert not is_sensitive_payload_key(key)
+    assert not is_sensitive_payload_key(key, rules=PLATFORM_REDACTION)
 
 
 @pytest.mark.parametrize(
@@ -81,9 +87,32 @@ def test_plain_keys_are_not_sensitive(key: str) -> None:
     ["sk-abcdef123456", "Bearer abcdef123456", "AKIAABCDEFGHIJKLMNOP"],
 )
 def test_sensitive_values_are_detected(value: str) -> None:
-    assert contains_embedded_secret(value)
-    assert redact_sensitive_text(value) == REDACTED_VALUE
+    assert is_sensitive_payload_value(value, rules=PLATFORM_REDACTION)
+    assert redact_sensitive_text(value, rules=PLATFORM_REDACTION) == REDACTED_VALUE
 
 
 def test_plain_values_are_preserved() -> None:
-    assert redact_sensitive_text("run-123") == "run-123"
+    assert redact_sensitive_text("run-123", rules=PLATFORM_REDACTION) == "run-123"
+
+
+def test_redaction_uses_only_supplied_rules_and_does_not_mutate_input() -> None:
+    payload = {"password": "visible", "caseNumber": "C42", "nested": [{"text": "C42"}]}
+    rules = RedactionRules(
+        exact_keys=frozenset({"case_number"}),
+        text_patterns=(re.compile(r"C[0-9]+"),),
+    )
+    assert redact_sensitive_payload(payload, rules=rules) == {
+        "password": "visible",
+        "caseNumber": REDACTED_VALUE,
+        "nested": [{"text": REDACTED_VALUE}],
+    }
+    assert redact_sensitive_payload(payload, rules=RedactionRules()) == payload
+    assert payload["caseNumber"] == "C42"
+    assert redact_text_fragments("case C42 closed", rules=rules) == "case [redacted] closed"
+
+
+def test_key_parts_are_supplied_by_caller_and_match_complete_segments() -> None:
+    rules = RedactionRules(key_parts=frozenset({"private_code"}))
+    assert is_sensitive_payload_key("customerPrivateCodeValue", rules=rules)
+    assert not is_sensitive_payload_key("customerPrivateCodes", rules=rules)
+    assert not is_sensitive_payload_key("api_key", rules=rules)

@@ -1,427 +1,176 @@
-"""Destructive acceptance confined to a fresh, disposable GitHub-hosted Linux VM."""
+"""Exercise an attested V4 release on a disposable Linux Actions host.
+
+First-version acceptance installs from an empty database. It never imports a
+pre-V4 installation or treats an old release as a supported schema predecessor.
+"""
 
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import secrets
-import subprocess
-import tarfile
 import time
-from collections.abc import Callable
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
 from uuid import uuid4
 
 import httpx
-import psycopg
-from dotenv import dotenv_values
-from opsmesh_operator.backups import postgres_env
-from opsmesh_operator.commands import run_command
-from opsmesh_operator.contracts import ReleaseManifest
+from opsmesh_operator.backups import BackupStore
+from opsmesh_operator.cli import build_argument_parser, execute
+from opsmesh_operator.deployments import deployment_for
 from opsmesh_operator.files import atomic_write
 from opsmesh_operator.installation import Installation
-from opsmesh_operator.releases import ReleaseDownloader
-from psycopg import sql
-
-ROOT = Path("/opt/opsmesh-acceptance")
+from opsmesh_operator.installer import install
+from opsmesh_operator.releases_apply import change_admission
 
 
-def wait_for(predicate: Callable[[], bool], description: str, timeout: int = 900) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return
-        time.sleep(0.1)
-    raise TimeoutError(f"Acceptance timed out: {description}")
-
-
-class UnavailableReleaseHandler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        self.send_response(503)
-        self.end_headers()
-
-    def log_message(self, *_: object) -> None:
-        pass
-
-
-class ManagedDeliveryAcceptance:
-    def __init__(self, mode: str, tag: str, previous: str) -> None:
-        self.mode, self.tag, self.previous = mode, tag, previous
-        self.installation = Installation(root=ROOT, mode=mode)
-        self.cli = ROOT / "client/opsmesh"
-        self.environment = dict(os.environ)
-        self.database: dict[str, str] = {}
-
-    def command(self, *args: str) -> str:
-        result = subprocess.run(
-            [str(self.cli), "--root", str(ROOT), *args],
-            env=self.environment,
-            timeout=1800,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode:
-            # Public CLI errors are sanitized; never print command environments.
-            raise RuntimeError(f"Native CLI failed: {result.stderr[-2000:]}")
-        return result.stdout
-
-    def connect(self) -> psycopg.Connection:
-        return psycopg.connect(**self.database, autocommit=True)
-
-    def diagnostics(self) -> None:
-        record = ROOT / "downloads" / self.tag / "release-manifest.json"
-        if not record.is_file():
-            print("Installation diagnostics: release manifest has not been downloaded", flush=True)
-            return
-        manifest = ReleaseManifest.model_validate_json(record.read_bytes())
-        directory = self.installation.release_dir(manifest)
-        executable = directory / "opsmesh-server"
-        print(
-            f"Installation diagnostics: staged={directory.exists()}, "
-            f"prepared={(directory / '.prepared').exists()}, "
-            f"selected={(ROOT / 'current').exists()}",
-            flush=True,
-        )
-        if executable.exists():
-            for frozen in (False, True):
-                env = dict(os.environ)
-                if frozen:
-                    env["LD_LIBRARY_PATH"] = str(ROOT / "client/_internal")
-                result = subprocess.run(
-                    [str(executable), "check"],
-                    cwd=directory,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=60,
-                )
-                print(
-                    f"Server check with frozen_libraries={frozen}: exit={result.returncode}",
-                    flush=True,
-                )
-                print(result.stderr[-3000:], flush=True)
-
-    def install(self) -> None:
-        if ROOT.exists():
-            raise ValueError("ManagedDeliveryAcceptance refuses to reuse an installation directory")
-        ROOT.mkdir(mode=0o750)
-        # A temporary workflow token lets this disposable runner install the attested,
-        # unpublished candidate before publication. Public hosts require only the repository name.
-        release_token = os.environ["OPSMESH_RELEASE_TOKEN"]
-        atomic_write(ROOT / "updater.env", f"OPSMESH_RELEASE_TOKEN={release_token}\n")
-        source = ReleaseDownloader("jhupo/OpsMesh")
-        directory = ROOT / "client-download"
-        manifest = source.fetch_manifest(self.tag, directory)
-        record = next(
-            file
-            for file in manifest.files
-            if file.name == f"opsmesh-cli-{self.tag}-linux-amd64.tar.gz"
-        )
-        archive = source.download_file(manifest, record, directory)
-        with tarfile.open(archive) as package:
-            package.extractall(ROOT / "client", filter="data")
-        if self.mode == "systemd":
-            values = {
-                "OPSMESH_ROOT": str(ROOT),
-                "OPSMESH_ENVIRONMENT": "production",
-                "OPSMESH_DATABASE_URL": (
-                    f"postgresql+psycopg://opsmesh:{os.environ['ACCEPTANCE_POSTGRES_PASSWORD']}"
-                    "@127.0.0.1:5432/opsmesh"
-                ),
-                "OPSMESH_REDIS_URL": "redis://127.0.0.1:6379/0",
-                "OPSMESH_STORAGE_ROOT": str(ROOT / "data/storage"),
-                "OPSMESH_RELEASE_UPDATE_ENABLED": "true",
-                "OPSMESH_TEMPORAL_ADDRESS": "127.0.0.1:7233",
-                "OPSMESH_TEMPORAL_NAMESPACE": "default",
-                "OPSMESH_TRACING_ENABLED": "false",
-                "OPSMESH_OTEL_LOGS_ENABLED": "false",
-                "OPSMESH_ENABLE_API_DOCS": "false",
-                "OPSMESH_API_RATE_LIMIT_ENABLED": "true",
-                "OPSMESH_CORS_ORIGINS": '["https://acceptance.example.org"]',
-            }
-            for name in (
-                "INTERNAL_API_TOKEN",
-                "PLATFORM_ADMIN_TOKEN",
-                "TOKEN_HASH_PEPPER",
-                "CREDENTIAL_ENCRYPTION_SECRET",
-            ):
-                values[f"OPSMESH_{name}"] = secrets.token_hex(32)
-            atomic_write(
-                ROOT / ".env", "".join(f"{key}={value}\n" for key, value in values.items())
-            )
-        self.command(
-            "install",
-            "--version",
-            self.tag,
-            "--mode",
-            self.mode,
-            "--origin",
-            "https://acceptance.example.org",
-        )
-        settings = dotenv_values(ROOT / ".env")
-        self.environment["OPSMESH_PLATFORM_ADMIN_TOKEN"] = str(
-            settings["OPSMESH_PLATFORM_ADMIN_TOKEN"]
-        )
-        env = postgres_env(self.installation)
-        self.database = {
-            "host": env["PGHOST"],
-            "port": env["PGPORT"],
-            "user": env["PGUSER"],
-            "password": env["PGPASSWORD"],
-            "dbname": env["PGDATABASE"],
-        }
-        # Prevent automatic restart from racing fault inspection; recovery explicitly restarts it.
-        atomic_write(
-            Path("/etc/systemd/system/opsmesh-updater.service.d/acceptance.conf"),
-            "[Service]\nRestart=no\n",
-            mode=0o644,
-        )
-        run_command(["systemctl", "daemon-reload"])
-        with self.connect() as connection:
-            connection.execute("CREATE TABLE delivery_acceptance_canary (value text NOT NULL)")
-            connection.execute("INSERT INTO delivery_acceptance_canary VALUES ('before')")
-        artifact = ROOT / "data/storage/acceptance/canary.txt"
-        artifact.parent.mkdir(mode=0o2770)
-        artifact.write_text("before", encoding="utf-8")
-        os.chown(artifact.parent, 10001, 10001)
-        os.chown(artifact, 10001, 10001)
-        artifact.chmod(0o660)
-        self.assert_version(self.tag)
-        print(f"PASS {self.mode}: signed native CLI managed installation", flush=True)
-
-    def status(self, job_id: str) -> str:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT status FROM platform_update_jobs WHERE id=%s", (job_id,)
-            ).fetchone()
-        if row is None:
-            raise ValueError("Missing acceptance job")
-        return str(row[0])
-
-    def plan(self, tag: str, action: str) -> str:
-        result = json.loads(
-            self.command("backup", "create")
-            if action == "backup"
-            else self.command("update", action, "--version", tag, "--idempotency-key", uuid4().hex)
-        )
-        job_id = str(result["id"])
-        wait_for(lambda: self.status(job_id) in {"ready", "failed"}, "validated plan")
-        result = json.loads(self.command("update", "status", job_id))
-        if result["status"] != "ready":
-            raise RuntimeError(f"Plan failed: {result['error_code']}")
-        self.command("update", "apply", "--plan", job_id, "--fingerprint", result["plan_sha256"])
-        return job_id
-
-    def journal(self, job_id: str) -> dict:
-        path = ROOT / "updates" / f"{job_id}.json"
-        return json.loads(path.read_bytes()) if path.exists() else {}
-
-    def assert_version(self, tag: str) -> None:
-        result = json.loads(self.command("status"))
-        if result["tag"] != tag or self.installation.current().tag != tag:
-            raise AssertionError("HTTP version and deployed release must both match target")
-        with httpx.Client(timeout=10, trust_env=False) as client:
-            client.get(self.installation.health_url).raise_for_status()
-        if json.loads((ROOT / "updater/BUILD.json").read_bytes())["tag"] != self.tag:
-            raise AssertionError("Application update replaced independent updater")
-
-    def normal(self, tag: str, action: str) -> None:
-        job_id = self.plan(tag, action)
-        wait_for(
-            lambda: self.status(job_id) in {"succeeded", "failed", "recovery_required"},
-            "normal managed update",
-        )
-        if self.status(job_id) != "succeeded":
-            raise AssertionError(
-                f"Managed update failed: {self.status(job_id)}, {self.journal(job_id).get('phase')}"
-            )
-        self.assert_version(tag)
-        print(f"PASS {self.mode}: approved {action} to {tag}", flush=True)
-
-    def interrupted(self, strategy: str, *, action: str = "plan") -> None:
-        job_id = self.plan(self.tag, action)
-        wait_for(lambda: self.journal(job_id).get("phase") == "backup", "backup entry")
-        # The real DB row lock holds the next checkpoint after its fsynced journal write.
-        # Killing the actual systemd process now deterministically tests crash recovery.
-        with self.connect() as connection, connection.transaction():
-            connection.execute(
-                "SELECT id FROM platform_update_jobs WHERE id=%s FOR UPDATE", (job_id,)
-            )
-            wait_for(lambda: self.journal(job_id).get("phase") == "backed_up", "durable backup")
-            run_command(
-                ["systemctl", "kill", "--signal=SIGKILL", "--kill-whom=all", "opsmesh-updater"]
-            )
-        wait_for(
-            lambda: (
-                subprocess.run(
-                    ["systemctl", "is-active", "--quiet", "opsmesh-updater"], check=False
-                ).returncode
-                != 0
-            ),
-            "killed updater",
-            30,
-        )
-        run_command(["systemctl", "reset-failed", "opsmesh-updater"])
-        run_command(["systemctl", "start", "opsmesh-updater"])
-        wait_for(
-            lambda: self.status(job_id) == "recovery_required", "interruption classification", 60
-        )
-        run_command(["systemctl", "stop", "opsmesh-updater"])
-        if strategy == "restore":
-            with self.connect() as connection:
-                connection.execute("UPDATE delivery_acceptance_canary SET value='after'")
-            (ROOT / "data/storage/acceptance/canary.txt").write_text("after", encoding="utf-8")
-            denied = subprocess.run(
-                [
-                    str(self.cli),
-                    "--root",
-                    str(ROOT),
-                    "update",
-                    "recover",
-                    "--plan",
-                    job_id,
-                    "--strategy",
-                    "restore",
-                ],
-                capture_output=True,
-                env=self.environment,
-                check=False,
-            )
-            if denied.returncode == 0:
-                raise AssertionError("Restore without data-loss acknowledgement was accepted")
-            # Also exercise recovery when the application DB cannot admit any SQL session.
-            # This database belongs exclusively to this newly created disposable installation.
-            with psycopg.connect(
-                **{**self.database, "dbname": "postgres"}, autocommit=True
-            ) as admin:
-                admin.execute(
-                    sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
-                        sql.Identifier(self.database["dbname"])
-                    )
-                )
-        arguments = ["update", "recover", "--plan", job_id, "--strategy", strategy]
-        if strategy == "restore":
-            arguments.append("--ack-data-loss")
-        self.command(*arguments)
-        run_command(["systemctl", "start", "opsmesh-updater"])
-        self.assert_version(
-            self.tag if strategy == "resume" or action == "backup" else self.previous
-        )
-        with self.connect() as connection:
-            if connection.execute("SELECT maintenance FROM platform_installation").fetchone() != (
-                False,
-            ):
-                raise AssertionError("Recovery left admission closed")
-            if strategy == "restore" and connection.execute(
-                "SELECT value FROM delivery_acceptance_canary"
-            ).fetchone() != ("before",):
-                raise AssertionError("Database canary was not restored")
-        if strategy == "restore":
-            if (ROOT / "data/storage/acceptance/canary.txt").read_text() != "before":
-                raise AssertionError("Filesystem canary was not restored")
-            if not any(
-                path.read_text() == "after"
-                for path in (ROOT / "data").glob("before-restore-*/acceptance/canary.txt")
-            ):
-                raise AssertionError("Post-backup files were not preserved for salvage")
-        print(
-            f"PASS {self.mode}: killed updater, durable classification, explicit {strategy}",
-            flush=True,
-        )
-
-    def failed_start(self, *, action: str = "plan") -> None:
-        job_id = self.plan(self.tag, action)
-        wait_for(lambda: self.journal(job_id).get("phase") == "backup", "stopped application")
-        server = ThreadingHTTPServer(("127.0.0.1", 8000), UnavailableReleaseHandler)
-        thread = Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            wait_for(lambda: self.status(job_id) == "recovery_required", "failed startup")
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join()
-        run_command(["systemctl", "stop", "opsmesh-updater"])
-        self.command("update", "recover", "--plan", job_id, "--strategy", "rollback")
-        run_command(["systemctl", "start", "opsmesh-updater"])
-        self.assert_version(self.tag if action == "backup" else self.previous)
-        print(
-            f"PASS {self.mode}: real port-bind/startup failure and application rollback", flush=True
-        )
-
-    def accepts_previous_application(self) -> bool:
-        source = ReleaseDownloader("jhupo/OpsMesh")
-        previous = source.fetch_manifest(self.previous, ROOT / "baseline-manifest")
-        return previous.accepts_database_revision(self.installation.current().database_revision)
-
-    def reject_incompatible_rollback(self) -> None:
-        result = json.loads(
-            self.command(
-                "update",
-                "rollback",
-                "--version",
-                self.previous,
-                "--idempotency-key",
-                uuid4().hex,
-            )
-        )
-        job_id = str(result["id"])
-        wait_for(lambda: self.status(job_id) in {"ready", "failed"}, "schema rollback rejection")
-        if self.status(job_id) != "failed" or self.journal(job_id):
-            raise AssertionError("Incompatible rollback was admitted or executed")
-        self.assert_version(self.tag)
-        with self.connect() as connection:
-            if connection.execute("SELECT maintenance FROM platform_installation").fetchone() != (
-                False,
-            ):
-                raise AssertionError("Rejected rollback changed maintenance state")
-        print(
-            f"PASS {self.mode}: incompatible baseline rollback rejected before execution",
-            flush=True,
-        )
+def prepare_systemd(root: Path) -> None:
+    password = os.environ["ACCEPTANCE_POSTGRES_PASSWORD"]
+    temporal_password = os.environ["ACCEPTANCE_TEMPORAL_POSTGRES_PASSWORD"]
+    values = {
+        "OPSMESH_ROOT": str(root),
+        "OPSMESH_ENVIRONMENT": "production",
+        "OPSMESH_DATABASE_URL": f"postgresql+psycopg://opsmesh:{password}@127.0.0.1:5432/opsmesh",
+        "OPSMESH_REDIS_URL": "redis://127.0.0.1:6379/0",
+        "OPSMESH_TEMPORAL_ADDRESS": "127.0.0.1:7233",
+        "OPSMESH_TEMPORAL_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal",
+        "OPSMESH_TEMPORAL_VISIBILITY_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal_visibility",
+        "OPSMESH_STORAGE_ROOT": str(root / "data/storage"),
+        "OPSMESH_TEMPORAL_WORKER_IDENTITY": "v4-managed-acceptance",
+        "OPSMESH_INVITATION_HASH_PEPPER": secrets.token_hex(32),
+        "OPSMESH_CREDENTIAL_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode(),
+        "OPSMESH_TRACING_ENABLED": "false",
+        "OPSMESH_OTEL_LOGS_ENABLED": "false",
+        "OPSMESH_API_RATE_LIMIT_ENABLED": "true",
+        "OPSMESH_METRICS_HOST": "127.0.0.1",
+        "OPSMESH_METRICS_PORT": "9000",
+        "OPSMESH_ENABLE_API_DOCS": "false",
+        "OPSMESH_CORS_ORIGINS": '["https://acceptance.invalid"]',
+    }
+    atomic_write(root / ".env", "".join(f"{key}={value}\n" for key, value in values.items()))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["compose", "systemd"], required=True)
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--previous", required=True)
+    parser.add_argument("--mode", choices=["compose", "systemd"], required=True)
     args = parser.parse_args()
-    if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0 or os.name != "posix":
-        raise ValueError("Run only as root on a fresh disposable GitHub Linux runner")
-    acceptance = ManagedDeliveryAcceptance(args.mode, args.tag, args.previous)
-    try:
-        acceptance.install()
-    except Exception:
-        acceptance.diagnostics()
-        raise
-    if not acceptance.accepts_previous_application():
-        acceptance.reject_incompatible_rollback()
-        acceptance.normal(args.tag, "backup")
-        acceptance.interrupted("resume", action="backup")
-        acceptance.failed_start(action="backup")
-        acceptance.interrupted("restore", action="backup")
-        acceptance.normal(args.tag, "backup")
-        print(
-            f"PASS {args.mode}: native install, schema boundary and current-release recovery; "
-            "cross-version rollback is unsupported by the published baseline",
-            flush=True,
+    if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0:
+        raise ValueError("Managed acceptance requires a disposable GitHub Actions Linux root host")
+    root = Path("/opt/opsmesh-v4-acceptance")
+    if root.exists() or Path("/opt/opsmesh/installation.json").exists():
+        raise ValueError("Refusing to overwrite an installation")
+    root.mkdir(mode=0o750)
+    if args.mode == "systemd":
+        prepare_systemd(root)
+    installation = Installation(
+        root=root,
+        mode=args.mode,
+        temporal_service_unit="v4-acceptance-temporal.service" if args.mode == "systemd" else None,
+    )
+    credentials = install(installation, args.tag, "https://acceptance.invalid")
+    manifest = installation.current()
+    if manifest.database_revision != "0001_v4_initial" or manifest.upgrade_from_revisions:
+        raise AssertionError(
+            "First V4 acceptance requires the initial schema without historical predecessors"
         )
-        return
-    acceptance.normal(args.previous, "rollback")
-    acceptance.normal(args.tag, "plan")
-    acceptance.normal(args.previous, "rollback")
-    acceptance.interrupted("resume")
-    acceptance.normal(args.previous, "rollback")
-    acceptance.failed_start()
-    acceptance.interrupted("restore")
-    acceptance.normal(args.tag, "plan")
-    print(f"PASS {args.mode}: complete managed delivery acceptance", flush=True)
+    with httpx.Client(base_url="http://127.0.0.1:8000", timeout=30, trust_env=False) as api:
+        login = api.post(
+            "/api/v1/auth/login",
+            json={"email": credentials["email"], "password": credentials["password"]},
+        )
+        login.raise_for_status()
+        os.environ["OPSMESH_SESSION_ID"] = login.json()["session_token"]
+        api.headers["X-Session-ID"] = os.environ["OPSMESH_SESSION_ID"]
+
+        def request(method: str, path: str, body: dict[str, object] | None = None) -> dict:
+            response = api.request(method, "/api/v1" + path, json=body)
+            response.raise_for_status()
+            return response.json()
+
+        path = "/platform/settings/acceptance/snapshot"
+        request("PUT", path, {"value": {"marker": "before"}})
+        definition = request(
+            "POST",
+            "/orchestration/definitions",
+            {
+                "name": "Snapshot evidence",
+                "spec": {
+                    "graph": {"nodes": [{"key": "receipt", "kind": "wait", "wait_seconds": 1}]}
+                },
+            },
+        )
+        revision = request(
+            "POST",
+            f"/orchestration/definitions/{definition['id']}/publish",
+            {"expected_revision": definition["revision"]},
+        )
+        response = api.post(
+            "/api/v1/orchestration/runs",
+            params={"idempotency_key": "snapshot-flow"},
+            json={"revision_id": revision["id"]},
+        )
+        response.raise_for_status()
+        run_id = response.json()["id"]
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            flow = request("GET", f"/orchestration/runs/{run_id}")
+            if flow["status"] == "succeeded":
+                break
+            if flow["status"] in {"failed", "needs_attention", "cancelled"}:
+                raise AssertionError("The installed Worker failed the real flow")
+            time.sleep(1)
+        else:
+            raise TimeoutError("The installed Worker did not complete the flow")
+        marker = root / "data/storage/acceptance-marker"
+        marker.write_text("before", encoding="utf-8")
+        arguments = build_argument_parser()
+
+        def command(*parts: str) -> object:
+            return execute(arguments.parse_args(["--root", str(root), *parts]))
+
+        backup = command("backup", "create")
+        backup_id = str(backup["id"])
+        checked = BackupStore(installation).verify(backup_id, restore_check=True)
+        assert checked["database_revision"] == "0001_v4_initial"
+        request("PUT", path, {"value": {"marker": "after"}, "expected_revision": 1})
+        marker.write_text("after", encoding="utf-8")
+        command("backup", "restore", backup_id, "--acknowledge-data-loss")
+        assert request("GET", path)["value"] == {"marker": "before"}
+        assert marker.read_text(encoding="utf-8") == "before"
+        assert request("GET", f"/orchestration/runs/{run_id}")["status"] == "succeeded"
+        change_admission(request, drained=False, operation_id=str(uuid4()), timeout=120)
+        deployment = deployment_for(installation)
+        deployment.stop()
+        deployment.start(manifest)
+        deployment.healthy()
+        assert request("GET", f"/orchestration/runs/{run_id}")["status"] == "succeeded"
+        assert command("status")["version"] == args.tag.removeprefix("v")
+        # Verify a corrupted snapshot is denied before restoring any database.
+        dump = BackupStore(installation).path(backup_id) / "database.dump"
+        with dump.open("ab") as stream:
+            stream.write(b"tampered")
+        try:
+            BackupStore(installation).verify(backup_id)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Corrupted snapshot was accepted")
+    print(
+        json.dumps(
+            {
+                "mode": args.mode,
+                "schema": manifest.database_revision,
+                "installed": True,
+                "flow": "succeeded",
+                "cohort_restored": True,
+                "tamper_denied": True,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

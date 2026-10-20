@@ -7,9 +7,7 @@ from fastapi import Response
 DEFAULT_MEDIA_TYPE = "application/octet-stream"
 
 
-def content_download_response(
-    payload: bytes, *, filename: str, media_type: str | None
-) -> Response:
+def content_download_response(payload: bytes, *, filename: str, media_type: str | None) -> Response:
     """Serve verified content bytes as a private download."""
     return Response(
         content=payload,

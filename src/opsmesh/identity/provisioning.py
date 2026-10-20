@@ -8,21 +8,18 @@ configured defaults and injects them into the assembled services.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from opsmesh.identity.auth.contracts import (
-    OpenedAccount,
-)
+from opsmesh.identity.auth.contracts import OpenedAccount
 from opsmesh.identity.auth.models import UserCredential
 from opsmesh.identity.auth.passwords import hash_password
 from opsmesh.identity.auth.service import AuthService
 from opsmesh.identity.context import CurrentUser
-from opsmesh.identity.invitations.contracts import (
-    OpenedInvitationAccount,
-)
+from opsmesh.identity.invitations.contracts import OpenedInvitationAccount
 from opsmesh.identity.quotas import service as quotas
 from opsmesh.identity.users import service as users
 from opsmesh.identity.users.models import UserProfile
@@ -44,12 +41,15 @@ class AccountDefaults:
 class ProvisionedAccountOpening:
     """Open the profile and the quota ledger of one new account."""
 
-    def __init__(self, defaults: AccountDefaults) -> None:
+    def __init__(
+        self,
+        defaults: AccountDefaults,
+        provision_resources: Callable[[Session, UUID], None] | None = None,
+    ) -> None:
         self._defaults = defaults
+        self._provision_resources = provision_resources
 
-    def open_account(
-        self, session: Session, *, email: str, display_name: str
-    ) -> OpenedAccount:
+    def open_account(self, session: Session, *, email: str, display_name: str) -> OpenedAccount:
         profile = users.create_user(
             session,
             email=email,
@@ -62,6 +62,8 @@ class ProvisionedAccountOpening:
             token_limit=self._defaults.token_limit,
             storage_limit_bytes=self._defaults.storage_limit_bytes,
         )
+        if self._provision_resources is not None:
+            self._provision_resources(session, profile.id)
         return OpenedAccount(
             user_id=profile.id,
             email=profile.email,
@@ -110,6 +112,7 @@ def provision_first_admin(
     display_name: str,
     password: str,
     defaults: AccountDefaults,
+    provision_resources: Callable[[Session, UUID], None] | None = None,
 ) -> UserProfile:
     """Create the first administrator with its credential and quota ledger.
 
@@ -129,6 +132,8 @@ def provision_first_admin(
         token_limit=defaults.token_limit,
         storage_limit_bytes=defaults.storage_limit_bytes,
     )
+    if provision_resources is not None:
+        provision_resources(session, profile.id)
     return profile
 
 

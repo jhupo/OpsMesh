@@ -7,7 +7,7 @@ boundary; plaintext context and secrets are never recorded.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -28,8 +28,9 @@ class ObservabilityRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: str = Field(pattern="^(log|metric|trace)$")
+    instrument: Literal["counter", "gauge"] = "counter"
     name: str = Field(min_length=1, max_length=200)
-    value: float | None = None
+    value: float | None = Field(default=None, allow_inf_nan=False)
     attributes: dict[str, JsonValue] = Field(default_factory=dict)
 
 
@@ -48,7 +49,14 @@ class ObservabilityReporter:
         await self._report(ObservabilityRecord(kind="metric", name=name, value=value))
 
     async def gauge(self, name: str, *, value: float) -> None:
-        await self._report(ObservabilityRecord(kind="metric", name=name, value=value))
+        await self._report(
+            ObservabilityRecord(kind="metric", instrument="gauge", name=name, value=value)
+        )
+
+    async def trace(self, name: str, attributes: Mapping[str, JsonValue] | None = None) -> None:
+        await self._report(
+            ObservabilityRecord(kind="trace", name=name, attributes=dict(attributes or {}))
+        )
 
     async def _report(self, record: ObservabilityRecord) -> None:
         if len(repr(record.attributes).encode()) > MAX_RECORD_BYTES:

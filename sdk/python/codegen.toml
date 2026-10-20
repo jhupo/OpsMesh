@@ -26,20 +26,12 @@ group = "identity"
 target = "api/identity.py"
 
 [[clients]]
-group = "workspaces"
-target = "api/workspaces.py"
-
-[[clients]]
 group = "capabilities"
 target = "api/capabilities.py"
 
 [[clients]]
 group = "resources"
 target = "api/resources.py"
-
-[[clients]]
-group = "execution"
-target = "api/execution.py"
 
 [[clients]]
 group = "orchestration"
@@ -52,10 +44,6 @@ target = "api/extensions.py"
 [[clients]]
 group = "channels"
 target = "api/channels.py"
-
-[[clients]]
-group = "governance"
-target = "api/governance.py"
 
 [[clients]]
 group = "platform"
@@ -109,13 +97,18 @@ invitation_state = "ConflictError"
 quota_reservation = "ConflictError"
 idempotency_key_reused = "ConflictError"
 idempotency_resource_missing = "ConflictError"
-budget_revision = "ConflictError"
 rate_limited = "RateLimitError"
 quota_exceeded = "RateLimitError"
 capacity_exceeded = "RateLimitError"
-budget_exceeded = "RateLimitError"
 idempotency_in_progress = "RateLimitError"
 needs_attention = "UnknownEffectError"
+session_blocked = "ConflictError"
+session_not_closed = "ConflictError"
+session_not_open = "ConflictError"
+session_has_active_runs = "ConflictError"
+history_operation_in_flight = "ConflictError"
+history_operation_conflict = "ConflictError"
+history_operation_uncertain = "UnknownEffectError"
 unavailable = "TransportError"
 service_unavailable = "TransportError"
 
@@ -133,31 +126,7 @@ direction = "response"
 # S5：能力包与资源内容的原始字节通道。能力包上传与资源内容写回接受调用方
 # 声明的 Content-Type；包下载、版本内容与产物内容返回存储时的媒体类型。
 [[binary]]
-operation = "capabilities.experts.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.teams.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.mcp.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.skills.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.tools.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.channels.package.attach"
-direction = "request"
-
-[[binary]]
-operation = "capabilities.extensions.package.attach"
+operation = "capabilities.definitions.package.attach"
 direction = "request"
 
 [[binary]]
@@ -178,4 +147,12 @@ direction = "response"
 
 [[binary]]
 operation = "resources.artifacts.content.read"
+direction = "response"
+
+[[binary]]
+operation = "orchestration.configurations.files.write"
+direction = "request"
+
+[[binary]]
+operation = "orchestration.configurations.files.content"
 direction = "response"

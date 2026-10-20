@@ -1,8 +1,5 @@
 {
-  "upgrade_from_revisions": [
-    "0123_mcp_call_diagnostics",
-    "0127_task_event_store"
-  ],
+  "upgrade_from_revisions": [],
   "rollback_database_revisions": [],
   "platforms": ["linux/amd64"]
 }

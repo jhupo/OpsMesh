@@ -10,7 +10,6 @@ from opsmesh_sdk.host.events import EventPublisher
 from opsmesh_sdk.host.jobs import JobSubmitter
 from opsmesh_sdk.host.models import ModelOperator
 from opsmesh_sdk.host.observability import ObservabilityReporter
-from opsmesh_sdk.host.secrets import SecretReader
 from opsmesh_sdk.host.state import StateStore
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "JobSubmitter",
     "ModelOperator",
     "ObservabilityReporter",
-    "SecretReader",
     "StateStore",
 ]

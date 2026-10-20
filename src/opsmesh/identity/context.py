@@ -10,9 +10,8 @@ from uuid import UUID
 class CurrentUser:
     """The verified identity of one request.
 
-    Platform roles live here; space and project roles are owned by
-    ``workspaces.members`` and are never derived from or confused with the
-    platform roles carried by this value.
+    Platform roles live here; configuration grants belong to orchestration
+    and are never derived from the platform roles carried by this value.
     """
 
     user_id: UUID

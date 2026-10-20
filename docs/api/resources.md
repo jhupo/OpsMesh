@@ -135,6 +135,7 @@ Operation ID：`resources.files.list`。
 
 | 名称 | 位置 | 必填 | 类型 | 说明与约束 |
 | --- | --- | --- | --- | --- |
+| `directory_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 

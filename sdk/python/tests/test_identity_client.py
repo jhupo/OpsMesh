@@ -10,11 +10,7 @@ from uuid import UUID
 import httpx
 import pytest
 
-from opsmesh_sdk.api.identity import (
-    LoginRequest,
-    UpdateProfileRequest,
-    create_identity_client,
-)
+from opsmesh_sdk.api.identity import LoginRequest, UpdateProfileRequest, create_identity_client
 from opsmesh_sdk.client import PlatformClient
 from opsmesh_sdk.errors import AuthenticationError, NotFoundError
 from opsmesh_sdk.transport.contracts import SESSION_HEADER

@@ -1,9 +1,4 @@
-"""Injected contracts for invitation acceptance and mail registration.
-
-Invitations own the invitation fact and its transaction; the account it opens
-and the mail that carries its token are assembled by bootstrap, so this module
-never imports identity.auth or platform.mail.
-"""
+"""Injected account-opening contract for invitation acceptance."""
 
 from __future__ import annotations
 
@@ -39,18 +34,3 @@ class InvitationAccountOpening(Protocol):
         display_name: str,
         password: str,
     ) -> OpenedInvitationAccount: ...
-
-
-class InvitationMailSender(Protocol):
-    """Register one rendered invitation mail inside the caller's transaction."""
-
-    def send_account_invitation(
-        self,
-        session: Session,
-        *,
-        invitation_id: UUID,
-        recipient: str,
-        subject: str,
-        body: str,
-        idempotency_key: str,
-    ) -> None: ...

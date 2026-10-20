@@ -8,7 +8,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor
 from opsmesh.identity.access import require_platform_admin
 from opsmesh.identity.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.identity.context import CurrentUser
@@ -20,6 +19,7 @@ from opsmesh.identity.users.schemas import (
     UserPage,
     UserProfileView,
 )
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageParams
@@ -120,9 +120,7 @@ def admin_update_user(
             work_root=payload.work_root,
             status=payload.status,
             roles=(
-                frozenset(payload.platform_roles)
-                if payload.platform_roles is not None
-                else None
+                frozenset(payload.platform_roles) if payload.platform_roles is not None else None
             ),
         )
     return _view(profile)

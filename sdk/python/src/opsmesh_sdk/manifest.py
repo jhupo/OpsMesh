@@ -11,14 +11,7 @@ from enum import StrEnum
 from typing import Final, Literal
 
 from jsonschema import Draft202012Validator
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    model_validator,
-)
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 MAX_EXPORTS_PER_PACKAGE: Final = 256
 MAX_SCHEMA_BYTES: Final = 65_536
@@ -140,6 +133,14 @@ class HookExport(BaseModel):
     input_schema: JsonSchema = Field(default_factory=JsonSchema)
     patch_fields: tuple[str, ...] = ()
     failure_policy: HookFailurePolicy = HookFailurePolicy.BLOCK
+    permissions: tuple[str, ...] = ()
+    timeout_seconds: int = Field(default=60, ge=1, le=3600)
+
+    @model_validator(mode="after")
+    def observer_cannot_patch(self) -> HookExport:
+        if self.failure_policy == HookFailurePolicy.OBSERVE and self.patch_fields:
+            raise ValueError("An observer hook cannot declare patches")
+        return self
 
 
 class EventExport(BaseModel):
@@ -171,12 +172,43 @@ class DataPolicy(BaseModel):
     contains_user_content: bool = False
 
 
+class LockedWheel(BaseModel):
+    """An offline dependency artifact shipped in the fixed package."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    filename: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+\.whl$")
+    sha256: str = Field(pattern="^[a-f0-9]{64}$")
+
+
+class ExecutionPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    mode: Literal["sandbox", "managed_worker"] = "sandbox"
+    timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    memory_mb: int = Field(default=256, ge=32, le=4096)
+    cpus: float = Field(default=1, gt=0, le=4)
+    max_concurrency: int = Field(default=1, ge=1, le=64)
+    dependencies: tuple[LockedWheel, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_concurrency(self) -> ExecutionPolicy:
+        if self.mode == "sandbox" and self.max_concurrency != 1:
+            raise ValueError("One sandbox environment accepts one active operation")
+        return self
+
+
+class AuditAction(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    action: str = Field(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$", max_length=100)
+    target_types: tuple[str, ...] = Field(min_length=1, max_length=32)
+    details_schema: JsonSchema = Field(default_factory=JsonSchema)
+
+
 class PackageManifest(BaseModel):
     """The complete installation declaration of one package."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    package_name: str = Field(min_length=1, max_length=100)
+    package_name: str = Field(pattern="^[a-z][a-z0-9_-]{0,99}$")
     version: str = Field(min_length=1, max_length=50)
     description: str = Field(min_length=1, max_length=2000)
     operations: tuple[OperationExport, ...] = ()
@@ -185,6 +217,10 @@ class PackageManifest(BaseModel):
     permissions: tuple[Permission, ...] = Field(default=(), max_length=MAX_PERMISSIONS)
     configuration_schema: JsonSchema = Field(default_factory=JsonSchema)
     data_policy: DataPolicy = Field(default_factory=DataPolicy)
+    sdk_version: str = "0.1.0rc23"
+    execution: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
+    audit_actions: tuple[AuditAction, ...] = ()
+    published_events: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_declarations(self) -> PackageManifest:
@@ -205,7 +241,8 @@ class PackageManifest(BaseModel):
                     f"{event.operation_export_id!r}"
                 )
         declared = {permission.name for permission in self.permissions}
-        for operation in self.operations:
+        callable_exports: list[OperationExport | HookExport] = [*self.operations, *self.hooks]
+        for operation in callable_exports:
             for permission in operation.permissions:
                 if permission not in declared:
                     errors.append(

@@ -29,6 +29,7 @@ Stable operation ids of this group:
 
 from __future__ import annotations
 
+import builtins
 from datetime import datetime
 from uuid import UUID
 
@@ -56,6 +57,7 @@ class ArtifactView(BaseModel):
 
 
 class DirectoryCreateRequest(BaseModel):
+    parent_id: UUID | None = None
     path: str
 
 
@@ -175,7 +177,7 @@ class ResourcesArtifactsClient:
         *,
         source: str | None = None,
         source_id: UUID | None = None,
-    ) -> list[ArtifactView]:
+    ) -> builtins.list[ArtifactView]:
         """One page-free listing of the reader's own artifacts."""
         query = {
             name: str(value)
@@ -262,7 +264,7 @@ class ResourcesFilesDirectoriesClient:
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
 
-    async def list(self) -> list[DirectoryView]:
+    async def list(self) -> builtins.list[DirectoryView]:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
@@ -278,7 +280,7 @@ class ResourcesFilesDirectoriesClient:
             TransportRequest(
                 method="POST",
                 path=f"{self._channel.api_root}/resources/files/directories",
-                body=request.model_dump(mode="json"),
+                body=request.model_dump(mode="json", exclude_none=True),
             ),
             self._channel.context(),
         )
@@ -300,7 +302,7 @@ class ResourcesFilesGrantsClient:
     def __init__(self, channel: GroupChannel) -> None:
         self._channel = channel
 
-    async def list(self, file_id: UUID) -> list[GrantView]:
+    async def list(self, file_id: UUID) -> builtins.list[GrantView]:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
@@ -403,7 +405,7 @@ class ResourcesFilesVersionsClient:
         )
         return VersionDiffView.model_validate(response.body)
 
-    async def list(self, file_id: UUID) -> list[FileVersionView]:
+    async def list(self, file_id: UUID) -> builtins.list[FileVersionView]:
         response = await self._channel.transport.send(
             TransportRequest(
                 method="GET",
@@ -435,10 +437,17 @@ class ResourcesFilesClient:
         self.runtime_policy = ResourcesFilesRuntimePolicyClient(channel)
         self.versions = ResourcesFilesVersionsClient(channel)
 
-    async def list(self, *, limit: int = 50, offset: int = 0) -> FilePage:
+    async def list(
+        self,
+        *,
+        directory_id: UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> FilePage:
         query = {
             name: str(value)
             for name, value in (
+                ("directory_id", directory_id),
                 ("limit", limit),
                 ("offset", offset),
             )

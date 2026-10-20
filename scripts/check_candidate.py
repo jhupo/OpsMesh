@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import secrets
@@ -47,13 +48,15 @@ def main() -> None:
             }
         )
         for key in (
-            "INTERNAL_API_TOKEN",
-            "TOKEN_HASH_PEPPER",
-            "CREDENTIAL_ENCRYPTION_SECRET",
-            "PLATFORM_ADMIN_TOKEN",
+            "INVITATION_HASH_PEPPER",
+            "CREDENTIAL_ENCRYPTION_KEY",
             "POSTGRES_PASSWORD",
         ):
-            values[f"OPSMESH_{key}"] = secrets.token_hex(32)
+            values[f"OPSMESH_{key}"] = (
+                base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
+                if key == "CREDENTIAL_ENCRYPTION_KEY"
+                else secrets.token_hex(32)
+            )
         config = root / ".env"
         config.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
         config.chmod(0o600)

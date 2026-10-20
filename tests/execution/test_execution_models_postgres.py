@@ -20,19 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.execution.runs.models import (
-    OperationReceipt,
-    Run,
-    RunApproval,
-    RunEvent,
-)
-from opsmesh.execution.runtime.models import (
+from opsmesh.orchestration.runs.models import OperationReceipt, Run, RunApproval, RunEvent
+from opsmesh.orchestration.runtime.models import (
     Environment,
     EnvironmentOperationReceipt,
     MCPConnection,
     MCPOperationReceipt,
 )
-from opsmesh.execution.sessions.models import SessionOperationReceipt, SessionRecord
+from opsmesh.orchestration.sessions.models import SessionOperationReceipt, SessionRecord
 
 SCOPE_ID = UUID("11111111-1111-2222-3333-444444444444")
 OTHER_SCOPE_ID = UUID("55555555-1111-2222-3333-444444444444")
@@ -50,7 +45,7 @@ def create_session(
 ) -> SessionRecord:
     with sessions() as session, session.begin():
         record = SessionRecord(
-            id=session_id, scope_id=scope_id, principal_id=PRINCIPAL_ID, owner_ref="workspace:1"
+            id=session_id, scope_id=scope_id, principal_id=PRINCIPAL_ID, owner_ref="configuration:1"
         )
         session.add(record)
     return record
@@ -70,7 +65,7 @@ def create_run(
             id=run_id,
             scope_id=scope_id,
             principal_id=PRINCIPAL_ID,
-            owner_ref="workspace:1",
+            owner_ref="configuration:1",
             session_id=session_id,
             sequence=sequence,
             status=status,
@@ -87,7 +82,7 @@ def create_environment(sessions: sessionmaker) -> Environment:
             id=ENVIRONMENT_ID,
             scope_id=SCOPE_ID,
             principal_id=PRINCIPAL_ID,
-            owner_ref="workspace:1",
+            owner_ref="configuration:1",
             status="pending",
             configuration={"backend": "local"},
             encrypted_state="encrypted-connection-state",
@@ -109,7 +104,7 @@ def create_mcp_connection(
             id=connection_id,
             scope_id=scope_id,
             principal_id=PRINCIPAL_ID,
-            owner_ref="workspace:1",
+            owner_ref="configuration:1",
             name=name,
             transport="streamable_http",
             endpoint="https://mcp.example.com",
@@ -134,7 +129,9 @@ def add_run_event(sessions: sessionmaker, *, sequence: int, event_key: str) -> N
 
 
 class TestRuns:
-    def test_runs_serialize_one_session_on_their_sequence(self, database_sessions) -> None:
+    def test_runs_keep_submission_sequences_without_claiming_execution_slots(
+        self, database_sessions
+    ) -> None:
         create_session(database_sessions)
         create_run(database_sessions, sequence=1)
         create_run(database_sessions, sequence=2, run_id=uuid4())
@@ -160,7 +157,7 @@ class TestRuns:
                     id=other_session_id,
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                 )
             )
         create_run(database_sessions, sequence=1, session_id=other_session_id, run_id=uuid4())
@@ -254,7 +251,7 @@ class TestOperationReceipts:
                     id=other_session_id,
                     scope_id=OTHER_SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:2",
+                    owner_ref="configuration:2",
                 )
             )
             # Flush the session before the run that references it: without a
@@ -266,7 +263,7 @@ class TestOperationReceipts:
                     id=other_run_id,
                     scope_id=OTHER_SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:2",
+                    owner_ref="configuration:2",
                     session_id=other_session_id,
                     sequence=1,
                     status="queued",
@@ -345,7 +342,7 @@ class TestSessions:
                 SessionRecord(
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                     status="paused",
                 )
             )
@@ -356,15 +353,13 @@ class TestSessions:
                 SessionRecord(
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                     next_sequence=0,
                 )
             )
 
     @pytest.mark.parametrize("method", ["get_items", "add_items", "pop_item", "clear_session"])
-    def test_every_history_method_has_a_receipt(
-        self, database_sessions, method: str
-    ) -> None:
+    def test_every_history_method_has_a_receipt(self, database_sessions, method: str) -> None:
         create_session(database_sessions)
         with database_sessions() as session, session.begin():
             session.add(
@@ -390,6 +385,38 @@ class TestSessions:
                 )
             )
 
+    def test_a_history_receipt_is_always_completed(self, database_sessions) -> None:
+        create_session(database_sessions)
+        with database_sessions() as session, session.begin():
+            session.add(
+                SessionOperationReceipt(
+                    scope_id=SCOPE_ID,
+                    operation_id="history:get_items",
+                    session_id=SESSION_ID,
+                    method="get_items",
+                    fingerprint=FINGERPRINT,
+                )
+            )
+        with database_sessions() as session:
+            stored = session.get(SessionOperationReceipt, ("history:get_items", SESSION_ID))
+        assert stored is not None
+        assert stored.status == "completed"
+        assert stored.result == {}
+
+    def test_an_unknown_receipt_status_is_refused(self, database_sessions) -> None:
+        create_session(database_sessions)
+        with pytest.raises(IntegrityError), database_sessions() as session, session.begin():
+            session.add(
+                SessionOperationReceipt(
+                    scope_id=SCOPE_ID,
+                    operation_id="history:get_items",
+                    session_id=SESSION_ID,
+                    method="get_items",
+                    status="replayed",
+                    fingerprint=FINGERPRINT,
+                )
+            )
+
 
 class TestCascades:
     def test_deleting_a_session_removes_its_history_receipts(self, database_sessions) -> None:
@@ -408,9 +435,7 @@ class TestCascades:
             session.delete(session.get(SessionRecord, SESSION_ID))
         with database_sessions() as session:
             assert session.get(SessionRecord, SESSION_ID) is None
-            assert (
-                session.get(SessionOperationReceipt, (SCOPE_ID, "history:get_items")) is None
-            )
+            assert session.get(SessionOperationReceipt, ("history:get_items", SESSION_ID)) is None
 
     def test_a_run_with_receipts_cannot_be_deleted(self, database_sessions) -> None:
         create_session(database_sessions)
@@ -431,9 +456,7 @@ class TestCascades:
 
 
 class TestRuntime:
-    def test_the_environment_keeps_its_encrypted_connection_state(
-        self, database_sessions
-    ) -> None:
+    def test_the_environment_keeps_its_encrypted_connection_state(self, database_sessions) -> None:
         create_environment(database_sessions)
         with database_sessions() as session:
             stored = session.get(Environment, ENVIRONMENT_ID)
@@ -448,15 +471,13 @@ class TestRuntime:
                 Environment(
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                     status="paused",
                     configuration={},
                 )
             )
 
-    def test_one_scope_cannot_name_the_same_mcp_connection_twice(
-        self, database_sessions
-    ) -> None:
+    def test_one_scope_cannot_name_the_same_mcp_connection_twice(self, database_sessions) -> None:
         create_mcp_connection(database_sessions, name="search")
         with pytest.raises(IntegrityError):
             create_mcp_connection(database_sessions, name="search", connection_id=uuid4())
@@ -473,7 +494,7 @@ class TestRuntime:
                 MCPConnection(
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                     name="search",
                     transport="carrier-pigeon",
                 )
@@ -485,7 +506,7 @@ class TestRuntime:
                 MCPConnection(
                     scope_id=SCOPE_ID,
                     principal_id=PRINCIPAL_ID,
-                    owner_ref="workspace:1",
+                    owner_ref="configuration:1",
                     name="search",
                     transport="stdio",
                     status="paused",
@@ -509,9 +530,7 @@ class TestRuntime:
                 )
             )
 
-    def test_an_unknown_environment_receipt_action_is_refused(
-        self, database_sessions
-    ) -> None:
+    def test_an_unknown_environment_receipt_action_is_refused(self, database_sessions) -> None:
         create_environment(database_sessions)
         with pytest.raises(IntegrityError), database_sessions() as session, session.begin():
             session.add(
@@ -525,9 +544,7 @@ class TestRuntime:
                 )
             )
 
-    def test_an_uncertain_environment_operation_keeps_its_receipt(
-        self, database_sessions
-    ) -> None:
+    def test_an_uncertain_environment_operation_keeps_its_receipt(self, database_sessions) -> None:
         create_environment(database_sessions)
         with database_sessions() as session, session.begin():
             session.add(
@@ -543,9 +560,7 @@ class TestRuntime:
                 )
             )
         with database_sessions() as session:
-            stored = session.get(
-                EnvironmentOperationReceipt, (SCOPE_ID, "environment:create")
-            )
+            stored = session.get(EnvironmentOperationReceipt, (SCOPE_ID, "environment:create"))
         assert stored is not None
         assert stored.status == "uncertain"
         assert stored.encrypted_result == "encrypted-result"
@@ -581,9 +596,7 @@ class TestRuntime:
                 )
             )
 
-    def test_deleting_an_environment_removes_only_its_own_receipts(
-        self, database_sessions
-    ) -> None:
+    def test_deleting_an_environment_removes_only_its_own_receipts(self, database_sessions) -> None:
         create_environment(database_sessions)
         create_mcp_connection(database_sessions)
         with database_sessions() as session, session.begin():
@@ -612,7 +625,6 @@ class TestRuntime:
         with database_sessions() as session:
             assert session.get(Environment, ENVIRONMENT_ID) is None
             assert (
-                session.get(EnvironmentOperationReceipt, (SCOPE_ID, "environment:create"))
-                is None
+                session.get(EnvironmentOperationReceipt, (SCOPE_ID, "environment:create")) is None
             )
             assert session.get(MCPOperationReceipt, (SCOPE_ID, "mcp:connect")) is not None

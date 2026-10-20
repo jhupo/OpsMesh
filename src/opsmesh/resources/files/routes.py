@@ -16,7 +16,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
-from opsmesh.governance.audit.service import AuditActor
 from opsmesh.resources.files import service
 from opsmesh.resources.files.access import (
     RejectingScopeAdmission,
@@ -46,6 +45,7 @@ from opsmesh.resources.files.schemas import (
     VersionDiffView,
 )
 from opsmesh.resources.files.versions import list_versions, read_version, version_diff
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.http.dependencies import get_db_session
@@ -149,6 +149,7 @@ def create_directory(
             session,
             owner_id=reader.user_id,
             path=payload.path,
+            parent_id=payload.parent_id,
             admission=_scope_admission(request),
             reader=reader,
             scope=ScopeRef(),
@@ -199,10 +200,11 @@ def create_file(payload: FileCreateRequest, session: DbSession, reader: ReaderDe
 def list_files(
     session: DbSession,
     reader: ReaderDep,
+    directory_id: UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FilePage:
-    files = service.list_files(session, reader=reader)
+    files = service.list_files(session, reader=reader, directory_id=directory_id)
     page = PageParams(limit=limit, offset=offset)
     items = [
         _file_view(
@@ -294,9 +296,7 @@ def read_file_content(
         reader=reader,
         storage_root=_storage_root(request),
     )
-    return content_download_response(
-        payload, filename=resource.name, media_type=version.media_type
-    )
+    return content_download_response(payload, filename=resource.name, media_type=version.media_type)
 
 
 @router.get(
@@ -339,9 +339,7 @@ def read_file_version_content(
         reader=reader,
         storage_root=_storage_root(request),
     )
-    return content_download_response(
-        payload, filename=resource.name, media_type=version.media_type
-    )
+    return content_download_response(payload, filename=resource.name, media_type=version.media_type)
 
 
 @router.get(

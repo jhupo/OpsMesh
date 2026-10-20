@@ -7,7 +7,7 @@ license = "LGPL-3.0-only"
 license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
-    "opsmesh-operator[host]==0.1.0rc23",
+    "opsmesh-sdk==0.1.0rc23",
     "alembic>=1.18.4",
     "cryptography>=48.0.0",
     "docker>=7.2.0,<8.0.0",
@@ -31,7 +31,6 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
     "opentelemetry-sdk>=1.44.0",
     "packaging>=26.2,<27.0",
-    "pgvector>=0.5.0,<0.6.0",
     "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.3.4",
     "pyyaml>=6.0,<7.0",
@@ -57,6 +56,7 @@ build-backend = "setuptools.build_meta"
 compute = ["mcp>=2.0.0,<3.0.0"]
 packaging = ["pyinstaller==6.22.2"]
 dev = [
+    "opsmesh-operator[host]==0.1.0rc23",
     "aiosqlite>=0.22.1",
     "fakeredis[lua]>=2.35.1",
     "import-linter>=2.11,<3.0",
@@ -76,6 +76,7 @@ package = true
 members = ["operator", "sdk/python"]
 
 [tool.uv.sources]
+opsmesh-sdk = { workspace = true }
 opsmesh-operator = { workspace = true }
 
 [tool.setuptools]
@@ -136,329 +137,81 @@ files = ["src/opsmesh", "sdk/python/src/opsmesh_sdk"]
 root_package = "opsmesh"
 include_external_packages = true
 
-# V4 contracts (docs/source-refactor-plan-v4.md section 12). Each step extends
-# this section for the modules it implements; the root and second-level graphs
-# must stay acyclic and shared must keep zero product dependencies.
+# V4 section 12: enforce infrastructure and execution boundaries.
+# Ordinary feature calls use public functions; audit_app_layout checks module cycles.
 
 [[tool.importlinter.contracts]]
-id = "v4-root-independence"
-name = "Shared has zero product module dependencies"
+id = "shared-foundation"
+name = "Shared utilities do not depend on application code or execution SDKs"
 type = "forbidden"
 source_modules = ["opsmesh.shared"]
 forbidden_modules = [
-    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.bootstrap",
-    "opsmesh.config", "opsmesh.main",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-telemetry-foundation"
-name = "Telemetry uses only shared mechanisms and observability SDKs"
-type = "forbidden"
-source_modules = ["opsmesh.telemetry"]
-forbidden_modules = ["opsmesh.temporal", "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main"]
-
-[[tool.importlinter.contracts]]
-id = "v4-temporal-foundation"
-name = "Temporal uses shared and telemetry only; no business modules"
-type = "forbidden"
-source_modules = ["opsmesh.temporal"]
-forbidden_modules = [
-    "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main",
+    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
     "opsmesh.identity", "opsmesh.capabilities", "opsmesh.resources",
-    "opsmesh.governance", "opsmesh.extensions", "opsmesh.execution",
-    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
-    "opsmesh.platform",
+    "opsmesh.platform", "opsmesh.extensions", "opsmesh.orchestration",
+    "opsmesh.channels", "opsmesh.bootstrap",
+    "temporalio", "agents", "openai", "opentelemetry",
 ]
-
-[[tool.importlinter.contracts]]
-id = "v4-config-foundation"
-name = "Process configuration depends on shared mechanisms only"
-type = "forbidden"
-source_modules = ["opsmesh.config"]
-forbidden_modules = [
-    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.bootstrap",
-    "opsmesh.main", "opsmesh.shared.http",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-shared-core-independent"
-name = "Core types and pure helpers cannot depend on infrastructure adapters"
-type = "forbidden"
-source_modules = [
-    "opsmesh.shared.contracts", "opsmesh.shared.errors", "opsmesh.shared.files",
-    "opsmesh.shared.pagination", "opsmesh.shared.serialization",
-    "opsmesh.shared.version", "opsmesh.shared.mail",
-]
-forbidden_modules = [
-    "opsmesh.shared.db", "opsmesh.shared.redis",
-    "opsmesh.shared.http", "opsmesh.shared.security",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-pagination-no-transport"
-name = "Pagination inputs have no HTTP or database dependency"
-type = "forbidden"
-source_modules = ["opsmesh.shared.pagination"]
-forbidden_modules = ["fastapi", "starlette", "sqlalchemy"]
-
-[[tool.importlinter.contracts]]
-id = "v4-shared-infrastructure-no-http"
-name = "Database and Redis mechanisms have no HTTP framework dependency"
-type = "forbidden"
-source_modules = ["opsmesh.shared.db", "opsmesh.shared.redis", "opsmesh.shared.security"]
-forbidden_modules = ["fastapi", "starlette", "opsmesh.shared.http"]
-
-[[tool.importlinter.contracts]]
-id = "v4-shared-no-execution-sdk"
-name = "Shared does not own execution or telemetry SDK integration"
-type = "forbidden"
-source_modules = ["opsmesh.shared"]
-forbidden_modules = ["temporalio", "agents", "openai", "opentelemetry"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "v4-bootstrap-not-imported"
-name = "Bootstrap is never imported by other application modules"
+id = "infrastructure-no-business"
+name = "Infrastructure and configuration do not depend on business features"
+type = "forbidden"
+source_modules = ["opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config"]
+forbidden_modules = [
+    "opsmesh.identity", "opsmesh.capabilities", "opsmesh.resources",
+    "opsmesh.platform", "opsmesh.extensions", "opsmesh.orchestration",
+    "opsmesh.channels", "opsmesh.bootstrap",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "features-no-bootstrap"
+name = "Business features do not import process startup and assembly"
 type = "forbidden"
 source_modules = [
-    "opsmesh.shared", "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
+    "opsmesh.identity", "opsmesh.capabilities", "opsmesh.resources",
+    "opsmesh.platform", "opsmesh.extensions", "opsmesh.orchestration", "opsmesh.channels",
 ]
 forbidden_modules = ["opsmesh.bootstrap"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "v4-identity-boundaries"
-name = "Identity uses shared, telemetry, temporal and governance only"
-type = "forbidden"
-source_modules = ["opsmesh.identity"]
-forbidden_modules = [
-    "opsmesh.platform", "opsmesh.resources", "opsmesh.capabilities",
-    "opsmesh.extensions", "opsmesh.execution", "opsmesh.workspaces",
-    "opsmesh.orchestration", "opsmesh.channels", "opsmesh.bootstrap",
-    "opsmesh.config", "opsmesh_sdk",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-governance-boundaries"
-name = "Governance never imports identity or later owners; identity is injected"
-type = "forbidden"
-source_modules = ["opsmesh.governance"]
-forbidden_modules = [
-    "opsmesh.identity", "opsmesh.platform", "opsmesh.capabilities",
-    "opsmesh.resources", "opsmesh.extensions", "opsmesh.execution",
-    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
-    "opsmesh.bootstrap", "opsmesh.config", "opsmesh_sdk",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-governance-costs-boundaries"
-name = "Costs uses audit and shared only; no other owner ledgers"
-type = "forbidden"
-source_modules = ["opsmesh.governance.costs"]
-forbidden_modules = [
-    "opsmesh.identity", "opsmesh.platform", "opsmesh.capabilities",
-    "opsmesh.resources", "opsmesh.extensions", "opsmesh.execution",
-    "opsmesh.workspaces", "opsmesh.orchestration", "opsmesh.channels",
-    "opsmesh.bootstrap", "opsmesh.config", "opsmesh_sdk",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-platform-boundaries"
-name = "Platform uses shared, telemetry, temporal, identity and governance only"
-type = "forbidden"
-source_modules = ["opsmesh.platform"]
-forbidden_modules = [
-    "opsmesh.capabilities", "opsmesh.resources", "opsmesh.extensions",
-    "opsmesh.execution", "opsmesh.workspaces", "opsmesh.orchestration",
-    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh_sdk",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-capabilities-boundaries"
-name = "Capabilities use shared, identity and governance only"
+id = "publication-no-runtime"
+name = "Static capability publication does not load runtime implementations"
 type = "forbidden"
 source_modules = ["opsmesh.capabilities"]
 forbidden_modules = [
-    "opsmesh.platform", "opsmesh.resources", "opsmesh.extensions",
-    "opsmesh.execution", "opsmesh.workspaces", "opsmesh.orchestration",
-    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main",
+    "opsmesh.extensions", "opsmesh.orchestration",
+    "agents", "docker", "openai",
 ]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "v4-resources-boundaries"
-name = "Resources use shared, telemetry, temporal and governance only"
+id = "agent-adapter-no-orm"
+name = "The official Agent adapter does not own persistence or HTTP routes"
 type = "forbidden"
-source_modules = ["opsmesh.resources"]
-forbidden_modules = [
-    "opsmesh.identity", "opsmesh.capabilities", "opsmesh.platform",
-    "opsmesh.extensions", "opsmesh.execution", "opsmesh.workspaces",
-    "opsmesh.orchestration", "opsmesh.channels", "opsmesh.bootstrap",
-    "opsmesh.config", "opsmesh.main", "opsmesh_sdk",
-]
+source_modules = ["opsmesh.orchestration.execution"]
+forbidden_modules = ["sqlalchemy", "fastapi"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "v4-workspaces-boundaries"
-name = "Workspaces use shared, temporal, identity, capabilities, resources, extensions, execution and governance only"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces"]
-forbidden_modules = [
-    "opsmesh.platform", "opsmesh.orchestration", "opsmesh.channels",
-    "opsmesh.bootstrap", "opsmesh.config", "opsmesh.main", "opsmesh_sdk",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-members-isolated"
-name = "Space membership never reaches project or sibling workspace modules"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.members"]
-forbidden_modules = [
-    "opsmesh.workspaces.projects",
-    "opsmesh.workspaces.credentials",
-    "opsmesh.workspaces.capacity",
-    "opsmesh.workspaces.model_providers",
-    "opsmesh.workspaces.notifications",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-credentials-isolated"
-name = "Credentials stay on membership access and shared security"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.credentials"]
-forbidden_modules = [
-    "opsmesh.workspaces.projects",
-    "opsmesh.workspaces.capacity",
-    "opsmesh.workspaces.model_providers",
-    "opsmesh.workspaces.notifications",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-capacity-isolated"
-name = "Capacity stays on membership access and shared database mechanisms"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.capacity"]
-forbidden_modules = [
-    "opsmesh.workspaces.projects",
-    "opsmesh.workspaces.credentials",
-    "opsmesh.workspaces.model_providers",
-    "opsmesh.workspaces.notifications",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-model-providers-isolated"
-name = "Model providers stay on membership, credentials and temporal without projects"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.model_providers"]
-forbidden_modules = [
-    "opsmesh.workspaces.projects",
-    "opsmesh.workspaces.capacity",
-    "opsmesh.workspaces.notifications",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-notifications-isolated"
-name = "Notifications stay on membership and shared database mechanisms"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.notifications"]
-forbidden_modules = [
-    "opsmesh.workspaces.projects",
-    "opsmesh.workspaces.credentials",
-    "opsmesh.workspaces.capacity",
-    "opsmesh.workspaces.model_providers",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-workspaces-project-members-isolated"
-name = "Project membership never imports the project service"
-type = "forbidden"
-source_modules = ["opsmesh.workspaces.projects.members"]
-forbidden_modules = ["opsmesh.workspaces.projects.service"]
-
-[[tool.importlinter.contracts]]
-id = "v4-execution-boundaries"
-name = "Execution uses shared, telemetry, temporal, identity and governance only"
+id = "workflow-inputs-no-io"
+name = "Definition values and execution inputs stay independent of I/O frameworks"
 type = "forbidden"
 source_modules = [
-    "opsmesh.execution",
+    "opsmesh.orchestration.definitions.contracts",
+    "opsmesh.orchestration.execution.contracts",
 ]
-forbidden_modules = [
-    "opsmesh.platform", "opsmesh.capabilities", "opsmesh.resources",
-    "opsmesh.extensions", "opsmesh.workspaces", "opsmesh.orchestration",
-    "opsmesh.channels", "opsmesh.bootstrap", "opsmesh.config",
-    "opsmesh.main", "opsmesh_sdk",
-]
+forbidden_modules = ["sqlalchemy", "fastapi", "temporalio"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "v4-execution-contracts-isolated"
-name = "Execution contracts never import the runs, sessions or runtime implementations"
-type = "forbidden"
-source_modules = ["opsmesh.execution.contracts"]
-forbidden_modules = [
-    "opsmesh.execution.runs", "opsmesh.execution.sessions", "opsmesh.execution.runtime",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-execution-sessions-isolated"
-name = "Model sessions never import runs or runtime"
-type = "forbidden"
-source_modules = ["opsmesh.execution.sessions"]
-forbidden_modules = ["opsmesh.execution.runs", "opsmesh.execution.runtime"]
-
-[[tool.importlinter.contracts]]
-id = "v4-execution-runtime-isolated"
-name = "Runtime never imports runs or sessions"
-type = "forbidden"
-source_modules = ["opsmesh.execution.runtime"]
-forbidden_modules = ["opsmesh.execution.runs", "opsmesh.execution.sessions"]
-
-[[tool.importlinter.contracts]]
-id = "v4-identity-auth-isolated"
-name = "Authentication reaches the profile owner only through injected contracts"
-type = "forbidden"
-source_modules = ["opsmesh.identity.auth"]
-forbidden_modules = [
-    "opsmesh.identity.users", "opsmesh.identity.quotas", "opsmesh.identity.invitations",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-identity-users-service-no-auth"
-name = "The users service never imports authentication; only its routes may"
-type = "forbidden"
-source_modules = ["opsmesh.identity.users.service"]
-forbidden_modules = ["opsmesh.identity.auth"]
-
-[[tool.importlinter.contracts]]
-id = "v4-identity-quota-ledger-isolated"
-name = "Quota ledger services stay on shared database mechanisms"
-type = "forbidden"
-source_modules = ["opsmesh.identity.quotas.service"]
-forbidden_modules = [
-    "opsmesh.identity.auth", "opsmesh.identity.users", "opsmesh.identity.invitations",
-]
-
-[[tool.importlinter.contracts]]
-id = "v4-identity-invitations-no-auth"
-name = "Invitation services open accounts through injected contracts, not authentication"
-type = "forbidden"
-source_modules = ["opsmesh.identity.invitations.service"]
-forbidden_modules = ["opsmesh.identity.auth", "opsmesh.identity.quotas"]
-
-[[tool.importlinter.contracts]]
-id = "v4-platform-mail-service-no-identity"
-name = "The mail service never reads identity tables; only its routes authenticate"
-type = "forbidden"
-source_modules = ["opsmesh.platform.mail.service"]
-forbidden_modules = ["opsmesh.identity"]
-
-[[tool.importlinter.contracts]]
-id = "v4-server-does-not-import-sdk"
-name = "The server never imports the independent SDK"
+id = "production-no-tests-or-backups"
+name = "Production code does not import test or historical implementations"
 type = "forbidden"
 source_modules = ["opsmesh"]
-forbidden_modules = ["opsmesh_sdk"]
-
-[[tool.importlinter.contracts]]
-id = "production-no-test-framework"
-name = "Production code cannot depend on the test framework"
-type = "forbidden"
-source_modules = ["opsmesh"]
-forbidden_modules = ["pytest"]
+forbidden_modules = ["pytest", "backup", "backup_2"]
+allow_indirect_imports = true
 

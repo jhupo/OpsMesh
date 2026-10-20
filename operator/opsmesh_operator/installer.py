@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import platform
@@ -12,7 +13,7 @@ from filelock import FileLock
 
 from opsmesh_operator.commands import run_command
 from opsmesh_operator.deployments import ComposeDeployment, deployment_for
-from opsmesh_operator.files import atomic_write, require_install_root, sync_directory
+from opsmesh_operator.files import atomic_write, require_install_root
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.releases import ReleaseDownloader
 
@@ -48,7 +49,7 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                 or status["mode"] != installation.mode
             ):
                 raise ValueError(
-                    "Already installed or different install intent; use update plan/apply"
+                    "Already installed or different install intent; inspect the host installation"
                 )
         elif (root / "installation.json").exists() or (root / "current").exists():
             raise ValueError("Existing installation cannot be overwritten")
@@ -73,6 +74,8 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                 "OPSMESH_ENVIRONMENT": "production",
                 "OPSMESH_ENABLE_API_DOCS": "false",
                 "OPSMESH_API_RATE_LIMIT_ENABLED": "true",
+                "OPSMESH_METRICS_HOST": "127.0.0.1",
+                "OPSMESH_METRICS_PORT": "9000",
                 "OPSMESH_TEMPORAL_ADDRESS": os.environ.get(
                     "OPSMESH_TEMPORAL_ADDRESS", "127.0.0.1:7233"
                 ),
@@ -86,18 +89,25 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                 "OPSMESH_DATABASE_URL": f"postgresql+psycopg://opsmesh:{password}@127.0.0.1:5432/opsmesh",
                 "OPSMESH_REDIS_URL": "redis://127.0.0.1:6379/0",
                 "OPSMESH_STORAGE_ROOT": str(root / "data/storage"),
-                "OPSMESH_RELEASE_UPDATE_ENABLED": "true",
                 "OPSMESH_TRACING_ENABLED": "false",
                 "OPSMESH_OTEL_LOGS_ENABLED": "false",
                 "OPSMESH_DOCKER_GID": str(Path("/var/run/docker.sock").stat().st_gid),
             }
             for key in (
-                "INTERNAL_API_TOKEN",
-                "PLATFORM_ADMIN_TOKEN",
-                "TOKEN_HASH_PEPPER",
-                "CREDENTIAL_ENCRYPTION_SECRET",
+                "OPSMESH_TEMPORAL_DATABASE_URL",
+                "OPSMESH_TEMPORAL_VISIBILITY_DATABASE_URL",
             ):
-                values[f"OPSMESH_{key}"] = secrets.token_hex(32)
+                if value := os.environ.get(key):
+                    values[key] = value
+            for key in (
+                "INVITATION_HASH_PEPPER",
+                "CREDENTIAL_ENCRYPTION_KEY",
+            ):
+                values[f"OPSMESH_{key}"] = (
+                    base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
+                    if key == "CREDENTIAL_ENCRYPTION_KEY"
+                    else secrets.token_hex(32)
+                )
             atomic_write(
                 root / ".env", "".join(f"{key}={value}\n" for key, value in values.items())
             )
@@ -110,10 +120,6 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
         directory = deployment.stage(manifest)
         if isinstance(deployment, ComposeDeployment):
             deployment.infrastructure(manifest)
-        # Bootstrap the independently managed updater once. Application updates do not replace
-        # this process's environment while it is executing; unsupported protocol changes fail.
-        updater_directory = root / "updater"
-        provision_updater(directory, updater_directory)
         deployment.migrate(manifest)
         deployment.switch(manifest)
         if installation.mode == "systemd":
@@ -126,24 +132,12 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
                     template.replace("/opt/opsmesh", str(root)),
                     mode=0o644,
                 )
-        unit = (
-            "[Unit]\nDescription=OpsMesh host updater\nAfter=network-online.target\n"
-            "[Service]\nType=simple\nUser=root\n"
-            f"WorkingDirectory={root}\nEnvironmentFile={root}/.env\n"
-            f"EnvironmentFile=-{root}/updater.env\n"
-            f"ExecStart={updater_directory}/opsmesh-server updater "
-            f"--root {root}\n"
-            "Restart=on-failure\nRestartSec=10\nUMask=0077\nPrivateTmp=true\n"
-            "[Install]\nWantedBy=multi-user.target\n"
-        )
-        atomic_write(Path("/etc/systemd/system/opsmesh-updater.service"), unit, mode=0o644)
         installation.save()
         run_command(["systemctl", "daemon-reload"])
         deployment.start(manifest)
         deployment.healthy()
         if installation.mode == "systemd":
             run_command(["systemctl", "enable", "opsmesh-api", "opsmesh-worker"])
-        run_command(["systemctl", "enable", "--now", "opsmesh-updater.service"])
         output = deployment.bootstrap_admin(manifest)
         try:
             credentials = json.loads(output.strip().splitlines()[-1])
@@ -159,20 +153,6 @@ def install(installation: Installation, tag: str, origin: str) -> dict[str, str]
             "email": str(credentials["email"]),
             "password": str(credentials["password"]),
         }
-
-
-def provision_updater(directory: Path, target: Path) -> None:
-    """Copy the verified runtime once; application switches never replace the running updater."""
-    if target.exists():
-        if (target / "BUILD.json").read_bytes() != (directory / "BUILD.json").read_bytes():
-            raise ValueError("Independent updater already belongs to a different release")
-        return
-    staging = target.with_name(".updater.staging")
-    if staging.exists():
-        raise ValueError("Interrupted updater staging requires operator inspection")
-    shutil.copytree(directory, staging, ignore=shutil.ignore_patterns(".env", "__pycache__"))
-    staging.rename(target)
-    sync_directory(target.parent)
 
 
 def _service_accounts(installation: Installation) -> None:

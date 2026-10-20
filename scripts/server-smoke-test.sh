@@ -132,8 +132,8 @@ if [ "${OPSMESH_SMOKE_MONITORING:-false}" = "true" ]; then
     fi
 
     wait_for_prometheus_series 'up{job="opsmesh-api"} == 1'
-    wait_for_prometheus_series 'opsmesh_audit_integrity_workspaces >= 0'
-    wait_for_prometheus_series 'opsmesh_model_usage_records_24h >= 0'
+    wait_for_prometheus_series 'opsmesh_metrics_collection_success{source="postgres"} == 1'
+    wait_for_prometheus_series 'opsmesh_temporal_dispatches{state="pending"} >= 0'
 
     curl -sS -o /dev/null "${api_base_url}/api/v1/health"
     wait_for_loki_logs

@@ -29,9 +29,16 @@ class InvitationView(BaseModel):
     expires_at: datetime
     created_at: datetime
     accepted_at: datetime | None
-    send_count: int
-    last_sent_at: datetime | None
+    token_revision: int
+    token_issued_at: datetime | None
     invited_by_user_id: UUID | None
+
+
+class InvitationIssueView(InvitationView):
+    """The newly issued token is returned only once to its administrator."""
+
+    token: UUID = Field(repr=False)
+    acceptance_url: str | None = Field(repr=False)
 
 
 class CreateInvitationRequest(BaseModel):

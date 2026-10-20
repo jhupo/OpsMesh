@@ -5,6 +5,28 @@ x-logging: &id001
     max-size: 10m
     max-file: '3'
 services:
+  storage-init:
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    image: opsmesh-api:local
+    user: '0:0'
+    environment:
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    entrypoint:
+    - python
+    - -c
+    - |
+      import os
+      root = os.environ['OPSMESH_STORAGE_ROOT']
+      os.makedirs(root, exist_ok=True)
+      os.chown(root, 10001, 10001)
+      os.chmod(root, 0o2770)
   migrate:
     build:
       context: ../..
@@ -32,14 +54,21 @@ services:
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
-      OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
       OPSMESH_SERVICE_NAME: opsmesh-api
+      OPSMESH_METRICS_HOST: '0.0.0.0'
+      OPSMESH_METRICS_PORT: '9000'
       OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     ports:
     - ${OPSMESH_API_PORT:-8000}:8000
+    - 127.0.0.1:${OPSMESH_METRICS_PORT:-9000}:9000
     volumes:
-    - opsmesh_storage:/app/.opsmesh-storage
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       postgres:
@@ -69,12 +98,15 @@ services:
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
-      OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
       OPSMESH_RUN_MIGRATIONS: 'false'
       OPSMESH_SERVICE_NAME: opsmesh-worker
+      OPSMESH_EXTENSION_SDK_WHEEL: ${OPSMESH_EXTENSION_SDK_WHEEL:-/opt/opsmesh-extension-sdk/opsmesh_sdk-0.1.0rc23-py3-none-any.whl}
       OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     volumes:
-    - opsmesh_storage:/app/.opsmesh-storage
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
     - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       api:
@@ -117,6 +149,5 @@ services:
 volumes:
   opsmesh_postgres: null
   opsmesh_redis: null
-  opsmesh_storage: null
 include:
 - ../temporal/compose.yml

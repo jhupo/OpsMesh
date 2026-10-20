@@ -28,29 +28,27 @@ DEFAULT_API_ROOT: Final = "/api/v1"
 def validated_api_root(api_prefix: str) -> str:
     """Normalize one runtime API root: leading slash, no trailing slash."""
     if not api_prefix.startswith("/") or api_prefix.endswith("/"):
-        raise ValidationError(
-            "the API prefix must start with a slash and carry no trailing slash"
-        )
+        raise ValidationError("the API prefix must start with a slash and carry no trailing slash")
     if len(api_prefix) < 2:
         raise ValidationError("the API prefix must name at least one segment")
     return api_prefix
 
 
 class PlatformClient:
-    """The public client facade external callers use with a login session."""
+    """Public API client; an anonymous client can obtain a login session."""
 
     def __init__(
         self,
         base_url: str,
         *,
-        session_id: str,
+        session_id: str | None = None,
         timeout_seconds: float = 30.0,
         max_connections: int = 20,
         api_prefix: str = DEFAULT_API_ROOT,
         transport: Transport | None = None,
     ) -> None:
-        if not session_id:
-            raise ValidationError("a platform session id is required")
+        if session_id == "":
+            raise ValidationError("a platform session id cannot be empty")
         self._session_id = session_id
         self._api_root = validated_api_root(api_prefix)
         self._owns_transport = transport is None
@@ -75,7 +73,7 @@ class PlatformClient:
         """A fresh per-call context carrying this client's session identity."""
         return TransportContext(
             scope=CancellationScope(),
-            identity_headers={SESSION_HEADER: self._session_id},
+            identity_headers={SESSION_HEADER: self._session_id} if self._session_id else {},
             trace_headers={},
         )
 

@@ -7,37 +7,46 @@ package may publish its own namespaced events, never forge platform facts.
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from opsmesh_sdk.values import ScopeRef
 
 
+@dataclass(frozen=True)
+class EventEnvelope:
+    """An extension notification occurrence, with no policy or dispatch behavior."""
+
+    event_type: str
+    source: str
+    payload_json: str = "{}"
+    event_id: UUID = field(default_factory=uuid4)
+    occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if not self.event_type or not self.source:
+            raise ValueError("A notification requires type and source")
+        if self.occurred_at.utcoffset() is None:
+            raise ValueError("Notification timestamps must include a timezone")
+        if len(self.payload_json.encode()) > 65536:
+            raise ValueError("Notification payload exceeds 64 KiB")
+        if not isinstance(json.loads(self.payload_json), dict):
+            raise ValueError("Notification payload must be a JSON object")
+
+    @property
+    def payload(self) -> dict[str, object]:
+        value: dict[str, object] = json.loads(self.payload_json)
+        return value
+
+
 class EventOrigin(StrEnum):
     PLATFORM = "platform"
     EXTENSION_REPORTED = "extension_reported"
-
-
-class EventEnvelope(BaseModel):
-    """The wire envelope of one event occurrence."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    source_type: str = Field(min_length=1, max_length=100)
-    source_id: str = Field(min_length=1, max_length=128)
-    source_revision: str | None = Field(default=None, max_length=100)
-    event_id: str = Field(min_length=1, max_length=128)
-    event_version: str = Field(min_length=1, max_length=50)
-    scope: ScopeRef = Field(default_factory=ScopeRef)
-    origin: EventOrigin = EventOrigin.PLATFORM
-    causal_refs: tuple[str, ...] = ()
-    summary: dict[str, JsonValue] = Field(default_factory=dict)
-    content_ref: str | None = Field(default=None, max_length=512)
-
-    def deduplication_key(self) -> str:
-        """Consumers deduplicate on subscription, event and consumer revision."""
-        return f"{self.source_type}:{self.event_id}:{self.event_version}"
 
 
 class EventFilter(BaseModel):

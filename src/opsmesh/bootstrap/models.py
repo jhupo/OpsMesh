@@ -1,132 +1,60 @@
-"""Explicitly register the ORM models owned by the current application."""
+"""Explicit registration of the application-owned PostgreSQL model modules."""
 
 from sqlalchemy import MetaData
 
-from opsmesh.capabilities.models import (
-    CapabilityDefinition,
-    CapabilityPackage,
-    CapabilityVersion,
-)
-from opsmesh.execution.runs.models import OperationReceipt, Run, RunApproval, RunEvent
-from opsmesh.execution.runtime.models import (
-    Environment,
-    EnvironmentOperationReceipt,
-    MCPConnection,
-    MCPOperationReceipt,
-)
-from opsmesh.execution.sessions.models import SessionOperationReceipt, SessionRecord
-from opsmesh.governance.approvals.models import ApprovalRequest
-from opsmesh.governance.audit.models import (
-    AuditAppendReceipt,
-    AuditChainHead,
-    AuditEvent,
-    AuditVerification,
-)
-from opsmesh.governance.costs.models import (
-    CostBudget,
-    CostBudgetReservation,
-    CostBudgetWindow,
-    CostPricingRuleVersion,
-    CostUsageRecord,
-)
-from opsmesh.governance.security_events.models import SecurityEvent
-from opsmesh.identity.auth.models import LoginSession, UserCredential
-from opsmesh.identity.invitations.models import AccountInvitation
-from opsmesh.identity.quotas.models import (
-    StorageReservation,
-    TokenReservation,
-    UserQuotaLimit,
-    UserStorageAccount,
-    UserTokenAccount,
-)
-from opsmesh.identity.users.models import UserProfile
-from opsmesh.platform.mail.models import MailIntent, SmtpConfiguration
-from opsmesh.resources.artifacts.models import ResourceArtifact
-from opsmesh.resources.files.models import (
-    ResourceDirectory,
-    ResourceFile,
-    ResourceFileContent,
-    ResourceFileGrant,
-    ResourceFileVersion,
-    ResourceRuntimePolicy,
-)
+from opsmesh.capabilities import models as capabilities
+from opsmesh.channels import models as channels
+from opsmesh.extensions import models as extensions
+from opsmesh.identity.auth import models as authentication
+from opsmesh.identity.invitations import models as invitations
+from opsmesh.identity.quotas import models as quotas
+from opsmesh.identity.users import models as users
+from opsmesh.orchestration.configurations import models as configurations
+from opsmesh.orchestration.configurations.bindings import models as bindings
+from opsmesh.orchestration.definitions import models as definitions
+from opsmesh.orchestration.runs import model_operations
+from opsmesh.orchestration.runs import models as runs
+from opsmesh.orchestration.runtime import models as runtime
+from opsmesh.orchestration.sessions import models as sessions
+from opsmesh.orchestration.triggers import models as triggers
+from opsmesh.platform.approvals import models as approvals
+from opsmesh.platform.audit import models as audit
+from opsmesh.platform.model_connections import models as model_connections
+from opsmesh.platform.operations import models as operations
+from opsmesh.platform.policies import models as policies
+from opsmesh.resources.artifacts import models as artifacts
+from opsmesh.resources.files import models as files
+from opsmesh.shared.db import idempotency
 from opsmesh.shared.db.base import Base
-from opsmesh.shared.db.idempotency import CreationReceipt
-from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
-from opsmesh.workspaces.capacity.models import (
-    WorkspaceCapacityAccount,
-    WorkspaceCapacityReservation,
-)
-from opsmesh.workspaces.credentials.models import WorkspaceCredential
-from opsmesh.workspaces.members.models import WorkspaceInvitation, WorkspaceMember
-from opsmesh.workspaces.model_providers.models import ModelProviderConnection
-from opsmesh.workspaces.models import Workspace
-from opsmesh.workspaces.notifications.models import (
-    NotificationPreference,
-    WorkspaceNotification,
-)
-from opsmesh.workspaces.projects.members.models import ProjectInvitation, ProjectMember
-from opsmesh.workspaces.projects.models import Project
+from opsmesh.temporal.dispatch import models as dispatch
 
 
 def register_models() -> MetaData:
-    """Explicitly register the tables owned by the current application."""
+    """Load every owner explicitly, without discovering arbitrary executable packages."""
     _ = (
-        ApprovalRequest,
-        AuditAppendReceipt,
-        AuditChainHead,
-        AuditEvent,
-        AuditVerification,
-        AccountInvitation,
-        CapabilityDefinition,
-        CapabilityPackage,
-        CapabilityVersion,
-        CostBudget,
-        CostBudgetReservation,
-        CostBudgetWindow,
-        CostPricingRuleVersion,
-        CostUsageRecord,
-        CreationReceipt,
-        Environment,
-        EnvironmentOperationReceipt,
-        LoginSession,
-        MailIntent,
-        MCPConnection,
-        MCPOperationReceipt,
-        ModelProviderConnection,
-        NotificationPreference,
-        OperationReceipt,
-        Project,
-        ProjectInvitation,
-        ProjectMember,
-        ResourceArtifact,
-        ResourceDirectory,
-        ResourceFile,
-        ResourceFileContent,
-        ResourceFileGrant,
-        ResourceFileVersion,
-        ResourceRuntimePolicy,
-        Run,
-        RunApproval,
-        RunEvent,
-        SecurityEvent,
-        SessionOperationReceipt,
-        SessionRecord,
-        SmtpConfiguration,
-        StorageReservation,
-        TemporalOutboxEntry,
-        TokenReservation,
-        UserCredential,
-        UserProfile,
-        UserQuotaLimit,
-        UserStorageAccount,
-        UserTokenAccount,
-        Workspace,
-        WorkspaceCapacityAccount,
-        WorkspaceCapacityReservation,
-        WorkspaceCredential,
-        WorkspaceInvitation,
-        WorkspaceMember,
-        WorkspaceNotification,
+        capabilities,
+        channels,
+        extensions,
+        authentication,
+        invitations,
+        quotas,
+        users,
+        configurations,
+        bindings,
+        definitions,
+        model_operations,
+        runs,
+        runtime,
+        sessions,
+        triggers,
+        approvals,
+        audit,
+        model_connections,
+        operations,
+        policies,
+        artifacts,
+        files,
+        idempotency,
+        dispatch,
     )
     return Base.metadata

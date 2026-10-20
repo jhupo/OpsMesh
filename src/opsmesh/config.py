@@ -10,8 +10,8 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from opsmesh.shared.security.egress import validate_url_shape
-from opsmesh.shared.security.secrets import SecretCipher
+from opsmesh.shared.security.encryption import SecretCipher
+from opsmesh.shared.security.url_validation import validate_url_shape
 
 LogFormat = Literal["json", "text"]
 POSTGRES_PSYCOPG_DRIVER = "postgresql+psycopg"
@@ -48,6 +48,7 @@ _RESOURCE_RECOMMENDATION = recommend_connection_pools()
 
 
 class Settings(BaseSettings):
+    build_commit: str | None = Field(default=None, min_length=1, max_length=200)
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="OPSMESH_",
@@ -76,6 +77,8 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     log_format: LogFormat = Field(default="json")
     log_queue_capacity: int = Field(default=2048, ge=1, le=65536)
+    metrics_host: str = "127.0.0.1"
+    metrics_port: int | None = Field(default=None, ge=0, le=65535)
     tracing_enabled: bool = Field(default=True)
     otel_logs_enabled: bool = Field(default=True)
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
@@ -134,15 +137,13 @@ class Settings(BaseSettings):
     default_user_token_limit: int | None = Field(default=None, ge=0)
     default_user_storage_limit_bytes: int | None = Field(default=None, ge=0)
 
-    # Platform mail (S4)
-    mail_daily_source_limit: int = Field(default=1_000, ge=0)
-
-    # Built-in capability release root (S5)
-    bundled_root: str = Field(default="bundled")
-
     # Workspace capacity defaults (S6); a null limit means unlimited
-    default_workspace_concurrency_limit: int | None = Field(default=None, ge=0)
-    default_workspace_environment_limit: int | None = Field(default=None, ge=0)
+    default_user_concurrency_limit: int | None = Field(default=None, ge=0)
+    default_user_environment_limit: int | None = Field(default=None, ge=0)
+    execution_sandbox_images: list[str] = Field(default_factory=list)
+    extension_builder_image: str = ""
+    extension_sdk_wheel: str = ""
+    execution_model_context_windows: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_security_configuration(self) -> "Settings":
@@ -249,9 +250,8 @@ class Settings(BaseSettings):
             "platform_base_url_configured": bool(self.platform_base_url),
             "default_user_token_limit": self.default_user_token_limit,
             "default_user_storage_limit_bytes": self.default_user_storage_limit_bytes,
-            "mail_daily_source_limit": self.mail_daily_source_limit,
-            "default_workspace_concurrency_limit": self.default_workspace_concurrency_limit,
-            "default_workspace_environment_limit": self.default_workspace_environment_limit,
+            "default_user_concurrency_limit": self.default_user_concurrency_limit,
+            "default_user_environment_limit": self.default_user_environment_limit,
             "credential_encryption_key_id": self.credential_encryption_key_id,
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_keys

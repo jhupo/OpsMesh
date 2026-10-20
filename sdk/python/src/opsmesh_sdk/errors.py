@@ -123,10 +123,18 @@ _CODE_ALIASES: Final[dict[str, type[OpsMeshError]]] = {
     "idempotency_key_reused": ConflictError,
     "idempotency_resource_missing": ConflictError,
     "quota_exceeded": RateLimitError,
+    "capacity_exceeded": RateLimitError,
     "idempotency_in_progress": RateLimitError,
-    "budget_exceeded": RateLimitError,
     "service_unavailable": TransportError,
-    "budget_revision": ConflictError,
+    "session_blocked": ConflictError,
+    "session_not_closed": ConflictError,
+    "session_not_open": ConflictError,
+    "session_has_active_runs": ConflictError,
+    "history_operation_in_flight": ConflictError,
+    "history_operation_conflict": ConflictError,
+    "history_operation_uncertain": UnknownEffectError,
+    "channel_epoch": ConflictError,
+    "owner_unavailable": ConflictError,
 }
 
 _ERROR_BY_CODE: Final[dict[str, type[OpsMeshError]]] = {

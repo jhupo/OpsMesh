@@ -11,21 +11,10 @@ trusted system registration; an uploaded package cannot claim it.
 from __future__ import annotations
 
 import re
-from typing import Literal
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from opsmesh.capabilities.validation import (
-    validate_parameter_schema,
-    validate_secret_slots,
-)
+from opsmesh.capabilities.validation import validate_parameter_schema
 from opsmesh.shared.errors import InvalidArgumentError
 
 MAX_OPERATIONS = 256
@@ -82,17 +71,11 @@ class ToolConfiguration(BaseModel):
     entrypoint: str = Field(min_length=1, max_length=MAX_ENTRYPOINT_LENGTH)
     operations: list[ToolOperation] = Field(min_length=1, max_length=MAX_OPERATIONS)
     parameters_schema: dict[str, object] = Field(default_factory=dict)
-    secret_slots: list[str] = Field(default_factory=list)
 
     @field_validator("parameters_schema")
     @classmethod
     def _parameters_schema(cls, value: dict[str, object]) -> dict[str, object]:
         return validate_parameter_schema(value)
-
-    @field_validator("secret_slots")
-    @classmethod
-    def _secret_slots(cls, value: list[str]) -> list[str]:
-        return validate_secret_slots(value)
 
     @model_validator(mode="after")
     def _execution_contract(self) -> ToolConfiguration:
@@ -119,23 +102,3 @@ def validated_configuration(configuration: object) -> dict[str, object]:
             details={"reason": str(exc)},
         ) from exc
     return model.model_dump(mode="json")
-
-
-class ToolCreateRequest(BaseModel):
-    """Create one tool definition with its first draft version."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    key: str = Field(min_length=1, max_length=100)
-    name: str = Field(min_length=1, max_length=160)
-    description: str = Field(default="", max_length=2000)
-    visibility: Literal["private", "public"] = "private"
-    configuration: ToolConfiguration
-
-
-class ToolDraftRequest(BaseModel):
-    """Replace the current draft configuration of one tool definition."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    configuration: ToolConfiguration

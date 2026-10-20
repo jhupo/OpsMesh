@@ -37,7 +37,7 @@
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
       "id": 4,
       "options": {"displayMode": "lcd", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_sandbox_environments", "legendFormat": "{{sandbox_backend}}", "refId": "A"}],
+      "targets": [{"expr": "opsmesh_sandbox_environments", "legendFormat": "{{state}}", "refId": "A"}],
       "title": "Configured SDK Environments",
       "type": "bargauge"
     },
@@ -47,8 +47,8 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 5,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "opsmesh_runtime_active_runs", "legendFormat": "{{sandbox_backend}}", "refId": "A"}],
-      "title": "Active Runs Assigned to SDK Environments",
+      "targets": [{"expr": "opsmesh_execution_runs", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Agent Runs",
       "type": "timeseries"
     },
     {
@@ -57,8 +57,8 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "id": 6,
       "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "opsmesh_runtime_space_quota_usage_ratio", "legendFormat": "{{quota_key}} {{unit}}", "refId": "A"}],
-      "title": "Runtime Quota Usage",
+      "targets": [{"expr": "opsmesh_user_capacity_max_usage_ratio", "legendFormat": "{{kind}}", "refId": "A"}],
+      "title": "Maximum User Capacity Usage",
       "type": "timeseries"
     },
     {
@@ -67,8 +67,8 @@
       "gridPos": {"h": 6, "w": 8, "x": 0, "y": 16},
       "id": 7,
       "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_audit_integrity_workspaces", "legendFormat": "{{state}}", "refId": "A"}],
-      "title": "Audit Integrity",
+      "targets": [{"expr": "opsmesh_flow_runs", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Flow Runs",
       "type": "bargauge"
     },
     {
@@ -77,8 +77,8 @@
       "gridPos": {"h": 6, "w": 8, "x": 8, "y": 16},
       "id": 8,
       "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_cost_budget_workspaces", "legendFormat": "{{state}}", "refId": "A"}],
-      "title": "Cost Budgets",
+      "targets": [{"expr": "opsmesh_token_reservations", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Token Reservations",
       "type": "bargauge"
     },
     {
@@ -87,8 +87,8 @@
       "gridPos": {"h": 6, "w": 8, "x": 16, "y": 16},
       "id": 9,
       "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_model_usage_records_24h", "legendFormat": "{{state}}", "refId": "A"}],
-      "title": "Model Usage Metering",
+      "targets": [{"expr": "opsmesh_storage_reservations", "legendFormat": "{{state}}", "refId": "A"}],
+      "title": "Storage Reservations",
       "type": "bargauge"
     },
     {
@@ -116,8 +116,8 @@
       "gridPos": {"h": 6, "w": 8, "x": 8, "y": 22},
       "id": 12,
       "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_model_cost_current_month", "legendFormat": "{{currency}}", "refId": "A"}],
-      "title": "Current Month Model Cost",
+      "targets": [{"expr": "opsmesh_user_quota_max_usage_ratio", "legendFormat": "{{kind}}", "refId": "A"}],
+      "title": "Maximum User Quota Usage",
       "type": "bargauge"
     },
     {

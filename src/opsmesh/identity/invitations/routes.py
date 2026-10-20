@@ -4,27 +4,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Annotated, cast
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from opsmesh.governance.audit.service import AuditActor
 from opsmesh.identity.access import require_platform_admin
 from opsmesh.identity.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.identity.errors import AuthenticationError
 from opsmesh.identity.invitations import service
-from opsmesh.identity.invitations.contracts import (
-    InvitationAccountOpening,
-    InvitationMailSender,
-)
+from opsmesh.identity.invitations.contracts import InvitationAccountOpening
 from opsmesh.identity.invitations.models import INVITATION_STATUSES, AccountInvitation
 from opsmesh.identity.invitations.schemas import (
     AcceptInvitationRequest,
     AcceptInvitationResponse,
     CreateInvitationRequest,
+    InvitationIssueView,
     InvitationPage,
     InvitationView,
 )
+from opsmesh.shared.audit import AuditActor
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import InvalidArgumentError
 from opsmesh.shared.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageParams
@@ -38,13 +37,6 @@ class InvitationSettings:
 
     ttl_seconds: int
     base_url: str | None
-
-
-def get_invitation_mail_sender(request: Request) -> InvitationMailSender:
-    sender = getattr(request.app.state, "invitation_mail_sender", None)
-    if sender is None:
-        raise AuthenticationError("Invitation delivery is not assembled")
-    return cast(InvitationMailSender, sender)
 
 
 def get_invitation_account_opening(request: Request) -> InvitationAccountOpening:
@@ -64,7 +56,6 @@ def get_invitation_settings(request: Request) -> InvitationSettings:
     )
 
 
-MailSenderDep = Annotated[InvitationMailSender, Depends(get_invitation_mail_sender)]
 AccountOpeningDep = Annotated[InvitationAccountOpening, Depends(get_invitation_account_opening)]
 InvitationSettingsDep = Annotated[InvitationSettings, Depends(get_invitation_settings)]
 
@@ -77,15 +68,26 @@ def _view(invitation: AccountInvitation) -> InvitationView:
         expires_at=invitation.expires_at,
         created_at=invitation.created_at,
         accepted_at=invitation.accepted_at,
-        send_count=invitation.send_count,
-        last_sent_at=invitation.last_sent_at,
+        token_revision=invitation.token_revision,
+        token_issued_at=invitation.token_issued_at,
         invited_by_user_id=invitation.invited_by_user_id,
+    )
+
+
+def _issued(
+    invitation: AccountInvitation, token: UUID, base_url: str | None
+) -> InvitationIssueView:
+    acceptance_url = None
+    if base_url:
+        acceptance_url = f"{base_url.rstrip('/')}/accept-invitation?{urlencode({'token': token})}"
+    return InvitationIssueView(
+        **_view(invitation).model_dump(), token=token, acceptance_url=acceptance_url
     )
 
 
 @router.post(
     "",
-    response_model=InvitationView,
+    response_model=InvitationIssueView,
     status_code=status.HTTP_201_CREATED,
     operation_id="identity.invitations.create",
 )
@@ -93,21 +95,18 @@ def create_invitation(
     payload: CreateInvitationRequest,
     session: DbSession,
     user: CurrentUserDep,
-    sender: MailSenderDep,
     invitation_settings: InvitationSettingsDep,
-) -> InvitationView:
-    """Create one pending invitation and register its mail in the same transaction."""
+) -> InvitationIssueView:
+    """Issue one pending invitation for the administrator to deliver."""
     require_platform_admin(user)
     with session_transaction(session):
-        invitation, _token = service.create_invitation(
+        invitation, token = service.create_invitation(
             session,
             email=payload.email,
             invited_by=AuditActor.from_user(user),
-            sender=sender,
             ttl_seconds=payload.ttl_seconds or invitation_settings.ttl_seconds,
-            platform_base_url=invitation_settings.base_url,
         )
-    return _view(invitation)
+    return _issued(invitation, token, invitation_settings.base_url)
 
 
 @router.get("", response_model=InvitationPage, operation_id="identity.invitations.list")
@@ -138,27 +137,24 @@ def read_invitation(
 
 @router.post(
     "/{invitation_id}/resend",
-    response_model=InvitationView,
+    response_model=InvitationIssueView,
     operation_id="identity.invitations.resend",
 )
 def resend_invitation(
     invitation_id: UUID,
     session: DbSession,
     user: CurrentUserDep,
-    sender: MailSenderDep,
     invitation_settings: InvitationSettingsDep,
-) -> InvitationView:
-    """Resend with a freshly rotated token; the delivered code stops working."""
+) -> InvitationIssueView:
+    """Issue a replacement token; the previous token stops working."""
     require_platform_admin(user)
     with session_transaction(session):
-        invitation = service.resend_invitation(
+        invitation, token = service.resend_invitation(
             session,
             invitation_id=invitation_id,
             invited_by=AuditActor.from_user(user),
-            sender=sender,
-            platform_base_url=invitation_settings.base_url,
         )
-    return _view(invitation)
+    return _issued(invitation, token, invitation_settings.base_url)
 
 
 @router.post(

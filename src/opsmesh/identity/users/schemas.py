@@ -37,9 +37,7 @@ class UpdateProfileRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str | None = Field(
-        default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH
-    )
+    display_name: str | None = Field(default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
     work_root: str | None = Field(default=None, max_length=MAX_WORK_ROOT_LENGTH)
 
 
@@ -48,9 +46,7 @@ class AdminUpdateUserRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str | None = Field(
-        default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH
-    )
+    display_name: str | None = Field(default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
     work_root: str | None = Field(default=None, max_length=MAX_WORK_ROOT_LENGTH)
     status: str | None = Field(default=None, max_length=20)
     platform_roles: list[str] | None = Field(default=None, max_length=8)

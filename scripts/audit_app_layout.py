@@ -19,16 +19,13 @@ BUSINESS_ROOTS = {
     "identity",
     "capabilities",
     "resources",
-    "governance",
     "extensions",
-    "execution",
-    "workspaces",
     "orchestration",
     "channels",
     "platform",
 }
 ENTRYPOINTS = {
-    "opsmesh.main",
+    "opsmesh.bootstrap.api",
     "opsmesh.bootstrap.worker_cli",
 }
 
@@ -44,6 +41,15 @@ def check_architecture() -> None:
     tables: dict[str, str] = {}
     handlers: dict[str, str] = {}
     files = sorted(APP.rglob("*.py"))
+    for directory in APP.rglob("*"):
+        if (
+            directory.is_dir()
+            and "__pycache__" not in directory.parts
+            and not any(path.name != "__init__.py" for path in directory.rglob("*.py"))
+        ):
+            violations.append(
+                f"Source directory has no implementation: {directory.relative_to(APP)}"
+            )
     for path in files:
         module = module_name(path)
         relative = path.relative_to(APP)
@@ -54,7 +60,6 @@ def check_architecture() -> None:
             "bootstrap",
         } and path.name not in {
             "__init__.py",
-            "main.py",
             "config.py",
         }:
             violations.append(f"Unclassified application file: {relative}")
@@ -98,33 +103,15 @@ def check_architecture() -> None:
                     handlers[node.name] = module
         for dependency in dependencies:
             if dependency.startswith(
-                tuple("opsmesh." + name for name in ("api", "domains", "core", "observability"))
+                tuple(
+                    "opsmesh." + name
+                    for name in ("api", "domains", "core", "observability", "execution")
+                )
             ):
                 violations.append(f"Legacy import: {module} -> {dependency}")
             if not dependency.startswith("opsmesh."):
                 continue
             owner = dependency.split(".")[1]
-            if relative.parts[0] == "shared" and owner != "shared":
-                violations.append(f"Shared imports business: {module} -> {dependency}")
-            if relative.parts[0] == "telemetry" and owner not in {"telemetry", "shared"}:
-                violations.append(f"Telemetry imports application: {module} -> {dependency}")
-            if relative.parts[0] == "temporal" and owner not in {"temporal", "shared", "telemetry"}:
-                violations.append(f"Temporal imports application: {module} -> {dependency}")
-            if relative.parts[0] == "execution" and owner not in {
-                "execution",
-                "shared",
-                "temporal",
-                "telemetry",
-                "identity",
-                "governance",
-            }:
-                violations.append(f"Execution imports business: {module} -> {dependency}")
-            if (
-                relative.parts[0] == "governance"
-                and owner not in {"governance", "shared", "temporal", "telemetry"}
-                and "models" in dependency.split(".")[2:]
-            ):
-                violations.append(f"Governance imports foreign ORM: {module} -> {dependency}")
             if (
                 owner == "bootstrap"
                 and relative.parts[0] != "bootstrap"
@@ -155,10 +142,12 @@ def check_architecture() -> None:
                             f"{imported}.{node.attr}"
                         )
     for name in (
+        "main.py",
         "agents",
         "teams",
         "messaging",
         "runtime",
+        "execution",
         "delivery",
         "core",
         "domains",
@@ -192,7 +181,7 @@ def is_package_marker(tree: ast.Module) -> bool:
 
 
 def runtime_import_cycles(graph: grimp.ImportGraph) -> list[tuple[str, ...]]:
-    """Find actual module cycles; package dependencies are checked by import-linter."""
+    """Find actual module cycles; import-linter checks the remaining hard boundaries."""
     modules = set(graph.modules)
     adjacency = {
         module: graph.find_modules_directly_imported_by(module) & modules for module in modules
