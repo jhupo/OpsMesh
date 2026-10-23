@@ -4,6 +4,11 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      full:
+        description: Run release validation including the real model and dependency audit
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       full:
@@ -65,6 +70,13 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
+      - name: Audit all locked runtime dependencies for release
+        if: inputs.full
+        run: |
+          mkdir -p .tmp
+          uv export --frozen --all-packages --no-emit-workspace --no-dev \
+            --no-header --no-annotate --quiet --output-file .tmp/release-audit.txt
+          uv tool run pip-audit==2.10.1 --requirement .tmp/release-audit.txt --no-deps --disable-pip
       - name: Persistent Temporal for waits, cancellation and replay
         run: |
           docker compose -p opsmesh-ci -f deploy/temporal/compose.yml up -d temporal-namespace
