@@ -31,6 +31,7 @@ def prepare_systemd(root: Path) -> None:
         "OPSMESH_TEMPORAL_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal",
         "OPSMESH_TEMPORAL_VISIBILITY_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal_visibility",
         "OPSMESH_STORAGE_ROOT": str(root / "data/storage"),
+        "OPSMESH_PLUGINS_ROOT": str(root / "plugins"),
         "OPSMESH_TEMPORAL_WORKER_IDENTITY": "managed-acceptance",
         "OPSMESH_INVITATION_HASH_PEPPER": secrets.token_hex(32),
         "OPSMESH_CREDENTIAL_ENCRYPTION_KEY": base64.urlsafe_b64encode(
@@ -155,15 +156,16 @@ def main() -> None:
         backup_id = str(backup["id"])
         checked = BackupStore(installation).verify(backup_id, restore_check=True)
         assert checked["database_revision"] == manifest.database_revision
-        request(
+        changed = request(
             "PUT",
-            f"/workflows/{definition['id']}",
+            f"/workflows/{definition['id']}/draft",
             {
                 "name": "Changed after snapshot",
                 "expected_revision": definition["revision"] + 1,
                 "spec": {"graph": {"nodes": [{"key": "receipt", "kind": "wait", "seconds": 1}]}},
             },
         )
+        assert changed["name"] == "Changed after snapshot"
         marker.write_text("after", encoding="utf-8")
         command("backup", "restore", backup_id, "--acknowledge-data-loss")
         assert request("GET", f"/workflows/{definition['id']}")["name"] == "Snapshot evidence"
