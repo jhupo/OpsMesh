@@ -5,7 +5,7 @@ import logging
 import sys
 from logging.handlers import QueueHandler, QueueListener
 from queue import Full, Queue
-from traceback import format_exception
+from traceback import FrameSummary, StackSummary, TracebackException
 from typing import cast
 
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
@@ -77,7 +77,20 @@ class RequestContextFilter(logging.Filter):
         record.msg = redact_sensitive_payload_item(rendered_message, rules=self._redaction)
         record.args = ()
         if record.exc_info is not None:
-            exception_text = "".join(format_exception(*record.exc_info))
+            trace = TracebackException(*record.exc_info, lookup_lines=False)
+            pending = [trace]
+            while pending:
+                item = pending.pop()
+                # Frozen loaders may read files, which is forbidden in Workflow code.
+                item.stack = StackSummary.from_list(
+                    FrameSummary(frame.filename, frame.lineno, frame.name, line="")
+                    for frame in item.stack
+                )
+                pending.extend(
+                    child for child in (item.__cause__, item.__context__) if child is not None
+                )
+                pending.extend(item.exceptions or [])
+            exception_text = "".join(trace.format())
             redacted_exception = redact_sensitive_payload_item(
                 exception_text, rules=self._redaction
             )

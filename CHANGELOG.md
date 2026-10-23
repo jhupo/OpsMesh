@@ -2,6 +2,13 @@
 
 All notable changes to OpsMesh will be documented here.
 
+## 0.1.3
+
+- Make configured JSON Schema outputs implement the concrete native Agents SDK schema contract required by Temporal model Activities.
+- Load schema validation dependencies before Workflow execution instead of importing them dynamically inside the Workflow Sandbox.
+- Format exception chains and exception groups without reading source files, preserving error diagnostics in frozen native Workers under Temporal restrictions.
+- Extend real model execution/replay acceptance to structured output and add regressions for schema validation and source-free exception logging.
+
 ## 0.1.2
 
 - Moderate each original message through optional plugin message filters before activation and batching. Bound admission retries and preserve exact-message recall receipts.

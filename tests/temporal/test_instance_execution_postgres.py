@@ -15,6 +15,7 @@ from temporalio.worker import Replayer, Worker
 from opsmesh.agents.assembly import AssemblyBindings
 from opsmesh.agents.config.agent import AgentConfig
 from opsmesh.agents.config.model import ModelRef
+from opsmesh.agents.config.output import JsonSchemaOutput
 from opsmesh.agents.manager import AgentDefinition
 from opsmesh.agents.providers import ModelInfo, ProviderConfig, ProviderRegistry
 from opsmesh.bootstrap.telemetry import configure_process_telemetry
@@ -41,7 +42,10 @@ pytestmark = pytest.mark.openai_smoke
 
 
 @pytest.mark.parametrize("streaming", [False, True], ids=["ordinary", "streaming"])
-def test_persistent_instance_executes_and_replays(database_sessions, tmp_path, streaming):
+@pytest.mark.parametrize("structured", [False, True], ids=["text", "json-schema"])
+def test_persistent_instance_executes_and_replays(
+    database_sessions, tmp_path, streaming, structured
+):
     required = (
         "OPSMESH_TEST_TEMPORAL_ADDRESS",
         "OPSMESH_TEST_MODEL_API_KEY",
@@ -56,9 +60,19 @@ def test_persistent_instance_executes_and_replays(database_sessions, tmp_path, s
         id="acceptance",
         config=AgentConfig(
             name="Acceptance",
-            instructions="Reply with the number 42 only.",
+            instructions="Reply with the answer 42 using the required output format.",
             model=ModelRef(provider_id="acceptance", model_id=model_id),
             model_settings={"max_tokens": 2048, "reasoning": {"effort": "medium"}},
+            output_type=JsonSchemaOutput(
+                schema={
+                    "type": "object",
+                    "properties": {"answer": {"type": "integer", "enum": [42]}},
+                    "required": ["answer"],
+                    "additionalProperties": False,
+                }
+            )
+            if structured
+            else None,
         ),
     )
     providers = ProviderRegistry()
@@ -110,7 +124,7 @@ def test_persistent_instance_executes_and_replays(database_sessions, tmp_path, s
                 session_id=conversation.id,
                 driver="temporal",
                 request_key="run",
-                input="Reply with 42 only.",
+                input="Return answer=42." if structured else "Reply with 42 only.",
                 timeout_seconds=210,
             ),
         )
@@ -161,7 +175,8 @@ def test_persistent_instance_executes_and_replays(database_sessions, tmp_path, s
         with database_sessions.begin() as session:
             stored = session.get(ExecutionRun, run_id)
             assert stored.status == "completed", stored.error_code
-            assert cipher.decrypt_payload(stored.encrypted_result) == {"output": "42"}
+            expected = {"answer": 42} if structured else "42"
+            assert cipher.decrypt_payload(stored.encrypted_result) == {"output": expected}
             assert session.get(AgentInstance, instance_id).status == "active"
             assert session.get(ExecutionSession, session_id).status == "active"
             events = list(
@@ -172,7 +187,7 @@ def test_persistent_instance_executes_and_replays(database_sessions, tmp_path, s
                 for event in events
                 if event.kind == "model_text_delta"
             ]
-            assert "".join(deltas) == ("42" if streaming else "")
+            assert "".join(deltas) == ("42" if streaming and not structured else "")
         private_history = native_session(tmp_path, user_id, session_id, generation)
         try:
             assert len(await private_history.get_items()) >= 2
