@@ -9,6 +9,7 @@ description = "Plugin contracts, registration and package development for OpsMes
 readme = "README.md"
 requires-python = ">=3.11.8"
 license = "LGPL-3.0-only"
+license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 dependencies = ["pydantic>=2.10.0,<3.0.0", "pyyaml>=6.0,<7.0"]
 
 [dependency-groups]
