@@ -52,11 +52,11 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.12.10'
           python-version: '3.12.14'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.wheels-artifact != ''
         with:
           name: ${{ inputs.wheels-artifact }}
@@ -67,7 +67,7 @@ jobs:
         run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocated CLI without system Python
         run: uv run --no-project python scripts/check_standalone.py --kind cli --tag "$RELEASE_TAG" --archive "dist/opsmesh-cli-$RELEASE_TAG-${{ matrix.target }}.${{ matrix.extension }}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: standalone-cli-${{ matrix.target }}-${{ github.run_id }}
           path: dist/*
@@ -95,11 +95,11 @@ jobs:
       OPSMESH_TEMPORAL_ADDRESS: 127.0.0.1:7233
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.12.10'
           python-version: '3.12.14'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.wheels-artifact != ''
         with:
           name: ${{ inputs.wheels-artifact }}
@@ -117,7 +117,7 @@ jobs:
       - name: Remove only this acceptance Temporal project
         if: always()
         run: docker compose -f deploy/temporal/compose.yml down --volumes
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: standalone-server-linux-amd64-${{ github.run_id }}
           path: dist/*
