@@ -1,3 +1,5 @@
+"""Atomic Redis fixed-window counting; business limits come from the caller."""
+
 from __future__ import annotations
 
 import logging
@@ -11,6 +13,7 @@ from limits.strategies import FixedWindowRateLimiter as LimitsFixedWindowRateLim
 from redis import Redis
 
 logger = logging.getLogger(__name__)
+DEFAULT_NAMESPACE = "opsmesh:rate-limit"
 
 
 @dataclass(frozen=True)
@@ -23,7 +26,7 @@ class RateLimitDecision:
 
 
 class FixedWindowRateLimiter:
-    def __init__(self, storage: Storage, *, namespace: str = "opsmesh:rate-limit") -> None:
+    def __init__(self, storage: Storage, *, namespace: str = DEFAULT_NAMESPACE) -> None:
         self._strategy = LimitsFixedWindowRateLimiter(storage)
         self._namespace = namespace
 
@@ -58,7 +61,7 @@ class FixedWindowRateLimiter:
             allowed = self._strategy.hit(item, identifier)
             window = self._strategy.get_window_stats(item, identifier)
         except Exception:
-            logger.warning("Rate limiter failed open", exc_info=True)
+            logger.warning("Rate limit backend unavailable", exc_info=True)
             return RateLimitDecision(
                 allowed=True,
                 backend_available=False,
@@ -73,6 +76,3 @@ class FixedWindowRateLimiter:
             remaining=max(window.remaining, 0),
             reset_epoch_seconds=ceil(window.reset_time),
         )
-
-
-__all__ = ["FixedWindowRateLimiter", "RateLimitDecision"]

@@ -18,24 +18,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def validate_version(tag: str) -> None:
     require_tag(tag)
-    for directory in (ROOT, ROOT / "runtime", ROOT / "operator"):
+    for directory in (ROOT, ROOT / "deploy/cli", ROOT / "sdk/python"):
         project = tomllib.loads((directory / "pyproject.toml").read_text("utf-8"))
         if project["project"]["version"] != tag.removeprefix("v"):
             raise ValueError(f"Tag does not match {directory.name} package version")
 
 
 def validate_release_policy(policy: dict[str, object], revision: str, config: Config) -> None:
-    """Require the release to admit the immediately previous schema revision."""
+    """Admit only predecessors in the current immutable migration tree."""
     script = ScriptDirectory.from_config(config).get_revision(revision)
     if script is None:
         raise ValueError(f"Current database revision is not present: {revision}")
     raw_down_revision = script.down_revision
     if raw_down_revision is None:
+        if policy.get("upgrade_from_revisions") or policy.get("rollback_database_revisions"):
+            raise ValueError("An initial schema cannot admit historical upgrade/rollback revisions")
         return
     down_revisions = (
-        {raw_down_revision}
-        if isinstance(raw_down_revision, str)
-        else set(raw_down_revision)
+        {raw_down_revision} if isinstance(raw_down_revision, str) else set(raw_down_revision)
     )
     supported = policy.get("upgrade_from_revisions")
     if not isinstance(supported, list) or not down_revisions.issubset(set(supported)):
@@ -88,8 +88,14 @@ def main() -> None:
         f"opsmesh-cli-{args.tag}-{target}.{'zip' if target.startswith('windows-') else 'tar.gz'}"
         for target in CLI_PLATFORMS
     }
+    version = args.tag.removeprefix("v")
+    required |= {
+        f"{package}-{version}{suffix}"
+        for package in ("opsmesh", "opsmesh_operator", "opsmesh_sdk")
+        for suffix in ("-py3-none-any.whl", ".tar.gz")
+    }
     if not required <= {path.name for path in args.output.iterdir()}:
-        raise ValueError("Release is missing required standalone distributions")
+        raise ValueError("Release is missing native distributions or independent Python packages")
     write_checksums(args.output)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     files = [

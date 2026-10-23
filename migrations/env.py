@@ -4,12 +4,13 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from opsmesh.bootstrap.models import register_models
-from opsmesh.shared.config import get_settings
+from opsmesh.bootstrap.schema import include_schema_object
+from opsmesh.config import get_settings
 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = register_models()
 
@@ -43,7 +44,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_object=include_schema_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

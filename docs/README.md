@@ -1,26 +1,36 @@
-# 后端文档
+# OpsMesh 文档
 
-本目录只保留当前代码对应的接口、执行合同与配置说明。目录迁移计划、迁移过程报告、前端导航和旧 Worker 草案已移除；数据库迁移历史保留在 `migrations/`。
+## 使用与部署
 
-| 文档 | 范围 |
+| 文档 | 内容 |
 | --- | --- |
-| [API 使用说明](api.md) | 认证、权限、分页、错误、Chat 接入和流式事件 |
-| [完整接口参考](api/README.md) | 每个已注册接口的参数、请求、响应和权限依赖 |
-| [数据模型](api/schemas.md) / [OpenAPI](openapi.json) | 字段、约束、嵌套类型和机器可读合同 |
-| [对话与原生路由](conversations.md) | 排队、幂等、Router、专家接管、取消和重试 |
-| [执行边界](backend-execution-boundary.md) | API、Worker、Runtime 与 SDK 的职责 |
-| [SDK 原生执行](sdk-native-execution.md) | Session、审批恢复、MCP、记忆和压缩日志 |
-| [Agent 记忆与知识工具](agent-tools.md) | 模型 CRUD、权限、入库状态及原生路由配置 |
-| [共享 Runtime](shared-runtime-hosts.md) | 宿主、执行槽、并发、取消和生命周期 |
-| [托管 MCP](managed-mcp.md) | 导入、宿主绑定、进程控制和凭据 |
-| [审批配置](approval-configuration.md) | 工作空间策略、模型审核与人工批准 |
-| [执行指令配置](product-prompt-configuration.md) | 用户配置的 Agent、Team 和执行输入 |
-| [平台运维](platform-operations.md) | 访问上下文、恢复、审计、成本和状态历史 |
-| [邀请与邮件](user-invitations.md) | SMTP、邀请令牌、激活和失败重试 |
-| [服务器部署](../deploy/server/DEPLOYMENT.md) | 镜像、服务、配置、日志与升级 |
-| [管理与恢复](../deploy/server/delivery-operations.md) | 安装、CLI、备份、升级及故障恢复 |
-| [监控运维](../deploy/server/observability-audit-and-costs.md) | 指标、日志、追踪和可选监控服务 |
-| [发布分发](../deploy/DISTRIBUTIONS.md) | 原生管理 CLI 和独立服务器包 |
-| [自托管连接器](../runtime/CONNECTOR.md) | 注册、凭据和远程 Job 生命周期 |
+| [快速开始](getting-started.md) | 发行包安装、管理员登录、模型配置和第一条运行 |
+| [部署手册](../deploy/server/DEPLOYMENT.md) | Docker / 本机安装、配置、权限和基础设施 |
+| [主机操作](../deploy/server/delivery-operations.md) | 升级、备份、恢复与故障处理 |
+| [发行格式](../deploy/DISTRIBUTIONS.md) | 原生包、镜像、平台矩阵和校验合同 |
+| [观测](../deploy/server/observability.md) | 日志、指标、追踪和告警 |
+| [平台管理与自动化](platform-management.md) | 模型配置、重试、事件、调度、评测与预算 |
+| [0.1.0 发行说明](releases/0.1.0.md) | 功能范围、升级注意事项和已知限制 |
 
-API 参考由 `scripts/export_api_docs.py` 从实际应用生成，禁止手工增加未注册接口。使用 `--check` 验证无遗漏与文档漂移。实现说明不代表某台服务器已完成部署或外部模型验收。
+HTTP API 合同来自运行中服务的 `/openapi.json`，不维护手写或生成后入库的副本。
+生产环境默认关闭文档路由；按需在受控网络启用 `OPSMESH_ENABLE_API_DOCS`。
+
+## 开发与扩展
+
+| 文档 | 内容 |
+| --- | --- |
+| [贡献指南](../CONTRIBUTING.md) | 开发环境、检查与提交约定 |
+| [插件 SDK](../sdk/python/README.md) | 插件注册、打包和安装，不提供业务 API 客户端 |
+| [Agents](../src/opsmesh/agents/README.md) | 配置和原生 SDK 组装 |
+| [Execution](../src/opsmesh/execution/README.md) | 持久实例、Session、环境和 Run |
+| [Workflows](../src/opsmesh/workflows/README.md) | 编排定义、绑定、图执行和引擎边界 |
+| [Plugins](../src/opsmesh/plugins/README.md) | 安装、适配器和热更新 |
+| [Resources](../src/opsmesh/resources/README.md) | 存储接口、目录权限和资源所有权 |
+| [Gateway](../src/opsmesh/gateway/README.md) | 通道、外部身份绑定和投递 |
+| [测试范围](../tests/README.md) | 自动检查、外部依赖和覆盖限制 |
+| [工程脚本](../scripts/README.md) | 构建、发行和验收入口 |
+
+## 支持与安全
+
+问题报告使用 [GitHub Issues](https://github.com/jhupo/OpsMesh/issues)。提交日志前移除凭据、
+Session、用户输入和内部地址。漏洞通过[安全策略](../SECURITY.md)中的私密渠道报告。

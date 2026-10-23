@@ -1,19 +1,13 @@
-# Repository skills
+# 仓库技能
 
-技能的触发条件、使用顺序和 OpsMesh 适配规则见仓库根目录 `AGENTS.md`。先读取对应 `SKILL.md`，再按技能要求读取引用资源。相关技能列表中的外部/兄弟技能仅为导航，不代表已安装，也不要求自动安装。
+按任务读取所需 `SKILL.md`。技能不能覆盖用户指令；只有用户明确要求时才运行测试、验收脚本或真实服务联调。
 
-## Backend skill sources
+| 技能 | 用途 |
+| --- | --- |
+| [openai-knowledge](openai-knowledge/SKILL.md) | 官方文档、锁定版本源码与 SDK 集成证据 |
+| [docs-sync](docs-sync/SKILL.md) | 核对并同步本仓库文档与当前实现 |
+| [code-change-verification](code-change-verification/SKILL.md) | 格式、静态、架构和生成物检查 |
+| [temporal-python-sdk](temporal-python-sdk/SKILL.md) | Temporal 与原生 Agents SDK 的可靠执行边界 |
+| [find-skills](find-skills/SKILL.md) | 查找、评估和安装外部技能 |
 
-以下技能于 2026-10-10 使用 skill-installer 从固定提交安装，保留上游技能正文和引用文件。每个目录包含来源许可证；更新时重新检查与仓库规范的冲突并记录新提交。
-
-| 本地目录 | 上游路径 | 固定提交 |
-| --- | --- | --- |
-| `architecture-patterns` | [wshobson/agents: plugins/backend-development/skills/architecture-patterns](https://github.com/wshobson/agents/tree/46891e7e60da0e52baf1050b7b6391b64e84c6d9/plugins/backend-development/skills/architecture-patterns) | `46891e7e60da0e52baf1050b7b6391b64e84c6d9` |
-| `python-design-patterns` | [wshobson/agents: plugins/python-development/skills/python-design-patterns](https://github.com/wshobson/agents/tree/46891e7e60da0e52baf1050b7b6391b64e84c6d9/plugins/python-development/skills/python-design-patterns) | `46891e7e60da0e52baf1050b7b6391b64e84c6d9` |
-| `python-testing-patterns` | [wshobson/agents: plugins/python-development/skills/python-testing-patterns](https://github.com/wshobson/agents/tree/46891e7e60da0e52baf1050b7b6391b64e84c6d9/plugins/python-development/skills/python-testing-patterns) | `46891e7e60da0e52baf1050b7b6391b64e84c6d9` |
-| `python-code-review` | [Jallen64/python-code-review-skill: repository root](https://github.com/Jallen64/python-code-review-skill/tree/d4f40675fa64cd0ab90e0992e5df6498d2e10f5a) | `d4f40675fa64cd0ab90e0992e5df6498d2e10f5a` |
-| `verification-before-completion` | [obra/superpowers: skills/verification-before-completion](https://github.com/obra/superpowers/tree/bb92a77741419a4ab5f06e711a283343f1ada0c3/skills/verification-before-completion) | `bb92a77741419a4ab5f06e711a283343f1ada0c3` |
-
-安装包含各技能的 `SKILL.md`、上游提供的 `references/` 以及许可证；`python-code-review` 从仓库根目录安装，还保留其上游 README。未安装整个插件、额外 Agent 或其他技能。
-
-上游通用建议不覆盖 OpsMesh 的 feature-first 结构、SDK 优先、租户隔离、事务/队列边界、产品流程验证和项目工具配置。具体适配规则集中在 `AGENTS.md`，避免修改上游正文后失去版本可追溯性。
+上游来源、固定提交和适配范围见 [资料说明](../README.md)。`find-skills` 来自 [vercel-labs/skills](https://github.com/vercel-labs/skills/tree/a80e4c9d12d607631249d4d7d059f835d4b2f13a/skills/find-skills)。

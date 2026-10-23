@@ -1,4 +1,4 @@
-"""Focused PR validation; the full suite belongs only to release-prepare.yml."""
+"""Select current feature tests and their dependent boundaries for pull requests."""
 
 from __future__ import annotations
 
@@ -7,73 +7,114 @@ import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+DEPENDENTS = {
+    "users": {
+        "resources",
+        "plugins",
+        "gateway",
+        "agents",
+        "workflows",
+        "execution",
+        "platform",
+    },
+    "plugins": {"agents", "gateway", "execution", "workflows"},
+    "resources": {"agents", "execution", "workflows", "gateway"},
+    "platform": {"execution", "workflows"},
+    "agents": {"workflows", "execution"},
+    "execution": {"workflows", "gateway"},
+    "workflows": {"bootstrap"},
+    "gateway": {"bootstrap"},
+    "temporal": {"workflows", "bootstrap"},
+    "telemetry": {"bootstrap", "temporal", "users", "resources", "platform"},
+}
+NATIVE_SANDBOX_TEST = "tests/execution/test_sandbox_docker.py"
+
 
 def select_tests(changed: list[str]) -> list[str]:
-    # Select product boundaries, not helper filenames or implementation classes.
-    flows = {
-        "identity": {"test_auth_api.py", "test_tenant_isolation_matrix.py", "test_admin_api.py"},
-        "agents": {"test_agent_runtime_critical_e2e.py"},
-        "capabilities": {"test_capabilities_api.py", "test_marketplace_api.py"},
-        "orchestration": {
-            "test_user_orchestration.py", "test_agent_runtime_recovery_e2e.py", "test_webhooks.py"
-        },
-        "workspaces": {"test_workspace_projects.py", "test_workspace_export_api.py"},
-        "teams": {"test_worker_runner.py", "test_workspace_api.py"},
-        "resources": {"test_file_api.py", "test_workspace_export_api.py"},
-        "messaging": {"test_notifications_api.py", "test_platform_mail_invitations.py"},
-        "governance": {"test_audit_integrity_api.py", "test_cost_api.py"},
-        "runtime": {"test_worker_runner.py", "test_agent_runtime_recovery_e2e.py"},
-        "shared": {"test_auth_api.py", "test_user_orchestration.py", "test_operations_api.py"},
-        "bootstrap": {"test_model_registration.py", "test_worker_runner.py", "test_admin_api.py"},
-        "platform": {"test_platform_updates.py"},
-    }
-    tests: set[str] = set()
+    """Return existing targets from the current feature tree."""
+    directories: set[str] = set()
+    selected: set[str] = set()
+    features: set[str] = set()
     for name in changed:
         path = Path(name)
-        if name.startswith("operator/"):
-            tests.update({"test_operator_security.py", "test_platform_updates.py"})
-        if name.startswith(("deploy/", ".github/workflows/")):
-            tests.add("test_deployment_assets.py")
-        if name.startswith("scripts/release"):
-            tests.add("test_release_delivery.py")
-        if name in {"scripts/ci_tests.py", "scripts/ci_command.py"}:
-            tests.add("test_ci_command.py")
-        if name in {"pyproject.toml", "uv.lock"}:
-            tests.update({"test_health.py", "test_user_orchestration.py"})
-        if name.startswith("tests/test_") and path.is_file():
-            tests.add(path.name)
+        if name.startswith("tests/") and path.suffix == ".py":
+            if path.name == "conftest.py" and len(path.parts) == 2:
+                directories.add("tests")
+            elif not path.name.startswith("test_") or not (ROOT / path).is_file():
+                directories.add(str(path.parent).replace("\\", "/"))
+        if (
+            path.suffix == ".py"
+            and path.name.startswith("test_")
+            and (ROOT / path).is_file()
+            and name.startswith(("tests/", "sdk/python/tests/", "deploy/cli/tests/"))
+        ):
+            selected.add(path.as_posix())
         if name.startswith("src/opsmesh/"):
-            tests.add("test_health.py")
-            for domain, targets in flows.items():
-                if name.startswith(f"src/opsmesh/{domain}/"):
-                    tests.update(targets)
-    return sorted(f"tests/{name}" for name in tests)
+            feature = path.parts[2]
+            if feature in {"shared", "bootstrap", "config.py", "__init__.py"}:
+                directories.add("tests")
+            else:
+                features.add(feature)
+                directories.add("tests/bootstrap")
+        if name in {"pyproject.toml", "uv.lock", "scripts/ci_tests.py"} or name.startswith(
+            "migrations/"
+        ):
+            directories.update({"tests", "sdk/python/tests", "deploy/cli/tests"})
+        if name.startswith("sdk/python/"):
+            directories.update(
+                {
+                    "sdk/python/tests",
+                    "tests/plugins",
+                    "tests/agents",
+                    "tests/workflows",
+                    "tests/gateway",
+                    "tests/platform",
+                    "tests/bootstrap",
+                    "deploy/cli/tests",
+                }
+            )
+        if name.startswith(("deploy/cli/", "deploy/", ".github/", "scripts/")):
+            directories.update({"deploy/cli/tests", "tests/engineering", "tests/platform"})
+    pending = list(features)
+    while pending:
+        for feature in DEPENDENTS.get(pending.pop(), set()) - features:
+            features.add(feature)
+            pending.append(feature)
+    directories.update(f"tests/{feature}" for feature in features)
+    for directory in directories:
+        folder = ROOT / directory
+        if folder.is_dir():
+            selected.update(path.relative_to(ROOT).as_posix() for path in folder.rglob("test_*.py"))
+    return sorted(selected)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True)
+    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     if not args.base or set(args.base) == {"0"}:
         parser.error("A real base commit is required")
     changed = subprocess.check_output(
-        ["git", "diff", "--name-status", "--find-renames", f"{args.base}...HEAD"], text=True
+        ["git", "diff", "--name-only", "--diff-filter=ACDMRT", f"{args.base}...HEAD"],
+        text=True,
+        cwd=ROOT,
     ).splitlines()
-    paths = []
-    for entry in changed:
-        fields = entry.split("\t")
-        status, path = fields[0], fields[-1]
-        # A relocated test tree is validated by affected domain flows; running every
-        # renamed file would turn a source-layout change into the release-only suite.
-        if status.startswith("R") and path.startswith("tests/"):
-            continue
-        paths.append(path)
-    tests = select_tests(paths)
+    tests = select_tests(changed)
+    if args.github_output is not None:
+        with args.github_output.open("a", encoding="utf-8") as output:
+            output.write(f"has_tests={str(bool(tests)).lower()}\n")
+            output.write(f"native_sandbox={str(NATIVE_SANDBOX_TEST in tests).lower()}\n")
+        print("Focused test targets:", *tests, flush=True)
+        return 0
     if not tests:
         print("No affected product flows; static checks cover this change.", flush=True)
         return 0
     print("Focused test targets:", *tests, flush=True)
-    return subprocess.run([sys.executable, "-m", "pytest", *tests], check=False).returncode
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *tests], cwd=ROOT, check=False
+    ).returncode
 
 
 if __name__ == "__main__":

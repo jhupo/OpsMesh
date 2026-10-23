@@ -1,14 +1,12 @@
-from typing import TypeVar
+"""SQL query pagination with total counts."""
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from opsmesh.shared.pagination import PageParams
 
-T = TypeVar("T")
 
-
-def page_scalars(
+def page_scalars[T](
     session: Session,
     statement: Select[tuple[T]],
     page: PageParams,
@@ -21,7 +19,7 @@ def page_scalars(
     )
 
 
-def page_scalars_by_offset(
+def page_scalars_by_offset[T](
     session: Session,
     statement: Select[tuple[T]],
     *,

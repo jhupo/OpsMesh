@@ -29,6 +29,10 @@ def main() -> None:
         )
     if any(not (name.startswith("opsmesh/") or ".dist-info/" in name) for name in names):
         raise ValueError("Wheel contains files outside the application package and metadata")
+    with ZipFile(wheel) as archive:
+        for name in sorted(expected):
+            if archive.read(name) != (ROOT / "src" / name).read_bytes():
+                raise ValueError(f"Wheel contains stale source: {name}")
     code = """
 import importlib
 import os
@@ -37,21 +41,24 @@ os.environ.update(OPSMESH_ENVIRONMENT='test', OPSMESH_TRACING_ENABLED='false',
                   OPSMESH_OTEL_LOGS_ENABLED='false', OPSMESH_LOG_LEVEL='ERROR')
 sys.path.insert(0, sys.argv[1])
 from fastapi.testclient import TestClient
-from opsmesh.main import app
+from opsmesh.bootstrap.api import create_app
 from opsmesh.bootstrap.models import register_models
-for name in ('opsmesh.runtime.workers.cli', 'opsmesh.runtime.agent_host.main',
-             'opsmesh.platform.updates.daemon', 'opsmesh.delivery'):
+for name in ('opsmesh.bootstrap.worker',):
     importlib.import_module(name)
-with TestClient(app) as client:
-    assert client.get('/api/v1/health').status_code == 200
-    assert client.post('/api/v1/auth/login', json={}).json()['error']['code'] == 'validation_error'
+app = create_app()
+# No lifespan: package integrity requires no external infrastructure.
+# Startup/readiness is exercised separately on real PG/Redis/Temporal.
+client = TestClient(app)
+assert client.get('/api/v1/health').status_code == 200
+assert '/api/v1/auth/login' in app.openapi()['paths']
+client.close()
 assert app.openapi()['paths']
 for name, module in list(sys.modules.items()):
     if name == 'opsmesh' or name.startswith('opsmesh.'):
         assert module.__file__.startswith(sys.argv[1]), (name, module.__file__)
 model_count = len(register_models().tables)
 assert model_count > 0
-print(f'Isolated wheel import, API, Worker, updater, SDK host and {model_count} models verified')
+print(f'Isolated wheel import, API, Worker CLI and {model_count} models verified')
 """
     with tempfile.TemporaryDirectory(prefix="opsmesh-wheel-check-") as directory:
         subprocess.run(

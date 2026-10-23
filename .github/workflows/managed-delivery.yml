@@ -5,19 +5,11 @@ on:
       tag:
         required: true
         type: string
-      previous:
-        required: true
-        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: Published release containing the independent updater under test
+        description: Staged release containing the deployment CLI under test
         required: true
-        type: string
-      previous:
-        description: Published baseline; incompatible rollback must be rejected
-        required: true
-        default: v0.1.0rc9
         type: string
 permissions:
   # GitHub only includes unpublished candidate releases for credentials with
@@ -37,7 +29,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.tag }}
-      PREVIOUS_TAG: ${{ inputs.previous }}
       DEPLOYMENT_MODE: ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,21 +41,43 @@ jobs:
         if: matrix.mode == 'systemd'
         run: |
           acceptance_pg_password=$(openssl rand -hex 32)
+          acceptance_temporal_password=$(openssl rand -hex 32)
           echo "::add-mask::$acceptance_pg_password"
+          echo "::add-mask::$acceptance_temporal_password"
           printf 'ACCEPTANCE_POSTGRES_PASSWORD=%s\n' "$acceptance_pg_password" >> "$GITHUB_ENV"
+          printf 'ACCEPTANCE_TEMPORAL_POSTGRES_PASSWORD=%s\n' "$acceptance_temporal_password" >> "$GITHUB_ENV"
           docker run -d --name acceptance-postgres -p 127.0.0.1:5432:5432 \
             -e POSTGRES_DB=opsmesh -e POSTGRES_USER=opsmesh -e "POSTGRES_PASSWORD=$acceptance_pg_password" \
             --health-cmd 'pg_isready -U opsmesh' --health-interval 2s --health-retries 30 \
-            pgvector/pgvector:0.8.6-pg16-bookworm
+            postgres:16-bookworm
           docker run -d --name acceptance-redis -p 127.0.0.1:6379:6379 redis:7-alpine
-      - name: Signed native install, cross-version upgrade and real interruption recovery
+          printf 'OPSMESH_TEMPORAL_POSTGRES_PASSWORD=%s\n' "$acceptance_temporal_password" > /tmp/opsmesh-acceptance-temporal.env
+          chmod 600 /tmp/opsmesh-acceptance-temporal.env
+          printf 'services:\n  temporal-postgres:\n    ports: ["127.0.0.1:5433:5432"]\n' > /tmp/opsmesh-acceptance-temporal-ports.yml
+          docker compose --env-file /tmp/opsmesh-acceptance-temporal.env -p acceptance-temporal -f deploy/temporal/compose.yml -f /tmp/opsmesh-acceptance-temporal-ports.yml up -d temporal-namespace
+          uv run python -m opsmesh_operator.compose --timeout 180 -- docker compose --env-file /tmp/opsmesh-acceptance-temporal.env -p acceptance-temporal -f deploy/temporal/compose.yml -f /tmp/opsmesh-acceptance-temporal-ports.yml
+          sudo tee /etc/systemd/system/opsmesh-acceptance-temporal.service >/dev/null <<EOF
+          [Unit]
+          Description=Disposable OpsMesh Temporal acceptance service
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/bin/docker compose --env-file /tmp/opsmesh-acceptance-temporal.env -p acceptance-temporal -f $GITHUB_WORKSPACE/deploy/temporal/compose.yml -f /tmp/opsmesh-acceptance-temporal-ports.yml up -d --no-deps --wait temporal
+          ExecStop=/usr/bin/docker compose --env-file /tmp/opsmesh-acceptance-temporal.env -p acceptance-temporal -f $GITHUB_WORKSPACE/deploy/temporal/compose.yml -f /tmp/opsmesh-acceptance-temporal-ports.yml stop temporal
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl start opsmesh-acceptance-temporal.service
+      - name: Attested fresh install, real flow, complete snapshot restore and tamper denial
         run: |
           sudo env "PATH=$PATH" "OPSMESH_RELEASE_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \
             "ACCEPTANCE_POSTGRES_PASSWORD=${ACCEPTANCE_POSTGRES_PASSWORD:-}" \
+            "ACCEPTANCE_TEMPORAL_POSTGRES_PASSWORD=${ACCEPTANCE_TEMPORAL_POSTGRES_PASSWORD:-}" \
             .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_managed_delivery.py \
-            --tag "$RELEASE_TAG" --previous "$PREVIOUS_TAG" --mode "$DEPLOYMENT_MODE"
+            --tag "$RELEASE_TAG" --mode "$DEPLOYMENT_MODE"
       - name: Redacted service diagnostics on failure
         if: failure()
         run: |
           sudo .venv/bin/python scripts/ci_command.py journalctl \
-            -u opsmesh-updater -u opsmesh-api -u opsmesh-worker --no-pager -n 150
+            -u opsmesh-acceptance-temporal -u opsmesh-api -u opsmesh-worker --no-pager -n 150

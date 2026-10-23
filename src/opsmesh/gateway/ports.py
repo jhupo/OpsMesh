@@ -1,0 +1,13 @@
+"""Application adapters supply execution and authorization."""
+
+from typing import Protocol
+from uuid import UUID
+
+from opsmesh.gateway.contracts import GatewayTurn, RouteDefinition
+
+
+class ExecutionPort(Protocol):
+    async def authorize(self, user_id: UUID, route: RouteDefinition) -> None: ...
+    async def submit(self, turn: GatewayTurn) -> UUID: ...
+    async def result(self, turn: GatewayTurn, run_id: UUID) -> tuple[str, object]: ...
+    async def control(self, turn: GatewayTurn, command: str) -> str: ...

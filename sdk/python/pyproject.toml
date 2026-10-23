@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opsmesh-sdk"
+version = "0.1.0"
+description = "Plugin contracts, registration and package development for OpsMesh."
+readme = "README.md"
+requires-python = ">=3.11.8"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
+dependencies = ["pydantic>=2.10.0,<3.0.0", "pyyaml>=6.0,<7.0"]
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.11,<3.0",
+    "mypy>=1.17.0,<2.0.0",
+    "pytest>=8.4.0,<9.0.0",
+    "ruff>=0.12.0,<1.0.0",
+    "types-pyyaml>=6.0.12",
+]
+
+[project.scripts]
+opsmesh-plugin = "opsmesh_sdk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opsmesh_sdk*"]
+
+[tool.setuptools.package-data]
+opsmesh_sdk = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.mypy]
+strict = true
+files = ["src/opsmesh_sdk"]
+
+[tool.importlinter]
+root_package = "opsmesh_sdk"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Plugin SDK is independent of the server and execution infrastructure"
+type = "forbidden"
+source_modules = ["opsmesh_sdk"]
+forbidden_modules = ["opsmesh", "fastapi", "sqlalchemy", "temporalio", "agents", "openai", "mcp"]

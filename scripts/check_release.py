@@ -7,20 +7,32 @@ import tempfile
 from pathlib import Path
 
 from opsmesh_operator.commands import run_command
-from opsmesh_operator.releases import ReleaseSource
+from opsmesh_operator.releases import ReleaseDownloader
 
 
 def verify_attestation(path: str, tag: str, commit: str, repository: str) -> None:
-    run_command([
-        "gh", "attestation", "verify", path, "--repo", repository,
-        "--signer-workflow", f"{repository}/.github/workflows/release-publish.yml",
-        "--source-ref", f"refs/tags/{tag}", "--source-digest", commit,
-        "--deny-self-hosted-runners",
-    ], timeout=120)
+    run_command(
+        [
+            "gh",
+            "attestation",
+            "verify",
+            path,
+            "--repo",
+            repository,
+            "--signer-workflow",
+            f"{repository}/.github/workflows/release-publish.yml",
+            "--source-ref",
+            f"refs/tags/{tag}",
+            "--source-digest",
+            commit,
+            "--deny-self-hosted-runners",
+        ],
+        timeout=120,
+    )
 
 
 def verify_release(tag: str, repository: str) -> None:
-    source = ReleaseSource(repository)
+    source = ReleaseDownloader(repository)
     with tempfile.TemporaryDirectory(prefix="opsmesh-release-verification-") as temporary:
         directory = Path(temporary)
         manifest = source.fetch_manifest(tag, directory)

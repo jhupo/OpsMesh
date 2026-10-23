@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Sync"
+  short_description: "Sync OpsMesh docs with implementation contracts"
+  default_prompt: "Use $docs-sync to align OpsMesh documentation and maintainer references with the requested implementation scope."

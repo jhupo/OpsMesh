@@ -4,13 +4,13 @@
 
 ## Tests
 
-<!-- Example: uv run ruff check . && uv run pytest -->
+<!-- List static checks and explicitly requested tests actually run; explain unverified scope. -->
 
 ## Safety Checklist
 
-- [ ] Workspace isolation is preserved.
+- [ ] User ownership, grants and private histories are preserved.
 - [ ] Secrets and provider URLs are redacted from API responses, logs, and events.
-- [ ] Public resources still require review before visibility.
+- [ ] Configuration, instance, Run and plugin lifetimes remain separate.
 - [ ] Risky execution remains sandboxed or approval-gated.
 - [ ] Migrations are included when database schema changes.
 

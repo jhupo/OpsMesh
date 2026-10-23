@@ -1,70 +1,49 @@
-"""Explicit ORM registration shared by API, workers, migrations and tests."""
-
-from importlib import import_module
+"""Explicit registration for the current source tree, without legacy discovery."""
 
 from sqlalchemy import MetaData
-from sqlalchemy.orm import configure_mappers
 
+from opsmesh.agents.catalog import models as catalog
+from opsmesh.execution.instances import models as instances
+from opsmesh.execution.runs import models as runs
+from opsmesh.execution.runtime import models as runtime
+from opsmesh.execution.sessions import models as model_sessions
+from opsmesh.gateway import models as gateway
+from opsmesh.platform.audit import models as audit
+from opsmesh.platform.billing import models as billing
+from opsmesh.platform.evaluations import models as evaluations
+from opsmesh.resources.directories import models as resources
 from opsmesh.shared.db.base import Base
-
-_MODEL_MODULES = (
-    "opsmesh.platform.data_migrations.models",
-    "opsmesh.runtime.queues.models",
-    "opsmesh.orchestration.conversations.models",
-    "opsmesh.runtime.operations.models",
-    "opsmesh.governance.policies.models",
-    "opsmesh.messaging.email.models",
-    "opsmesh.platform.updates.models",
-    "opsmesh.identity.auth.models",
-    "opsmesh.identity.authorization.models",
-    "opsmesh.identity.invitations.models",
-    "opsmesh.identity.users.models",
-    "opsmesh.orchestration.webhooks.models",
-    "opsmesh.orchestration.automations.models",
-    "opsmesh.governance.security_events.models",
-    "opsmesh.resources.memory.models",
-    "opsmesh.agents.messages.models",
-    "opsmesh.agents.profiles.models",
-    "opsmesh.agents.providers.models",
-    "opsmesh.agents.sessions.models",
-    "opsmesh.capabilities.marketplace.models",
-    "opsmesh.capabilities.plugins.models",
-    "opsmesh.capabilities.catalog.models",
-    "opsmesh.capabilities.mcp.models",
-    "opsmesh.capabilities.references.models",
-    "opsmesh.capabilities.skills.models",
-    "opsmesh.resources.knowledge.models",
-    "opsmesh.orchestration.approvals.models",
-    "opsmesh.orchestration.definitions.models",
-    "opsmesh.orchestration.runs.subworkflow_models",
-    "opsmesh.orchestration.runs.models",
-    "opsmesh.orchestration.tasks.models",
-    "opsmesh.orchestration.planning.attempt_models",
-    "opsmesh.workspaces.domain_items.models",
-    "opsmesh.resources.transfers.models",
-    "opsmesh.workspaces.projects.models",
-    "opsmesh.resources.artifacts.models",
-    "opsmesh.resources.files.models",
-    "opsmesh.teams.management.models",
-    "opsmesh.workspaces.management.models",
-    "opsmesh.workspaces.members.models",
-    "opsmesh.workspaces.quotas.models",
-    "opsmesh.governance.audit.models",
-    "opsmesh.governance.costs.models",
-    "opsmesh.messaging.notifications.models",
-    "opsmesh.runtime.instances.models",
-    "opsmesh.runtime.spaces.models",
-    "opsmesh.runtime.workers.models",
-    "opsmesh.runtime.self_hosted.models",
-    "opsmesh.orchestration.scheduling.models",
-)
+from opsmesh.temporal.dispatch import models as dispatch
+from opsmesh.users import models as users
+from opsmesh.users.auth import models as authentication
+from opsmesh.users.invitations import models as invitations
+from opsmesh.users.quotas import models as quotas
+from opsmesh.workflows import models as workflows
+from opsmesh.workflows.instances import models as workflow_instances
+from opsmesh.workflows.runs import models as workflow_runs
+from opsmesh.workflows.triggers import models as triggers
 
 
 def register_models() -> MetaData:
-    for module_name in _MODEL_MODULES:
-        import_module(module_name)
-    configure_mappers()
-    from opsmesh.orchestration.conversations.dispatch import register_task_notifications
-
-    register_task_notifications()
+    _ = (
+        catalog,
+        billing,
+        evaluations,
+        triggers,
+        runs,
+        instances,
+        model_sessions,
+        gateway,
+        runtime,
+        resources,
+        users,
+        authentication,
+        invitations,
+        quotas,
+        workflows,
+        workflow_instances,
+        workflow_runs,
+        audit,
+        dispatch,
+    )
     return Base.metadata

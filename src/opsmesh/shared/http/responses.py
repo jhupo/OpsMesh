@@ -1,17 +1,16 @@
+"""Build stable paginated HTTP responses from domain items."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TypeVar
 
 from pydantic import BaseModel
 
 from opsmesh.shared.http.pagination import PageResponse
 from opsmesh.shared.pagination import PageParams
 
-ResponseT = TypeVar("ResponseT", bound=BaseModel)
 
-
-def page_response(
+def page_response[ResponseT: BaseModel](
     items: Iterable[object],
     total: int,
     page: PageParams,

@@ -1,15 +1,22 @@
 name: opsmesh
+include:
+  - ../temporal/compose.yml
 x-api: &api
   image: ${OPSMESH_API_IMAGE:?Set an attested API image digest}
   env_file: ${OPSMESH_ROOT:?Set installation root}/.env
   environment: &environment
     OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:?Set database password}@postgres:5432/opsmesh
     OPSMESH_REDIS_URL: redis://redis:6379/0
-    OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
-    OPSMESH_RUN_MIGRATIONS: 'false'
-    OPSMESH_RUNTIME_ALLOWED_IMAGES: ${OPSMESH_RUNTIME_ALLOWED_IMAGES:?Set attested runtime images}
+    OPSMESH_TEMPORAL_ADDRESS: temporal:7233
+    OPSMESH_STORAGE_ROOT: ${OPSMESH_ROOT}/data/storage
+    OPSMESH_EXECUTION_SANDBOX_IMAGES: ${OPSMESH_EXECUTION_SANDBOX_IMAGES:?Set attested runtime images}
+    OPSMESH_PLUGINS_ROOT: ${OPSMESH_ROOT}/plugins
+    OPSMESH_BUILD_COMMIT: ${OPSMESH_BUILD_COMMIT:?Set attested build commit}
   volumes:
-    - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+    - type: bind
+      source: ${OPSMESH_ROOT}/data/storage
+      target: ${OPSMESH_ROOT}/data/storage
+    - ${OPSMESH_ROOT}/plugins:${OPSMESH_ROOT}/plugins
   restart: unless-stopped
   logging:
     driver: json-file
@@ -22,33 +29,53 @@ x-api: &api
 services:
   api:
     <<: *api
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-api
-    ports: ['${OPSMESH_API_BIND:-127.0.0.1}:${OPSMESH_API_PORT:-8000}:8000']
+      OPSMESH_METRICS_HOST: '0.0.0.0'
+      OPSMESH_METRICS_PORT: '9000'
+    ports:
+      - '${OPSMESH_API_BIND:-127.0.0.1}:${OPSMESH_API_PORT:-8000}:8000'
+      - '127.0.0.1:${OPSMESH_METRICS_PORT:-9000}:9000'
     healthcheck:
-      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=3).read()']
+      test: [CMD, python, -c, 'import os,urllib.request; prefix=os.environ.get("OPSMESH_API_PREFIX","/api/v1"); urllib.request.urlopen("http://127.0.0.1:8000"+prefix+"/health/ready", timeout=8).read()']
       interval: 5s
-      timeout: 4s
+      timeout: 10s
       retries: 24
   worker:
     <<: *api
     image: ${OPSMESH_WORKER_IMAGE:?Set an attested Worker image digest}
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-worker
-    # Only the runtime-management worker has daemon authority. Never expose this to API/runtimes.
+    # Only the SDK sandbox Worker has daemon authority. Never expose this to API/runtimes.
     group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
     volumes:
-      - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
+      - type: bind
+        source: ${OPSMESH_ROOT}/data/storage
+        target: ${OPSMESH_ROOT}/data/storage
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${OPSMESH_ROOT}/plugins:${OPSMESH_ROOT}/plugins:ro
+  gateway:
+    <<: *api
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
+    environment:
+      <<: *environment
+      OPSMESH_SERVICE_NAME: opsmesh-gateway
+    command: [opsmesh-server, gateway]
+    ports: []
   migrate:
     <<: *api
     profiles: [maintenance]
     restart: 'no'
-    command: [alembic, upgrade, head]
+    command: [opsmesh-server, migrate]
   postgres:
-    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    image: postgres:16-bookworm
     environment:
       POSTGRES_USER: opsmesh
       POSTGRES_DB: opsmesh

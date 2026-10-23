@@ -1,0 +1,34 @@
+{
+  "providers": [
+    {
+      "id": "primary",
+      "name": "Primary model provider",
+      "protocol": "openai_responses",
+      "credential_ref": "env:OPSMESH_MODEL_API_KEY",
+      "timeout": 60,
+      "max_retries": 2,
+      "request_timeout": 300,
+      "models": [
+        {
+          "id": "replace-with-model-id",
+          "max_output_tokens": 2048
+        }
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "id": "assistant",
+      "visibility": "public",
+      "config": {
+        "type": "agent",
+        "name": "Assistant",
+        "instructions": "Answer the user's request using authorized tools.",
+        "model": {
+          "provider_id": "primary",
+          "model_id": "replace-with-model-id"
+        }
+      }
+    }
+  ]
+}

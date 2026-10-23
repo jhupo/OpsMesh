@@ -1,11 +1,50 @@
-from collections.abc import Generator
+"""Engine, session factories and caller-owned transaction boundaries."""
+
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
-from sqlalchemy import Engine, create_engine
+import sqlalchemy
+from sqlalchemy import Engine
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from opsmesh.shared.config import Settings, get_settings
+from opsmesh.shared.db.errors import DatabaseConflictError
+
+POSTGRES_BACKEND = "postgresql"
+DEFAULT_POOL_TIMEOUT_SECONDS = 30
+DEFAULT_POOL_RECYCLE_SECONDS = 1800
+DEFAULT_STATEMENT_TIMEOUT_MS = 30000
+
+
+@contextmanager
+def session_transaction(
+    session: Session, *, conflict_message: str | None = None
+) -> Iterator[Session]:
+    """Caller-selected boundary for all staged work; does not close the session.
+
+    This commits the current transaction, including changes staged before entry.
+    Use only at the application operation boundary, never inside domain helpers.
+    """
+    try:
+        yield session
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if conflict_message is not None:
+            raise DatabaseConflictError(conflict_message) from exc
+        raise
+    except BaseException:
+        session.rollback()
+        raise
+
+
+@contextmanager
+def database_transaction(sessions: Callable[[], Session]) -> Iterator[Session]:
+    """Commit staged changes, rollback any failure, and close the session."""
+    with sessions() as session, session_transaction(session):
+        yield session
 
 
 @dataclass(frozen=True)
@@ -32,39 +71,34 @@ class DatabasePoolSnapshot:
         }
 
 
-def create_database_engine(settings: Settings) -> Engine:
-    engine_kwargs: dict[str, object] = {
-        "pool_pre_ping": True,
-        "future": True,
-    }
-    if not _is_sqlite_url(settings.database_url):
-        engine_kwargs.update(
-            {
-                "pool_size": settings.database_pool_size,
-                "max_overflow": settings.database_max_overflow,
-                "pool_timeout": settings.database_pool_timeout_seconds,
-                "pool_recycle": settings.database_pool_recycle_seconds,
-            }
-        )
-        if _is_postgres_url(settings.database_url):
-            engine_kwargs["connect_args"] = {
-                "options": (
-                    f"-c statement_timeout={settings.database_statement_timeout_ms}"
-                )
-            }
-    return create_engine(settings.database_url, **engine_kwargs)
+def create_database_engine(
+    url: str,
+    *,
+    pool_size: int,
+    max_overflow: int,
+    pool_timeout_seconds: int = DEFAULT_POOL_TIMEOUT_SECONDS,
+    pool_recycle_seconds: int = DEFAULT_POOL_RECYCLE_SECONDS,
+    statement_timeout_ms: int = DEFAULT_STATEMENT_TIMEOUT_MS,
+) -> Engine:
+    database_url = make_url(url)
+    if database_url.get_backend_name() != POSTGRES_BACKEND:
+        raise ValueError("OpsMesh requires PostgreSQL")
+    options = database_url.query.get("options", "")
+    if not isinstance(options, str):
+        raise ValueError("PostgreSQL options must have a single value")
+    statement_timeout = f"-c statement_timeout={statement_timeout_ms}"
+    return sqlalchemy.create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout_seconds,
+        pool_recycle=pool_recycle_seconds,
+        connect_args={"options": f"{options} {statement_timeout}".strip()},
+    )
 
 
-def _is_sqlite_url(database_url: str) -> bool:
-    return make_url(database_url).get_backend_name() == "sqlite"
-
-
-def _is_postgres_url(database_url: str) -> bool:
-    return make_url(database_url).get_backend_name().startswith("postgresql")
-
-
-def database_pool_snapshot(target_engine: Engine | None = None) -> DatabasePoolSnapshot:
-    resolved_engine = target_engine or engine
+def database_pool_snapshot(resolved_engine: Engine) -> DatabasePoolSnapshot:
     pool = resolved_engine.pool
     return DatabasePoolSnapshot(
         backend=resolved_engine.url.get_backend_name(),
@@ -91,18 +125,3 @@ def _pool_int(pool: object, method_name: str) -> int | None:
 def _pool_attr_int(pool: object, attr_name: str) -> int | None:
     value = getattr(pool, attr_name, None)
     return value if isinstance(value, int) else None
-
-
-engine = create_database_engine(get_settings())
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-
-def get_db_session() -> Generator[Session, None, None]:
-    session = SessionLocal()
-    try:
-        yield session
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()

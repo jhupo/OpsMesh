@@ -11,6 +11,8 @@ __pycache__
 .env.*
 .codex
 .agents
+backup
+backup_2
 .tmp
 .tmp-release
 output

@@ -1,17 +1,48 @@
+"""Public error envelope and HTTP exception handlers for neutral errors."""
+
 from collections.abc import Mapping, Sequence
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette import status
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.errors import DomainError
+
+
+class ErrorInfo(BaseModel):
+    code: str
+    message: str
+    request_id: str | None
+    details: dict[str, object] | list[dict[str, object]] | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorInfo
 
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(HTTPException, http_exception_handler)
+    # Starlette's routing raises the base HTTPException for unmatched paths and
+    # methods; FastAPI's subclass inherits from it, so one handler covers both
+    # and framework-generated 404/405 answers keep the unified error envelope.
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(DomainError, domain_exception_handler)
+    app.add_exception_handler(DatabaseConflictError, database_conflict_handler)
+
+
+async def database_conflict_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, DatabaseConflictError):
+        raise exc
+    return error_response(
+        status_code=409,
+        code="conflict",
+        message=exc.message,
+        request_id=getattr(request.state, "request_id", None),
+    )
 
 
 async def validation_exception_handler(
@@ -38,7 +69,7 @@ async def http_exception_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
-    if not isinstance(exc, HTTPException):
+    if not isinstance(exc, StarletteHTTPException):
         raise exc
 
     message = exc.detail if isinstance(exc.detail, str) else "Request failed"
@@ -104,6 +135,8 @@ def _code_for_status(status_code: int) -> str:
             return "forbidden"
         case status.HTTP_404_NOT_FOUND:
             return "not_found"
+        case status.HTTP_405_METHOD_NOT_ALLOWED:
+            return "method_not_allowed"
         case status.HTTP_409_CONFLICT:
             return "conflict"
         case status.HTTP_413_CONTENT_TOO_LARGE:

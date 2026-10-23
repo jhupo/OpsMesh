@@ -207,9 +207,7 @@ tar -xzf "$work_directory/$archive" -C "$work_directory/cli"
 "$work_directory/cli/opsmesh" --root "$install_root" install \
     --version "$version" --origin "$origin" --mode "$mode" --repository "$repository"
 
-# Keep the host operator available for later status, update and credential recovery commands.
-install -d -m 0750 "$install_root/operator"
-cp -a "$work_directory/cli/." "$install_root/operator/"
+# The installer staged and activated the manifest-verified immutable operator release.
 ln -sfn "$install_root/operator/opsmesh" /usr/local/bin/opsmesh
 
 echo "OpsMesh $version installed under $install_root"

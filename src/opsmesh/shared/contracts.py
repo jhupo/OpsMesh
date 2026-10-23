@@ -1,18 +1,27 @@
-from datetime import datetime
-from uuid import UUID
+"""Neutral value contracts: JSON values, UTC time and identifier construction."""
 
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
+
+type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
+type JsonObject = dict[str, JsonValue]
+Identifier = UUID
 
 
-class ORMModel(BaseModel):
-    """Base contract for models serialized from persisted domain objects."""
+def utc_now() -> datetime:
+    """Current time as an aware UTC datetime."""
+    return datetime.now(UTC)
 
-    model_config = ConfigDict(from_attributes=True)
+
+def ensure_aware_utc(value: datetime) -> datetime:
+    """Treat naive datetimes as UTC and convert aware values to UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
-class TimestampedModel(ORMModel):
-    """Persisted contract carrying the standard audit timestamps."""
-
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
+def new_identifier() -> Identifier:
+    """Fresh identifier for caller-owned entities and receipts."""
+    return uuid4()

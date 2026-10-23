@@ -1,0 +1,151 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run release validation including the real model and dependency audit
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
+      base:
+        type: string
+        default: ''
+    secrets:
+      OPSMESH_TEST_MODEL_API_KEY:
+        description: Isolated model credential for the native SDK smoke check
+        required: false
+      OPSMESH_TEST_MODEL_BASE_URL:
+        description: Isolated model API endpoint
+        required: false
+      OPSMESH_TEST_MODEL_NAME:
+        description: Model supporting Responses and tool calls
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}-${{ inputs.full && github.run_id || 'ci' }}
+  cancel-in-progress: ${{ !inputs.full }}
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_DB: opsmesh
+          POSTGRES_USER: opsmesh
+          POSTGRES_PASSWORD: opsmesh
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U opsmesh" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 10
+    env:
+      OPSMESH_ENVIRONMENT: test
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+      OPSMESH_TEST_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
+      OPSMESH_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      OPSMESH_TEST_TEMPORAL_ADDRESS: 127.0.0.1:7233
+      OPSMESH_TEST_TEMPORAL_LOCAL: '1'
+      OPSMESH_TEST_SANDBOX_IMAGE: opsmesh-compute:ci
+      OPSMESH_TEST_STORAGE_ROOT: ${{ github.workspace }}/.tmp/product-storage
+      BASE_SHA: ${{ inputs.base || github.event.pull_request.base.sha || github.event.before }}
+      FULL_VALIDATION: ${{ inputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - name: Audit all locked runtime dependencies for release
+        if: inputs.full
+        run: |
+          mkdir -p .tmp
+          uv export --frozen --all-packages --no-emit-workspace --no-dev \
+            --no-header --no-annotate --quiet --output-file .tmp/release-audit.txt
+          uv tool run pip-audit==2.10.1 --requirement .tmp/release-audit.txt --no-deps --disable-pip
+      - name: Persistent Temporal for waits, cancellation and replay
+        run: |
+          docker compose -p opsmesh-ci -f deploy/temporal/compose.yml up -d temporal-namespace
+          uv run python -m opsmesh_operator.compose --timeout 180 -- docker compose -p opsmesh-ci -f deploy/temporal/compose.yml
+      - name: Native sandbox
+        run: |
+          docker build -f deploy/images/Dockerfile.runtime \
+            --build-arg "SANDBOX_UID=$(id -u)" --build-arg "SANDBOX_GID=$(id -g)" \
+            -t "$OPSMESH_TEST_SANDBOX_IMAGE" .
+      - run: uv run ruff check . --output-format github
+      - run: uv run mypy
+      - run: uv run lint-imports --no-cache
+      - run: uv run python scripts/audit_app_layout.py --architecture-check
+      - run: uv run python scripts/export_compute_requirements.py --check
+      - name: Empty database migration chain and current model comparison
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run pytest tests/engineering/test_initial_schema.py
+      - name: Current feature tests and dependent boundaries
+        env:
+          OPSMESH_CI_REPORT_PATH: reports/ci-tests.log
+        run: |
+          if [ "$FULL_VALIDATION" = true ] || [ -z "$BASE_SHA" ] || [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            uv run python scripts/ci_command.py uv run pytest tests deploy/cli/tests sdk/python/tests
+          else
+            uv run python scripts/ci_command.py uv run python scripts/ci_tests.py --base "$BASE_SHA"
+          fi
+      - name: Independent extension SDK
+        working-directory: sdk/python
+        run: |
+          uv run ruff check .
+          uv run mypy
+          uv run lint-imports --no-cache
+      - name: Native SDK model and Docker MCP checks for release
+        if: inputs.full
+        env:
+          OPSMESH_TEST_MODEL_API_KEY: ${{ secrets.OPSMESH_TEST_MODEL_API_KEY }}
+          OPSMESH_TEST_MODEL_BASE_URL: ${{ secrets.OPSMESH_TEST_MODEL_BASE_URL }}
+          OPSMESH_TEST_MODEL_NAME: ${{ secrets.OPSMESH_TEST_MODEL_NAME }}
+          OPSMESH_TEST_MODEL_REASONING_EFFORT: ${{ vars.OPSMESH_TEST_MODEL_REASONING_EFFORT || 'medium' }}
+          OPSMESH_CI_REPORT_PATH: reports/ci-native-sdk.log
+        run: |
+          uv run python - <<'PY'
+          import os
+          required = ('OPSMESH_TEST_MODEL_API_KEY', 'OPSMESH_TEST_MODEL_BASE_URL', 'OPSMESH_TEST_MODEL_NAME')
+          if any(not os.environ.get(name, '').strip() for name in required):
+              raise SystemExit('Release SDK smoke requires an isolated model endpoint, name and credential')
+          PY
+          uv run python scripts/ci_command.py uv run pytest tests/execution/test_native_model.py
+          uv run python scripts/check_runtime_image.py --image "$OPSMESH_TEST_SANDBOX_IMAGE"
+      - name: Independent wheels and installed application boundary
+        run: |
+          uv build --all-packages --out-dir .tmp/package-check
+          uv run python scripts/check_python_package.py --wheel .tmp/package-check/opsmesh-*.whl
+          uv venv /tmp/opsmesh-sdk-check
+          uv pip install --python /tmp/opsmesh-sdk-check/bin/python .tmp/package-check/opsmesh_sdk-*.whl
+          cd /tmp
+          /tmp/opsmesh-sdk-check/bin/python -I -c "from opsmesh_sdk import PluginContext, PluginManifest; import importlib.util; assert importlib.util.find_spec('opsmesh') is None"
+      - name: Redacted diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            reports/ci-tests.log
+            reports/ci-native-sdk.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove disposable Temporal data
+        if: always()
+        run: docker compose -p opsmesh-ci -f deploy/temporal/compose.yml down --volumes
