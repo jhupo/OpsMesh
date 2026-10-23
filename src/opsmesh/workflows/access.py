@@ -7,18 +7,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from opsmesh.shared.errors import ConflictError, ForbiddenError, NotFoundError
-from opsmesh.users.access import CurrentUser, ensure_active_user
-from opsmesh.users.service import load_identity
+from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows.contracts import Permission
 from opsmesh.workflows.models import WorkflowDefinition, WorkflowGrant, WorkflowRevision
-
-
-def current_actor(session: Session, actor: CurrentUser) -> CurrentUser:
-    ensure_active_user(actor)
-    current = load_identity(session, actor.user_id)
-    if current is None:
-        raise NotFoundError("The Workflow user does not exist")
-    return ensure_active_user(current)
 
 
 def public_revisions() -> ColumnElement[bool]:
@@ -65,7 +57,7 @@ def load_workflow(
     owner: bool = False,
     lock: bool = False,
 ) -> WorkflowDefinition:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     query = select(WorkflowDefinition).where(WorkflowDefinition.id == workflow_id)
     if lock:
         query = query.with_for_update()

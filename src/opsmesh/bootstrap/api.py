@@ -33,8 +33,8 @@ from opsmesh.bootstrap.telemetry import configure_api_telemetry, flush_process_t
 from opsmesh.bootstrap.workflows import configure_workflows
 from opsmesh.config import Settings, get_settings
 from opsmesh.gateway import Gateway
-from opsmesh.gateway.routes import router as gateway_router
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.api.routes import router as gateway_router
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.platform.audit.service import SecurityAuditRecorder
 from opsmesh.platform.evaluations.contracts import EvaluatorRegistry
 from opsmesh.platform.evaluations.evaluators import default_evaluators

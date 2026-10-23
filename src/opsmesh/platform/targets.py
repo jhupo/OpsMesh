@@ -1,4 +1,4 @@
-"""Owned target execution callbacks injected by process assembly."""
+"""Shared target execution ports for schedules and evaluation experiments."""
 
 from collections.abc import Callable
 from dataclasses import dataclass

@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import exists, select, text
 from sqlalchemy.orm import Session
 
-from opsmesh.execution.instances.access import current_user, get_instance
+from opsmesh.execution.instances.access import get_instance
 from opsmesh.execution.instances.models import AgentInstance
 from opsmesh.execution.instances.schemas import InstanceCreate
 from opsmesh.execution.preparation import DefinitionLoader, freeze_agent
@@ -15,6 +15,7 @@ from opsmesh.shared.errors import ConflictError, InvalidArgumentError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import canonical_json, payload_digest
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 
 
 def create_instance(

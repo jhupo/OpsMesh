@@ -9,8 +9,8 @@ from opsmesh_sdk.channels import InboundMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.gateway.models import GatewayConversation, GatewayMember
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.storage.models import GatewayConversation, GatewayMember
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.serialization import payload_digest
 
 
@@ -67,7 +67,7 @@ class Conversations:
             ]
 
     def members(self, channel_id: UUID, key: str) -> builtins.list[dict[str, object]]:
-        from opsmesh.gateway.models import GatewayIdentity
+        from opsmesh.gateway.storage.models import GatewayIdentity
 
         with self.store.sessions() as session:
             return [

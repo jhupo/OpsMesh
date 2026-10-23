@@ -167,12 +167,35 @@ class WorkflowActivities:
             self.check_arguments(node, command["input"])
             if node.execution_run_id is not None:
                 return {"execution_id": str(node.execution_run_id)}
+            from opsmesh.workflows.runs.sessions import conversation_session
+
+            source = (
+                InvocationSource.model_validate(
+                    self.cipher.decrypt_payload(parent.encrypted_context)
+                )
+                if parent.encrypted_context
+                else InvocationSource()
+            )
+            value = command["input"]
+            if declared.input_mode == "messages":
+                if set(value) != {"messages"} or not isinstance(value["messages"], list):
+                    raise ConflictError("Message-mode Agent nodes require only a messages array")
+                from opsmesh.execution.runner import native_input
+
+                value = native_input(value["messages"])
             request = RunCreate(
                 instance_id=binding.instance_id,
-                session_id=binding.session_id,
+                session_id=conversation_session(
+                    session,
+                    actor=actor,
+                    source=source,
+                    workflow_instance_id=parent.instance_id,
+                    binding_name=declared.binding,
+                    binding=binding,
+                ),
                 driver="temporal",
                 request_key="workflow:" + str(uuid5(NAMESPACE_URL, f"{run_id}:{node.path}")),
-                input=command["input"],
+                input=value,
                 max_turns=binding.max_turns,
                 timeout_seconds=binding.timeout_seconds,
             )
@@ -181,11 +204,7 @@ class WorkflowActivities:
                 actor=actor,
                 request=request,
                 cipher=self.cipher,
-                source=InvocationSource.model_validate(
-                    self.cipher.decrypt_payload(parent.encrypted_context)
-                )
-                if parent.encrypted_context
-                else InvocationSource(),
+                source=source,
             )
             node.execution_run_id = execution.id
             return {"execution_id": str(execution.id)}

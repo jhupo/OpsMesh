@@ -1,5 +1,6 @@
 """Bind a caller authorized resource catalog to a single execution attempt."""
 
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import replace
 
@@ -52,40 +53,52 @@ def freeze_bindings(
 
 def execution_bindings(source: AssemblyBindings, ledger: OperationLedger) -> AssemblyBindings:
     async def resolve(
-        reference: ModelRef, lifespan: AsyncExitStack
+        agent_id: str, reference: ModelRef, lifespan: AsyncExitStack
     ) -> tuple[Model, ModelSettings | None]:
-        ledger.authorize()
-        context_tokens = None
-        timeout_seconds = 300.0
-        pricing = None
-        max_retries = 0
-        if source.model_resolver is not None:
-            native, settings = await source.model_resolver(reference, lifespan)
-        elif source.credentials is not None:
-            provider, info = source.providers.select(reference.provider_id, reference.model_id)
-            context_tokens = info.context_tokens
-            timeout_seconds = provider.request_timeout
-            pricing, max_retries = info.pricing, provider.max_retries
-            native, settings = await create_model(
-                reference,
-                providers=source.providers,
-                credentials=source.credentials,
-                lifespan=lifespan,
-            )
-            if settings.max_tokens is None and info.max_output_tokens is not None:
-                settings = settings.resolve(ModelSettings(max_tokens=info.max_output_tokens))
-        else:
-            raise ValueError("Execution requires an authorized model resolver")
-        if not isinstance(native, Model):
-            raise TypeError("Direct execution requires a native Model from its resource resolver")
-        return ExecutionModel(
-            native,
-            ledger,
-            context_tokens=context_tokens,
-            timeout_seconds=timeout_seconds,
-            reference=reference,
-            pricing=pricing,
-            max_retries=max_retries,
-        ), settings
+        return await resolve_execution_model(source, ledger, agent_id, reference, lifespan)
 
     return replace(source, model_resolver=resolve)
+
+
+async def resolve_execution_model(
+    source: AssemblyBindings,
+    ledger: OperationLedger,
+    agent_id: str,
+    reference: ModelRef,
+    lifespan: AsyncExitStack,
+    *,
+    operation_id: Callable[[], str] | None = None,
+    stream_events: Callable[[object], Awaitable[None]] | None = None,
+) -> tuple[ExecutionModel, ModelSettings | None]:
+    ledger.authorize()
+    context_tokens = None
+    timeout_seconds = 300.0
+    pricing = None
+    max_retries = 0
+    if source.model_resolver is not None:
+        native, settings = await source.model_resolver(agent_id, reference, lifespan)
+    elif source.credentials is not None:
+        provider, info = source.providers.select(reference.provider_id, reference.model_id)
+        context_tokens = info.context_tokens
+        timeout_seconds = provider.request_timeout
+        pricing, max_retries = info.pricing, provider.max_retries
+        native, settings = await create_model(
+            reference, providers=source.providers, credentials=source.credentials, lifespan=lifespan
+        )
+        if settings.max_tokens is None and info.max_output_tokens is not None:
+            settings = settings.resolve(ModelSettings(max_tokens=info.max_output_tokens))
+    else:
+        raise ValueError("Execution requires an authorized model resolver")
+    if not isinstance(native, Model):
+        raise TypeError("Execution requires a native Model from its resource resolver")
+    return ExecutionModel(
+        native,
+        ledger,
+        context_tokens=context_tokens,
+        timeout_seconds=timeout_seconds,
+        reference=reference,
+        pricing=pricing,
+        max_retries=max_retries,
+        operation_id=operation_id,
+        stream_events=stream_events,
+    ), settings

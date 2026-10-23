@@ -7,8 +7,8 @@ from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from opsmesh.execution.runtime.routes import secret_cipher
 from opsmesh.shared.db.session import session_transaction
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.shared.http.eventstreams import EventBatch, stream_events
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession, get_auth_service
 from opsmesh.workflows.runs.access import get_run

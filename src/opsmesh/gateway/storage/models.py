@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -19,6 +19,8 @@ class GatewayChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     encrypted_settings: Mapped[str] = mapped_column(Text)
     key_id: Mapped[str] = mapped_column(String(100))
+    send_window_started: Mapped[datetime | None]
+    send_window_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class GatewayIdentity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -67,6 +69,7 @@ class GatewayRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     target_kind: Mapped[str] = mapped_column(String(16))
     target_id: Mapped[UUID]
     allow_group: Mapped[bool] = mapped_column(Boolean, default=False)
+    output_mode: Mapped[str] = mapped_column(String(16), default="text")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -81,10 +84,30 @@ class GatewaySession(TimestampMixin, Base):
 
 class GatewayInbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "gateway_inbox"
-    __table_args__ = (UniqueConstraint("channel_id", "event_key"),)
+    __table_args__ = (
+        UniqueConstraint("channel_id", "event_key"),
+        Index(
+            "ix_gateway_inbox_session_queue",
+            "channel_id",
+            "identity_id",
+            "conversation_key",
+            "status",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_gateway_inbox_group_history",
+            "channel_id",
+            "conversation_key",
+            "status",
+            "created_at",
+            "id",
+        ),
+    )
     channel_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_channels.id"), index=True)
     identity_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_identities.id"))
     event_key: Mapped[str] = mapped_column(String(64))
+    conversation_key: Mapped[str] = mapped_column(String(64), index=True)
     encrypted_payload: Mapped[str] = mapped_column(Text)
     key_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
@@ -93,6 +116,9 @@ class GatewayInbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     route_revision: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(100))
+    encrypted_context: Mapped[str | None] = mapped_column(Text)
+    event_cursor: Mapped[int] = mapped_column(Integer, default=0)
+    control: Mapped[str | None] = mapped_column(String(16))
 
 
 class GatewayDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -101,12 +127,33 @@ class GatewayDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     channel_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_channels.id"), index=True)
     inbox_id: Mapped[UUID | None] = mapped_column(ForeignKey("gateway_inbox.id"))
     ordinal: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(16), default="message")
     encrypted_payload: Mapped[str] = mapped_column(Text)
     key_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     remote_id: Mapped[str | None] = mapped_column(String(500))
     error_code: Mapped[str | None] = mapped_column(String(100))
+
+
+class GatewayPush(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "gateway_pushes"
+    channel_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_channels.id"), index=True)
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    encrypted_result: Mapped[str] = mapped_column(Text)
+    key_id: Mapped[str] = mapped_column(String(100))
+
+
+class GatewayBinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "gateway_bindings"
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    expires_at: Mapped[datetime]
+    encrypted_state: Mapped[str | None] = mapped_column(Text)
+    key_id: Mapped[str] = mapped_column(String(100))
+    channel_id: Mapped[UUID | None] = mapped_column(ForeignKey("gateway_channels.id"))
 
 
 class GatewayLease(Base):

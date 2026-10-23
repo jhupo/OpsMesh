@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from opsmesh.execution.runtime.routes import secret_cipher
+from opsmesh.platform.dependencies import ports
 from opsmesh.platform.evaluations import service
 from opsmesh.platform.evaluations.contracts import DatasetSpec, EvaluatorRegistry, ExperimentSpec
 from opsmesh.platform.evaluations.models import (
@@ -21,8 +21,8 @@ from opsmesh.platform.evaluations.models import (
 )
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import NotFoundError
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
-from opsmesh.workflows.triggers.routes import ports
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 

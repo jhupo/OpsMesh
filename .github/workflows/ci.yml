@@ -126,7 +126,7 @@ jobs:
           if any(not os.environ.get(name, '').strip() for name in required):
               raise SystemExit('Release SDK smoke requires an isolated model endpoint, name and credential')
           PY
-          uv run python scripts/ci_command.py uv run pytest tests/execution/test_native_model.py
+          uv run python scripts/ci_command.py uv run pytest tests/execution/test_native_model.py tests/temporal/test_instance_execution_postgres.py
           uv run python scripts/check_runtime_image.py --image "$OPSMESH_TEST_SANDBOX_IMAGE"
       - name: Independent wheels and installed application boundary
         run: |

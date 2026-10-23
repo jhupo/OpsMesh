@@ -1,20 +1,18 @@
 """Native model creation with explicit credentials and a caller-owned lifespan."""
 
-from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 
 from agents import ModelSettings
 from agents.models.interface import Model
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from agents.models.openai_responses import OpenAIResponsesModel
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpx2Client
 from pydantic import SecretStr
 
 from opsmesh.agents.config.model import ModelRef, model_settings
+from opsmesh.shared.network import CredentialResolver, http_routing
 
 from .registry import ProviderRegistry
-
-CredentialResolver = Callable[[str], Awaitable[SecretStr]]
 
 
 async def create_model(
@@ -28,8 +26,13 @@ async def create_model(
     secret = await credentials(provider.credential_ref)
     if not isinstance(secret, SecretStr) or not secret.get_secret_value():
         raise ValueError("Credential resolver must return a nonempty SecretStr")
+    trust_env, proxy = await http_routing(provider.network, credentials)
+    transport = await lifespan.enter_async_context(
+        DefaultAsyncHttpx2Client(trust_env=trust_env, proxy=proxy)
+    )
     client = await lifespan.enter_async_context(
         AsyncOpenAI(
+            http_client=transport,
             api_key=secret.get_secret_value(),
             base_url=str(provider.base_url),
             timeout=provider.timeout,

@@ -8,16 +8,17 @@ from uuid import UUID, uuid4
 
 from opsmesh_sdk.channels import ChannelAdapter, DeliveryRejected, InboundMessage
 
+from opsmesh.gateway.channels.bindings import Bindings
+from opsmesh.gateway.channels.leases import ChannelLeases
+from opsmesh.gateway.channels.registry import ChannelRegistry
 from opsmesh.gateway.contracts import ChannelDefinition
-from opsmesh.gateway.dispatcher import Dispatcher
-from opsmesh.gateway.inbox import Inbox
-from opsmesh.gateway.leases import ChannelLeases
-from opsmesh.gateway.media import GatewayMedia
-from opsmesh.gateway.outbox import Outbox
+from opsmesh.gateway.messaging.dispatcher import Dispatcher
+from opsmesh.gateway.messaging.inbox import Inbox
+from opsmesh.gateway.messaging.media import GatewayMedia
+from opsmesh.gateway.messaging.outbox import Outbox
 from opsmesh.gateway.ports import ExecutionPort
-from opsmesh.gateway.registry import ChannelRegistry
-from opsmesh.gateway.store import GatewayStore
-from opsmesh.shared.errors import DomainError
+from opsmesh.gateway.storage.store import GatewayStore
+from opsmesh.shared.errors import ConflictError, DomainError, InvalidArgumentError
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class Gateway:
         )
         self.leases = ChannelLeases(store)
         self.inbox, self.outbox = Inbox(store), Outbox(store)
-        self.dispatcher = Dispatcher(self.inbox, self.outbox, execution)
+        self.dispatcher = Dispatcher(self.inbox, self.outbox, execution, media_root)
         self.tasks: dict[UUID, tuple[ChannelDefinition, asyncio.Task[None]]] = {}
         self.supervisor: asyncio.Task[None] | None = None
 
@@ -49,6 +50,26 @@ class Gateway:
 
     async def delete(self, channel_id: UUID, actor_id: UUID) -> None:
         await asyncio.to_thread(self.store.delete, channel_id, actor_id)
+
+    async def probe(self, channel_id: UUID) -> dict[str, object]:
+        definition = await asyncio.to_thread(self.store.get, channel_id)
+        info = self.registry.infos.get(definition.kind)
+        if info is None or not info.capabilities.probe:
+            raise InvalidArgumentError("The channel does not support a connection probe")
+
+        async def reject(message: InboundMessage) -> None:
+            raise RuntimeError("A connection probe cannot accept incoming messages")
+
+        adapter = self.registry.create(
+            definition, reject, GatewayMedia(self.media_root / str(channel_id))
+        )
+        try:
+            async with asyncio.timeout(15):
+                return await adapter.probe()
+        except Exception as error:
+            raise ConflictError("Channel authentication probe failed") from error
+        finally:
+            await adapter.close()
 
     async def replace_registry(self, registry: ChannelRegistry) -> None:
         previous = self.registry
@@ -81,6 +102,7 @@ class Gateway:
     async def run(self) -> None:
         while True:
             try:
+                await asyncio.to_thread(Bindings(self.store).expire)
                 definitions = {
                     row.id: row
                     for row in await asyncio.to_thread(self.store.list_channels)
@@ -130,8 +152,10 @@ class Gateway:
                         raise RuntimeError("Gateway lease lost")
 
             async def dispatch() -> None:
-                while True:
-                    for inbox_id in await asyncio.to_thread(self.inbox.pending, definition.id):
+                slots = asyncio.Semaphore(definition.policy.workers)
+
+                async def process(inbox_id: UUID) -> None:
+                    async with slots:
                         try:
                             await self.dispatcher.process(inbox_id, owner)
                         except asyncio.CancelledError:
@@ -140,22 +164,46 @@ class Gateway:
                             logger.warning(
                                 "Gateway event pending after error: %s", type(error).__name__
                             )
+
+                while True:
+                    await asyncio.gather(
+                        *(
+                            process(inbox_id)
+                            for inbox_id in await asyncio.to_thread(
+                                self.inbox.pending, definition.id
+                            )
+                        )
+                    )
                     await asyncio.sleep(1)
 
+            async def connect() -> None:
+                assert adapter is not None
+                await adapter.run()
+                raise RuntimeError("Channel connection stopped")
+
             async with asyncio.TaskGroup() as group:
-                group.create_task(adapter.run())
+                group.create_task(connect())
                 group.create_task(renew())
                 group.create_task(dispatch())
-                group.create_task(self.deliver(definition.id, owner, adapter))
+                group.create_task(self.deliver(definition, owner, adapter))
         finally:
             if adapter is not None:
                 with suppress(Exception):
                     await adapter.close()
             await asyncio.to_thread(self.leases.release, definition.id, owner)
 
-    async def deliver(self, channel_id: UUID, owner: str, adapter: ChannelAdapter) -> None:
+    async def deliver(
+        self, definition: ChannelDefinition, owner: str, adapter: ChannelAdapter
+    ) -> None:
+        channel_id = definition.id
         while True:
-            message = await asyncio.to_thread(self.outbox.next, channel_id, owner)
+            message = await asyncio.to_thread(
+                self.outbox.next,
+                channel_id,
+                owner,
+                send_limit=definition.policy.send_limit,
+                send_window_seconds=definition.policy.send_window_seconds,
+            )
             if message is None:
                 await asyncio.sleep(1)
                 continue
@@ -177,7 +225,8 @@ class Gateway:
                 )
                 continue
             try:
-                receipt = await adapter.send(message)
+                async with asyncio.timeout(definition.policy.send_timeout_seconds):
+                    receipt = await adapter.send(message)
             except asyncio.CancelledError:
                 raise
             except DeliveryRejected as error:

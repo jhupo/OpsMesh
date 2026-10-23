@@ -33,18 +33,11 @@ from opsmesh.shared.errors import (
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users import service as users
-from opsmesh.users.access import CurrentUser, ensure_active_user
+from opsmesh.users.access import CurrentUser
 from opsmesh.users.quotas import service as quotas
 
 if TYPE_CHECKING:
     from opsmesh.execution.runtime.sandbox import SandboxBackend
-
-
-def current_actor(session: Session, actor: CurrentUser) -> CurrentUser:
-    current = users.load_identity(session, actor.user_id)
-    if current is None:
-        raise ForbiddenError("The runtime user is unavailable")
-    return ensure_active_user(current)
 
 
 def create_environment(
@@ -55,7 +48,7 @@ def create_environment(
     cipher: SecretCipher,
     allowed_images: Collection[str],
 ) -> SandboxEnvironment:
-    current_actor(session, actor)
+    users.current_user(session, actor.user_id)
     if request.image not in allowed_images:
         raise ForbiddenError("The sandbox image is not registered by the operator")
     directory = (
@@ -136,7 +129,7 @@ def reconcile_environment(
     request: EnvironmentReconciliation,
     cipher: SecretCipher,
 ) -> SandboxOperation:
-    actor = current_actor(session, actor)
+    actor = users.current_user(session, actor.user_id)
     if not actor.has_platform_role("admin"):
         raise ForbiddenError("Only an administrator may reconcile an environment")
     environment = session.get(SandboxEnvironment, environment_id, with_for_update=True)
@@ -257,7 +250,7 @@ class SandboxOperations:
                     and not (reconciliation and actor.has_platform_role("admin"))
                 ):
                     raise ForbiddenError("The sandbox owner is unavailable")
-                current_actor(session, actor)
+                users.current_user(session, actor.user_id)
                 if operation.action != "close":
                     images = self.allowed_images
                     if environment.image not in images:

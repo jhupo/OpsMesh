@@ -116,6 +116,9 @@ async def run_agent(
                     "roles": sorted(context.principal.roles),
                     "group_ids": sorted(context.principal.group_ids),
                     "reply_scope": context.source.reply_scope,
+                    "external_role": context.source.external_role,
+                    "external_id": context.source.external_id,
+                    "identity_scope": context.source.identity_scope,
                 }
             )
             for agent in built.agents.values():

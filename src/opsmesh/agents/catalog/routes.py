@@ -10,9 +10,9 @@ from opsmesh.agents.catalog import service
 from opsmesh.agents.catalog.models import CatalogCredential, CatalogEntry, CatalogVersion
 from opsmesh.agents.manager import AgentDefinition
 from opsmesh.agents.providers.config import ProviderConfig
-from opsmesh.execution.runtime.routes import secret_cipher
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.shared.security.redaction import require_redaction_rules
 from opsmesh.users.access import require_platform_admin
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession

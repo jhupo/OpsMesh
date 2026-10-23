@@ -12,15 +12,15 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 
-from opsmesh.execution.runtime.routes import secret_cipher
+from opsmesh.platform.dependencies import ports
 from opsmesh.shared.db.session import session_transaction
 from opsmesh.shared.errors import ForbiddenError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.shared.serialization import canonical_json
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.workflows.triggers import service
 from opsmesh.workflows.triggers.contracts import TriggerSpec
 from opsmesh.workflows.triggers.models import Trigger, TriggerDelivery
-from opsmesh.workflows.triggers.ports import TargetPorts
 
 router = APIRouter(prefix="/triggers", tags=["triggers"])
 
@@ -35,13 +35,6 @@ class TriggerRequest(BaseModel):
 class FireRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(min_length=1, max_length=200)
-
-
-def ports(request: Request) -> TargetPorts:
-    value = getattr(request.app.state, "automation_targets", None)
-    if not isinstance(value, TargetPorts):
-        raise HTTPException(503, "Automation execution is not configured")
-    return value
 
 
 def view(row: Trigger, request: Request) -> dict[str, object]:

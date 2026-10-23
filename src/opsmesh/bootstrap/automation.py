@@ -11,6 +11,7 @@ from opsmesh.execution.runs.access import get_run
 from opsmesh.execution.runs.schemas import RunCreate
 from opsmesh.execution.runs.service import cancel_run, submit_run
 from opsmesh.platform.billing.models import ModelCharge
+from opsmesh.platform.targets import TargetPorts
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.temporal.dispatch.outbox import stage_execution
 from opsmesh.users.access import CurrentUser
@@ -26,7 +27,6 @@ from opsmesh.workflows.runs.control import cancel_run as cancel_workflow
 from opsmesh.workflows.runs.models import WorkflowNodeRun
 from opsmesh.workflows.runs.schemas import RunCreate as WorkflowCreate
 from opsmesh.workflows.runs.service import submit_run as submit_workflow
-from opsmesh.workflows.triggers.ports import TargetPorts
 
 
 def target_ports(cipher: SecretCipher) -> TargetPorts:

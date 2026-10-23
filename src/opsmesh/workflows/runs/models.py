@@ -10,6 +10,15 @@ from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 ACTIVE = ("queued", "running", "cancelling", "needs_attention")
 
 
+class WorkflowAgentSession(TimestampMixin, Base):
+    __tablename__ = "workflow_agent_sessions"
+    scope_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    binding: Mapped[str] = mapped_column(String(100), primary_key=True)
+    instance_id: Mapped[UUID] = mapped_column(ForeignKey("execution_instances.id"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("execution_sessions.id"))
+
+
 class WorkflowRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (UniqueConstraint("user_id", "request_key"),)

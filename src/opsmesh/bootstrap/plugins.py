@@ -18,8 +18,8 @@ from opsmesh.agents.plugins.adapters import (
 )
 from opsmesh.agents.plugins.skills import skill_packages
 from opsmesh.config import Settings
-from opsmesh.gateway.plugins import ChannelAdapter
-from opsmesh.gateway.registry import ChannelRegistry
+from opsmesh.gateway.channels.plugins import ChannelAdapter
+from opsmesh.gateway.channels.registry import ChannelRegistry
 from opsmesh.plugins.base import PreparedResource
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.packages import PluginPackages

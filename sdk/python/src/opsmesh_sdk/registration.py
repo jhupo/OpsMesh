@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from opsmesh_sdk.channels import ChannelAdapter
 from opsmesh_sdk.hooks import HOOK_POINTS, HookHandler, HookPoint, HookRegistration
@@ -40,6 +40,7 @@ class InvocationContext:
     tool_name: str = ""
     principal: Principal | None = None
     source: InvocationSource = field(default_factory=InvocationSource)
+    credentials: Mapping[str, SecretStr] = field(default_factory=dict, repr=False)
 
 
 _invocation: ContextVar[InvocationContext] = ContextVar("opsmesh_plugin_invocation")
@@ -55,6 +56,11 @@ def get_tool_config(name: str | None = None) -> Mapping[str, object]:
 
 def get_invocation() -> InvocationContext:
     return _invocation.get()
+
+
+def get_plugin_credential(name: str) -> SecretStr:
+    """Read a host-resolved credential declared by this installed plugin."""
+    return _invocation.get().credentials[name]
 
 
 @contextmanager
@@ -117,10 +123,20 @@ class PluginContext:
     channels: dict[str, ChannelRegistration] = field(default_factory=dict, init=False)
     mcps: dict[str, MCPRegistration] = field(default_factory=dict, init=False)
     skills_directory: Path | None = field(default=None, init=False)
+    credential_refs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.source_path = self.source_path.resolve(strict=True)
         self.config = MappingProxyType(dict(self.config))
+
+    def credential(self, name: str, reference: str) -> None:
+        if (
+            not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name)
+            or name in self.credential_refs
+            or not re.fullmatch(r"(?:env:[A-Z_][A-Z0-9_]*|secret:[A-Za-z0-9_.-]{1,190})", reference)
+        ):
+            raise ValueError("Plugin credentials require unique names and credential references")
+        self.credential_refs[name] = reference
 
     def tool(
         self,

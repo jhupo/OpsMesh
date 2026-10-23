@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InvocationSource(BaseModel):
@@ -14,6 +14,11 @@ class InvocationSource(BaseModel):
     conversation_id: str | None = None
     identity_id: UUID | None = None
     reply_scope: Literal["private", "group"] = "private"
+    external_role: str | None = Field(default=None, max_length=64)
+    external_id: str | None = Field(default=None, max_length=500)
+    identity_scope: str | None = Field(default=None, max_length=300)
+    session_scope: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    stream_output: bool = False
 
 
 class Principal(BaseModel):

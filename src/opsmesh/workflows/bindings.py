@@ -11,6 +11,7 @@ from opsmesh.execution.sessions.service import get_session
 from opsmesh.shared.errors import InvalidArgumentError
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows import access
 from opsmesh.workflows.compiler import compile_spec
 from opsmesh.workflows.contracts import (
@@ -64,7 +65,7 @@ def resolve_spec(
     revision_id: UUID | None = None,
     public: bool = False,
 ) -> WorkflowPlan:
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
 
     def load(identifier: UUID) -> CompiledWorkflow:
         revision, definition = access.load_revision(
@@ -98,7 +99,7 @@ def compile_workflow(session: Session, *, actor: CurrentUser, revision_id: UUID)
 
 def authorize_bindings(session: Session, *, actor: CurrentUser, prepared: PreparedWorkflow) -> None:
     plan, bindings = prepared.plan, prepared.bindings
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     for revision_id in (plan.entry.revision_id, *plan.workflows):
         if revision_id is not None:
             access.load_revision(session, actor=actor, revision_id=revision_id, use=True)

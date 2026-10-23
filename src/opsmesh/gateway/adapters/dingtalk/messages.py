@@ -14,9 +14,17 @@ from opsmesh.gateway.adapters.dingtalk.client import DingTalkClient
 async def send_message(
     client: DingTalkClient, media: ChannelMedia, message: OutboundMessage
 ) -> DeliveryReceipt:
+    if message.event != "message":
+        raise DeliveryRejected("DingTalk does not expose this delivery capability")
     if len(message.content) != 1:
         raise DeliveryRejected("DingTalk delivery must contain one part")
     part, address = message.content[0], message.address
+    text_kind = "markdown" if len(part.text) <= 3500 else "text"
+    text_parameters = (
+        {"title": "OpsMesh", "text": part.text}
+        if text_kind == "markdown"
+        else {"content": part.text}
+    )
     webhook = address.get("webhook")
     if part.type == "text" and webhook and int(address.get("expires_at") or 0) > time.time() * 1000:
         parsed = urlparse(webhook)
@@ -29,13 +37,14 @@ async def send_message(
             raise DeliveryRejected("Invalid DingTalk reply address")
         value = await client.post(
             webhook,
-            {"msgtype": "text", "text": {"content": part.text}},
+            {"msgtype": text_kind, text_kind: text_parameters},
             authenticated=False,
             sending=True,
         )
     else:
         if part.type == "text":
-            key, param = "sampleText", {"content": part.text}
+            key = "sampleMarkdown" if text_kind == "markdown" else "sampleText"
+            param = text_parameters
         elif part.media_key and part.type in {"image", "file", "audio"}:
             token = await client.access_token()
             response = await client.http.post(

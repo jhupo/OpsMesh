@@ -20,17 +20,10 @@ from opsmesh.execution.runtime.schemas import (
     RuntimeCommand,
 )
 from opsmesh.shared.db.session import session_transaction
-from opsmesh.shared.security.encryption import SecretCipher
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 
 router = APIRouter(prefix="/execution/environments", tags=["execution-runtime"])
-
-
-def secret_cipher(request: Request) -> SecretCipher:
-    cipher = getattr(request.app.state, "secret_cipher", None)
-    if not isinstance(cipher, SecretCipher):
-        raise HTTPException(503, "Execution encryption is unavailable")
-    return cipher
 
 
 def operation_dispatcher(request: Request) -> Callable[[Session, RuntimeCommand], None]:

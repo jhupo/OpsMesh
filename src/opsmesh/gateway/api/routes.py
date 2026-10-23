@@ -8,25 +8,33 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import func, select
 
-from opsmesh.gateway.contracts import ChannelDefinition, RouteDefinition
-from opsmesh.gateway.conversations import Conversations
-from opsmesh.gateway.identities import Identities
-from opsmesh.gateway.manager import Gateway
-from opsmesh.gateway.models import (
+from opsmesh.gateway.api.schemas import (
+    AccountBind,
+    BindingCreate,
+    ChannelCreate,
+    ChannelPatch,
+    RouteCreate,
+)
+from opsmesh.gateway.channels.bindings import Bindings
+from opsmesh.gateway.channels.manager import Gateway
+from opsmesh.gateway.contracts import (
+    ChannelDefinition,
+    DeliveryResolution,
+    PushCreate,
+    RouteDefinition,
+)
+from opsmesh.gateway.identity.conversations import Conversations
+from opsmesh.gateway.identity.identities import Identities
+from opsmesh.gateway.messaging import push
+from opsmesh.gateway.messaging.media import GatewayMedia
+from opsmesh.gateway.messaging.recovery import resolve_delivery, retry_inbox
+from opsmesh.gateway.routing.service import Routing
+from opsmesh.gateway.storage.models import (
     GatewayAccountBinding,
     GatewayDelivery,
     GatewayIdentity,
     GatewayInbox,
     GatewayLease,
-)
-from opsmesh.gateway.recovery import resolve_delivery, retry_inbox
-from opsmesh.gateway.routing import Routing
-from opsmesh.gateway.schemas import (
-    AccountBind,
-    ChannelCreate,
-    ChannelPatch,
-    DeliveryResolution,
-    RouteCreate,
 )
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.users.access import require_platform_admin
@@ -34,6 +42,56 @@ from opsmesh.users.auth.dependencies import CurrentUserDep
 from opsmesh.users.service import load_identity
 
 router = APIRouter(prefix="/gateway", tags=["gateway"])
+
+
+@router.post("/bindings/qq", status_code=201)
+async def create_binding(
+    body: BindingCreate, request: Request, user: CurrentUserDep
+) -> dict[str, Any]:
+    require_platform_admin(user)
+    return await asyncio.to_thread(Bindings(gateway(request).store).create, user.user_id, body.name)
+
+
+@router.post("/bindings/qq/{binding_id}/poll")
+async def poll_binding(binding_id: UUID, request: Request, user: CurrentUserDep) -> dict[str, Any]:
+    require_platform_admin(user)
+    return await asyncio.to_thread(Bindings(gateway(request).store).poll, binding_id, user.user_id)
+
+
+@router.delete("/bindings/qq/{binding_id}")
+async def cancel_binding(
+    binding_id: UUID, request: Request, user: CurrentUserDep
+) -> dict[str, Any]:
+    require_platform_admin(user)
+    return await asyncio.to_thread(
+        Bindings(gateway(request).store).poll, binding_id, user.user_id, cancel=True
+    )
+
+
+@router.post("/channels/{channel_id}/push", status_code=202)
+async def push_messages(
+    channel_id: UUID, body: PushCreate, request: Request, user: CurrentUserDep
+) -> dict[str, Any]:
+    value = await managed(request, user, channel_id)
+    definition = await asyncio.to_thread(value.store.get, channel_id)
+    info = value.registry.infos.get(definition.kind)
+    if info is None or not info.capabilities.proactive:
+        raise InvalidArgumentError("This channel does not support proactive delivery")
+    turns = await asyncio.to_thread(push.recipients, value.store, channel_id, body)
+    for turn in turns:
+        await value.execution.authorize(turn.user_id, turn.route)
+    try:
+        content = await GatewayMedia(value.media_root / str(channel_id)).prepare(
+            body.content,
+            preserve_image_url=definition.kind == "qq"
+            and any(turn.message.reply_address.get("kind") in {"channel", "dm"} for turn in turns),
+        )
+    except ValueError as error:
+        raise InvalidArgumentError("Invalid push media source") from error
+    identifiers = await asyncio.to_thread(
+        push.enqueue, value.store, channel_id, user.user_id, body, turns, content
+    )
+    return {"request_id": str(body.request_id), "deliveries": [str(item) for item in identifiers]}
 
 
 def gateway(request: Request) -> Gateway:
@@ -130,6 +188,12 @@ async def status(channel_id: UUID, request: Request, user: CurrentUserDep) -> di
     return await asyncio.to_thread(read)
 
 
+@router.post("/channels/{channel_id}/probe")
+async def probe(channel_id: UUID, request: Request, user: CurrentUserDep) -> dict[str, object]:
+    value = await managed(request, user, channel_id)
+    return await value.probe(channel_id)
+
+
 @router.post("/channels/{channel_id}/inbox/{inbox_id}/retry", status_code=204)
 async def retry_event(
     channel_id: UUID,
@@ -209,6 +273,23 @@ async def conversations(
     return await asyncio.to_thread(Conversations(value.store).list, channel_id)
 
 
+@router.get("/channels/{channel_id}/subjects")
+async def subjects(
+    channel_id: UUID, request: Request, user: CurrentUserDep
+) -> list[dict[str, object]]:
+    value = await managed(request, user, channel_id)
+    turns = await asyncio.to_thread(push.known_subjects, value.store, channel_id)
+    return [
+        {
+            "receipt_id": str(turn.inbox_id),
+            "identity_id": str(turn.identity_id),
+            "user_id": str(turn.user_id),
+            "conversation": turn.message.conversation.model_dump(mode="json"),
+        }
+        for turn in turns
+    ]
+
+
 @router.get("/channels/{channel_id}/conversations/{key}/members")
 async def members(
     channel_id: UUID, key: str, request: Request, user: CurrentUserDep
@@ -241,7 +322,10 @@ async def create_route(
     channel_id: UUID, body: RouteCreate, request: Request, user: CurrentUserDep
 ) -> RouteDefinition:
     value = await managed(request, user, channel_id)
-    route = RouteDefinition(id=uuid4(), channel_id=channel_id, **body.model_dump())
+    try:
+        route = RouteDefinition(id=uuid4(), channel_id=channel_id, **body.model_dump())
+    except ValueError as error:
+        raise InvalidArgumentError("Invalid route configuration") from error
     return await save_route(
         value,
         route,

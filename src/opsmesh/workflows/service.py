@@ -10,6 +10,7 @@ from opsmesh.shared.errors import ConflictError, InvalidArgumentError
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.redaction import RedactionRules, redact_sensitive_payload
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows import access
 from opsmesh.workflows.contracts import WorkflowSpec
 from opsmesh.workflows.models import WorkflowDefinition, WorkflowRevision
@@ -33,7 +34,7 @@ def create_workflow(
     request: WorkflowCreate,
     redaction: RedactionRules,
 ) -> WorkflowDefinition:
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     _validate_authoring(request, redaction=redaction)
     workflow = WorkflowDefinition(
         owner_user_id=actor.user_id,
@@ -53,7 +54,7 @@ def list_workflows(
     page: PageParams,
     owned: bool = False,
 ) -> tuple[list[WorkflowDefinition], int]:
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     query = select(WorkflowDefinition).where(
         WorkflowDefinition.owner_user_id == actor.user_id
         if owned

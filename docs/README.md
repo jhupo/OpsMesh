@@ -10,7 +10,8 @@
 | [发行格式](../deploy/DISTRIBUTIONS.md) | 原生包、镜像、平台矩阵和校验合同 |
 | [观测](../deploy/server/observability.md) | 日志、指标、追踪和告警 |
 | [平台管理与自动化](platform-management.md) | 模型配置、重试、事件、调度、评测与预算 |
-| [0.1.0 发行说明](releases/0.1.0.md) | 功能范围、升级注意事项和已知限制 |
+| [0.2.0 发行说明](releases/0.2.0.md) | 当前版本范围、升级注意事项和已知限制 |
+| [0.1.0 发行说明](releases/0.1.0.md) | 首个正式版本的历史说明 |
 
 HTTP API 合同来自运行中服务的 `/openapi.json`，不维护手写或生成后入库的副本。
 生产环境默认关闭文档路由；按需在受控网络启用 `OPSMESH_ENABLE_API_DOCS`。
@@ -29,6 +30,8 @@ HTTP API 合同来自运行中服务的 `/openapi.json`，不维护手写或生�
 | [Gateway](../src/opsmesh/gateway/README.md) | 通道、外部身份绑定和投递 |
 | [测试范围](../tests/README.md) | 自动检查、外部依赖和覆盖限制 |
 | [工程脚本](../scripts/README.md) | 构建、发行和验收入口 |
+| [模块审查](code-review.md) | 重复实现、分类调整、网关对照与未验收范围 |
+| [验收记录](acceptance.md) | 当前工作区真实测试结果、修复和外部依赖限制 |
 
 ## 支持与安全
 

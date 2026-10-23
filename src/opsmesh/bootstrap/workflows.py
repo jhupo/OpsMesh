@@ -19,11 +19,12 @@ from opsmesh.agents.plugins.registry import (
     authorize_tool_policy,
     invoke_registered_tool,
 )
-from opsmesh.execution.instances.access import current_user
 from opsmesh.execution.mcp import AuthorizedMCP
 from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.network import CredentialResolver
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows.contracts import ToolBinding
 from opsmesh.workflows.engines.registry import EngineRegistry
 from opsmesh.workflows.engines.temporal.engine import TemporalWorkflowEngine
@@ -31,9 +32,14 @@ from opsmesh.workflows.engines.temporal.engine import TemporalWorkflowEngine
 
 class WorkflowTools:
     def __init__(
-        self, sessions: sessionmaker[Session], *, plugins: Callable[[], PluginRegistry]
+        self,
+        sessions: sessionmaker[Session],
+        *,
+        plugins: Callable[[], PluginRegistry],
+        credentials: CredentialResolver | None = None,
     ) -> None:
         self.sessions, self.plugins = sessions, plugins
+        self.credentials = credentials
 
     def actor(self, actor: CurrentUser) -> CurrentUser:
         with self.sessions.begin() as session:
@@ -238,6 +244,7 @@ class WorkflowTools:
                 operation_id,
                 binding.config,
                 source=source,
+                credentials=self.credentials,
             )
         async with self.mcp(actor, binding, source or InvocationSource()) as (
             server,

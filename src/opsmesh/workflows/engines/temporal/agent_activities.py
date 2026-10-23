@@ -3,7 +3,7 @@
 import inspect
 import json
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -34,8 +34,7 @@ from temporalio import activity
 from opsmesh.agents.assembly import AssemblyBindings
 from opsmesh.agents.config.mcp import MCPServerRef
 from opsmesh.agents.config.model import ModelRef
-from opsmesh.agents.providers.factory import create_model
-from opsmesh.execution.bindings import freeze_bindings
+from opsmesh.execution.bindings import freeze_bindings, resolve_execution_model
 from opsmesh.execution.context import ExecutionContext
 from opsmesh.execution.contracts import HistoryCall, PreparedAgent
 from opsmesh.execution.mcp import AuthorizedMCP
@@ -48,6 +47,7 @@ from opsmesh.execution.runs.models import ExecutionRun
 from opsmesh.execution.runs.operations import OperationLedger
 from opsmesh.execution.runs.schemas import RunCreate
 from opsmesh.execution.runs.service import AdmissionPending, claim_run, finish_run, release_run
+from opsmesh.execution.runs.streaming import RunEventRecorder, public_agent_ids
 from opsmesh.execution.runtime.sandbox import AgentSandboxClient, AgentSandboxState
 from opsmesh.execution.runtime.schemas import RuntimeCommand
 from opsmesh.execution.runtime.service import SandboxOperations
@@ -91,7 +91,7 @@ class InstanceActivities:
             prepared = PreparedAgent.model_validate(
                 self.cipher.decrypt_payload(row.encrypted_prepared or "")
             )
-            from opsmesh.execution.instances.access import current_user
+            from opsmesh.users.service import current_user
 
             actor = current_user(session, row.user_id)
             context = ExecutionContext(
@@ -412,55 +412,62 @@ class InstanceModel(Model):
     def __init__(self, owner: InstanceActivities, reference: dict[str, str]) -> None:
         self.owner, self.reference = owner, reference
 
-    async def get_response(self, *args: Any, **kwargs: Any) -> ModelResponse:
+    @asynccontextmanager
+    async def resolved(self) -> AsyncIterator[ExecutionModel]:
         context, prepared = self.owner.context(
             UUID(self.reference["run_id"]), self.reference["attempt_id"]
         )
         reference = ModelRef(
             provider_id=self.reference["provider_id"], model_id=self.reference["model_id"]
         )
-        if not any(config.model == reference for config in prepared.snapshot.definitions.values()):
+        agent_id = self.reference["agent_id"]
+        config = prepared.snapshot.definitions.get(agent_id)
+        if config is None or config.model != reference:
             raise ForbiddenError("The model reference is not in this instance configuration")
         source = await self.owner.source(context, prepared)
         ledger = OperationLedger(self.owner.sessions, self.owner.cipher, context)
-        context_tokens = None
-        timeout_seconds = 300.0
-        pricing = None
-        max_retries = 0
         async with AsyncExitStack() as lifespan:
-            if source.model_resolver is not None:
-                native, _ = await source.model_resolver(reference, lifespan)
-            elif source.credentials is not None:
-                provider, info = source.providers.select(reference.provider_id, reference.model_id)
-                context_tokens = info.context_tokens
-                timeout_seconds = provider.request_timeout
-                pricing, max_retries = info.pricing, provider.max_retries
-                native, _ = await create_model(
-                    reference,
-                    providers=source.providers,
-                    credentials=source.credentials,
-                    lifespan=lifespan,
+            recorder = RunEventRecorder(
+                self.owner.sessions,
+                self.owner.cipher,
+                context.run_id,
+                attempt_id=context.attempt_id,
+            )
+            streaming = (
+                prepared.source.stream_output
+                and agent_id in public_agent_ids(prepared.snapshot)
+                and not any(
+                    config.input_guardrails
+                    or config.output_guardrails
+                    or config.output_type is not None
+                    for config in prepared.snapshot.definitions.values()
                 )
-            else:
-                raise ValueError("A model resolver is required")
-            if not isinstance(native, Model):
-                raise ValueError("Model Activities require a native Model")
-            return await ExecutionModel(
-                native,
+            )
+            model, _ = await resolve_execution_model(
+                source,
                 ledger,
-                context_tokens=context_tokens,
-                timeout_seconds=timeout_seconds,
-                reference=reference,
-                pricing=pricing,
-                max_retries=max_retries,
+                agent_id,
+                reference,
+                lifespan,
                 operation_id=lambda: context.operation_id("model", activity.info().activity_id),
-            ).get_response(*args, **kwargs)
+                stream_events=recorder.raw if streaming else None,
+            )
+            yield model
+
+    async def get_response(self, *args: Any, **kwargs: Any) -> ModelResponse:
+        async with self.resolved() as model:
+            return await model.get_response(*args, **kwargs)
 
     async def stream_response(
         self, *args: Any, **kwargs: Any
     ) -> AsyncIterator[TResponseStreamEvent]:
-        raise ValueError("Temporal instance execution uses native non-streaming model Activities")
-        yield
+        async with self.resolved() as model:
+            stream = model.stream_response(*args, **kwargs)
+            try:
+                async for event in stream:
+                    yield event
+            finally:
+                await stream.aclose()
 
 
 class InstanceMCP(MCPServer):

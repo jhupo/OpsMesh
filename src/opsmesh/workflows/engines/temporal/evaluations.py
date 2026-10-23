@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from opsmesh.execution.instances.access import current_user
 from opsmesh.platform.evaluations import service
 from opsmesh.platform.evaluations.contracts import EvaluatorRegistry, ExperimentSpec
 from opsmesh.platform.evaluations.models import EvaluationCase, EvaluationExperiment
+from opsmesh.platform.targets import TargetPorts
 from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.encryption import SecretCipher
-from opsmesh.workflows.triggers.ports import TargetPorts
+from opsmesh.users.service import current_user
 
 
 class EvaluationActivities:

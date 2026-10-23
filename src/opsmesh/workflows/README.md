@@ -102,11 +102,18 @@ workflows/
 }
 ```
 
-Agent 节点把 `arguments` 对象作为 execution 输入；execution 转换为原生 SDK
-输入格式。数据映射使用 `{"$ref":"input.query"}` 或
+Agent 节点默认 `input_mode: "json"`，把 `arguments` 对象转换为 JSON 文本输入。
+`input_mode: "messages"` 要求参数仅含 `messages` 数组，按 execution 的原生 SDK
+消息合同校验后传入，保留图片等多模态内容。数据映射使用 `{"$ref":"input.query"}` 或
 `{"$ref":"steps.review.output"}`，只能读取已声明依赖的结果。
 条件节点输出布尔值，下游通过 `when` 选择执行；没有任意 Python/表达式求值。
 并行支持 all/any/quorum，foreach 和 repeat 都需要静态上界。
+
+可信网关来源带 session_scope 时，runs/sessions.py 按路由代际、平台用户、会话、编排实例
+和 Agent 绑定选择私有原生 Session，不共享其他用户的固定绑定历史；普通编排保留显式绑定。
+这份映射属于编排运行管理，底层 Session 的创建、存储、重置与删除仍属于 execution。
+决策分支示例见 [TypeSafe Decision](../../../sdk/python/examples/typesafe-decision/README.md)，
+厂商协议和业务规则不进入图调度器或网关核心。
 
 ## 工具及恢复边界
 

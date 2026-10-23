@@ -8,6 +8,7 @@ from opsmesh_sdk.hooks import HookPoint
 from opsmesh_sdk.registration import ConfigField
 from pydantic import BaseModel, ConfigDict, Field
 
+from opsmesh.agents.catalog.service import ManagedCatalog
 from opsmesh.agents.plugins.registry import PluginRegistry, invoke_registered_tool
 from opsmesh.agents.tools import ToolInfo
 from opsmesh.shared.errors import ConflictError, NotFoundError
@@ -90,6 +91,15 @@ async def invoke_tool(
         raise ConflictError("This tool requires an approved Agent or Workflow Run")
     operation_id = uuid4()
     value = await invoke_registered_tool(
-        registry, plugin_id, name, body.arguments, user, operation_id, body.config
+        registry,
+        plugin_id,
+        name,
+        body.arguments,
+        user,
+        operation_id,
+        body.config,
+        credentials=ManagedCatalog(
+            request.app.state.database_sessions, request.app.state.secret_cipher
+        ).credential,
     )
     return {"operation_id": str(operation_id), "value": value}

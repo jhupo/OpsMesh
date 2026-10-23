@@ -46,6 +46,7 @@ class DingTalkClient:
             raise
         if response.status_code == 401:
             self.expires = 0
+            raise DeliveryRejected("DingTalk authentication expired", retryable=True)
         if response.status_code == 429:
             raise DeliveryRejected("DingTalk rate limited", retryable=True)
         if response.status_code >= 500 and sending:

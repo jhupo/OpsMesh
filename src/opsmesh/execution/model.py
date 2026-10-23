@@ -2,7 +2,7 @@
 
 import asyncio
 import inspect
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
@@ -41,11 +41,13 @@ class ExecutionModel(Model):
         reference: ModelRef | None = None,
         pricing: ModelPricing | None = None,
         max_retries: int = 0,
+        stream_events: Callable[[object], Awaitable[None]] | None = None,
     ) -> None:
         self.native, self.ledger = native, ledger
         self.context_tokens = context_tokens
         self.timeout_seconds = timeout_seconds
         self.reference, self.pricing, self.max_retries = reference, pricing, max_retries
+        self.stream_events = stream_events
         self.operation_id = operation_id or (
             lambda: ledger.context.operation_id("model", uuid4().hex)
         )
@@ -131,9 +133,28 @@ class ExecutionModel(Model):
             self.ledger.uncertain(operation_id, error_code=type(error).__name__)
             raise
 
+    @staticmethod
+    def _stream_response(event: ResponseCompletedEvent) -> ModelResponse:
+        usage = event.response.usage
+        if usage is None or usage.input_tokens + usage.output_tokens <= 0:
+            raise InvalidArgumentError("The model stream did not confirm positive token usage")
+        return ModelResponse(
+            output=event.response.output,
+            response_id=event.response.id,
+            usage=Usage(
+                requests=1,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                total_tokens=usage.total_tokens,
+                input_tokens_details=usage.input_tokens_details,
+                output_tokens_details=usage.output_tokens_details,
+            ),
+            raw_usage=usage.model_dump(mode="json"),
+        )
+
     async def stream_response(
         self, *args: Any, **kwargs: Any
-    ) -> AsyncIterator[TResponseStreamEvent]:
+    ) -> AsyncGenerator[TResponseStreamEvent]:
         bound, operation_id, cached = self._prepare(args, kwargs)
         if cached is not None:
             raise InvalidArgumentError("A completed model stream cannot be replayed as live events")
@@ -142,34 +163,15 @@ class ExecutionModel(Model):
         try:
             async for event in self._bounded_stream(stream):
                 if isinstance(event, ResponseCompletedEvent):
-                    usage = event.response.usage
-                    if usage is None:
-                        raise InvalidArgumentError(
-                            "The model stream did not include confirmed usage"
-                        )
-                    if usage.input_tokens + usage.output_tokens <= 0:
-                        raise InvalidArgumentError(
-                            "The model stream did not confirm positive token usage"
-                        )
-                    response = ModelResponse(
-                        output=event.response.output,
-                        response_id=event.response.id,
-                        usage=Usage(
-                            requests=1,
-                            input_tokens=usage.input_tokens,
-                            output_tokens=usage.output_tokens,
-                            total_tokens=usage.total_tokens,
-                            input_tokens_details=usage.input_tokens_details,
-                            output_tokens_details=usage.output_tokens_details,
-                        ),
-                        raw_usage=usage.model_dump(mode="json"),
-                    )
+                    response = self._stream_response(event)
                     self.ledger.complete(
                         operation_id,
                         RESPONSE.dump_python(response, mode="json"),
-                        tokens=usage.input_tokens + usage.output_tokens,
+                        tokens=response.usage.input_tokens + response.usage.output_tokens,
                     )
                     completed = True
+                if self.stream_events is not None:
+                    await self.stream_events(event)
                 yield event
             if not completed:
                 raise InvalidArgumentError("The model stream ended without a completion receipt")

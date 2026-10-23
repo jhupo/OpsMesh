@@ -2,9 +2,9 @@
 
 from uuid import UUID
 
-from opsmesh.gateway.models import GatewayDelivery, GatewayInbox
-from opsmesh.gateway.schemas import DeliveryResolution
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.contracts import DeliveryResolution
+from opsmesh.gateway.storage.models import GatewayDelivery, GatewayInbox
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 
 

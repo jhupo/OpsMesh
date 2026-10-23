@@ -13,9 +13,10 @@ from opsmesh.agents.plugins.registry import (
     authorize_tool_policy,
     invoke_registered_tool,
 )
-from opsmesh.execution.instances.access import current_user
 from opsmesh.execution.runs.operations import OperationLedger
 from opsmesh.shared.errors import ConflictError
+from opsmesh.shared.network import CredentialResolver
+from opsmesh.users.service import current_user
 
 
 class PluginTools:
@@ -24,8 +25,10 @@ class PluginTools:
         ledger: OperationLedger,
         registry: Callable[[], PluginRegistry],
         admitted: PluginRegistry,
+        credentials: CredentialResolver | None = None,
     ) -> None:
         self.ledger, self.registry, self.admitted = ledger, registry, admitted
+        self.credentials = credentials
 
     def current(self, plugin_id: str, name: str) -> PluginRegistry:
         registry = self.registry()
@@ -81,6 +84,7 @@ class PluginTools:
                 operation_id=uuid5(NAMESPACE_URL, operation_id),
                 config=dict(config),
                 source=self.ledger.context.source,
+                credentials=self.credentials,
             )
             self.ledger.complete(operation_id, {"output": result})
             return result

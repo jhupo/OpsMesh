@@ -6,15 +6,27 @@ from opsmesh_sdk.channels import InboundMessage
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from opsmesh.gateway.contracts import RouteDefinition
-from opsmesh.gateway.models import (
+from opsmesh.gateway.channels.leases import require_lease
+from opsmesh.gateway.contracts import GatewayTurn, RouteDefinition
+from opsmesh.gateway.storage.models import (
     GatewayAccountBinding,
+    GatewayChannel,
     GatewayIdentity,
     GatewayRoute,
     GatewaySession,
 )
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.errors import ConflictError, ForbiddenError, NotFoundError
+
+
+def authorize_turn(session: Session, turn: GatewayTurn) -> None:
+    require_lease(session, turn.channel_id, turn.lease_owner)
+    channel = session.get(GatewayChannel, turn.channel_id)
+    if channel is None or not channel.enabled:
+        raise ConflictError("Gateway channel is disabled")
+    user_id, route = resolve_route(session, turn.channel_id, turn.identity_id, turn.message)
+    if user_id != turn.user_id or route != turn.route:
+        raise ConflictError("Gateway account binding or route changed")
 
 
 def route_value(row: GatewayRoute) -> RouteDefinition:

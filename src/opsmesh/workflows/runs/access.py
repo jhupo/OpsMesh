@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.users.access import CurrentUser
-from opsmesh.users.service import load_identity
-from opsmesh.workflows.access import current_actor
+from opsmesh.users.service import current_user, load_identity
 from opsmesh.workflows.bindings import authorize_bindings
 from opsmesh.workflows.contracts import PreparedWorkflow
 from opsmesh.workflows.instances.access import get_instance
@@ -19,7 +18,7 @@ from opsmesh.workflows.runs.models import WorkflowRun
 def get_run(
     session: Session, *, actor: CurrentUser, run_id: UUID, lock: bool = False
 ) -> WorkflowRun:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     query = select(WorkflowRun).where(
         WorkflowRun.id == run_id, WorkflowRun.user_id == actor.user_id
     )
@@ -40,7 +39,7 @@ def authorize_run(
     actor = load_identity(session, row.user_id)
     if actor is None:
         raise NotFoundError("The workflow user does not exist")
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     if row.status != "running":
         raise ConflictError("The workflow run is not active")
     instance = get_instance(session, actor=actor, instance_id=row.instance_id)

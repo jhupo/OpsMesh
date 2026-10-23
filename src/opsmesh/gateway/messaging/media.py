@@ -1,8 +1,11 @@
 """Bounded attachments use the resources storage interface and public egress."""
 
 import asyncio
+import base64
 from pathlib import Path
 from uuid import uuid4
+
+from opsmesh_sdk.channels import ContentPart
 
 from opsmesh.resources.storage.base import FileStorage
 from opsmesh.resources.storage.local import LocalFileStorage
@@ -39,3 +42,20 @@ class GatewayMedia:
             return await self.save_bytes(bytes(result)), response.headers.get(
                 "Content-Type", "application/octet-stream"
             ).split(";")[0]
+
+    async def prepare(
+        self, content: list[ContentPart], *, preserve_image_url: bool = False
+    ) -> list[ContentPart]:
+        result = []
+        for part in content:
+            if part.url is not None:
+                key, mime = await self.fetch(part.url)
+                if not (preserve_image_url and part.type == "image"):
+                    part = part.model_copy(
+                        update={"media_key": key, "mime_type": mime, "url": None}
+                    )
+            elif part.data is not None:
+                key = await self.save_bytes(base64.b64decode(part.data, validate=True))
+                part = part.model_copy(update={"media_key": key, "data": None})
+            result.append(part)
+        return result

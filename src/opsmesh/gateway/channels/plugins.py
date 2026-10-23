@@ -4,7 +4,7 @@ from opsmesh_sdk import PluginContext
 from opsmesh_sdk.channels import ChannelAdapter as TransportAdapter
 from opsmesh_sdk.registration import ChannelRegistration
 
-from opsmesh.gateway.registry import BUILTINS
+from opsmesh.gateway.channels.registry import BUILTINS
 from opsmesh.plugins.base import PluginAdapter, PreparedResource
 
 

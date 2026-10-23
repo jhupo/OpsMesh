@@ -55,11 +55,12 @@ class ResourceDescriptions(BaseModel):
     callbacks: list[CallbackDescription] = Field(default_factory=list)
 
 
-def model_name(context: ExecutionContext, reference: ModelRef) -> str:
+def model_name(context: ExecutionContext, agent_id: str, reference: ModelRef) -> str:
     return MODEL_PREFIX + canonical_json(
         {
             "run_id": str(context.run_id),
             "attempt_id": context.attempt_id,
+            "agent_id": agent_id,
             "provider_id": reference.provider_id,
             "model_id": reference.model_id,
         }
@@ -115,15 +116,12 @@ async def describe_resources(
     for skill in descriptions.skills:
         capture(skill.model_dump(mode="json"))
     async with AsyncExitStack() as lifespan:
-        for config in prepared.snapshot.definitions.values():
+        for agent_id, config in prepared.snapshot.definitions.items():
             reference = config.model
             if reference is None:
                 raise ValueError("Temporal Agent configurations require a model reference")
-            key = canonical_json(reference.model_dump(mode="json"))
-            if key in descriptions.models:
-                continue
             if source.model_resolver is not None:
-                _, settings = await source.model_resolver(reference, lifespan)
+                _, settings = await source.model_resolver(agent_id, reference, lifespan)
             elif source.credentials is not None:
                 _, info = source.providers.select(reference.provider_id, reference.model_id)
                 _, settings = await create_model(
@@ -136,7 +134,7 @@ async def describe_resources(
                     settings = settings.resolve(ModelSettings(max_tokens=info.max_output_tokens))
             else:
                 raise ValueError("A model resolver is required")
-            descriptions.models[key] = settings.to_json_dict() if settings else {}
+            descriptions.models[agent_id] = settings.to_json_dict() if settings else {}
     return descriptions
 
 
@@ -170,10 +168,9 @@ def workflow_bindings(
     register_callbacks(bindings.callbacks, resources.callbacks, invoke_callback)
 
     async def resolve_model(
-        reference: ModelRef, lifespan: AsyncExitStack
+        agent_id: str, reference: ModelRef, lifespan: AsyncExitStack
     ) -> tuple[str, ModelSettings]:
-        key = canonical_json(reference.model_dump(mode="json"))
-        return model_name(context, reference), model_settings(resources.models[key])
+        return model_name(context, agent_id, reference), model_settings(resources.models[agent_id])
 
     async def resolve_mcp(
         reference: MCPServerRef, options: dict[str, Any], lifespan: AsyncExitStack

@@ -8,7 +8,7 @@ import pytest
 
 import opsmesh.workflows.engines.temporal.agent_activities as activities
 from opsmesh.users.quotas.service import CapacityExceededError
-from opsmesh.workflows.engines.temporal import execution_dispatch
+from opsmesh.workflows.engines.temporal import agent_workflow, execution_dispatch
 from opsmesh.workflows.engines.temporal.agent_workflow import AgentInstanceWorkflow
 from opsmesh.workflows.engines.temporal.workflow import WorkflowExecutionWorkflow
 
@@ -55,7 +55,8 @@ def test_approval_dispatch_wakes_original_workflow_with_stable_identity(monkeypa
 
 @pytest.mark.asyncio
 async def test_approval_notification_before_wait_is_not_lost(monkeypatch):
-    owner = AgentInstanceWorkflow()
+    monkeypatch.setattr(agent_workflow, "WorkflowStream", Mock())
+    owner = AgentInstanceWorkflow({"execution_id": str(uuid4())})
     approval_id = str(uuid4())
     await owner.approval_decided(approval_id, approval_id)
 

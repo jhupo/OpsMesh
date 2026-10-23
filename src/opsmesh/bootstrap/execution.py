@@ -22,19 +22,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from opsmesh.agents.assembly import AssemblyBindings
 from opsmesh.agents.plugins.mcp import connect_plugin_mcp
 from opsmesh.agents.plugins.registry import PluginRegistry
-from opsmesh.agents.providers.factory import CredentialResolver
 from opsmesh.agents.providers.registry import ProviderRegistry
 from opsmesh.execution.context import ExecutionContext
 from opsmesh.execution.contracts import PreparedAgent
-from opsmesh.execution.instances.access import current_user
 from opsmesh.execution.mcp import AuthorizedMCP
 from opsmesh.execution.preparation import DefinitionLoader
 from opsmesh.execution.runs.executor import BindingsFactory, RunExecutor
 from opsmesh.execution.runs.operations import OperationLedger
 from opsmesh.execution.tools import PluginTools
 from opsmesh.shared.errors import ForbiddenError
+from opsmesh.shared.network import CredentialResolver
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows.engines.temporal.execution_dispatch import (
     dispatch_cancellation,
     dispatch_run,
@@ -55,7 +55,7 @@ def native_bindings_factory(
         with sessions.begin() as session:
             actor = current_user(session, context.user_id)
         registry = plugins()
-        tools = PluginTools(ledger, plugins, registry)
+        tools = PluginTools(ledger, plugins, registry, credentials)
 
         async def connect_mcp(
             plugin: PluginContext,

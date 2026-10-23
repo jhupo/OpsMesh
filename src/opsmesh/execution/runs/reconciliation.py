@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.execution.instances.access import current_user
 from opsmesh.execution.runs.events import append_event
 from opsmesh.execution.runs.models import ExecutionOperation, ExecutionRun
 from opsmesh.execution.runs.service import release_run
@@ -16,6 +15,7 @@ from opsmesh.shared.errors import ConflictError, ForbiddenError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.users.access import CurrentUser
 from opsmesh.users.quotas import service as quotas
+from opsmesh.users.service import current_user
 
 
 class EffectResolution(BaseModel):

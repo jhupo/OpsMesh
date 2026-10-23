@@ -10,7 +10,7 @@ from opsmesh.shared.errors import ConflictError, ForbiddenError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users.access import CurrentUser
-from opsmesh.workflows.access import current_actor
+from opsmesh.users.service import current_user
 from opsmesh.workflows.runs.access import authorize_run
 from opsmesh.workflows.runs.events import append_event
 from opsmesh.workflows.runs.models import WorkflowNodeRun, WorkflowOperation, WorkflowRun
@@ -21,7 +21,7 @@ from opsmesh.workflows.schema import validate_json
 def settle_run(
     session: Session, *, actor: CurrentUser, run_id: UUID, cipher: SecretCipher
 ) -> WorkflowRun:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     if not actor.has_platform_role("admin"):
         raise ForbiddenError("Only an administrator may settle workflow effects")
     row = session.get(WorkflowRun, run_id, with_for_update=True)
@@ -143,7 +143,7 @@ def reconcile_effect(
     request: EffectResolution,
     cipher: SecretCipher,
 ) -> WorkflowRun:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     if not actor.has_platform_role("admin"):
         raise ForbiddenError("Only an administrator may reconcile workflow effects")
     row = session.get(WorkflowRun, run_id, with_for_update=True)

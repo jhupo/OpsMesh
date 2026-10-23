@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from opsmesh.agents.config.sandbox import AgentConfiguration
 from opsmesh.agents.manager import AgentDefinition
+from opsmesh.agents.resolvers.agents import resolve_agents
 from opsmesh.shared.errors import InvalidArgumentError
 
 type DefinitionLoader = Callable[[str], AgentDefinition]
@@ -29,16 +30,8 @@ class AgentSnapshot(BaseModel):
 
 def freeze_agent(agent_id: str, load: DefinitionLoader) -> AgentSnapshot:
     """The loader authorizes every transitive definition, including Agent tools."""
-    definitions: dict[str, AgentConfiguration] = {}
-    visiting: set[str] = set()
 
-    def visit(identifier: str, depth: int) -> None:
-        if identifier in visiting:
-            raise InvalidArgumentError("Agent reference cycles are not allowed")
-        if identifier in definitions:
-            return
-        if depth > 32 or len(definitions) >= 256:
-            raise InvalidArgumentError("The Agent configuration graph exceeds its limit")
+    def configuration(identifier: str) -> AgentConfiguration:
         definition = load(identifier)
         if not definition.enabled:
             raise InvalidArgumentError("The Agent configuration is disabled")
@@ -47,14 +40,10 @@ def freeze_agent(agent_id: str, load: DefinitionLoader) -> AgentSnapshot:
             raise InvalidArgumentError(
                 "Persistent sandbox instances use the compute image identity; run_as is unsupported"
             )
-        definitions[identifier] = config
-        visiting.add(identifier)
-        for handoff in config.handoffs:
-            visit(handoff.agent_id, depth + 1)
-        for tool in config.tools:
-            if tool.type == "agent":
-                visit(tool.agent_id, depth + 1)
-        visiting.remove(identifier)
+        return config
 
-    visit(agent_id, 0)
+    try:
+        definitions = resolve_agents(agent_id, configuration)
+    except ValueError as error:
+        raise InvalidArgumentError(str(error)) from error
     return AgentSnapshot(root_id=agent_id, definitions=definitions)

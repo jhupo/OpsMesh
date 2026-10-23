@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.gateway.contracts import ChannelDefinition
-from opsmesh.gateway.models import GatewayChannel
+from opsmesh.gateway.storage.models import GatewayChannel
 from opsmesh.shared.errors import ConflictError, ForbiddenError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 
@@ -27,6 +27,7 @@ class GatewayStore:
             enabled=row.enabled,
             revision=row.revision,
             config=settings.get("config", {}),
+            policy=settings.get("policy", {}),
         )
 
     def audit(self, session: Session, action: str, actor_id: UUID, target_id: UUID) -> None:
@@ -59,27 +60,34 @@ class GatewayStore:
             return self.definition(row)
 
     def save(self, definition: ChannelDefinition, actor_id: UUID) -> ChannelDefinition:
-        encrypted = self.cipher.encrypt_payload({"config": definition.config})
         with self.sessions.begin() as session:
-            row = session.get(GatewayChannel, definition.id, with_for_update=True)
-            if row is None:
-                row = GatewayChannel(
-                    id=definition.id, owner_id=definition.owner_id, kind=definition.kind, revision=1
-                )
-                session.add(row)
-            else:
-                if row.deleted:
-                    raise NotFoundError("Channel was deleted")
-                if row.owner_id != definition.owner_id:
-                    raise ForbiddenError("Channel ownership cannot be changed")
-                if row.kind != definition.kind or row.revision != definition.revision:
-                    raise ConflictError("Channel kind or revision changed")
-                row.revision += 1
-            row.name, row.enabled = definition.name, definition.enabled
-            row.encrypted_settings, row.key_id = encrypted.ciphertext, encrypted.key_id
-            session.flush()
-            self.audit(session, "channel.save", actor_id, row.id)
-            return self.definition(row)
+            return self.save_in(session, definition, actor_id)
+
+    def save_in(
+        self, session: Session, definition: ChannelDefinition, actor_id: UUID
+    ) -> ChannelDefinition:
+        encrypted = self.cipher.encrypt_payload(
+            {"config": definition.config, "policy": definition.policy.model_dump(mode="json")}
+        )
+        row = session.get(GatewayChannel, definition.id, with_for_update=True)
+        if row is None:
+            row = GatewayChannel(
+                id=definition.id, owner_id=definition.owner_id, kind=definition.kind, revision=1
+            )
+            session.add(row)
+        else:
+            if row.deleted:
+                raise NotFoundError("Channel was deleted")
+            if row.owner_id != definition.owner_id:
+                raise ForbiddenError("Channel ownership cannot be changed")
+            if row.kind != definition.kind or row.revision != definition.revision:
+                raise ConflictError("Channel kind or revision changed")
+            row.revision += 1
+        row.name, row.enabled = definition.name, definition.enabled
+        row.encrypted_settings, row.key_id = encrypted.ciphertext, encrypted.key_id
+        session.flush()
+        self.audit(session, "channel.save", actor_id, row.id)
+        return self.definition(row)
 
     def delete(self, channel_id: UUID, actor_id: UUID) -> None:
         # Explicit soft deletion retains bindings, pending deliveries and audit evidence.

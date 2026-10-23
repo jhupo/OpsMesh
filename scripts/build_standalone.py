@@ -22,10 +22,12 @@ CLI_PLATFORMS = ("linux-amd64", "linux-arm64", "windows-amd64", "darwin-amd64", 
 
 def server_freeze_options() -> list[str]:
     options = ["--additional-hooks-dir", str(ROOT / "scripts/freeze_hooks")]
+    options += ["--copy-metadata", "typesafe-sdk"]
     for package in (
         "opsmesh",
         "opsmesh_sdk",
         "dingtalk_stream",
+        "typesafe_sdk",
         "agents",
         "temporalio",
         "opentelemetry",
