@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:2.10.7
+    image: grafana/tempo:3.0.3
     network_mode: host
     command: -config.file=/etc/tempo/tempo.yml
     volumes:
