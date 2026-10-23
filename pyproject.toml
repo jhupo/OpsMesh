@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "opsmesh-sdk==0.1.0",
     "alembic>=1.18.4",
-    "cryptography>=48.0.0",
+    "cryptography>=50.0.0",
     "docker>=7.2.0,<8.0.0",
     "email-validator>=2.0.0",
     "fastapi>=0.116.0,<1.0.0",

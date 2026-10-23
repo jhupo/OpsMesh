@@ -126,6 +126,8 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         "run",
         "--network",
         "host",
+        "--user",
+        f"{os.getuid()}:{os.getgid()}",
         "-v",
         f"{directory}:/bundle:ro",
         "-v",

@@ -66,6 +66,14 @@ with current source before accepting the artifacts.
 
 ## Required release acceptance configuration
 
+Pushing a version tag such as `v0.1.0` automatically runs
+[Release Publish](../.github/workflows/release-publish.yml). The tag must point to a commit
+on `master` and match all three package versions. No manual GitHub Release creation is needed.
+The workflow validates the application, builds native archives and container images, stages
+an attested draft, and tests fresh Docker and native installations before publishing it.
+A failed check keeps the release unpublished. `vX.Y.ZrcN` tags create prereleases;
+`vX.Y.Z` tags create stable releases. Retry a failed workflow only after resolving its cause.
+
 CI runs current tests against disposable PostgreSQL, Redis, Temporal and Docker.
 Release validation additionally requires the native SDK model/tool/session smoke and
 `scripts/check_runtime_image.py` for a Docker sandbox and MCP stdio round trip.

@@ -65,8 +65,22 @@ def redact_sensitive_payload_item(
 
 def is_sensitive_payload_key(key: str, *, rules: RedactionRules) -> bool:
     # Split both camelCase and acronym boundaries before matching key parts.
-    normalized = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
-    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
+    characters: list[str] = []
+    for index, character in enumerate(key):
+        previous = key[index - 1] if index else ""
+        following = key[index + 1] if index + 1 < len(key) else ""
+        if (
+            index
+            and "A" <= character <= "Z"
+            and (
+                "a" <= previous <= "z"
+                or "0" <= previous <= "9"
+                or ("A" <= previous <= "Z" and "a" <= following <= "z")
+            )
+        ):
+            characters.append("_")
+        characters.append(character)
+    normalized = "".join(characters)
     normalized = re.sub(r"[^a-z0-9]+", "_", normalized.lower()).strip("_")
     if normalized in rules.exact_keys:
         return True

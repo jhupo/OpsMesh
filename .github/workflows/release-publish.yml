@@ -1,13 +1,40 @@
 name: Release Publish
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['v*']
 permissions:
   contents: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the pushed tag and package versions before building
+        run: |
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          git merge-base --is-ancestor HEAD origin/master
+          python3 - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(rc[1-9][0-9]*)?', tag):
+              raise SystemExit('Expected vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCHrcN')
+          for directory in (Path('.'), Path('deploy/cli'), Path('sdk/python')):
+              project = tomllib.loads((directory / 'pyproject.toml').read_text())
+              if project['project']['version'] != tag[1:]:
+                  raise SystemExit(f'Tag does not match {directory}/pyproject.toml')
+          PY
   managed-acceptance:
     needs: stage
     uses: ./.github/workflows/managed-delivery.yml
@@ -21,6 +48,7 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
   validation:
+    needs: preflight
     uses: ./.github/workflows/ci.yml
     with:
       full: true
@@ -39,10 +67,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Require the pushed release tag to belong to master
-        run: |
-          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
-          git merge-base --is-ancestor HEAD origin/master
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: '0.12.10'

@@ -5,10 +5,9 @@ import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-from urllib.parse import urlsplit
 from zipfile import BadZipFile
 
-import httpx
+import aiohttp
 from fastapi import APIRouter, HTTPException, Request
 from opsmesh_sdk import PluginManifest
 from opsmesh_sdk.packages import MAX_PACKAGE_SIZE
@@ -16,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.shared.errors import InvalidArgumentError, NotFoundError
+from opsmesh.shared.http.egress import public_https_response
 from opsmesh.users.access import require_platform_admin
 from opsmesh.users.auth.dependencies import CurrentUserDep
 
@@ -128,42 +128,20 @@ async def upload(request: Request, user: CurrentUserDep, enabled: bool = False) 
 @router.post("/install-url", status_code=202, operation_id="plugins.install_url")
 async def install_url(body: PluginURL, request: Request, user: CurrentUserDep) -> dict[str, Any]:
     require_platform_admin(user)
-    parsed = urlsplit(body.url)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.fragment
-    ):
-        raise InvalidArgumentError("Plugin downloads require HTTPS without URL credentials")
     with TemporaryDirectory() as directory:
         archive = Path(directory) / "plugin.zip"
         digest, size = hashlib.sha256(), 0
 
-        async def require_https(outbound: httpx.Request) -> None:
-            if outbound.url.scheme != "https" or outbound.url.username or outbound.url.password:
-                raise InvalidArgumentError("Plugin redirects require HTTPS without URL credentials")
-
         try:
-            async with (
-                httpx.AsyncClient(
-                    timeout=60,
-                    follow_redirects=True,
-                    trust_env=False,
-                    event_hooks={"request": [require_https]},
-                ) as client,
-                client.stream("GET", body.url) as response,
-            ):
-                response.raise_for_status()
+            async with public_https_response(body.url) as response:
                 with archive.open("wb") as target:
-                    async for chunk in response.aiter_bytes():
+                    async for chunk in response.content.iter_chunked(65536):
                         size += len(chunk)
                         if size > MAX_PACKAGE_SIZE:
                             raise HTTPException(status_code=413, detail="Plugin ZIP exceeds 50 MB")
                         digest.update(chunk)
                         target.write(chunk)
-        except httpx.HTTPError as exc:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             raise InvalidArgumentError("Plugin download failed") from exc
         if digest.hexdigest() != body.sha256.lower():
             raise InvalidArgumentError("Plugin checksum mismatch")

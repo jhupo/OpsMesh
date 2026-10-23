@@ -116,3 +116,12 @@ def test_key_parts_are_supplied_by_caller_and_match_complete_segments() -> None:
     assert is_sensitive_payload_key("customerPrivateCodeValue", rules=rules)
     assert not is_sensitive_payload_key("customerPrivateCodes", rules=rules)
     assert not is_sensitive_payload_key("api_key", rules=rules)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["HTTPAuthorization", "APIKey", "a" + "A" * 100_000 + "Password"],
+    ids=["http-authorization", "api-key", "long-acronym"],
+)
+def test_acronym_and_long_keys_preserve_redaction_boundaries(key: str) -> None:
+    assert is_sensitive_payload_key(key, rules=PLATFORM_REDACTION)
