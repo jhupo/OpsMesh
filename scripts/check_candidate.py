@@ -20,18 +20,25 @@ def main() -> None:
     api = os.environ["API_DIGEST"]
     worker = os.environ["WORKER_DIGEST"]
     runtime = os.environ["RUNTIME_DIGEST"]
+    build_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     with tempfile.TemporaryDirectory(prefix="opsmesh-candidate-") as temporary:
         root = Path(temporary)
+        root.chmod(0o755)
         storage = root / "data/storage"
         storage.mkdir(parents=True)
-        (root / "plugins").mkdir(mode=0o755)
+        plugins = root / "plugins"
+        plugins.mkdir()
+        os.chown(plugins, 10001, 10001)
+        plugins.chmod(0o2750)
         os.chown(storage, 10001, 10001)
+        storage.chmod(0o2770)
         values = {
             key: value or "" for key, value in dotenv_values("deploy/server/env.example").items()
         }
         values.update(
             {
                 "OPSMESH_ROOT": str(root),
+                "OPSMESH_BUILD_COMMIT": build_commit,
                 "OPSMESH_API_IMAGE": f"ghcr.io/jhupo/opsmesh-api@{api}",
                 "OPSMESH_WORKER_IMAGE": f"ghcr.io/jhupo/opsmesh-worker@{worker}",
                 "OPSMESH_EXECUTION_SANDBOX_IMAGES": json.dumps(
@@ -71,6 +78,7 @@ def main() -> None:
             "-f",
             str(Path("deploy/server/compose.yml").resolve()),
         ]
+        subprocess.run([*compose, "config", "--quiet"], check=True)
         try:
             subprocess.run(
                 [*compose, "up", "-d", "postgres", "redis", "temporal-namespace"],
