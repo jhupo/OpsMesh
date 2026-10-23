@@ -5,6 +5,8 @@
 `gateway` 拥有通道、外部身份、绑定、观察到的群成员、路由、收发件和连接租约。
 `bootstrap/gateway.py` 实现执行端口；`bootstrap/gateway_worker.py` 负责独立进程。
 SDK 的 `identity.py` 与 `channels.py` 提供无宿主依赖的合同。
+gateway 内按 api、channels、identity、routing、messaging、storage 与 adapters 归类。
+路由与提交前授权共用 routing/service.py，公共执行事件在 contracts.py，不保留旧导入路径。
 调用者经 execution.context、加密 PreparedAgent 和 workflow_runs.encrypted_context
 传到原生 SDK、Agent 工具和编排工具。MCP 连接仍由原生 SDK 管理。
 
@@ -22,6 +24,14 @@ SDK 的 `identity.py` 与 `channels.py` 提供无宿主依赖的合同。
 - 解绑、停用、修改路由均不能将旧 Run 结果发给新账号，也不能删除旧用户历史。
 - 通道配置、身份绑定、路由与人工恢复同事务审计；凭据和回复地址不通过查询暴露。
 - 附件通过 resources 文件接口和公共 HTTPS 读取；禁止任意路径、私网和重定向。
+- 决策厂商只出现在独立插件；显式 message 编排路由输出 reply/ignore，不能从任意模型对象猜测控制指令。
+- 短期群上下文受条数、TTL、当前账号绑定和路由代际限制；跨用户历史只在显式 group 范围启用。
+- 推送使用已核实的会话收件依据并复用同一发件箱；QR 只创建禁用通道，不自动绑定或授权用户。
+- 同一身份与会话的普通消息顺序处理，debounce 合批有条数和体积上限；取消控制可以越过普通队列。
+- subjects/broadcast 基于已观察且当前可授权的目的地，不代表厂商全量用户目录。
+- QQ C2C 流式输出只记录公开根 Agent、handoff 与根沙箱文本；工具 Agent 及其后代不公开。
+- 不转发隐藏 reasoning、内部子节点输出或未经守卫校验的文本；公开摘要需显式启用。
+- 原生 Runner 流式执行由官方 Temporal Agents 集成和 WorkflowStream 提供，不在 get_response 重建流式 Runner。
 
 ## 改动检查
 

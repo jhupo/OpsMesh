@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.execution.context import ExecutionContext
 from opsmesh.execution.contracts import ExecutionIdentity, PreparedAgent, SessionReference
-from opsmesh.execution.instances.access import current_user, get_instance
+from opsmesh.execution.instances.access import get_instance
 from opsmesh.execution.preparation import AgentSnapshot
 from opsmesh.execution.runs.access import authorize_run as authorize_run
 from opsmesh.execution.runs.access import get_run
@@ -23,6 +23,7 @@ from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import canonical_json, payload_digest
 from opsmesh.users.access import CurrentUser
 from opsmesh.users.quotas import service as quotas
+from opsmesh.users.service import current_user
 
 
 class AdmissionPending(ConflictError):

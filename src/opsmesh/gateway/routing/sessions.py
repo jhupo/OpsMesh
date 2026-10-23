@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from opsmesh.gateway.contracts import GatewayTurn
-from opsmesh.gateway.conversations import conversation_key
-from opsmesh.gateway.models import GatewaySession
+from opsmesh.gateway.identity.conversations import conversation_key
+from opsmesh.gateway.storage.models import GatewaySession
 from opsmesh.shared.errors import ConflictError
 
 

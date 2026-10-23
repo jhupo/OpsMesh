@@ -22,10 +22,11 @@ from opsmesh_sdk.registration import (
     resolve_config,
     tool_invocation,
 )
-from pydantic import TypeAdapter, ValidationError
+from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from opsmesh.agents.tools import ToolInfo
 from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.network import CredentialResolver
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users.access import CurrentUser, ensure_active_user
 
@@ -184,6 +185,7 @@ async def invoke_registered_tool(
     operation_id: UUID,
     config: dict[str, object] | None = None,
     source: InvocationSource | None = None,
+    credentials: CredentialResolver | None = None,
 ) -> object:
     installed = authorize_registered_tool(registry, plugin_id, name, user)
     context = registry.plugins[plugin_id]
@@ -209,10 +211,18 @@ async def invoke_registered_tool(
         AuthorizationRequest(principal, "execute", f"{plugin_id}/tools/{name}", origin, arguments),
     )
     args, kwargs = installed.schema.to_call_args(values)
+    secrets: dict[str, SecretStr] = {}
+    for alias, reference in context.credential_refs.items():
+        if credentials is None:
+            raise InvalidArgumentError("The plugin credential resolver is unavailable")
+        secret = await credentials(reference)
+        if not isinstance(secret, SecretStr) or not secret.get_secret_value():
+            raise InvalidArgumentError("A declared plugin credential is unavailable")
+        secrets[alias] = secret
     try:
         with tool_invocation(
             InvocationContext(
-                operation_id, user.user_id, admin, configuration, name, principal, origin
+                operation_id, user.user_id, admin, configuration, name, principal, origin, secrets
             )
         ):
             # Await the sync function's thread even on timeout/cancellation: a running

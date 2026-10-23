@@ -5,15 +5,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.execution.instances.access import current_user
 from opsmesh.platform.audit.contracts import AuditActor, AuditRecord, record_audit
+from opsmesh.platform.targets import TargetPorts
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import canonical_json, payload_digest
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 from opsmesh.workflows.triggers.contracts import TriggerSpec
 from opsmesh.workflows.triggers.models import Trigger, TriggerDelivery
-from opsmesh.workflows.triggers.ports import TargetPorts
 
 _NO_EVENT = object()
 

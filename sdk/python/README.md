@@ -224,6 +224,21 @@ def setup(ctx: PluginContext) -> None:
 框架不内置组织、服务器或项目业务规则。`Principal.group_ids` 是扩展字段，当前
 平台没有组授权目录，默认空集合；外部群和已见成员保存在 Gateway，不能当平台权限。
 
+`InvocationSource` 还包含宿主观察到的 external_role、external_id、identity_scope，
+以及用于会话隔离的 session_scope；外部角色不自动成为 Principal.roles。
+通道的 `MessageContext` 保留提及、引用和可见性，`OutboundMessage.event` 区分
+message/delta/completed/typing。ContentPart 媒体必须指定 media_key、公共 URL、base64 data
+之一；MessageContext.recent_messages 表示平台随当前事件提供的有界上下文，不是授权声明。
+声明 streaming、typing、proactive、qr_binding、probe 等能力
+只说明适配器接口范围，不能使厂商授予额外权限；QQ 扫码入口由内置宿主管理。
+probe 仅探测认证，不启动入站连接或消费消息。
+
+插件可在 setup 中用 `ctx.credential("api_key", "env:MY_API_KEY")` 声明凭据引用，
+在工具执行中用 `get_plugin_credential("api_key")` 获取宿主解析的 SecretStr。
+引用由管理员安装配置决定，模型工具参数不能选择任意 secret；setup 不读取凭据或联网。
+调用结束后上下文恢复，凭据不进入工具参数、描述或结果。
+非 OpenAI 决策协议的实例见 [TypeSafe Decision](examples/typesafe-decision/README.md)。
+
 `ctx.mcp(..., authorize=...)` 也支持同类策略，resource 使用
 `plugin-id/mcp/name/connect`、`.../tools`、`.../tools/tool_name`、`.../prompts`、
 `.../prompts/name`、`.../resources`、`.../resource_templates` 或 `.../resources/read`。

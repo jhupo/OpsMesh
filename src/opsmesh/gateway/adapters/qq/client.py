@@ -52,6 +52,7 @@ class QQClient:
             raise
         if response.status_code == 401:
             self.expires = 0
+            raise DeliveryRejected("QQ authentication expired", retryable=True)
         if response.status_code == 429:
             raise DeliveryRejected("QQ rate limited", retryable=True)
         if response.status_code >= 500 and sending:

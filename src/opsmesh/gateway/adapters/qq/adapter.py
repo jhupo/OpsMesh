@@ -5,7 +5,9 @@ from typing import Any
 from opsmesh_sdk.channels import (
     ChannelAdapter,
     ChannelCapabilities,
+    ChannelMedia,
     DeliveryReceipt,
+    EventSink,
     OutboundMessage,
 )
 
@@ -17,15 +19,26 @@ from opsmesh.gateway.adapters.qq.messages import send_message
 
 
 class QQAdapter(ChannelAdapter):
-    capabilities = ChannelCapabilities(inbound_media=True, outbound_media=True)
+    capabilities = ChannelCapabilities(
+        inbound_media=True,
+        outbound_media=True,
+        streaming=True,
+        typing=True,
+        proactive=True,
+        qr_binding=True,
+        probe=True,
+    )
+
+    def __init__(self, config: dict[str, Any], sink: EventSink, media: ChannelMedia) -> None:
+        super().__init__(config, sink, media)
+        self.client = QQClient(QQConfig.model_validate(config))
+        self.connection = QQConnection(self.client)
 
     @classmethod
     def validate_config(cls, config: dict[str, Any]) -> dict[str, Any]:
         return QQConfig.model_validate(config).model_dump()
 
     async def run(self) -> None:
-        self.client = QQClient(QQConfig.model_validate(self.config))
-        self.connection = QQConnection(self.client)
 
         async def receive(payload: dict[str, Any]) -> None:
             event = await parse_event(payload, self.client.config.app_id, self.media)
@@ -38,8 +51,12 @@ class QQAdapter(ChannelAdapter):
             await self.client.http.aclose()
 
     async def close(self) -> None:
-        if hasattr(self, "connection"):
-            await self.connection.close()
+        await self.connection.close()
+        await self.client.http.aclose()
 
     async def send(self, message: OutboundMessage) -> DeliveryReceipt:
         return await send_message(self.client, self.media, message)
+
+    async def probe(self) -> dict[str, Any]:
+        value = await self.client.request("GET", "/users/@me")
+        return {"authenticated": True, "account_id": str(value["id"])}

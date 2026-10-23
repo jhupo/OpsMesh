@@ -10,7 +10,7 @@ from opsmesh.shared.db.pagination import page_scalars
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
 from opsmesh.users.access import CurrentUser
-from opsmesh.users.service import load_identity
+from opsmesh.users.service import current_user, load_identity
 from opsmesh.workflows import access
 from opsmesh.workflows.contracts import Permission
 from opsmesh.workflows.models import WorkflowDefinition, WorkflowGrant, WorkflowInvitation
@@ -158,7 +158,7 @@ def list_invitations(
     actor: CurrentUser,
     page: PageParams,
 ) -> tuple[list[WorkflowInvitation], int]:
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     return page_scalars(
         session,
         select(WorkflowInvitation)
@@ -180,7 +180,7 @@ def decide_invitation(
     invitation_id: UUID,
     accept: bool,
 ) -> WorkflowInvitation:
-    actor = access.current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     query = select(WorkflowInvitation).where(
         WorkflowInvitation.id == invitation_id,
         WorkflowInvitation.recipient_user_id == actor.user_id,

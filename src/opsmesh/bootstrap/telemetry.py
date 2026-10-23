@@ -19,6 +19,7 @@ from temporalio.contrib.opentelemetry import ReplaySafeTracerProvider, create_tr
 from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.config import Settings
 from opsmesh.shared.security.redaction import is_sensitive_payload_key, redact_sensitive_text
+from opsmesh.shared.version import package_version
 from opsmesh.telemetry.exporters import configure_log_export, configure_trace_export
 from opsmesh.telemetry.instrumentation import (
     instrument_fastapi,
@@ -103,7 +104,7 @@ def _configure_process_telemetry(settings: Settings) -> ReplaySafeTracerProvider
             {
                 "service.name": settings.service_name,
                 "service.instance.id": socket.gethostname(),
-                "service.version": "0.1.0",
+                "service.version": package_version(),
                 "deployment.environment.name": settings.environment,
             }
         )

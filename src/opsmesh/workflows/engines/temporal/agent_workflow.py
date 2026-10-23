@@ -11,6 +11,7 @@ with workflow.unsafe.imports_passed_through():
     from agents import RunState
     from agents.sandbox import SandboxRunConfig
     from pydantic import BaseModel, ConfigDict
+    from temporalio.contrib.workflow_streams import WorkflowStream
     from temporalio.openai_agents.workflow import temporal_sandbox_client
 
     from opsmesh.execution.context import ExecutionContext, serialize_execution_context
@@ -38,8 +39,16 @@ class InstanceAdmission(BaseModel):
 
 @workflow.defn
 class AgentInstanceWorkflow:
-    def __init__(self) -> None:
+    @workflow.init
+    def __init__(self, command: dict[str, str]) -> None:
         self.decisions: set[str] = set()
+        self.model_stream = WorkflowStream()
+
+    async def consume_model_event(self, event: object) -> None:
+        # Public text is recorded by the authorized model Activity. The SDK owns
+        # transport events; retain no duplicate in-memory log after consumption.
+        state = self.model_stream.get_state()
+        self.model_stream.truncate(state.base_offset + len(state.log))
 
     @workflow.signal
     async def approval_decided(self, dispatch_id: str, approval_id: str) -> None:
@@ -149,6 +158,9 @@ class AgentInstanceWorkflow:
                         sandbox=sandbox,
                         state=state,
                         decision=decision,
+                        on_event=self.consume_model_event
+                        if prepared.source.stream_output
+                        else None,
                     ),
                     timeout=admission.timeout_seconds,
                 )

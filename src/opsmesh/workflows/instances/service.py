@@ -10,7 +10,7 @@ from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.redaction import RedactionRules, redact_sensitive_payload
 from opsmesh.shared.serialization import payload_digest
 from opsmesh.users.access import CurrentUser
-from opsmesh.workflows.access import current_actor
+from opsmesh.users.service import current_user
 from opsmesh.workflows.bindings import bind_workflow
 from opsmesh.workflows.instances.access import get_instance
 from opsmesh.workflows.instances.models import WorkflowInstance
@@ -27,7 +27,7 @@ def create_instance(
     cipher: SecretCipher,
     redaction: RedactionRules,
 ) -> WorkflowInstance:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     payload = request.model_dump(mode="json")
     validate_json(payload)
     for binding in request.bindings.tools.values():

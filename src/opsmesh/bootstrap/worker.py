@@ -13,7 +13,6 @@ from temporalio.openai_agents import SandboxClientProvider
 from temporalio.worker import Worker
 
 from opsmesh.agents.catalog.service import ManagedCatalog
-from opsmesh.agents.providers.factory import CredentialResolver
 from opsmesh.agents.providers.registry import ProviderRegistry
 from opsmesh.bootstrap.automation import target_ports
 from opsmesh.bootstrap.catalog import load_catalog
@@ -37,6 +36,7 @@ from opsmesh.platform.evaluations.contracts import EvaluatorRegistry
 from opsmesh.platform.evaluations.evaluators import default_evaluators
 from opsmesh.resources.layout import StorageLayout
 from opsmesh.resources.storage.local import LocalFileStorage
+from opsmesh.shared.network import CredentialResolver
 from opsmesh.telemetry.context import restore_trace_context
 from opsmesh.telemetry.logging import configure_logging, shutdown_logging
 from opsmesh.temporal.dispatch.dispatcher import TemporalOutboxDispatcher
@@ -105,7 +105,11 @@ async def build_dispatch_worker(
     orchestration = WorkflowActivities(
         local.sessions,
         cipher,
-        tools=WorkflowTools(local.sessions, plugins=lambda: host.current.views["agents"]),
+        tools=WorkflowTools(
+            local.sessions,
+            plugins=lambda: host.current.views["agents"],
+            credentials=managed.credential,
+        ),
     )
     targets = target_ports(cipher)
     triggers = TriggerActivities(local.sessions, cipher, targets)

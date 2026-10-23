@@ -11,7 +11,7 @@ from opsmesh_sdk.registration import ConfigField, resolve_config
 from opsmesh.gateway.adapters.dingtalk.adapter import DingTalkAdapter
 from opsmesh.gateway.adapters.qq.adapter import QQAdapter
 from opsmesh.gateway.contracts import ChannelDefinition
-from opsmesh.gateway.media import GatewayMedia
+from opsmesh.gateway.messaging.media import GatewayMedia
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,11 @@ class ChannelRegistry:
     def validate(self, definition: ChannelDefinition) -> None:
         if definition.kind not in self.classes:
             raise ValueError("Unknown gateway channel kind")
+        capabilities = self.infos[definition.kind].capabilities
+        if definition.policy.streaming and not capabilities.streaming:
+            raise ValueError("The channel does not support streaming")
+        if definition.policy.typing_interval_seconds and not capabilities.typing:
+            raise ValueError("The channel does not support typing notifications")
         if definition.enabled or definition.config:
             self.configuration(definition.kind, dict(definition.config))
 

@@ -2,7 +2,7 @@
 
 ## 所有者与入口
 
-`src/opsmesh/plugins` 是通用包宿主；`agents/plugins`、`gateway/plugins.py` 是资源适配器。`sdk/python/src/opsmesh_sdk` 提供 plugin.yaml、setup(ctx)、注册声明与 ZIP 打包。bootstrap 注册适配器并提供 API/Worker/Gateway 视图。通道实现 SDK 的 ChannelAdapter；工具和 MCP 授权边界见[网关与调用者身份](gateway-and-identity.md)。
+`src/opsmesh/plugins` 是通用包宿主；`agents/plugins`、`gateway/channels/plugins.py` 是资源适配器。`sdk/python/src/opsmesh_sdk` 提供 plugin.yaml、setup(ctx)、注册声明与 ZIP 打包。bootstrap 注册适配器并提供 API/Worker/Gateway 视图。通道实现 SDK 的 ChannelAdapter；工具和 MCP 授权边界见[网关与调用者身份](gateway-and-identity.md)。
 
 ## 不变量
 

@@ -1,7 +1,7 @@
 # Plugin Host
 
 `plugins` owns package installation, private module namespaces, adapter registration and
-generation changes. Resource semantics remain with `agents/plugins` and `gateway/plugins.py`.
+generation changes. Resource semantics remain with `agents/plugins` and `gateway/channels/plugins.py`.
 `bootstrap/plugins.py` registers those adapters and supplies the feature views.
 
 ```text

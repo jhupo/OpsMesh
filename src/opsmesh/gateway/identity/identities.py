@@ -6,13 +6,13 @@ from opsmesh_sdk.channels import ExternalActor
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from opsmesh.gateway.models import (
+from opsmesh.gateway.storage.models import (
     GatewayAccountBinding,
     GatewayIdentity,
     GatewayRoute,
     GatewaySession,
 )
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.shared.serialization import payload_digest
 

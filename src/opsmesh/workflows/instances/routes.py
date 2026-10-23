@@ -7,8 +7,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
-from opsmesh.execution.runtime.routes import secret_cipher
 from opsmesh.shared.db.session import session_transaction
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.shared.security.redaction import RedactionRules
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.workflows.instances.access import get_instance

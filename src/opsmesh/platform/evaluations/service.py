@@ -13,11 +13,11 @@ from opsmesh.platform.evaluations.models import (
     EvaluationDataset,
     EvaluationExperiment,
 )
+from opsmesh.platform.targets import TargetPorts
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.serialization import canonical_json, payload_digest
 from opsmesh.users.access import CurrentUser
-from opsmesh.workflows.triggers.ports import TargetPorts
 
 
 def audit(session: Session, actor: CurrentUser, action: str, identifier: UUID) -> None:

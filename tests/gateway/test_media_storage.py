@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from opsmesh.gateway.media import GatewayMedia
+from opsmesh.gateway.messaging.media import GatewayMedia
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Local storage requires POSIX directory descriptors")

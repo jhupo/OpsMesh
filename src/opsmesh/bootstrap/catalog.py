@@ -31,8 +31,9 @@ def load_catalog(path: Path | None) -> HostCatalog:
     )
     agents, providers = AgentManager(), ProviderRegistry()
     for provider in catalog.providers:
-        if not re.fullmatch(r"env:[A-Z_][A-Z0-9_]*", provider.credential_ref):
-            raise ValueError("Host credentials require an env:VARIABLE reference")
+        for reference in (provider.credential_ref, provider.network.proxy_ref):
+            if reference is not None and not re.fullmatch(r"env:[A-Z_][A-Z0-9_]*", reference):
+                raise ValueError("Host credentials require an env:VARIABLE reference")
         providers.register(provider)
     for definition in catalog.agents:
         agents.register(definition)

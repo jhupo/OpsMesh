@@ -7,7 +7,7 @@ from opsmesh.execution.instances import models as instances
 from opsmesh.execution.runs import models as runs
 from opsmesh.execution.runtime import models as runtime
 from opsmesh.execution.sessions import models as model_sessions
-from opsmesh.gateway import models as gateway
+from opsmesh.gateway.storage import models as gateway
 from opsmesh.platform.audit import models as audit
 from opsmesh.platform.billing import models as billing
 from opsmesh.platform.evaluations import models as evaluations

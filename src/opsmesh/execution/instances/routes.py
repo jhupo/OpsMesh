@@ -9,8 +9,8 @@ from opsmesh.execution.instances.access import get_instance
 from opsmesh.execution.instances.models import AgentInstance
 from opsmesh.execution.instances.schemas import InstanceCreate, InstanceView
 from opsmesh.execution.instances.service import create_instance, delete_instance
-from opsmesh.execution.runtime.routes import secret_cipher
 from opsmesh.shared.db.session import session_transaction
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 
 router = APIRouter(prefix="/execution/instances", tags=["execution-instances"])

@@ -57,6 +57,7 @@ class Node(WorkflowValue):
 
 class AgentNode(Node):
     kind: Literal["agent"] = "agent"
+    input_mode: Literal["json", "messages"] = "json"
     binding: str = Field(min_length=1, max_length=100)
 
 

@@ -23,12 +23,12 @@ from temporalio.client import (
 )
 from temporalio.exceptions import ApplicationError
 
-from opsmesh.execution.instances.access import current_user
+from opsmesh.platform.targets import TargetPorts
 from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.encryption import SecretCipher
+from opsmesh.users.service import current_user
 from opsmesh.workflows.triggers import service
 from opsmesh.workflows.triggers.models import Trigger, TriggerDelivery
-from opsmesh.workflows.triggers.ports import TargetPorts
 
 logger = logging.getLogger(__name__)
 

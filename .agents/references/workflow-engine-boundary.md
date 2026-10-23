@@ -16,6 +16,9 @@
 - 动态指令、Prompt、守卫和 Agent Hooks 走 Activity 代理并冻结注册 revision；其他不可安全传输的回调合同在准入时拒绝。回调上下文是副本，不能依赖修改 Agent 或工厂状态影响 Workflow。
 - Temporal 载荷按最终加密编码大小限额，完整准入结果在 Activity 返回前预检；缺失沙箱文件通过公开 FailureConverter 保留原生 SDK 异常。
 - 已执行的历史必须保持可重放；修改 Workflow 命令序列需评估版本兼容，而不是重试旧历史碰运气。
+- 模型引用含 Agent ID，模型默认设置按 Agent 冻结，不能按厂商和模型名去重后覆盖不同 Agent 的设置。
+- 流式 Runner 使用锁定官方 Temporal 集成的 WorkflowStream；公开文本由授权 Model Activity 记录，内部工具 Agent 不公开。
+- Agent 节点的 messages 输入模式只接受原生 messages 数组，不能把含附件的 JSON 参数误认为多模态输入。
 
 ## 改动检查点
 

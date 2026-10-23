@@ -7,15 +7,8 @@ from sqlalchemy.orm import Session
 
 from opsmesh.execution.instances.models import AgentInstance
 from opsmesh.shared.errors import NotFoundError
-from opsmesh.users.access import CurrentUser, ensure_active_user
-from opsmesh.users.service import load_identity
-
-
-def current_user(session: Session, user_id: UUID) -> CurrentUser:
-    actor = load_identity(session, user_id)
-    if actor is None:
-        raise NotFoundError("The execution user does not exist")
-    return ensure_active_user(actor)
+from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 
 
 def get_instance(

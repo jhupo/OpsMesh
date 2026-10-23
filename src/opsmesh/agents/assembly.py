@@ -22,7 +22,6 @@ from opsmesh.agents.config.model import ModelRef, model_settings
 from opsmesh.agents.config.sandbox import SandboxAgentConfig
 from opsmesh.agents.config.tools import AgentToolRef
 from opsmesh.agents.providers import ProviderRegistry, create_model
-from opsmesh.agents.providers.factory import CredentialResolver
 from opsmesh.agents.resolvers.agents import resolve_agents
 from opsmesh.agents.resolvers.mcp import MCPResolver, resolve_mcp
 from opsmesh.agents.resolvers.output import resolve_output
@@ -35,9 +34,10 @@ from opsmesh.agents.skills import SkillCatalog, SkillInstallation
 from opsmesh.agents.skills.preparation import EntryResolver
 from opsmesh.agents.tools import ToolRegistry
 from opsmesh.agents.tools.adapter import agent_as_tool, resolve_tool
+from opsmesh.shared.network import CredentialResolver
 
 ModelResolver = Callable[
-    [ModelRef, AsyncExitStack], Awaitable[tuple[Model | str, ModelSettings | None]]
+    [str, ModelRef, AsyncExitStack], Awaitable[tuple[Model | str, ModelSettings | None]]
 ]
 
 
@@ -130,7 +130,9 @@ async def build_agent(
             settings: ModelSettings | None = None
             if config.model is not None:
                 if bindings.model_resolver is not None:
-                    model, settings = await bindings.model_resolver(config.model, lifespan)
+                    model, settings = await bindings.model_resolver(
+                        identifier, config.model, lifespan
+                    )
                 elif bindings.credentials is not None:
                     model, settings = await create_model(
                         config.model,

@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal
@@ -20,6 +19,7 @@ from opsmesh.agents.providers.registry import ProviderRegistry
 from opsmesh.agents.resolvers.agents import resolve_agents
 from opsmesh.platform.audit.contracts import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
+from opsmesh.shared.network import validate_credential_reference
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.redaction import RedactionRules, redact_sensitive_payload
 from opsmesh.shared.serialization import canonical_json, payload_digest
@@ -164,6 +164,8 @@ def save_draft(
         payload["updated_at"] = datetime.now(UTC).isoformat()
     else:
         validate_reference(value.credential_ref)
+        if value.network.proxy_ref is not None:
+            validate_reference(value.network.proxy_ref)
     encrypted = cipher.encrypt_payload(payload)
     if row is None:
         row = CatalogEntry(
@@ -201,13 +203,16 @@ def publish(
     providers = provider_snapshot(session, cipher)
     if isinstance(value, ProviderConfig):
         require_platform_admin(actor)
-        validate_reference(value.credential_ref)
-        if (
-            value.enabled
-            and value.credential_ref.startswith("secret:")
-            and session.get(CatalogCredential, value.credential_ref[7:]) is None
-        ):
-            raise InvalidArgumentError("The provider credential is not configured")
+        for reference in (value.credential_ref, value.network.proxy_ref):
+            if reference is None:
+                continue
+            validate_reference(reference)
+            if (
+                value.enabled
+                and reference.startswith("secret:")
+                and session.get(CatalogCredential, reference[7:]) is None
+            ):
+                raise InvalidArgumentError("A provider credential is not configured")
         providers.register(value, replace=True)
     definitions = [v for v in published(session, cipher, "agent") if isinstance(v, AgentDefinition)]
     if isinstance(value, AgentDefinition):
@@ -277,10 +282,10 @@ def publish(
 
 
 def validate_reference(reference: str) -> None:
-    if not re.fullmatch(r"(?:env:[A-Z_][A-Z0-9_]*|secret:[A-Za-z0-9_.-]{1,190})", reference):
-        raise InvalidArgumentError(
-            "Credentials require an env:VARIABLE or secret:identifier reference"
-        )
+    try:
+        validate_credential_reference(reference)
+    except ValueError as error:
+        raise InvalidArgumentError(str(error)) from error
 
 
 class ManagedCatalog:

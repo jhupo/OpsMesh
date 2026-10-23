@@ -7,8 +7,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from opsmesh.gateway.models import GatewayLease
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.storage.models import GatewayLease
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.errors import ConflictError
 
 LEASE_SECONDS = 45

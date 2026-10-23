@@ -61,7 +61,7 @@ def gateway_audit(session: Session, action: str, actor_id: UUID, target_id: UUID
             category="gateway",
             action=action,
             actor=AuditActor(actor_type="user", actor_id=str(actor_id)),
-            source="gateway",
+            source="platform",
             target_type=action.split(".", 1)[0],
             target_id=str(target_id),
         ),

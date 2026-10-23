@@ -7,7 +7,9 @@ import dingtalk_stream
 from opsmesh_sdk.channels import (
     ChannelAdapter,
     ChannelCapabilities,
+    ChannelMedia,
     DeliveryReceipt,
+    EventSink,
     OutboundMessage,
 )
 
@@ -19,14 +21,20 @@ from opsmesh.gateway.adapters.dingtalk.messages import send_message
 
 
 class DingTalkAdapter(ChannelAdapter):
-    capabilities = ChannelCapabilities(inbound_media=True, outbound_media=True)
+    capabilities = ChannelCapabilities(
+        inbound_media=True, outbound_media=True, proactive=True, probe=True
+    )
+
+    def __init__(self, config: dict[str, Any], sink: EventSink, media: ChannelMedia) -> None:
+        super().__init__(config, sink, media)
+        self.client = DingTalkClient(DingTalkConfig.model_validate(config))
+        self.connection: DingTalkConnection | None = None
 
     @classmethod
     def validate_config(cls, config: dict[str, Any]) -> dict[str, Any]:
         return DingTalkConfig.model_validate(config).model_dump()
 
     async def run(self) -> None:
-        self.client = DingTalkClient(DingTalkConfig.model_validate(self.config))
         adapter = self
 
         class Handler(dingtalk_stream.CallbackHandler):  # type: ignore[misc]
@@ -45,8 +53,13 @@ class DingTalkAdapter(ChannelAdapter):
             await self.client.http.aclose()
 
     async def close(self) -> None:
-        if hasattr(self, "connection"):
+        if self.connection is not None:
             await self.connection.close()
+        await self.client.http.aclose()
 
     async def send(self, message: OutboundMessage) -> DeliveryReceipt:
         return await send_message(self.client, self.media, message)
+
+    async def probe(self) -> dict[str, Any]:
+        await self.client.access_token()
+        return {"authenticated": True}

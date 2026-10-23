@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.execution.instances.access import current_user
 from opsmesh.execution.runs.models import ExecutionRun
 from opsmesh.shared.errors import ForbiddenError, NotFoundError
 from opsmesh.users.access import CurrentUser
+from opsmesh.users.service import current_user
 
 
 def get_run(

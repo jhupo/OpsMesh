@@ -21,7 +21,7 @@ from opsmesh.platform.audit.contracts import AuditActor, AuditRecord, record_aud
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError, NotFoundError
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.serialization import canonical_json
-from opsmesh.users.access import CurrentUser, PlatformRole
+from opsmesh.users.access import CurrentUser, PlatformRole, ensure_active_user
 from opsmesh.users.avatars import normalize_avatar
 from opsmesh.users.errors import DuplicateUserError
 from opsmesh.users.models import (
@@ -97,6 +97,13 @@ def load_identity(session: Session, user_id: UUID) -> CurrentUser | None:
     if profile is None:
         return None
     return identity_of(profile)
+
+
+def current_user(session: Session, user_id: UUID) -> CurrentUser:
+    actor = load_identity(session, user_id)
+    if actor is None:
+        raise NotFoundError("The user does not exist")
+    return ensure_active_user(actor)
 
 
 def list_users(

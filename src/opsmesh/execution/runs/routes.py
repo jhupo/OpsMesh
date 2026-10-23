@@ -15,8 +15,8 @@ from opsmesh.execution.runs.reconciliation import EffectResolution, reconcile_ef
 from opsmesh.execution.runs.schemas import ApprovalDecision, RunCreate, RunView
 from opsmesh.execution.runs.service import cancel_run, submit_run
 from opsmesh.execution.runs.streaming import RunEventRecorder
-from opsmesh.execution.runtime.routes import secret_cipher
 from opsmesh.shared.db.session import session_transaction
+from opsmesh.shared.http.dependencies import secret_cipher
 from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 
 router = APIRouter(prefix="/execution/runs", tags=["execution-runs"])

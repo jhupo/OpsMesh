@@ -65,12 +65,19 @@ async def run(message: str) -> object:
 With no explicit model selection, the SDK's configured default model is used.
 For an explicit `ModelRef`, register `ProviderConfig` and `ModelInfo` in
 `bindings.providers` and inject an asynchronous `credentials(reference)` returning
-`SecretStr`. Alternatively, inject `model_resolver(reference, lifespan)` returning
+`SecretStr`. Alternatively, inject `model_resolver(agent_id, reference, lifespan)` returning
 a native `Model` and optional `ModelSettings`. This also accommodates execution-time
 model proxies without importing an execution engine. The built-in factory supports
 Responses and Chat Completions with explicit provider URLs and credential references.
 It never stores a plaintext API key in the Agent definition. Model descriptions
 advertise capabilities; the application still owns user grants, limits and metering.
+
+Each Provider has an explicit `network` configuration: `direct` (default, ignores
+environment proxies), `proxy` (requires an `env:` or `secret:` proxy reference), or
+`environment` (uses the HTTP client's environment proxy rules). HTTP(S) proxy URLs
+require an explicit port. Clients do not mutate process environment variables.
+Register separate Provider IDs to use the same vendor through different network
+paths; each subagent selects its own Provider/model through `ModelRef`.
 
 Every build creates a fresh graph. Graph limits and cycles are checked before
 resource creation. The build context closes owned model clients on success, error

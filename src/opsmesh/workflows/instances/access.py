@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.users.access import CurrentUser
-from opsmesh.workflows.access import current_actor
+from opsmesh.users.service import current_user
 from opsmesh.workflows.instances.models import WorkflowInstance
 
 
 def get_instance(
     session: Session, *, actor: CurrentUser, instance_id: UUID, lock: bool = False
 ) -> WorkflowInstance:
-    actor = current_actor(session, actor)
+    actor = current_user(session, actor.user_id)
     query = select(WorkflowInstance).where(
         WorkflowInstance.id == instance_id,
         WorkflowInstance.owner_user_id == actor.user_id,

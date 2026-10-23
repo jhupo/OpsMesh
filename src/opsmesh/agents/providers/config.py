@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, HttpUrl, model_validator
 
 from opsmesh.agents.config.base import ConfigValue, Identifier
+from opsmesh.shared.network import NetworkConfig
 
 from .models import ModelInfo
 
@@ -15,6 +16,7 @@ class ProviderConfig(ConfigValue):
     protocol: Literal["openai_responses", "openai_chat_completions"] = "openai_responses"
     base_url: HttpUrl = Field(default=HttpUrl("https://api.openai.com/v1"))
     credential_ref: Identifier = Field(repr=False)
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
     models: list[ModelInfo] = Field(min_length=1)
     default_model: str | None = None
     enabled: bool = True

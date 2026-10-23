@@ -1,15 +1,17 @@
 """Typed QQ identities, chats and media; nicknames never identify accounts."""
 
-import re
 from typing import Any
 
 from opsmesh_sdk.channels import (
     ChannelMedia,
-    ContentPart,
     Conversation,
     ExternalActor,
     InboundMessage,
+    MessageContext,
+    MessageReference,
 )
+
+from opsmesh.gateway.adapters.qq.content import attached_context, content_parts
 
 
 async def parse_event(
@@ -44,24 +46,13 @@ async def parse_event(
         reply_kind = "dm" if kind == "private" else "channel"
     if not sender or not destination or not data.get("id"):
         raise ValueError("QQ event lacks stable identity or message ID")
-    content = []
-    text = re.sub(r"<@!?[A-Za-z0-9_-]+>", "", data.get("content", "")).strip()
-    if text:
-        content.append(ContentPart(text=text))
-    for attachment in data.get("attachments", []):
-        url = str(attachment.get("url", ""))
-        if url.startswith("//"):
-            url = "https:" + url
-        key, mime = await media.fetch(url)
-        family = mime.split("/")[0]
-        content.append(
-            ContentPart(
-                type=family if family in {"image", "audio", "video"} else "file",
-                media_key=key,
-                mime_type=mime,
-                filename=attachment.get("filename") or "attachment",
-            )
-        )
+    mentions = [str(item["id"]) for item in data.get("mentions", []) if item.get("id")]
+    reference = data.get("message_reference") or {}
+    role = author.get("member_role")
+    mentioned = event in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
+    content = await content_parts(data, media, mentioned=mentioned)
+    recent, quoted = await attached_context(data, media)
+    content = (quoted + content)[:100]
     if not content:
         return None
     return InboundMessage(
@@ -71,8 +62,24 @@ async def parse_event(
             id_kind=identity_kind,
             external_id=str(sender),
             name=str(author.get("username") or ""),
+            external_role=role if role in {"owner", "admin", "member"} else None,
         ),
         conversation=Conversation(external_id=str(destination), kind=kind),
         content=content,
+        context=MessageContext(
+            event_type=str(event),
+            bot_mentioned=event in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
+            or any(item.get("is_you") is True for item in data.get("mentions", [])),
+            mentions=mentions,
+            reference=MessageReference(message_id=str(reference["message_id"]))
+            if reference.get("message_id")
+            else None,
+            visibility="all"
+            if event == "GROUP_MESSAGE_CREATE"
+            else "mention_recent"
+            if recent
+            else "mention_only",
+            recent_messages=recent,
+        ),
         reply_address={"kind": reply_kind, "target": str(destination), "msg_id": str(data["id"])},
     )

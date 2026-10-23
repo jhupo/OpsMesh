@@ -100,6 +100,7 @@ async def connect_temporal(
                 model_params=ModelActivityParameters(
                     start_to_close_timeout=timedelta(minutes=5),
                     heartbeat_timeout=timedelta(seconds=10),
+                    streaming_topic="model-events",
                     retry_policy=RetryPolicy(maximum_attempts=1),
                     cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                 ),

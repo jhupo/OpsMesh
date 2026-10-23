@@ -1,0 +1,6 @@
+id: typesafe-decision
+version: 0.1.0
+name: TypeSafe Decision
+description: Typed Jev decisions for workflow routing
+kind: tool
+entry: main.py

@@ -8,6 +8,7 @@ from opsmesh_sdk.channels import (
     Conversation,
     ExternalActor,
     InboundMessage,
+    MessageContext,
 )
 
 from opsmesh.gateway.adapters.dingtalk.client import DingTalkClient
@@ -72,6 +73,15 @@ async def parse_event(
             name=str(data.get("conversationTitle") or ""),
         ),
         content=content,
+        context=MessageContext(
+            event_type="chatbot_message",
+            bot_mentioned=data.get("isInAtList") is True,
+            mentions=[
+                str(item.get("staffId") or item.get("dingtalkId"))
+                for item in data.get("atUsers", [])
+                if item.get("staffId") or item.get("dingtalkId")
+            ],
+        ),
         reply_address={
             "webhook": data.get("sessionWebhook"),
             "expires_at": data.get("sessionWebhookExpiredTime"),

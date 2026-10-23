@@ -11,8 +11,8 @@ from opsmesh.bootstrap.models import register_models
 from opsmesh.bootstrap.plugins import create_plugin_manager, watch_plugins
 from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.config import Settings
-from opsmesh.gateway.manager import Gateway
-from opsmesh.gateway.store import GatewayStore
+from opsmesh.gateway.channels.manager import Gateway
+from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.plugins.manager import PluginSnapshot
 from opsmesh.resources.layout import StorageLayout
 from opsmesh.telemetry.logging import configure_logging, shutdown_logging

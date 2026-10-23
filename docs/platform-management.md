@@ -51,6 +51,19 @@ Provider 配置如下：
 模型调用最终失败不能证明服务商未执行或未计费。此时回执进入不确定状态，保留额度和费用
 预留，交由显式对账处理；不会自动当作零用量释放。
 
+Provider 的 `network` 独立选择网络路径：`{"mode":"direct"}` 默认直连并忽略环境代理，
+`{"mode":"proxy","proxy_ref":"secret:model-proxy"}` 使用指定 HTTP(S) 代理，
+`{"mode":"environment"}` 使用客户端的环境代理规则（含 NO_PROXY）。
+proxy_ref 只接受 env:VARIABLE 或 secret:identifier，代理 URL 必须有明确端口，不能写进模型参数。
+每个模型 Client 拥有自己的网络配置，不修改进程级环境变量。
+同一厂商需要同时代理和直连时，注册两个 Provider ID；不同子 Agent 的 ModelRef 分别选择它们，
+base_url、模型、API 凭据和代理可各自不同，不要求整个 Agent 图走相同网络。
+新增环境引用需配置到实际执行进程；Provider/插件配置更新不等于自动分发服务器环境变量。
+
+非 OpenAI 协议的决策服务通过独立插件适配，示例见
+[TypeSafe Decision](../sdk/python/examples/typesafe-decision/README.md)。它使用自己的官方 SDK
+和重试配置，不伪装成 OpenAI Chat Completions。网关只调用配置的编排，不固定决策厂商。
+
 ## 运行事件和追踪
 
 - Agent Run：`/execution/runs/{id}/events/stream`。
@@ -64,8 +77,13 @@ SSE 使用持久事件序号作为 `id`，支持 `after` 和 `Last-Event-ID` 断
 
 直接执行的 `/execution/runs/{id}/execute?stream_model=true` 使用原生 `Runner.run_streamed`，
 将文本增量分批写入事件日志；调用方可同时订阅 SSE。默认直接执行仍使用普通 Runner。
-Temporal 的官方模型 Activity 接口目前非流式，因此其 SSE 提供运行、节点、模型及工具操作
-事件，不提供逐 Token 输出。
+Temporal 流式调用使用官方 Agents 集成的 `Runner.run_streamed`、`WorkflowStream` 和
+模型 streaming Activity。授权的模型 Activity 将公开文本分批写入持久事件，SDK 管理
+流事件传输和完整模型结果。QQ C2C 的 text 路由可转发公开根 Agent、handoff 与根沙箱文本；
+工具 Agent 及其后代不公开，带守卫或结构化输出的图只发最终结果。
+show_thinking 只转发供应商显式提供的公开摘要，不读取隐藏推理。
+编排决策路由不提前公开子 Agent 输出。变更了模型引用和流式 Workflow 路径的版本，
+升级前应先完成历史重放验证；未验证时先排空旧执行再切换 Worker。
 
 ## 定时触发与 Webhook
 
