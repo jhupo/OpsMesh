@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal
 
+from jsonschema import Draft202012Validator, SchemaError
 from pydantic import Field, JsonValue, model_validator
 
 from .base import ConfigValue, Identifier
@@ -16,8 +17,6 @@ class JsonSchemaOutput(ConfigValue):
 
     @model_validator(mode="after")
     def validate_schema(self) -> "JsonSchemaOutput":
-        from jsonschema import Draft202012Validator, SchemaError
-
         try:
             Draft202012Validator.check_schema(self.schema_)
         except SchemaError as error:

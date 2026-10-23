@@ -12,8 +12,10 @@ from opsmesh.agents.callbacks import CallbackRegistry
 from opsmesh.agents.config.output import JsonSchemaOutput, OutputConfig
 
 
-class SchemaOutput(AgentOutputSchemaBase):
+class SchemaOutput(AgentOutputSchema):
     def __init__(self, config: JsonSchemaOutput) -> None:
+        # Temporal's native model bridge requires the concrete SDK schema contract.
+        super().__init__(dict[str, Any], strict_json_schema=False)
         self.config = config.model_copy(deep=True)
         schema = self.config.schema_
         self.schema = ensure_strict_json_schema(schema) if config.strict else schema
