@@ -7,10 +7,10 @@ from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from opsmesh.identity.access import require_platform_admin
-from opsmesh.identity.auth.dependencies import CurrentUserDep, DbSession
 from opsmesh.platform.health.schemas import HealthView, VersionView
 from opsmesh.shared.version import package_version
+from opsmesh.users.access import require_platform_admin
+from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
 
 router = APIRouter(tags=["platform"])
 

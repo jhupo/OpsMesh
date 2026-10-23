@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 from opentelemetry import propagate, trace
 from opentelemetry.trace import Span, SpanKind
-from opentelemetry.util.types import Attributes, AttributeValue
+from opentelemetry.util.types import Attributes
 
 
 def current_trace_context() -> dict[str, str]:
@@ -30,10 +30,6 @@ def start_span(
         name, kind=kind, attributes=attributes
     ) as span:
         yield span
-
-
-def set_span_attributes(attributes: Mapping[str, AttributeValue]) -> None:
-    trace.get_current_span().set_attributes(attributes)
 
 
 def parent_span_id(carrier: Mapping[str, str]) -> str | None:

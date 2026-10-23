@@ -1,29 +1,61 @@
-"""The renamed audit API retains authorization and has no legacy alias."""
+"""Read isolation, pagination and read-only audit routes over PostgreSQL."""
 
-from tests.execution.test_session_routes import app_client as app_client
-from tests.platform.test_policies import principals as principals
+from fastapi.testclient import TestClient
 
 
-def test_audit_namespace_and_admin_read_authorization(app_client, principals):
-    admin, member = principals
-    endpoint = "/api/v1/platform/audit"
-    response = app_client.get(endpoint, headers=admin)
-    assert response.status_code == 200
-    assert "events" in response.json()
-    assert app_client.get(endpoint, headers=member).status_code == 403
-    assert app_client.get("/api/v1/platform/events", headers=admin).status_code == 404
-    # A logged-in administrator cannot impersonate a delegated extension writer.
-    assert (
-        app_client.post(
-            endpoint,
-            headers=admin,
-            json={
-                "action": "forged",
-                "target_type": "user",
-                "target_id": "other",
-                "summary": "forged",
-                "idempotency_key": "forged-admin-write",
-            },
-        ).status_code
-        == 401
-    )
+def test_member_sees_only_own_events_and_cannot_read_another_actor(
+    audit_app, audit_readers, audit_facts
+):
+    _, alice, _ = audit_readers
+    with TestClient(audit_app) as client:
+        headers = {"X-Session-ID": str(alice.user_id)}
+        page = client.get("/api/v1/platform/audit", headers=headers).json()
+        assert len(page["events"]) == 2
+        assert {event["actor_id"] for event in page["events"]} == {str(alice.user_id)}
+        assert (
+            client.get(
+                f"/api/v1/platform/audit/{audit_facts[-1].event_id}", headers=headers
+            ).status_code
+            == 404
+        )
+        own = client.get(f"/api/v1/platform/audit/{audit_facts[2].event_id}", headers=headers)
+        assert own.status_code == 200
+        assert own.json()["details"]["password"] == "[redacted]"
+
+
+def test_admin_reads_all_actors_and_cursor_pages_do_not_overlap(
+    audit_app, audit_readers, audit_facts
+):
+    admin, _, _ = audit_readers
+    headers = {"X-Session-ID": str(admin.user_id)}
+    with TestClient(audit_app) as client:
+        first = client.get("/api/v1/platform/audit?limit=3", headers=headers).json()
+        second = client.get(
+            "/api/v1/platform/audit",
+            params={"after_sequence": first["next_after_sequence"]},
+            headers=headers,
+        ).json()
+        assert len(first["events"]) == len(second["events"]) == 3
+        assert {item["event_id"] for item in first["events"]}.isdisjoint(
+            item["event_id"] for item in second["events"]
+        )
+        assert (
+            client.get(
+                f"/api/v1/platform/audit/{audit_facts[-1].event_id}", headers=headers
+            ).status_code
+            == 200
+        )
+
+
+def test_audit_api_has_no_external_write_or_configuration_scope(audit_app, audit_readers):
+    with TestClient(audit_app) as client:
+        assert (
+            client.post(
+                "/api/v1/platform/audit",
+                headers={"X-Session-ID": str(audit_readers[0].user_id)},
+                json={"action": "forged"},
+            ).status_code
+            == 405
+        )
+    operation = audit_app.openapi()["paths"]["/api/v1/platform/audit"]["get"]
+    assert "configuration_id" not in {item["name"] for item in operation["parameters"]}

@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from ipaddress import ip_network
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
@@ -129,21 +130,19 @@ class Settings(BaseSettings):
 
     # Resource content root; owners decide their own layout below it
     storage_root: str = Field(default=".opsmesh-storage")
+    plugins_root: Path | None = None
+    agent_catalog_path: Path | None = None
 
-    # Identity (S4)
+    # Users
     session_ttl_seconds: int = Field(default=30 * 24 * 60 * 60, ge=60)
     invitation_ttl_seconds: int = Field(default=7 * 24 * 60 * 60, ge=3_600)
     platform_base_url: str = Field(default="")
     default_user_token_limit: int | None = Field(default=None, ge=0)
-    default_user_storage_limit_bytes: int | None = Field(default=None, ge=0)
 
-    # Workspace capacity defaults (S6); a null limit means unlimited
+    # Per-user runtime capacity; a null limit means unlimited
     default_user_concurrency_limit: int | None = Field(default=None, ge=0)
     default_user_environment_limit: int | None = Field(default=None, ge=0)
     execution_sandbox_images: list[str] = Field(default_factory=list)
-    extension_builder_image: str = ""
-    extension_sdk_wheel: str = ""
-    execution_model_context_windows: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_security_configuration(self) -> "Settings":
@@ -249,7 +248,6 @@ class Settings(BaseSettings):
             "invitation_ttl_seconds": self.invitation_ttl_seconds,
             "platform_base_url_configured": bool(self.platform_base_url),
             "default_user_token_limit": self.default_user_token_limit,
-            "default_user_storage_limit_bytes": self.default_user_storage_limit_bytes,
             "default_user_concurrency_limit": self.default_user_concurrency_limit,
             "default_user_environment_limit": self.default_user_environment_limit,
             "credential_encryption_key_id": self.credential_encryption_key_id,

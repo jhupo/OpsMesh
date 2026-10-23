@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+import json
+import os
+import platform
+import shutil
+import time
+from abc import ABC, abstractmethod
+from pathlib import Path
+
+import httpx
+
+from opsmesh_operator.commands import run_command
+from opsmesh_operator.compose import wait_for_service_completion
+from opsmesh_operator.contracts import ReleaseManifest
+from opsmesh_operator.files import atomic_write, sync_directory
+from opsmesh_operator.installation import Installation
+from opsmesh_operator.releases import ReleaseDownloader, extract_bundle
+
+
+class Deployment(ABC):
+    def __init__(self, installation: Installation) -> None:
+        self.installation = installation
+        self.root = installation.root
+
+    def preflight(self, manifest: ReleaseManifest) -> None:
+        from dotenv import dotenv_values
+
+        settings = dotenv_values(self.root / ".env")
+        if settings.get("OPSMESH_STORAGE_BACKEND", "local") != "local":
+            raise ValueError("Managed upgrades require a coordinated local-storage backup")
+        configured_storage = settings.get("OPSMESH_STORAGE_ROOT")
+        if configured_storage and Path(configured_storage).resolve() != self.root / "data/storage":
+            raise ValueError("Storage must be inside the managed persistent data directory")
+        configured_plugins = settings.get("OPSMESH_PLUGINS_ROOT")
+        if configured_plugins and Path(configured_plugins).resolve() != self.root / "plugins":
+            raise ValueError("Plugins must be inside the managed plugin directory")
+        machine = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
+        if platform.system() != "Linux" or f"linux/{machine}" not in manifest.platforms:
+            raise ValueError("This release does not support the host platform")
+        if shutil.disk_usage(self.root).free < 2_000_000_000:
+            raise ValueError("At least 2 GB of free space is required before staging")
+
+    def stage(self, manifest: ReleaseManifest) -> Path:
+        source = ReleaseDownloader(self.installation.repository)
+        cache = self.root / "downloads" / manifest.tag
+        cache.mkdir(parents=True, exist_ok=True)
+        target = self.installation.release_dir(manifest)
+        if target.exists():
+            existing = ReleaseManifest.model_validate_json(
+                (target / "release-manifest.json").read_bytes()
+            )
+            if existing != manifest:
+                raise ValueError("Immutable release directory already has different content")
+            if not (target / ".prepared").exists():
+                self.prepare(target, manifest)
+                atomic_write(target / ".prepared", manifest.commit)
+            return target
+        architecture = {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]
+        record = next(
+            file
+            for file in manifest.files
+            if file.name == f"opsmesh-server-{manifest.tag}-linux-{architecture}.tar.gz"
+        )
+        archive = source.download_file(manifest, record, cache)
+        staging = self.root / "releases" / f".{manifest.tag}-{manifest.commit}.staging"
+        # An interrupted stage is quarantined, never recursively deleted or reused.
+        if staging.exists():
+            raise RuntimeError("Interrupted staging directory requires operator inspection")
+        extract_bundle(archive, staging)
+        atomic_write(
+            staging / "release-manifest.json", manifest.model_dump_json(indent=2), mode=0o644
+        )
+        runtime_images = {manifest.image("runtime")}
+        for path in (self.root / "releases").glob("*/release-manifest.json"):
+            retained = ReleaseManifest.model_validate_json(path.read_bytes())
+            runtime_images.add(retained.image("runtime"))
+        atomic_write(
+            staging / "images.env",
+            f"OPSMESH_API_IMAGE={manifest.image('api')}\n"
+            f"OPSMESH_WORKER_IMAGE={manifest.image('worker')}\n"
+            f"OPSMESH_RUNTIME_IMAGE={manifest.image('runtime')}\n"
+            f"OPSMESH_EXECUTION_SANDBOX_IMAGES={json.dumps(sorted(runtime_images))}\n"
+            f"OPSMESH_BUILD_COMMIT={manifest.commit}\n",
+            mode=0o644,
+        )
+        # Release code is public and must remain readable by the unprivileged API/worker;
+        # secrets and writable state stay outside this tree.
+        staging.chmod(0o755)
+        staging.parent.chmod(0o755)
+        for path in staging.rglob("*"):
+            path.chmod(0o755 if path.is_dir() or path.stat().st_mode & 0o111 else 0o644)
+        staging.rename(target)
+        sync_directory(target.parent)
+        self.prepare(target, manifest)
+        atomic_write(target / ".prepared", manifest.commit)
+        return target
+
+    def switch(self, manifest: ReleaseManifest) -> None:
+        target = self.installation.release_dir(manifest)
+        temporary = self.root / ".current.next"
+        temporary.unlink(missing_ok=True)
+        temporary.symlink_to(target, target_is_directory=True)
+        os.replace(temporary, self.root / "current")
+        sync_directory(self.root)
+
+    def healthy(self) -> None:
+        deadline = time.monotonic() + min(120, self.installation.timeout_seconds)
+        with httpx.Client(timeout=5, trust_env=False) as client:
+            while time.monotonic() < deadline:
+                try:
+                    if client.get(self.installation.health_url).status_code == 200:
+                        return
+                except httpx.HTTPError:
+                    pass
+                time.sleep(2)
+        raise RuntimeError("Application readiness check failed")
+
+    @abstractmethod
+    def prepare(self, directory: Path, manifest: ReleaseManifest) -> None: ...
+
+    @abstractmethod
+    def migrate(self, manifest: ReleaseManifest) -> None: ...
+
+    @abstractmethod
+    def stop(self) -> None: ...
+
+    @abstractmethod
+    def start(self, manifest: ReleaseManifest) -> None: ...
+
+    @abstractmethod
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str: ...
+
+    @abstractmethod
+    def reset_admin_password(self) -> str: ...
+
+
+class ComposeDeployment(Deployment):
+    def application_services(self, directory: Path) -> list[str]:
+        available = run_command(self.command(directory) + ["config", "--services"]).splitlines()
+        return [name for name in ("api", "worker", "gateway") if name in available]
+
+    def command(self, directory: Path) -> list[str]:
+        return [
+            "docker",
+            "compose",
+            "--project-name",
+            self.installation.compose_project,
+            "--project-directory",
+            str(directory / "deploy/server"),
+            "--env-file",
+            str(self.root / ".env"),
+            "--env-file",
+            str(directory / "images.env"),
+            "-f",
+            str(directory / "deploy/server/compose.yml"),
+        ]
+
+    def prepare(self, directory: Path, manifest: ReleaseManifest) -> None:
+        import docker
+
+        client = docker.from_env(timeout=self.installation.timeout_seconds)
+        try:
+            client.ping()
+            client.images.pull(manifest.image("api"))
+            client.images.pull(manifest.image("worker"))
+            client.images.pull(manifest.image("runtime"))
+        finally:
+            client.close()
+        run_command(self.command(directory) + ["config", "--quiet"])
+
+    def infrastructure(self, manifest: ReleaseManifest) -> None:
+        compose = self.command(self.installation.release_dir(manifest))
+        run_command(
+            compose + ["up", "-d", "postgres", "redis", "temporal-namespace"],
+            timeout=self.installation.timeout_seconds,
+        )
+        wait_for_service_completion(
+            compose, service="temporal-namespace", timeout=self.installation.timeout_seconds
+        )
+        run_command(
+            compose + ["up", "-d", "--no-deps", "--wait", "postgres", "redis", "temporal"],
+            timeout=self.installation.timeout_seconds,
+        )
+
+    def migrate(self, manifest: ReleaseManifest) -> None:
+        run_command(
+            self.command(self.installation.release_dir(manifest))
+            + ["run", "--rm", "--no-deps", "migrate"],
+            timeout=self.installation.timeout_seconds,
+        )
+
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str:
+        return self._run_admin_command(manifest, "bootstrap-admin")
+
+    def reset_admin_password(self) -> str:
+        manifest = ReleaseManifest.model_validate_json(
+            (self.root / "current/release-manifest.json").read_bytes()
+        )
+        return self._run_admin_command(manifest, "reset-admin-password")
+
+    def _run_admin_command(self, manifest: ReleaseManifest, command: str) -> str:
+        return run_command(
+            self.command(self.installation.release_dir(manifest))
+            + [
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--entrypoint",
+                "opsmesh-server",
+                "api",
+                "--directory",
+                "/app",
+                command,
+            ],
+            timeout=self.installation.timeout_seconds,
+        )
+
+    def stop(self) -> None:
+        directory = self.root / "current"
+        run_command(self.command(directory) + ["stop", *self.application_services(directory)])
+
+    def start(self, manifest: ReleaseManifest) -> None:
+        from opsmesh_operator.temporal_backup import TemporalBackup
+
+        TemporalBackup(self.installation).start()
+        directory = self.installation.release_dir(manifest)
+        run_command(
+            self.command(directory)
+            + ["up", "-d", "--no-deps", "--wait", *self.application_services(directory)],
+            timeout=self.installation.timeout_seconds,
+        )
+
+
+class SystemdDeployment(Deployment):
+    def prepare(self, directory: Path, manifest: ReleaseManifest) -> None:
+        identity = json.loads((directory / "BUILD.json").read_bytes())
+        if identity["commit"] != manifest.commit:
+            raise ValueError("Bundled server commit does not match release manifest")
+        result = json.loads(
+            run_command([str(directory / "opsmesh-server"), "check"], cwd=directory)
+        )
+        if result["version"] != manifest.tag.removeprefix("v"):
+            raise ValueError("Bundled server version does not match release manifest")
+
+    def migrate(self, manifest: ReleaseManifest) -> None:
+        directory = self.installation.release_dir(manifest)
+        # Persistent configuration is linked, never copied into release assets.
+        env_link = directory / ".env"
+        if not env_link.exists():
+            env_link.symlink_to(self.root / ".env")
+        run_command([str(directory / "opsmesh-server"), "migrate"], cwd=directory)
+
+    def stop(self) -> None:
+        units = ["opsmesh-api", "opsmesh-worker"]
+        if Path("/etc/systemd/system/opsmesh-gateway.service").exists():
+            units.append("opsmesh-gateway")
+        run_command(["systemctl", "stop", *units])
+
+    def start(self, manifest: ReleaseManifest) -> None:
+        directory = self.installation.release_dir(manifest)
+        gateway_template = directory / "deploy/server/systemd/opsmesh-gateway.service"
+        units = ["opsmesh-api", "opsmesh-worker"]
+        if gateway_template.is_file():
+            from opsmesh_operator.installer import service_accounts
+
+            service_accounts(self.installation)
+            atomic_write(
+                Path("/etc/systemd/system/opsmesh-gateway.service"),
+                gateway_template.read_text().replace("/opt/opsmesh", str(self.root)),
+                mode=0o644,
+            )
+            run_command(["systemctl", "daemon-reload"])
+            run_command(["systemctl", "enable", "opsmesh-gateway"])
+            units.append("opsmesh-gateway")
+        if self.installation.temporal_service_unit:
+            from opsmesh_operator.temporal_backup import TemporalBackup
+
+            TemporalBackup(self.installation).start()
+        run_command(["systemctl", "start", *units])
+
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str:
+        directory = self.installation.release_dir(manifest)
+        return run_command(
+            [str(directory / "opsmesh-server"), "bootstrap-admin"],
+            cwd=directory,
+        )
+
+    def reset_admin_password(self) -> str:
+        directory = self.root / "current"
+        return run_command(
+            [str(directory / "opsmesh-server"), "reset-admin-password"],
+            cwd=directory,
+        )
+
+
+def deployment_for(installation: Installation) -> Deployment:
+    if installation.mode == "compose":
+        return ComposeDeployment(installation)
+    return SystemdDeployment(installation)

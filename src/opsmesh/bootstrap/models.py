@@ -1,60 +1,49 @@
-"""Explicit registration of the application-owned PostgreSQL model modules."""
+"""Explicit registration for the current source tree, without legacy discovery."""
 
 from sqlalchemy import MetaData
 
-from opsmesh.capabilities import models as capabilities
-from opsmesh.channels import models as channels
-from opsmesh.extensions import models as extensions
-from opsmesh.identity.auth import models as authentication
-from opsmesh.identity.invitations import models as invitations
-from opsmesh.identity.quotas import models as quotas
-from opsmesh.identity.users import models as users
-from opsmesh.orchestration.configurations import models as configurations
-from opsmesh.orchestration.configurations.bindings import models as bindings
-from opsmesh.orchestration.definitions import models as definitions
-from opsmesh.orchestration.runs import model_operations
-from opsmesh.orchestration.runs import models as runs
-from opsmesh.orchestration.runtime import models as runtime
-from opsmesh.orchestration.sessions import models as sessions
-from opsmesh.orchestration.triggers import models as triggers
-from opsmesh.platform.approvals import models as approvals
+from opsmesh.agents.catalog import models as catalog
+from opsmesh.execution.instances import models as instances
+from opsmesh.execution.runs import models as runs
+from opsmesh.execution.runtime import models as runtime
+from opsmesh.execution.sessions import models as model_sessions
+from opsmesh.gateway import models as gateway
 from opsmesh.platform.audit import models as audit
-from opsmesh.platform.model_connections import models as model_connections
-from opsmesh.platform.operations import models as operations
-from opsmesh.platform.policies import models as policies
-from opsmesh.resources.artifacts import models as artifacts
-from opsmesh.resources.files import models as files
-from opsmesh.shared.db import idempotency
+from opsmesh.platform.billing import models as billing
+from opsmesh.platform.evaluations import models as evaluations
+from opsmesh.resources.directories import models as resources
 from opsmesh.shared.db.base import Base
 from opsmesh.temporal.dispatch import models as dispatch
+from opsmesh.users import models as users
+from opsmesh.users.auth import models as authentication
+from opsmesh.users.invitations import models as invitations
+from opsmesh.users.quotas import models as quotas
+from opsmesh.workflows import models as workflows
+from opsmesh.workflows.instances import models as workflow_instances
+from opsmesh.workflows.runs import models as workflow_runs
+from opsmesh.workflows.triggers import models as triggers
 
 
 def register_models() -> MetaData:
-    """Load every owner explicitly, without discovering arbitrary executable packages."""
     _ = (
-        capabilities,
-        channels,
-        extensions,
+        catalog,
+        billing,
+        evaluations,
+        triggers,
+        runs,
+        instances,
+        model_sessions,
+        gateway,
+        runtime,
+        resources,
+        users,
         authentication,
         invitations,
         quotas,
-        users,
-        configurations,
-        bindings,
-        definitions,
-        model_operations,
-        runs,
-        runtime,
-        sessions,
-        triggers,
-        approvals,
+        workflows,
+        workflow_instances,
+        workflow_runs,
         audit,
-        model_connections,
-        operations,
-        policies,
-        artifacts,
-        files,
-        idempotency,
         dispatch,
     )
     return Base.metadata

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenAI Knowledge"
+  short_description: "Verify locked Agents SDK APIs with official sources"
+  default_prompt: "Use $openai-knowledge to verify the locked SDK source and official documentation for this OpsMesh integration."

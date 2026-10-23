@@ -38,3 +38,16 @@ def test_codec_output_never_contains_plaintext() -> None:
     secret = "credential-shaped-secret-value"
     encoded = asyncio.run(codec().encode([plain_payload(secret)]))
     assert secret.encode("utf-8") not in encoded[0].data
+
+
+def test_codec_bounds_encrypted_size_including_encoding_overhead() -> None:
+    payload = plain_payload("x" * 1_100_000)
+    with pytest.raises(ValueError, match="payload exceeds"):
+        asyncio.run(codec().encode([payload]))
+
+
+def test_codec_bounds_combined_batch_of_individually_valid_payloads() -> None:
+    payload = plain_payload("x" * 1_000_000)
+    assert len(asyncio.run(codec().encode([payload]))) == 1
+    with pytest.raises(ValueError, match="batch exceeds"):
+        asyncio.run(codec().encode([payload, payload]))

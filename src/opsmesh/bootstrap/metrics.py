@@ -6,19 +6,15 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import InstrumentedAttribute, Session, sessionmaker
 
-from opsmesh.extensions.models import Invocation, ManagedDeployment
-from opsmesh.identity.quotas.models import (
-    StorageReservation,
+from opsmesh.execution.runtime.models import SandboxEnvironment
+from opsmesh.telemetry.metrics import GaugeMetric
+from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
+from opsmesh.users.quotas.models import (
     TokenReservation,
     UserCapacityAccount,
     UserQuotaLimit,
-    UserStorageAccount,
     UserTokenAccount,
 )
-from opsmesh.orchestration.runs.models import FlowRun, Run
-from opsmesh.orchestration.runtime.models import Environment
-from opsmesh.telemetry.metrics import GaugeMetric
-from opsmesh.temporal.dispatch.models import TemporalOutboxEntry
 
 
 def product_metrics(sessions: sessionmaker[Session]) -> list[GaugeMetric]:
@@ -27,14 +23,9 @@ def product_metrics(sessions: sessionmaker[Session]) -> list[GaugeMetric]:
     result: list[GaugeMetric] = []
     try:
         with sessions() as session:
-            for metric, column in (
-                ("opsmesh_execution_runs", Run.status),
-                ("opsmesh_sandbox_environments", Environment.status),
-                ("opsmesh_flow_runs", FlowRun.status),
-                ("opsmesh_managed_deployments", ManagedDeployment.status),
-                ("opsmesh_extension_invocations", Invocation.status),
-            ):
-                result.extend(count_states(session, metric, column))
+            result.extend(
+                count_states(session, "opsmesh_sandbox_environments", SandboxEnvironment.status)
+            )
             pending = TemporalOutboxEntry.published_at.is_(None)
             total, oldest, errors = session.execute(
                 select(
@@ -82,33 +73,28 @@ def product_metrics(sessions: sessionmaker[Session]) -> list[GaugeMetric]:
             result.extend(
                 count_states(session, "opsmesh_token_reservations", TokenReservation.status)
             )
-            result.extend(
-                count_states(session, "opsmesh_storage_reservations", StorageReservation.status)
-            )
-            for kind, used, reserved, limit in (
-                (
-                    "token",
-                    UserTokenAccount.used_tokens,
-                    UserTokenAccount.reserved_tokens,
-                    UserQuotaLimit.token_limit,
-                ),
-                (
-                    "storage",
-                    UserStorageAccount.used_bytes,
-                    UserStorageAccount.reserved_bytes,
-                    UserQuotaLimit.storage_limit_bytes,
-                ),
-            ):
-                ratio = session.scalar(
-                    select(func.max(case((limit > 0, (used + reserved) * 1.0 / limit), else_=0)))
-                    .select_from(used.class_)
-                    .join(UserQuotaLimit, used.class_.user_id == UserQuotaLimit.user_id)
-                )
-                result.append(
-                    GaugeMetric(
-                        "opsmesh_user_quota_max_usage_ratio", float(ratio or 0), {"kind": kind}
+            ratio = session.scalar(
+                select(
+                    func.max(
+                        case(
+                            (
+                                UserQuotaLimit.token_limit > 0,
+                                (UserTokenAccount.used_tokens + UserTokenAccount.reserved_tokens)
+                                * 1.0
+                                / UserQuotaLimit.token_limit,
+                            ),
+                            else_=0,
+                        )
                     )
                 )
+                .select_from(UserTokenAccount)
+                .join(UserQuotaLimit, UserTokenAccount.user_id == UserQuotaLimit.user_id)
+            )
+            result.append(
+                GaugeMetric(
+                    "opsmesh_user_quota_max_usage_ratio", float(ratio or 0), {"kind": "token"}
+                )
+            )
     except SQLAlchemyError:
         return [GaugeMetric("opsmesh_metrics_collection_success", 0, {"source": "postgres"})]
     result.append(GaugeMetric("opsmesh_metrics_collection_success", 1, {"source": "postgres"}))

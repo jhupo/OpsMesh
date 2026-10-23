@@ -24,6 +24,7 @@ def main() -> None:
         root = Path(temporary)
         storage = root / "data/storage"
         storage.mkdir(parents=True)
+        (root / "plugins").mkdir(mode=0o755)
         os.chown(storage, 10001, 10001)
         values = {
             key: value or "" for key, value in dotenv_values("deploy/server/env.example").items()
@@ -33,7 +34,7 @@ def main() -> None:
                 "OPSMESH_ROOT": str(root),
                 "OPSMESH_API_IMAGE": f"ghcr.io/jhupo/opsmesh-api@{api}",
                 "OPSMESH_WORKER_IMAGE": f"ghcr.io/jhupo/opsmesh-worker@{worker}",
-                "OPSMESH_RUNTIME_ALLOWED_IMAGES": json.dumps(
+                "OPSMESH_EXECUTION_SANDBOX_IMAGES": json.dumps(
                     [f"ghcr.io/jhupo/opsmesh-runtime@{runtime}"]
                 ),
                 "OPSMESH_DOCKER_GID": str(Path("/var/run/docker.sock").stat().st_gid),

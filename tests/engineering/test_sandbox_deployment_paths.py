@@ -15,7 +15,8 @@ def test_compose_storage_path_is_identical_in_api_worker_and_daemon(deployment):
         service = compose["services"][name]
         storage = service["environment"]["OPSMESH_STORAGE_ROOT"]
         mounts = [
-            mount for mount in service["volumes"]
+            mount
+            for mount in service["volumes"]
             if isinstance(mount, dict) and mount.get("target") == storage
         ]
         assert len(mounts) == 1

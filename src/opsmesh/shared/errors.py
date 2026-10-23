@@ -60,14 +60,3 @@ class InvalidArgumentError(DomainError):
         details: dict[str, object] | None = None,
     ) -> None:
         super().__init__(message, code=code, status_code=400, details=details or {})
-
-
-class PolicyDeniedError(DomainError):
-    def __init__(
-        self,
-        message: str = "Action denied by policy",
-        *,
-        code: str = "policy_denied",
-        details: dict[str, object] | None = None,
-    ) -> None:
-        super().__init__(message, code=code, status_code=403, details=details or {})

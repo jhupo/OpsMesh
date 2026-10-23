@@ -4,19 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-sdk"
-version = "0.1.0rc23"
-description = "Independent client, extension and host contracts for the OpsMesh platform."
+version = "0.1.0"
+description = "Plugin contracts, registration and package development for OpsMesh."
 readme = "README.md"
-license = "LGPL-3.0-only"
 requires-python = ">=3.11.8"
-dependencies = [
-    "httpx>=0.28.0,<1.0.0",
-    "jsonschema>=4.26.0,<5.0.0",
-    "pydantic>=2.10.0,<3.0.0",
-]
-
-[project.scripts]
-opsmesh-sdk = "opsmesh_sdk.development.cli:main"
+license = "LGPL-3.0-only"
+dependencies = ["pydantic>=2.10.0,<3.0.0", "pyyaml>=6.0,<7.0"]
 
 [dependency-groups]
 dev = [
@@ -24,75 +17,34 @@ dev = [
     "mypy>=1.17.0,<2.0.0",
     "pytest>=8.4.0,<9.0.0",
     "ruff>=0.12.0,<1.0.0",
+    "types-pyyaml>=6.0.12",
 ]
 
-[tool.uv]
-package = true
-
-[tool.setuptools]
-include-package-data = false
+[project.scripts]
+opsmesh-plugin = "opsmesh_sdk.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["opsmesh_sdk*"]
+
+[tool.setuptools.package-data]
+opsmesh_sdk = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
 
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-
-[tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "I",
-    "UP",
-    "B",
-    "SIM",
-]
-
 [tool.mypy]
-python_version = "3.11"
-platform = "linux"
-mypy_path = ["src"]
-plugins = ["pydantic.mypy"]
 strict = true
-warn_return_any = true
-warn_unused_configs = true
 files = ["src/opsmesh_sdk"]
 
 [tool.importlinter]
 root_package = "opsmesh_sdk"
 include_external_packages = true
 
-# V4 section 12: independent SDK, static declarations and production runtime.
-
 [[tool.importlinter.contracts]]
-id = "sdk-no-server"
-name = "The independent SDK does not import server or historical implementations"
+name = "Plugin SDK is independent of the server and execution infrastructure"
 type = "forbidden"
 source_modules = ["opsmesh_sdk"]
-forbidden_modules = [
-    "opsmesh", "backup", "backup_2", "fastapi", "sqlalchemy", "temporalio", "redis",
-]
-
-[[tool.importlinter.contracts]]
-id = "sdk-static-declarations"
-name = "Extension declarations can be read without creating clients or loading packages"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.extensions"]
-forbidden_modules = [
-    "opsmesh_sdk.transport", "opsmesh_sdk.host", "opsmesh_sdk.client",
-    "opsmesh_sdk.context", "opsmesh_sdk.development", "opsmesh_sdk.runtime",
-]
-
-[[tool.importlinter.contracts]]
-id = "sdk-runtime-no-development"
-name = "Production extension execution does not depend on development tools"
-type = "forbidden"
-source_modules = ["opsmesh_sdk.runtime"]
-forbidden_modules = ["opsmesh_sdk.development"]
+forbidden_modules = ["opsmesh", "fastapi", "sqlalchemy", "temporalio", "agents", "openai", "mcp"]

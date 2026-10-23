@@ -20,14 +20,47 @@ jobs:
       packages: read
     with:
       tag: ${{ github.ref_name }}
-  gate:
-    uses: ./.github/workflows/release-prepare.yml
+  validation:
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
     secrets:
       OPSMESH_TEST_MODEL_API_KEY: ${{ secrets.OPSMESH_TEST_MODEL_API_KEY }}
-    permissions:
-      contents: read
-    with:
-      tag: ${{ github.ref_name }}
+      OPSMESH_TEST_MODEL_BASE_URL: ${{ secrets.OPSMESH_TEST_MODEL_BASE_URL }}
+      OPSMESH_TEST_MODEL_NAME: ${{ secrets.OPSMESH_TEST_MODEL_NAME }}
+  gate:
+    needs: validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the pushed release tag to belong to master
+        run: |
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          git merge-base --is-ancestor HEAD origin/master
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --frozen --all-groups
+      - run: uv run python -m scripts.release validate --tag "$RELEASE_TAG"
+      - run: uv build --all-packages
+      - name: Verify the built deployment CLI wheel in a clean environment
+        run: |
+          uv venv /tmp/opsmesh-package-check
+          uv pip install --python /tmp/opsmesh-package-check/bin/python dist/opsmesh_sdk-*.whl dist/opsmesh_operator-*.whl
+          /tmp/opsmesh-package-check/bin/opsmesh version
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-packages-${{ github.run_id }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
   standalone:
     needs: gate
     uses: ./.github/workflows/standalone.yml

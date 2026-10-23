@@ -7,12 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from temporalio.common import WorkflowIDConflictPolicy, WorkflowIDReusePolicy
 
 
-class ExecutionReference(BaseModel):
-    """Typed owner payload; product references and validators belong to the owner."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 class WorkflowStartOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id_reuse_policy: WorkflowIDReusePolicy = WorkflowIDReusePolicy.REJECT_DUPLICATE
@@ -40,8 +34,7 @@ class DispatchRequest(BaseModel):
     ``dispatch_id`` is the stable delivery identity: a start command is
     idempotent through the Workflow id, and a signal command is delivered with
     this identity as its first argument so receivers can deduplicate
-    at-least-once signal delivery (V4: signals bind command_id and waiting
-    generation). Start and cancel commands for one Workflow are ordered under a
+    at-least-once signal delivery. Start and cancel commands for one Workflow are ordered under a
     per-Workflow lock: a cancel persists its intent before its delivery is
     attempted, a start is superseded as soon as that intent exists, and a
     command is only marked published once its delivery is confirmed. A

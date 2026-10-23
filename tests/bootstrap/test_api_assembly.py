@@ -1,4 +1,4 @@
-"""S2 bootstrap assembly tests: lifecycle release, gateway wiring and error contract."""
+"""API assembly: lifecycle release, host boundaries and HTTP error contracts."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from logging.handlers import QueueHandler
+from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import fakeredis
 import pytest
@@ -22,15 +24,40 @@ import opsmesh.bootstrap.api as api_module
 import opsmesh.bootstrap.connections as resources_module
 import opsmesh.bootstrap.telemetry as telemetry_module
 from opsmesh.bootstrap.connections import APIResources, DatabaseResources
-from opsmesh.bootstrap.http_policy import gateway_policy
+from opsmesh.bootstrap.http import gateway_policy
+from opsmesh.bootstrap.plugins import plugin_views
 from opsmesh.config import Settings
-from opsmesh.orchestration.sessions.history import HistoryGateway
+from opsmesh.resources.storage.local import LocalFileStorage
 from opsmesh.shared.db.session import database_pool_snapshot
 from opsmesh.shared.http.errors import register_error_handlers
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
+from opsmesh.users.auth.service import AuthService
 
 TEST_KEY = "JCxBK6PRTTz8-XJDf7ZEbEzcB2s3LFj8nRPODPwf6C0="
+
+
+@pytest.fixture(autouse=True)
+def filesystem_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lifecycle tests replace POSIX storage; product tests exercise the real filesystem."""
+    monkeypatch.setattr(
+        api_module, "LocalFileStorage", Mock(return_value=Mock(spec=LocalFileStorage))
+    )
+    # These tests own process assembly, not plugin discovery or channel database I/O.
+    host = SimpleNamespace(
+        current=SimpleNamespace(views=plugin_views((), {})),
+        reload=AsyncMock(),
+        close=Mock(),
+        apply=None,
+    )
+    monkeypatch.setattr(api_module, "create_plugin_manager", lambda *args, **kwargs: host)
+    monkeypatch.setattr(api_module, "watch_plugins", lambda *args: None)
+    monkeypatch.setattr(api_module, "ManagedCatalog", Mock())
+    monkeypatch.setattr(
+        api_module,
+        "Gateway",
+        Mock(return_value=SimpleNamespace(start=AsyncMock(), stop=AsyncMock())),
+    )
 
 
 class FakeEngine:
@@ -180,7 +207,7 @@ def test_application_lifespan_sets_state_and_releases_engine(
     engine = install_fake_assembly(monkeypatch)
     app = api_module.create_app(settings())
     lifespan = app.router.lifespan_context
-    gateways: list[HistoryGateway] = []
+    auth_services: list[AuthService] = []
 
     async def run() -> None:
         async with lifespan(app):
@@ -188,14 +215,14 @@ def test_application_lifespan_sets_state_and_releases_engine(
             assert app.state.database_sessions is not None
             assert app.state.database_engine is not None
             assert app.state.rate_limiter is not None
-            assert app.state.json_cache is not None
-            assert app.state.history_gateway is not None
-            gateways.append(app.state.history_gateway)
+            assert isinstance(app.state.auth_service, AuthService)
+            assert isinstance(app.state.resource_filesystem, LocalFileStorage)
+            auth_services.append(app.state.auth_service)
 
     asyncio.run(run())
     assert engine.disposed, "the database engine must be released on shutdown"
-    assert gateways[0].sessions is app.state.database_sessions
-    assert app.state.history_gateway is None
+    assert len(auth_services) == 1
+    assert app.state.auth_service is None
 
 
 def test_application_assembles_without_explicit_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -351,9 +378,52 @@ def test_gateway_policy_classifies_paths() -> None:
     assert policy_for_path("/api/v1/auth/login").limit == 20
     assert policy_for_path("/api/v1/platform/backups").name == "platform"
     assert policy_for_path("/api/v1/platform/backups").limit == 120
-    assert policy_for_path("/api/v1/orchestration/configurations").name == "api"
-    assert policy_for_path("/api/v1/orchestration/configurations").limit == 600
+    assert policy_for_path("/api/v1/agents").name == "api"
+    assert policy_for_path("/api/v1/agents").limit == 600
     assert policy_for_path("/docs").name == "api"
     assert policy_for_path("/api/v1").name == "api"
     assert policy_for_path("/api/v1/auth/login").fail_closed is True
-    assert policy_for_path("/api/v1/orchestration/configurations").fail_closed is False
+    assert policy_for_path("/api/v1/agents").fail_closed is False
+
+
+def test_removed_plugin_identity_headers_cannot_authenticate() -> None:
+    from opsmesh.shared.http.dependencies import get_db_session
+
+    app = api_module.create_app(settings(api_rate_limit_enabled=False))
+    database = Mock()
+    app.dependency_overrides[get_db_session] = lambda: database
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/api/v1/users/me",
+            headers={
+                "X-OpsMesh-Installation-Id": "00000000-0000-0000-0000-000000000001",
+                "X-OpsMesh-Instance-Id": "00000000-0000-0000-0000-000000000002",
+                "X-OpsMesh-Invocation-Id": "00000000-0000-0000-0000-000000000003",
+                "X-OpsMesh-Namespace": "external-adapter",
+            },
+        )
+        assert response.status_code == 401
+        database.execute.assert_not_called()
+    finally:
+        client.close()
+
+
+def test_current_hosts_and_user_auth_contract() -> None:
+    from opsmesh.bootstrap.models import register_models
+
+    document = api_module.create_app(settings()).openapi()
+    assert "/api/v1/plugins" in document["paths"]
+    assert "/api/v1/gateway/channels" in document["paths"]
+    assert "/api/v1/workflows/instances" in document["paths"]
+    assert "/api/v1/workflows/runs" in document["paths"]
+    assert not any(
+        path.startswith(("/api/v1/channels", "/api/v1/extensions", "/api/v1/capabilities/plugins"))
+        for path in document["paths"]
+    )
+    assert not any(
+        table.startswith(("channel_", "extension_")) for table in register_models().tables
+    )
+    parameters = document["paths"]["/api/v1/users/me"]["get"]["parameters"]
+    headers = {parameter["name"] for parameter in parameters if parameter["in"] == "header"}
+    assert headers == {"X-Session-ID"}

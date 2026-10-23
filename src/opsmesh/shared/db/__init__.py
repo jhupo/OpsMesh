@@ -1,1 +1,1 @@
-"""Database connection, transaction, pagination and idempotency mechanisms."""
+"""Database connection, transaction and pagination mechanisms."""

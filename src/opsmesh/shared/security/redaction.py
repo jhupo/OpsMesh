@@ -6,8 +6,6 @@ import re
 from dataclasses import dataclass
 from typing import Literal, overload
 
-from sqlalchemy.orm import Session
-
 
 @dataclass(frozen=True)
 class RedactionRules:
@@ -19,6 +17,13 @@ class RedactionRules:
 
 
 REDACTED_VALUE = "[redacted]"
+
+
+def require_redaction_rules(value: object) -> RedactionRules:
+    """Validate caller-supplied rules without silently using an empty ruleset."""
+    if not isinstance(value, RedactionRules):
+        raise RuntimeError("Redaction rules are not assembled")
+    return value
 
 
 def redact_sensitive_payload(
@@ -92,11 +97,3 @@ def redact_text_fragments(value: str | None, *, rules: RedactionRules) -> str | 
     for pattern in rules.text_patterns:
         value = pattern.sub(REDACTED_VALUE, value)
     return value
-
-
-def redaction_rules_for(session: Session) -> RedactionRules:
-    """Read rules explicitly supplied by this database session's application factory."""
-    rules = session.info.get("redaction_rules")
-    if not isinstance(rules, RedactionRules):
-        raise RuntimeError("Application redaction rules are not assembled")
-    return rules

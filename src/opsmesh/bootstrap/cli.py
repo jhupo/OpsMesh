@@ -1,38 +1,34 @@
-"""Platform command line: first administrator initialization and operations.
-
-Process entry for the operations that run outside the API process. The S4
-surface is the first administrator; the deploy host launcher delegates its
-``bootstrap-admin`` command here, and later steps register their operations in
-the same parser. The schema belongs to Alembic: apply the migrations before
-running any command.
-"""
+"""Shared server commands for Docker images and native installations."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import getpass
+import json
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from pydantic import EmailStr, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from opsmesh.bootstrap import accounts
 from opsmesh.bootstrap.accounts import AccountResources
 from opsmesh.bootstrap.connections import DatabaseResources, build_database_resources
 from opsmesh.config import Settings, get_settings
-from opsmesh.identity.auth.models import UserCredential
-from opsmesh.identity.auth.passwords import validate_password_shape
-from opsmesh.identity.provisioning import (
-    PLATFORM_ADMINISTRATOR,
-    AccountDefaults,
-    provision_first_admin,
-)
-from opsmesh.identity.users import service as users
-from opsmesh.identity.users.models import UserProfile
 from opsmesh.shared.errors import DomainError
+from opsmesh.shared.version import package_version
+from opsmesh.users import service as users
+from opsmesh.users.auth.models import UserCredential
+from opsmesh.users.auth.passwords import validate_password_shape
+from opsmesh.users.models import UserProfile
+from opsmesh.users.service import PLATFORM_ADMINISTRATOR, create_account
 
 InitializationDecision = Literal["create", "already_initialized", "conflict"]
 
@@ -59,7 +55,14 @@ def decide_initialization(state: InitializationState) -> InitializationDecision:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="opsmesh-cli", description=__doc__)
+    parser = argparse.ArgumentParser(prog="opsmesh-server", description=__doc__)
+    parser.add_argument(
+        "--directory",
+        type=Path,
+        default=(
+            Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd()
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     init_admin = subparsers.add_parser(
         "init-admin", help="Initialize the first platform administrator"
@@ -71,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Read the password from the first line of standard input instead of prompting",
     )
+    for name in ("version", "check", "api", "worker", "gateway"):
+        subparsers.add_parser(name)
+    migrate = subparsers.add_parser("migrate")
+    migrate.add_argument("migration_action", nargs="?", choices=["check", "current"])
+    for name in ("bootstrap-admin", "reset-admin-password"):
+        command = subparsers.add_parser(name)
+        command.add_argument("--email", default="admin@example.com")
+    cleanup = subparsers.add_parser("cleanup-login-sessions")
+    cleanup.add_argument("--before", type=datetime.fromisoformat)
     return parser
 
 
@@ -128,17 +140,17 @@ def initialize_first_administrator(
                     file=sys.stderr,
                 )
                 return 1
-            defaults = AccountDefaults(
-                token_limit=settings.default_user_token_limit,
-                storage_limit_bytes=settings.default_user_storage_limit_bytes,
-            )
-            profile = provision_first_admin(
+            profile = create_account(
                 session,
                 email=email,
                 display_name=display_name,
                 password=password,
-                defaults=defaults,
-                provision_resources=AccountResources(settings),
+                platform_roles=frozenset({"admin"}),
+                token_limit=settings.default_user_token_limit,
+                capacity_limits={
+                    "concurrency": settings.default_user_concurrency_limit,
+                    "environment": settings.default_user_environment_limit,
+                },
             )
             session.commit()
     except DomainError as exc:
@@ -153,8 +165,10 @@ def initialize_first_administrator(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    directory = args.directory.resolve(strict=True)
+    os.chdir(directory)
     if args.command != "init-admin":
-        parser.error(f"unsupported command: {args.command}")
+        return run_server_command(args, directory)
     try:
         email = validated_email(args.email)
         if not args.display_name.strip():
@@ -170,6 +184,78 @@ def main(argv: Sequence[str] | None = None) -> int:
         display_name=args.display_name.strip(),
         password=password,
     )
+
+
+def administrator_handoff(*, reset: bool, email: str) -> dict[str, str]:
+    settings = get_settings()
+    database = build_database_resources(settings)
+    try:
+        with database.sessions() as session, session.begin():
+            return accounts.administrator_handoff(
+                session,
+                reset=reset,
+                email=email,
+                token_limit=settings.default_user_token_limit,
+                provision_resources=AccountResources(settings),
+            )
+    finally:
+        database.engine.dispose()
+
+
+def run_server_command(args: argparse.Namespace, directory: Path) -> int:
+    if args.command in {"version", "check"}:
+        if args.command == "check":
+            from opsmesh.bootstrap.models import register_models
+
+            register_models()
+            if not (directory / "migrations/env.py").is_file():
+                raise ValueError("The distribution is missing its migration assets")
+        print(json.dumps({"version": package_version()}))
+    elif args.command in {"bootstrap-admin", "reset-admin-password"}:
+        print(
+            json.dumps(
+                administrator_handoff(
+                    reset=args.command == "reset-admin-password", email=args.email
+                )
+            )
+        )
+    elif args.command == "cleanup-login-sessions":
+        from opsmesh.bootstrap.maintenance import maintain_database
+
+        print(json.dumps(maintain_database(get_settings(), args.command, before=args.before)))
+    elif args.command == "migrate":
+        from alembic import command
+        from alembic.config import Config
+
+        configuration = Config(str(directory / "alembic.ini"))
+        configuration.set_main_option("script_location", str(directory / "migrations"))
+        if args.migration_action == "check":
+            command.check(configuration)
+        elif args.migration_action == "current":
+            command.current(configuration)
+        else:
+            command.upgrade(configuration, "head")
+    elif args.command == "api":
+        import uvicorn
+
+        uvicorn.run(
+            "opsmesh.bootstrap.api:create_app",
+            factory=True,
+            host=os.environ.get("OPSMESH_API_BIND", "127.0.0.1"),
+            port=int(os.environ.get("OPSMESH_API_PORT", "8000")),
+            proxy_headers=False,
+        )
+    elif args.command == "gateway":
+        from opsmesh.bootstrap.gateway_worker import run_gateway
+
+        asyncio.run(run_gateway(get_settings()))
+    elif args.command == "worker":
+        from opsmesh.bootstrap.worker import run_worker
+
+        asyncio.run(run_worker())
+    else:
+        raise ValueError(f"Unknown server command: {args.command}")
+    return 0
 
 
 if __name__ == "__main__":

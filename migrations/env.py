@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from opsmesh.bootstrap.models import register_models
+from opsmesh.bootstrap.schema import include_schema_object
 from opsmesh.config import get_settings
 
 config = context.config
@@ -47,6 +48,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_schema_object,
         )
 
         with context.begin_transaction():

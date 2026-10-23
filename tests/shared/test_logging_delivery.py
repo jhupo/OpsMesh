@@ -5,7 +5,7 @@ from queue import Queue
 
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
 
-from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
+from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.telemetry.logging import BoundedLogHandler, RequestContextFilter
 
 

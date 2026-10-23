@@ -7,23 +7,7 @@ import socket
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlparse
 
-_SENSITIVE_QUERY_KEYS = frozenset(
-    {
-        "access_token",
-        "api_key",
-        "apikey",
-        "authorization",
-        "client_secret",
-        "credential",
-        "credentials",
-        "key",
-        "password",
-        "secret",
-        "sig",
-        "signature",
-        "token",
-    }
-)
+from opsmesh.shared.security.redaction import RedactionRules, is_sensitive_payload_key
 
 
 @dataclass(frozen=True)
@@ -31,6 +15,7 @@ class EgressURLPolicy:
     allowed_schemes: frozenset[str]
     allow_unresolved_hosts: bool = True
     allow_private_addresses: bool = False
+    query_redaction_rules: RedactionRules = RedactionRules()
 
 
 class EgressURLValidationError(ValueError):
@@ -38,7 +23,11 @@ class EgressURLValidationError(ValueError):
 
 
 def validate_egress_url(url: str, *, policy: EgressURLPolicy) -> str:
-    validate_url_shape(url, allowed_schemes=policy.allowed_schemes)
+    validate_url_shape(
+        url,
+        allowed_schemes=policy.allowed_schemes,
+        query_redaction_rules=policy.query_redaction_rules,
+    )
     parsed = urlparse(url)
     try:
         _ = parsed.port
@@ -62,8 +51,13 @@ def validate_egress_url(url: str, *, policy: EgressURLPolicy) -> str:
     return url
 
 
-def validate_url_shape(url: str, *, allowed_schemes: frozenset[str]) -> str:
-    """Validate URL syntax and reject credential-bearing configuration values."""
+def validate_url_shape(
+    url: str,
+    *,
+    allowed_schemes: frozenset[str],
+    query_redaction_rules: RedactionRules | None = None,
+) -> str:
+    """Validate URL syntax; query restrictions come only from caller-supplied rules."""
     if not isinstance(url, str) or not url.strip():
         raise EgressURLValidationError("URL is required")
     if any(ord(character) < 0x20 for character in url):
@@ -78,14 +72,10 @@ def validate_url_shape(url: str, *, allowed_schemes: frozenset[str]) -> str:
         raise EgressURLValidationError("URL credentials are not allowed")
     if parsed.fragment:
         raise EgressURLValidationError("URL fragments are not allowed")
-    for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
-        normalized_key = key.strip().lower().replace("-", "_")
-        if (
-            normalized_key in _SENSITIVE_QUERY_KEYS
-            or normalized_key.endswith("_token")
-            or normalized_key.endswith("_secret")
-        ):
-            raise EgressURLValidationError("URL query must not contain credentials")
+    if query_redaction_rules is not None:
+        for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
+            if is_sensitive_payload_key(key, rules=query_redaction_rules):
+                raise EgressURLValidationError("URL query must not contain credentials")
     return url
 
 
@@ -95,7 +85,11 @@ def resolve_egress_address(url: str, *, policy: EgressURLPolicy) -> str:
     Configuration may allow unresolved hosts; an actual connection never does.
     Every returned DNS address must satisfy the policy before one is selected.
     """
-    validate_url_shape(url, allowed_schemes=policy.allowed_schemes)
+    validate_url_shape(
+        url,
+        allowed_schemes=policy.allowed_schemes,
+        query_redaction_rules=policy.query_redaction_rules,
+    )
     parsed = urlparse(url)
     try:
         _ = parsed.port
@@ -110,7 +104,12 @@ def resolve_egress_address(url: str, *, policy: EgressURLPolicy) -> str:
         if literal is not None
         else _resolve_host(
             host,
-            policy=EgressURLPolicy(policy.allowed_schemes, False, policy.allow_private_addresses),
+            policy=EgressURLPolicy(
+                allowed_schemes=policy.allowed_schemes,
+                allow_unresolved_hosts=False,
+                allow_private_addresses=policy.allow_private_addresses,
+                query_redaction_rules=policy.query_redaction_rules,
+            ),
         )
     )
     if not addresses:
@@ -118,20 +117,6 @@ def resolve_egress_address(url: str, *, policy: EgressURLPolicy) -> str:
     for address in addresses:
         _validate_address(address, policy=policy)
     return str(sorted(addresses, key=lambda address: (address.version, int(address)))[0])
-
-
-def url_host(url: str) -> str | None:
-    """Return a redaction-safe host and optional port without user information."""
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        port = parsed.port
-    except ValueError:
-        return None
-    if not hostname:
-        return None
-    rendered_hostname = f"[{hostname}]" if ":" in hostname else hostname
-    return f"{rendered_hostname}:{port}" if port is not None else rendered_hostname
 
 
 def _normalized_hostname(hostname: str) -> str:

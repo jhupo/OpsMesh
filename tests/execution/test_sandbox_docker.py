@@ -7,10 +7,17 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from agents.sandbox.errors import WorkspaceArchiveReadError, WorkspaceReadNotFoundError
 
-from opsmesh.orchestration.runtime.contracts import SandboxDirectory
-from opsmesh.orchestration.runtime.files import MAX_FILE_BYTES, read_file
-from opsmesh.orchestration.runtime.sandbox import SandboxBackend, SandboxCommandCancelled
+from opsmesh.execution.runtime.manifest import WORKING_DIRECTORIES
+from opsmesh.execution.runtime.sandbox import (
+    MAX_FILE_BYTES,
+    SandboxBackend,
+    SandboxCommandCancelled,
+    read_file,
+    write_file,
+)
+from opsmesh.execution.runtime.schemas import SandboxDirectory
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OPSMESH_TEST_SANDBOX_IMAGE"),
@@ -18,10 +25,112 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_nested_write_creates_parents_without_following_directory_symlinks(tmp_path):
+    async def scenario():
+        directory_id, environment_id, principal_id = uuid4(), uuid4(), uuid4()
+        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path))) / str(
+            directory_id
+        )
+        root.mkdir(parents=True, exist_ok=True)
+        backend = SandboxBackend(lambda **_: SandboxDirectory(directory_id, root))
+        native = await backend.create(
+            image=os.environ["OPSMESH_TEST_SANDBOX_IMAGE"],
+            labels={
+                "opsmesh.environment": str(environment_id),
+                "opsmesh.principal": str(principal_id),
+                "opsmesh.test": f"nested-write:{uuid4()}",
+            },
+        )
+        try:
+            await backend.prepare_directory(native)
+            await backend.initialize_directory(native)
+            content = b"print(6 * 7)\n"
+            encoded = base64.b64encode(content).decode()
+            path = "new/project/main.py"
+            assert await write_file(native, path, encoded) == len(content)
+            assert base64.b64decode(await read_file(native, path)) == content
+            result = await native.exec("python3", f"/workspace/{path}", shell=False)
+            assert result.exit_code == 0
+            assert result.stdout == b"42\n"
+            setup = await native.exec(
+                "sh",
+                "-c",
+                "mkdir -p /tmp/write-target && ln -s /tmp/write-target /workspace/escape",
+                shell=False,
+            )
+            assert setup.exit_code == 0
+            with pytest.raises(ValueError, match="safely"):
+                await write_file(native, "escape/marker.txt", encoded)
+            unchanged = await native.exec(
+                "test", "!", "-e", "/tmp/write-target/marker.txt", shell=False
+            )
+            assert unchanged.exit_code == 0
+        finally:
+            await backend.execute(native, "close", {})
+            backend.close()
+
+    asyncio.run(scenario())
+
+
+def test_native_manifest_preserves_existing_workspace_across_container_recreation(tmp_path):
+    async def scenario():
+        directory_id, principal_id = uuid4(), uuid4()
+        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path))) / str(
+            directory_id
+        )
+        (root / "skills").mkdir(parents=True)
+        prompt = root / "skills" / "SKILL.md"
+        prompt.write_text("User-owned skill instructions", encoding="utf-8")
+        backend = SandboxBackend(lambda **_: SandboxDirectory(directory_id, root))
+        try:
+            for generation in range(2):
+                native = await backend.create(
+                    image=os.environ["OPSMESH_TEST_SANDBOX_IMAGE"],
+                    labels={
+                        "opsmesh.environment": str(uuid4()),
+                        "opsmesh.principal": str(principal_id),
+                        "opsmesh.test": f"manifest:{directory_id}:{generation}",
+                    },
+                )
+                container_id = native.state.container_id
+                try:
+                    await backend.prepare_directory(native)
+                    await backend.initialize_directory(native)
+                    assert all((root / name).is_dir() for name in WORKING_DIRECTORIES)
+                    assert prompt.read_text(encoding="utf-8") == "User-owned skill instructions"
+                    result = await native.exec(
+                        "python3",
+                        "-I",
+                        "-c",
+                        "from pathlib import Path; p=Path('/workspace/files/result.txt'); "
+                        "assert not p.exists() or p.read_text() == 'persistent'; "
+                        "p.write_text('persistent'); "
+                        "assert Path('/workspace/skills/SKILL.md').read_text() "
+                        "== 'User-owned skill instructions'",
+                        shell=False,
+                    )
+                    assert result.exit_code == 0, result.stderr
+                    resumed = await backend.resume(backend.state(native))
+                    assert resumed.state.container_id == container_id
+                    await backend.initialize_directory(resumed)
+                    assert (root / "files" / "result.txt").read_text() == "persistent"
+                finally:
+                    await backend.execute(native, "close", {})
+                    assert (
+                        await asyncio.to_thread(backend.client.get_container, container_id) is None
+                    )
+        finally:
+            backend.close()
+
+    asyncio.run(scenario())
+
+
 def test_remote_read_is_bounded_before_transfer_and_rejects_symlinks_and_fifos(tmp_path):
     async def scenario():
         directory_id, environment_id, principal_id = uuid4(), uuid4(), uuid4()
-        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path)))
+        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path))) / str(
+            directory_id
+        )
         root.mkdir(parents=True, exist_ok=True)
         backend = SandboxBackend(lambda **_: SandboxDirectory(directory_id, root))
         native = await backend.create(
@@ -34,6 +143,7 @@ def test_remote_read_is_bounded_before_transfer_and_rejects_symlinks_and_fifos(t
         )
         container_id = native.state.container_id
         try:
+            await backend.prepare_directory(native)
             await native.start()
             state = backend.state(native)
             resumed = await backend.resume(state)
@@ -71,8 +181,10 @@ def test_remote_read_is_bounded_before_transfer_and_rejects_symlinks_and_fifos(t
             assert base64.b64decode(await read_file(observed, "exact.bin")) == b"x" * MAX_FILE_BYTES
             assert await read_file(observed, "empty.bin") == ""
             for name in ("escape", "directory-link/passwd", "fifo"):
-                with pytest.raises(ValueError, match="read safely"):
+                with pytest.raises(WorkspaceArchiveReadError):
                     await read_file(observed, name)
+            with pytest.raises(WorkspaceReadNotFoundError):
+                await read_file(observed, "missing.txt")
             assert max(observed.sizes) == MAX_FILE_BYTES + 1
         finally:
             await backend.execute(native, "close", {})
@@ -85,7 +197,9 @@ def test_remote_read_is_bounded_before_transfer_and_rejects_symlinks_and_fifos(t
 def test_cancelled_native_command_finishes_before_ack_and_keeps_shared_environment(tmp_path):
     async def scenario():
         directory_id, environment_id, principal_id = uuid4(), uuid4(), uuid4()
-        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path)))
+        root = Path(os.environ.get("OPSMESH_TEST_SANDBOX_HOST_ROOT", str(tmp_path))) / str(
+            directory_id
+        )
         root.mkdir(parents=True, exist_ok=True)
         backend = SandboxBackend(lambda **_: SandboxDirectory(directory_id, root))
         native = await backend.create(
@@ -98,6 +212,7 @@ def test_cancelled_native_command_finishes_before_ack_and_keeps_shared_environme
         )
         container_id = native.state.container_id
         try:
+            await backend.prepare_directory(native)
             await native.start()
             command = asyncio.create_task(
                 backend.execute(

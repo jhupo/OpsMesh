@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
+from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.shared.security.redaction import redact_text_fragments
 
 

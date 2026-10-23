@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import secrets
+import socket
 import subprocess
 import tarfile
 import tempfile
@@ -72,10 +73,41 @@ def check_cli(directory: Path, tag: str) -> None:
 
 
 def check_server(directory: Path, tag: str, work: Path) -> None:
-    # The base image contains neither Python nor uv. Only the extracted archive supplies Python.
+    # The base image contains neither Python nor uv; execute the frozen artifact directly.
+    assert not (directory / "python").exists(), "Full interpreter trees must not be shipped"
+    assert (directory / "_internal").is_dir()
     container = "opsmesh-native-" + secrets.token_hex(6)
     state = work / "state"
     (state / "opsmesh").mkdir(parents=True)
+    plugins = state / "opsmesh/plugin-code"
+    plugin = plugins / "native-check/0.1.0"
+    plugin.mkdir(parents=True)
+    manifest = {
+        "id": "native-check",
+        "version": "0.1.0",
+        "name": "Native Check",
+        "kind": "tool",
+        "entry": "main.py",
+    }
+    # JSON mappings are a YAML subset; the actual manifest filename is plugin.yaml.
+    (plugin / "plugin.yaml").write_text(json.dumps(manifest))
+    (plugin / "helper.py").write_text("message = 'external plugin loaded'\n")
+    (plugin / "main.py").write_text(
+        "from .helper import message\n"
+        "def echo() -> dict[str, str]:\n    return {'message': message}\n"
+        "def setup(ctx):\n    ctx.tool('echo', echo)\n"
+    )
+    (plugins / "registry.json").write_text(
+        json.dumps(
+            {
+                "native-check": {"manifest": manifest, "enabled": True, "config": {}},
+            }
+        )
+    )
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    api_url = f"http://127.0.0.1:{port}/api/v1"
     environment = {
         "OPSMESH_ENVIRONMENT": "test",
         "OPSMESH_DATABASE_URL": os.environ["OPSMESH_DATABASE_URL"],
@@ -85,12 +117,13 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
         "OPSMESH_TEMPORAL_ADDRESS": os.environ["OPSMESH_TEMPORAL_ADDRESS"],
         "OPSMESH_TEMPORAL_NAMESPACE": os.environ.get("OPSMESH_TEMPORAL_NAMESPACE", "default"),
         "OPSMESH_STORAGE_ROOT": "/work/opsmesh/storage",
+        "OPSMESH_PLUGINS_ROOT": "/work/opsmesh/plugin-code",
+        "OPSMESH_API_PORT": str(port),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     base = [
         "docker",
         "run",
-        "--rm",
         "--network",
         "host",
         "-v",
@@ -107,32 +140,29 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
 
     def run(*args: str) -> str:
         return subprocess.check_output(
-            [*base, image, "/bundle/opsmesh-server", *args],
+            [*base, "--rm", image, "/bundle/opsmesh-server", *args],
             text=True,
             timeout=180,
         )
 
     assert json.loads(run("check"))["version"] == tag.removeprefix("v")
-    subprocess.run(
-        [*base, image, "/bin/sh", "-n", "/bundle/scripts/server-smoke-test.sh"],
-        check=True,
-    )
-    subprocess.run(
-        [
-            *base,
-            image,
-            "/bundle/python/bin/python3",
-            "/bundle/scripts/render_alertmanager_config.py",
-            "--webhook-url",
-            "https://alerts.example.com/hook",
-            "--output",
-            "/work/opsmesh/alerts.yml",
-        ],
-        check=True,
-    )
-    assert (state / "opsmesh/alerts.yml").is_file()
     run("migrate")
     run("migrate", "check")
+    administrator = json.loads(run("bootstrap-admin"))
+
+    def request(path: str, body: dict[str, object] | None, session: str | None = None) -> dict:
+        headers = {"Content-Type": "application/json"}
+        if session is not None:
+            headers["X-Session-ID"] = session
+        payload = urllib.request.Request(
+            api_url + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers=headers,
+            method="POST" if body is not None else "GET",
+        )
+        with urllib.request.urlopen(payload, timeout=30) as response:
+            return json.load(response)
+
     worker_container = container + "-worker"
     started: list[str] = []
     try:
@@ -143,9 +173,7 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
             started.append(name)
         for _ in range(60):
             try:
-                with urllib.request.urlopen(
-                    "http://127.0.0.1:8000/api/v1/health/ready", timeout=2
-                ) as r:
+                with urllib.request.urlopen(api_url + "/health/ready", timeout=2) as r:
                     if r.status == 200:
                         running = subprocess.check_output(
                             [
@@ -159,15 +187,89 @@ def check_server(directory: Path, tag: str, work: Path) -> None:
                         ).strip()
                         if running != "true":
                             raise RuntimeError("Standalone Temporal Worker stopped during startup")
-                        return
+                        login = request(
+                            "/auth/login",
+                            {
+                                "email": administrator["email"],
+                                "password": administrator["password"],
+                            },
+                        )
+                        output = request(
+                            "/agents/plugins/native-check/tools/echo",
+                            {
+                                "arguments": {},
+                            },
+                            login["session_token"],
+                        )
+                        assert output["value"] == {"message": "external plugin loaded"}
+                        session = login["session_token"]
+                        flow = request(
+                            "/workflows",
+                            {
+                                "name": "Native distribution acceptance",
+                                "spec": {
+                                    "graph": {
+                                        "nodes": [
+                                            {
+                                                "key": "wait",
+                                                "kind": "wait",
+                                                "seconds": 1,
+                                            }
+                                        ]
+                                    }
+                                },
+                            },
+                            session,
+                        )
+                        revision = request(
+                            f"/workflows/{flow['id']}/publish",
+                            {
+                                "expected_revision": flow["revision"],
+                            },
+                            session,
+                        )
+                        instance = request(
+                            "/workflows/instances",
+                            {
+                                "revision_id": revision["id"],
+                                "name": "Native distribution instance",
+                                "request_key": "native-instance-" + secrets.token_hex(8),
+                            },
+                            session,
+                        )
+                        submitted = request(
+                            "/workflows/runs",
+                            {
+                                "instance_id": instance["id"],
+                                "request_key": "native-distribution-" + secrets.token_hex(8),
+                                "input": {},
+                            },
+                            session,
+                        )
+                        deadline = time.monotonic() + 60
+                        while time.monotonic() < deadline:
+                            run_state = request(f"/workflows/runs/{submitted['id']}", None, session)
+                            if run_state["status"] == "completed":
+                                return
+                            if run_state["status"] in {"failed", "needs_attention", "cancelled"}:
+                                raise RuntimeError("Native Worker failed its durable workflow")
+                            time.sleep(1)
+                        raise RuntimeError("Native Worker did not complete the durable workflow")
+            except urllib.error.HTTPError:
+                raise
             except OSError:
                 pass
             time.sleep(1)
         subprocess.run(["docker", "logs", container], check=False)
         raise RuntimeError("Standalone API/worker readiness failed")
+    except BaseException:
+        for name in started:
+            subprocess.run(["docker", "logs", name], check=False)
+        raise
     finally:
         if started:
-            subprocess.run(["docker", "stop", "--time", "130", *started], check=True)
+            subprocess.run(["docker", "stop", "--timeout", "130", *started], check=False)
+            subprocess.run(["docker", "rm", *started], check=False)
 
 
 def main() -> None:

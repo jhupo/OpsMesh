@@ -83,18 +83,6 @@ groups:
           summary: OpsMesh user capacity usage is high
           description: Capacity {{ $labels.kind }} is above 85 percent reserved usage.
 
-      - alert: OpsMeshExtensionEffectsUnconfirmed
-        expr: |
-          (sum(opsmesh_managed_deployments{state="needs_attention"}) or vector(0))
-          + (sum(opsmesh_extension_invocations{state="needs_attention"}) or vector(0)) > 0
-        for: 5m
-        labels:
-          severity: warning
-          service: opsmesh-extensions
-        annotations:
-          summary: Extension effects require reconciliation
-          description: Inspect the retained deployment or Invocation receipt before retrying external writes.
-
       - alert: OpsMeshObservabilityTargetDown
         expr: up{job=~"alertmanager|loki|tempo|otel-collector"} == 0
         for: 5m

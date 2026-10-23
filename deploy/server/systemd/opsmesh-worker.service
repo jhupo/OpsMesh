@@ -12,7 +12,6 @@ WorkingDirectory=/opt/opsmesh/current
 EnvironmentFile=/opt/opsmesh/.env
 EnvironmentFile=/opt/opsmesh/current/images.env
 Environment=OPSMESH_SERVICE_NAME=opsmesh-worker
-Environment=OPSMESH_RUN_MIGRATIONS=false
 ExecStart=/opt/opsmesh/current/opsmesh-server worker
 Restart=always
 RestartSec=5

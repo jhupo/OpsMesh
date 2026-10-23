@@ -36,9 +36,8 @@ services:
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
     command:
-    - alembic
-    - upgrade
-    - head
+    - opsmesh-server
+    - migrate
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,6 +85,28 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+  gateway:
+    logging: *id001
+    image: opsmesh-api:local
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    command: [opsmesh-server, gateway]
+    env_file: [../../.env]
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      OPSMESH_SERVICE_NAME: opsmesh-gateway
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    depends_on:
+      api:
+        condition: service_healthy
   worker:
     logging: *id001
     image: opsmesh-worker:local
@@ -99,9 +120,7 @@ services:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
-      OPSMESH_RUN_MIGRATIONS: 'false'
       OPSMESH_SERVICE_NAME: opsmesh-worker
-      OPSMESH_EXTENSION_SDK_WHEEL: ${OPSMESH_EXTENSION_SDK_WHEEL:-/opt/opsmesh-extension-sdk/opsmesh_sdk-0.1.0rc23-py3-none-any.whl}
       OPSMESH_TEMPORAL_ADDRESS: temporal:7233
     volumes:
     - type: bind
@@ -116,7 +135,7 @@ services:
     group_add:
     - ${OPSMESH_DOCKER_GID:-0}
   postgres:
-    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    image: postgres:16-bookworm
     environment:
       POSTGRES_DB: opsmesh
       POSTGRES_USER: opsmesh

@@ -17,16 +17,16 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
-from opsmesh.bootstrap.approvals import build_approvals
 from opsmesh.bootstrap.models import register_models
-from opsmesh.bootstrap.platform import transaction_dependencies
+from opsmesh.bootstrap.policies import transaction_dependencies
+from opsmesh.bootstrap.schema import RETIRED_TABLES
 from opsmesh.config import Settings
 from opsmesh.shared.db.session import create_database_engine
 from opsmesh.shared.security.encryption import SecretCipher
 
 TEST_DATABASE_URL_ENV = "OPSMESH_TEST_DATABASE_URL"
 TEST_STORAGE_ROOT = ".opsmesh-test-storage"
-FEATURE_TABLES = tuple(sorted(table.name for table in register_models().tables.values()))
+FEATURE_TABLES = tuple(sorted(set(register_models().tables) | RETIRED_TABLES))
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -70,9 +70,6 @@ def database_url() -> str:
 
 @pytest.fixture(scope="session")
 def database_engine(database_url: str) -> Iterator[Engine]:
-    from opsmesh.bootstrap.source_notifications import register_source_events
-
-    register_source_events()
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     command.upgrade(config, "head")
@@ -89,7 +86,6 @@ def database_sessions(database_engine: Engine) -> Iterator[sessionmaker]:
         expire_on_commit=False,
         info={
             **transaction_dependencies(),
-            "approvals": build_approvals(),
             "dispatch_cipher": dispatch_cipher(),
             "dispatch_trace_context": lambda: {},
         },
@@ -112,7 +108,6 @@ def async_database_sessions(database_url: str) -> Iterator[async_sessionmaker[As
         expire_on_commit=False,
         info={
             **transaction_dependencies(),
-            "approvals": build_approvals(),
             "dispatch_cipher": dispatch_cipher(),
             "dispatch_trace_context": lambda: {},
         },
@@ -128,12 +123,8 @@ def async_database_sessions(database_url: str) -> Iterator[async_sessionmaker[As
 
 
 def session_dependency_info() -> dict[str, object]:
-    from opsmesh.bootstrap.source_notifications import register_source_events
-
-    register_source_events()
     return {
         **transaction_dependencies(),
-        "approvals": build_approvals(),
         "dispatch_cipher": dispatch_cipher(),
         "dispatch_trace_context": lambda: {},
     }

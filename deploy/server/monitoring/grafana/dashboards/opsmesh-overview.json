@@ -82,16 +82,6 @@
       "type": "bargauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "opsmesh-prometheus"},
-      "fieldConfig": {"defaults": {"mappings": [], "unit": "short"}},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 16},
-      "id": 9,
-      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
-      "targets": [{"expr": "opsmesh_storage_reservations", "legendFormat": "{{state}}", "refId": "A"}],
-      "title": "Storage Reservations",
-      "type": "bargauge"
-    },
-    {
       "datasource": {"type": "loki", "uid": "opsmesh-loki"},
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 28},
       "id": 10,

@@ -13,9 +13,13 @@ from temporalio import activity
 from temporalio.client import Client
 from temporalio.common import RetryPolicy
 from temporalio.contrib.opentelemetry import OpenTelemetryPlugin
-from temporalio.converter import DataConverter, DefaultFailureConverterWithEncodedAttributes
+from temporalio.converter import DataConverter
 from temporalio.exceptions import ApplicationError
-from temporalio.openai_agents import ModelActivityParameters, OpenAIAgentsPlugin
+from temporalio.openai_agents import (
+    ModelActivityParameters,
+    OpenAIAgentsPlugin,
+    SandboxClientProvider,
+)
 from temporalio.plugin import SimplePlugin
 from temporalio.worker import ActivityInboundInterceptor, ExecuteActivityInput, Interceptor
 from temporalio.workflow import ActivityCancellationType
@@ -25,6 +29,7 @@ from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.telemetry.context import bind_log_context
 from opsmesh.temporal.codec import EncryptedPayloadCodec
+from opsmesh.workflows.engines.temporal.failures import WorkspaceFailureConverter
 
 
 @runtime_checkable
@@ -79,6 +84,7 @@ async def connect_temporal(
     *,
     model_provider: ModelProvider | None = None,
     mcp_servers: Mapping[str, Callable[..., MCPServer]] | None = None,
+    sandbox_clients: tuple[SandboxClientProvider, ...] = (),
 ) -> Client:
     return await Client.connect(
         settings.temporal_address,
@@ -89,6 +95,7 @@ async def connect_temporal(
             OpenAIAgentsPlugin(
                 model_provider=model_provider,
                 mcp_servers=mcp_servers,
+                sandbox_clients=sandbox_clients,
                 register_activities=model_provider is not None,
                 model_params=ModelActivityParameters(
                     start_to_close_timeout=timedelta(minutes=5),
@@ -102,7 +109,7 @@ async def connect_temporal(
         ],
         data_converter=replace(
             DataConverter(),
-            failure_converter_class=DefaultFailureConverterWithEncodedAttributes,
+            failure_converter_class=WorkspaceFailureConverter,
             payload_codec=EncryptedPayloadCodec(
                 SecretCipher(
                     key=settings.credential_encryption_key,

@@ -11,13 +11,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from opsmesh.config import Settings
-from opsmesh.identity.auth.models import LoginSession, UserCredential
-from opsmesh.identity.auth.passwords import hash_password
-from opsmesh.identity.provisioning import AccountDefaults, provision_first_admin
-from opsmesh.identity.quotas.service import ensure_capacity_accounts
-from opsmesh.identity.users.models import UserProfile
-from opsmesh.shared.audit import AuditActor, AuditRecord, record_audit
+from opsmesh.platform.audit.contracts import AuditActor, AuditRecord, record_audit
 from opsmesh.shared.errors import ConflictError
+from opsmesh.users.auth.models import LoginSession, UserCredential
+from opsmesh.users.auth.passwords import hash_password
+from opsmesh.users.models import UserProfile
+from opsmesh.users.quotas.service import ensure_capacity_accounts
+from opsmesh.users.service import create_account
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ def administrator_handoff(
     *,
     reset: bool,
     email: str,
-    defaults: AccountDefaults,
+    token_limit: int | None,
     provision_resources: Callable[[Session, UUID], None],
 ) -> dict[str, str]:
     """An explicit host-owner command hands a fresh password to the terminal once."""
@@ -88,14 +88,15 @@ def administrator_handoff(
     else:
         if session.scalar(select(func.count()).select_from(UserProfile)):
             raise ConflictError("The platform already has accounts")
-        profile = provision_first_admin(
+        profile = create_account(
             session,
             email=email,
             display_name="Administrator",
             password=password,
-            defaults=defaults,
-            provision_resources=provision_resources,
+            platform_roles=frozenset({"admin"}),
+            token_limit=token_limit,
         )
+    provision_resources(session, profile.id)
     return {
         "user_id": str(profile.id),
         "email": profile.email,

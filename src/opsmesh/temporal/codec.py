@@ -9,6 +9,8 @@ from temporalio.converter import PayloadCodec
 from opsmesh.shared.security.encryption import SecretCipher
 
 _ENCODING = b"binary/opsmesh-encrypted"
+MAX_PAYLOAD_BYTES = 1_900_000
+MAX_PAYLOAD_BATCH_BYTES = 3_500_000
 
 
 class EncryptedPayloadCodec(PayloadCodec):
@@ -21,15 +23,18 @@ class EncryptedPayloadCodec(PayloadCodec):
             encrypted = self._encryption.encrypt_payload(
                 {"payload": base64.b64encode(payload.SerializeToString()).decode("ascii")}
             )
-            result.append(
-                Payload(
-                    metadata={
-                        "encoding": _ENCODING,
-                        "key_id": encrypted.key_id.encode("utf-8"),
-                    },
-                    data=encrypted.ciphertext.encode("ascii"),
-                )
+            encoded = Payload(
+                metadata={
+                    "encoding": _ENCODING,
+                    "key_id": encrypted.key_id.encode("utf-8"),
+                },
+                data=encrypted.ciphertext.encode("ascii"),
             )
+            if encoded.ByteSize() > MAX_PAYLOAD_BYTES:
+                raise ValueError("Encrypted Temporal payload exceeds the supported size limit")
+            result.append(encoded)
+        if sum(item.ByteSize() for item in result) > MAX_PAYLOAD_BATCH_BYTES:
+            raise ValueError("Encrypted Temporal payload batch exceeds the supported size limit")
         return result
 
     async def decode(self, payloads: Iterable[Payload]) -> list[Payload]:

@@ -1,11 +1,10 @@
-"""Build database, Redis and cache resources; owners receive explicit options."""
+"""Build database and Redis resources; owners receive explicit options."""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import cast
 
 import sqlalchemy.ext.asyncio
 from redis import Redis
@@ -14,12 +13,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
-from opsmesh.bootstrap.platform import transaction_dependencies
+from opsmesh.bootstrap.policies import transaction_dependencies
 from opsmesh.config import Settings
 from opsmesh.shared.db.session import create_database_engine
-from opsmesh.shared.redis.cache import RedisJsonCache
 from opsmesh.shared.redis.client import create_redis_client
-from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 from opsmesh.telemetry.context import capture_trace_context
@@ -66,10 +63,6 @@ class DatabaseResources:
 
 
 def build_database_resources(settings: Settings) -> DatabaseResources:
-    from opsmesh.bootstrap.approvals import build_approvals
-    from opsmesh.bootstrap.source_notifications import register_source_events
-
-    register_source_events()
     engine = create_database_engine(
         settings.database_url,
         pool_size=settings.database_pool_size,
@@ -89,44 +82,9 @@ def build_database_resources(settings: Settings) -> DatabaseResources:
                 "dispatch_cipher": cipher,
                 "dispatch_trace_context": capture_trace_context,
                 **transaction_dependencies(),
-                "approvals": build_approvals(),
             },
         ),
         cipher=cipher,
-    )
-
-
-def build_history_engine(settings: Settings) -> AsyncEngine:
-    """The async engine the native model history is stored in.
-
-    The official session backend accepts only an async engine, so the
-    history gets its own with the same connection, statement timeout and
-    pool settings as the main engine: every configured database limit
-    applies to it exactly once.
-    """
-    database_url = make_url(settings.database_url).set(drivername=POSTGRES_PSYCOPG_DRIVER)
-    configured_options = database_url.query.get("options", "")
-    if not isinstance(configured_options, str):
-        raise ValueError("Database connection options must be a single string")
-    options = (
-        f"{configured_options} -c statement_timeout={settings.database_statement_timeout_ms}"
-    ).strip()
-    return sqlalchemy.ext.asyncio.create_async_engine(
-        database_url,
-        pool_pre_ping=True,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_timeout=settings.database_pool_timeout_seconds,
-        pool_recycle=settings.database_pool_recycle_seconds,
-        connect_args={"options": options},
-    )
-
-
-def build_json_cache(redis_client: object | None, *, key_prefix: str) -> RedisJsonCache | None:
-    if redis_client is None:
-        return None
-    return RedisJsonCache(
-        cast("Redis[str]", redis_client), RedisKeyBuilder(key_prefix), namespace="api"
     )
 
 

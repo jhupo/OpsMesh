@@ -8,21 +8,20 @@ from sqlalchemy import event
 from sqlalchemy.exc import OperationalError
 
 from opsmesh.bootstrap.metrics import product_metrics
-from opsmesh.identity.quotas.models import UserStorageAccount, UserTokenAccount
-from opsmesh.identity.quotas.service import ensure_ledger
-from opsmesh.identity.users.service import create_user
 from opsmesh.telemetry.metrics import start_metrics_server
+from opsmesh.users.quotas.models import UserTokenAccount
+from opsmesh.users.quotas.service import ensure_ledger
+from opsmesh.users.service import create_user
 
 
 def test_private_listener_exports_current_facts_and_releases_socket(database_sessions):
     with database_sessions() as session, session.begin():
         user = create_user(session, email="metrics@example.com", display_name="Metrics")
-        ensure_ledger(session, user_id=user.id, token_limit=100, storage_limit_bytes=1000)
+        ensure_ledger(session, user_id=user.id, token_limit=100)
         session.flush()
         scope = user.id
         session.get(UserTokenAccount, user.id).used_tokens = 70
         session.get(UserTokenAccount, user.id).reserved_tokens = 20
-        session.get(UserStorageAccount, user.id).used_bytes = 400
     exporter = start_metrics_server(
         host="127.0.0.1", port=0, producer=partial(product_metrics, database_sessions)
     )
@@ -38,10 +37,13 @@ def test_private_listener_exports_current_facts_and_releases_socket(database_ses
         }
         assert samples[("opsmesh_metrics_collection_success", (("source", "postgres"),))] == 1
         assert samples[("opsmesh_user_quota_max_usage_ratio", (("kind", "token"),))] == 0.9
-        assert samples[("opsmesh_user_quota_max_usage_ratio", (("kind", "storage"),))] == 0.4
+        assert ("opsmesh_user_quota_max_usage_ratio", (("kind", "storage"),)) not in samples
+        assert "opsmesh_storage_reservations" not in response.text
         assert "opsmesh_cost_budgets" not in response.text
         assert "opsmesh_audit_integrity" not in response.text
-        assert samples[("opsmesh_temporal_dispatches", (("state", "pending"),))] >= 1
+        assert samples[("opsmesh_temporal_dispatches", (("state", "pending"),))] == 0
+        assert "opsmesh_extension_invocations" not in response.text
+        assert "opsmesh_managed_deployments" not in response.text
     finally:
         exporter.close()
     assert not exporter.thread.is_alive()

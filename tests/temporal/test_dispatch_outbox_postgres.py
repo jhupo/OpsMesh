@@ -63,9 +63,7 @@ def signal_request(workflow_id: str) -> DispatchRequest:
 
 def count_rows(engine: Engine) -> int:
     with engine.connect() as connection:
-        return int(
-            connection.scalar(select(func.count()).select_from(TemporalOutboxEntry)) or 0
-        )
+        return int(connection.scalar(select(func.count()).select_from(TemporalOutboxEntry)) or 0)
 
 
 def load_row(engine: Engine) -> TemporalOutboxEntry | None:
@@ -660,6 +658,4 @@ def release_rows(engine: Engine, operation: DispatchOperation) -> None:
 def expire_claims(engine: Engine) -> None:
     """Simulate expired claim leases, as after a publisher process exit."""
     with engine.begin() as connection:
-        connection.execute(
-            update(TemporalOutboxEntry).values(claim_token=None, claim_until=None)
-        )
+        connection.execute(update(TemporalOutboxEntry).values(claim_token=None, claim_until=None))

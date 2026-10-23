@@ -36,12 +36,28 @@ def verify_assets(assets: list[dict[str, object]], directory: Path) -> set[str]:
 
 
 def release_notes(manifest: ReleaseManifest) -> str:
+    authored = (
+        Path(__file__).resolve().parents[1]
+        / "docs/releases"
+        / f"{manifest.tag.removeprefix('v')}.md"
+    )
     archives = sorted(
         file.name
         for file in manifest.files
         if file.name.startswith(("opsmesh-cli-", "opsmesh-server-"))
     )
     lines = [
+        *([authored.read_text("utf-8").strip(), ""] if authored.is_file() else []),
+        "## Install",
+        "",
+        "Docker Compose (Debian/Ubuntu amd64 with systemd):",
+        "```sh",
+        f"curl -fLO https://github.com/{manifest.repository}/releases/download/{manifest.tag}/install.sh",
+        f"sudo sh install.sh --version {manifest.tag} --mode compose --origin https://agents.example.com",
+        "```",
+        "Native mode uses `--mode systemd` after provisioning PostgreSQL, Redis and Temporal.",
+        "Both modes install prebuilt artifacts; no source checkout or system Python is required.",
+        "",
         "## Ready-to-run distributions",
         "",
         "Download and extract the archive for your platform. Python/pip/uv are not required.",
@@ -52,6 +68,14 @@ def release_notes(manifest: ReleaseManifest) -> str:
         "CLI: `./opsmesh version` (Windows: `opsmesh.exe version`).",
         "Server (Linux amd64): `./opsmesh-server check`, then `migrate`, `api` or `worker`.",
         "PostgreSQL, Redis and deployment host services remain external prerequisites.",
+        "Native archives embed the necessary Python runtime, not a complete Python installation.",
+        "",
+        "## Online updates and extension development",
+        "",
+        "Linux host: `sudo opsmesh --root /opt/opsmesh update --check`, then `update`.",
+        "The updater verifies and snapshots the release, migrates, checks readiness "
+        "and switches the operator.",
+        "`opsmesh-sdk` (`opsmesh_sdk`) provides system plugin registration and package tooling.",
         "",
         "## Integrity and provenance",
         "",

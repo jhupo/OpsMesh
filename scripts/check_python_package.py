@@ -43,7 +43,7 @@ sys.path.insert(0, sys.argv[1])
 from fastapi.testclient import TestClient
 from opsmesh.bootstrap.api import create_app
 from opsmesh.bootstrap.models import register_models
-for name in ('opsmesh.bootstrap.worker_cli',):
+for name in ('opsmesh.bootstrap.worker',):
     importlib.import_module(name)
 app = create_app()
 # No lifespan: package integrity requires no external infrastructure.

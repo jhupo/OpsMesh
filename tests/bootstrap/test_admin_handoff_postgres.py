@@ -8,15 +8,14 @@ import pytest
 from sqlalchemy import func, select
 
 from opsmesh.bootstrap.accounts import administrator_handoff
-from opsmesh.identity.auth.models import LoginSession, UserCredential
-from opsmesh.identity.auth.passwords import verify_password
-from opsmesh.identity.auth.service import token_digest
-from opsmesh.identity.provisioning import AccountDefaults
-from opsmesh.identity.quotas.models import UserQuotaLimit
-from opsmesh.identity.users.models import UserProfile
-from opsmesh.identity.users.service import create_user
 from opsmesh.platform.audit.models import AuditEvent
 from opsmesh.shared.errors import ConflictError
+from opsmesh.users.auth.models import LoginSession, UserCredential
+from opsmesh.users.auth.passwords import verify_password
+from opsmesh.users.auth.service import token_digest
+from opsmesh.users.models import UserProfile
+from opsmesh.users.quotas.models import UserQuotaLimit
+from opsmesh.users.service import create_user
 
 
 def handoff(sessions, *, reset=False):
@@ -25,7 +24,7 @@ def handoff(sessions, *, reset=False):
             session,
             reset=reset,
             email="admin@example.com",
-            defaults=AccountDefaults(token_limit=1000, storage_limit_bytes=2000),
+            token_limit=1000,
             provision_resources=lambda session, user_id: None,
         )
 

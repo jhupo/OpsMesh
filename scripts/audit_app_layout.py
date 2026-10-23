@@ -16,17 +16,28 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "src/opsmesh"
 OUTPUT = ROOT / ".tmp/app-layout-review"
 BUSINESS_ROOTS = {
-    "identity",
-    "capabilities",
+    "plugins",
+    "users",
     "resources",
-    "extensions",
-    "orchestration",
-    "channels",
+    "agents",
+    "workflows",
+    "execution",
+    "gateway",
     "platform",
 }
 ENTRYPOINTS = {
     "opsmesh.bootstrap.api",
-    "opsmesh.bootstrap.worker_cli",
+    "opsmesh.bootstrap.cli",
+}
+# Deliberate public APIs, not arbitrary exceptions for implementation packages.
+PUBLIC_FACADES = {
+    "opsmesh.agents",
+    "opsmesh.agents.callbacks",
+    "opsmesh.agents.plugins",
+    "opsmesh.agents.providers",
+    "opsmesh.agents.skills",
+    "opsmesh.agents.tools",
+    "opsmesh.gateway",
 }
 
 
@@ -64,7 +75,11 @@ def check_architecture() -> None:
         }:
             violations.append(f"Unclassified application file: {relative}")
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
-        if path.name == "__init__.py" and not is_package_marker(tree):
+        if (
+            path.name == "__init__.py"
+            and module not in PUBLIC_FACADES
+            and not is_package_marker(tree)
+        ):
             violations.append(f"Package initializer is not an empty marker: {relative}")
         dependencies = []
         imported_modules: dict[str, str] = {}
@@ -105,7 +120,14 @@ def check_architecture() -> None:
             if dependency.startswith(
                 tuple(
                     "opsmesh." + name
-                    for name in ("api", "domains", "core", "observability", "execution")
+                    for name in (
+                        "api",
+                        "domains",
+                        "core",
+                        "observability",
+                        "identity",
+                        "orchestration",
+                    )
                 )
             ):
                 violations.append(f"Legacy import: {module} -> {dependency}")
@@ -143,11 +165,11 @@ def check_architecture() -> None:
                         )
     for name in (
         "main.py",
-        "agents",
         "teams",
         "messaging",
         "runtime",
-        "execution",
+        "identity",
+        "orchestration",
         "delivery",
         "core",
         "domains",

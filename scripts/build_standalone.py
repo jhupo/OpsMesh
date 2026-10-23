@@ -1,4 +1,4 @@
-"""Build native CLI and relocatable server archives from the locked release wheels."""
+"""Build frozen CLI and server executable archives from the locked release wheels."""
 
 from __future__ import annotations
 
@@ -18,6 +18,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_VERSION = "3.12.14"
 CLI_PLATFORMS = ("linux-amd64", "linux-arm64", "windows-amd64", "darwin-amd64", "darwin-arm64")
+
+
+def server_freeze_options() -> list[str]:
+    options = ["--additional-hooks-dir", str(ROOT / "scripts/freeze_hooks")]
+    for package in (
+        "opsmesh",
+        "opsmesh_sdk",
+        "dingtalk_stream",
+        "agents",
+        "temporalio",
+        "opentelemetry",
+        "uvicorn",
+        "sqlalchemy.dialects.postgresql",
+        "tiktoken_ext",
+    ):
+        options += ["--collect-all", package]
+    return options
 
 
 def host_platform() -> str:
@@ -52,14 +69,12 @@ def copy_server_assets(target: Path) -> None:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
     shutil.copytree(ROOT / "deploy/server", target / "deploy/server")
+    shutil.copytree(ROOT / "deploy/temporal", target / "deploy/temporal")
+    for script in (target / "deploy/server").rglob("*.sh"):
+        script.write_text(script.read_text("utf-8"), encoding="utf-8", newline="\n")
+        script.chmod(0o755)
     shutil.copy2(ROOT / "deploy/server/env.example", target / ".env.example")
     shutil.copy2(ROOT / "deploy/DISTRIBUTIONS.md", target / "DISTRIBUTION.md")
-    shutil.copy2(ROOT / "deploy/server/opsmesh-server", target / "opsmesh-server")
-    (target / "opsmesh-server").chmod(0o755)
-    (target / "scripts").mkdir()
-    for name in ("server-smoke-test.sh", "render_alertmanager_config.py"):
-        shutil.copy2(ROOT / "scripts" / name, target / "scripts" / name)
-        (target / "scripts" / name).chmod(0o755)
 
 
 def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str) -> Path:
@@ -67,7 +82,7 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
         raise ValueError("Expected a canonical release tag")
     if re.fullmatch(r"[a-f0-9]{40}", commit) is None:
         raise ValueError("Expected the full build commit")
-    for project in (ROOT, ROOT / "operator"):
+    for project in (ROOT, ROOT / "deploy/cli", ROOT / "sdk/python"):
         version = tomllib.loads((project / "pyproject.toml").read_text("utf-8"))["project"][
             "version"
         ]
@@ -78,6 +93,10 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
         raise ValueError("Unsupported native build platform")
     if kind == "server" and target_platform != "linux-amd64":
         raise ValueError("Server runtime currently supports Linux amd64 only")
+    if kind == "server":
+        libc, version = platform.libc_ver()
+        if libc != "glibc" or tuple(map(int, version.split("."))) > (2, 35):
+            raise ValueError("Build the Linux server on the Ubuntu 22.04 glibc baseline")
     package_version = tag.removeprefix("v")
     wheels = wheels.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -89,7 +108,12 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
         work = Path(temporary)
 
         def run(*args: str) -> None:
-            subprocess.run(list(args), check=True, cwd=ROOT)
+            environment = {
+                key: value
+                for key, value in os.environ.items()
+                if key not in {"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"}
+            }
+            subprocess.run(list(args), check=True, cwd=ROOT, env=environment)
 
         requirements = work / "requirements.txt"
         selection = ["--package", "opsmesh-operator", "--extra", "host"] if kind == "cli" else []
@@ -106,122 +130,85 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
             "--output-file",
             str(requirements),
         )
-        if kind == "cli":
-            environment = work / "environment"
-            run(uv, "venv", "--python", PYTHON_VERSION, str(environment))
-            python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-            build_requirements = work / "build-requirements.txt"
-            run(
-                uv,
-                "export",
-                "--quiet",
-                "--frozen",
-                "--only-group",
-                "packaging",
-                "--no-emit-workspace",
-                "--output-file",
-                str(build_requirements),
-            )
-            run(
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(python),
-                "--require-hashes",
-                "--no-deps",
-                "-r",
-                str(requirements),
-                "-r",
-                str(build_requirements),
-            )
-            run(
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(python),
-                "--no-deps",
-                str(wheels / f"opsmesh_operator-{package_version}-py3-none-any.whl"),
-            )
-            run(
-                str(python),
-                "-m",
-                "PyInstaller",
-                "--onedir",
-                "--name",
-                "opsmesh",
-                "--distpath",
-                str(work / "frozen"),
-                "--workpath",
-                str(work / "analysis"),
-                "--specpath",
-                str(work),
-                "--recursive-copy-metadata",
-                "opsmesh-operator",
-                "--collect-all",
-                "docker",
-                "--collect-all",
-                "dotenv",
-                "--collect-all",
-                "psycopg",
-                "--collect-all",
-                "psycopg_binary",
-                str(ROOT / "scripts/cli_entry.py"),
-            )
-            bundle = work / "frozen/opsmesh"
-            shutil.copy2(ROOT / "deploy/DISTRIBUTIONS.md", bundle / "DISTRIBUTION.md")
-        else:
-            installs = work / "managed-python"
-            run(uv, "python", "install", PYTHON_VERSION, "--install-dir", str(installs), "--no-bin")
-            # uv also creates minor-version aliases; use its discovery API, not directory globbing.
-            installed_python = subprocess.check_output(
-                [uv, "python", "find", "--managed-python", "--no-project", PYTHON_VERSION],
-                env={**os.environ, "UV_PYTHON_INSTALL_DIR": str(installs)},
-                text=True,
-            ).strip()
-            python_home = Path(installed_python).resolve().parent.parent
-            bundle = work / "server"
-            bundle.mkdir()
-            shutil.copytree(python_home, bundle / "python", symlinks=False)
-            python = bundle / "python/bin/python3"
-            run(
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(python),
-                "--break-system-packages",
-                "--require-hashes",
-                "--no-deps",
-                "--only-binary",
-                ":all:",
-                "--link-mode",
-                "copy",
-                "-r",
-                str(requirements),
-            )
-            run(
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(python),
-                "--break-system-packages",
-                "--no-deps",
-                "--link-mode",
-                "copy",
-                str(wheels / f"opsmesh-{package_version}-py3-none-any.whl"),
-                str(wheels / f"opsmesh_operator-{package_version}-py3-none-any.whl"),
-            )
+        environment = work / "environment"
+        run(uv, "venv", "--python", PYTHON_VERSION, str(environment))
+        python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        build_requirements = work / "build-requirements.txt"
+        run(
+            uv,
+            "export",
+            "--quiet",
+            "--frozen",
+            "--only-group",
+            "packaging",
+            "--no-emit-workspace",
+            "--output-file",
+            str(build_requirements),
+        )
+        run(
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--require-hashes",
+            "--no-deps",
+            "-r",
+            str(requirements),
+            "-r",
+            str(build_requirements),
+        )
+        run(
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--no-deps",
+            str(wheels / f"opsmesh_sdk-{package_version}-py3-none-any.whl"),
+            *(
+                [str(wheels / f"opsmesh-{package_version}-py3-none-any.whl")]
+                if kind == "server"
+                else [str(wheels / f"opsmesh_operator-{package_version}-py3-none-any.whl")]
+            ),
+        )
+        run(
+            str(python),
+            "-I",
+            "-m",
+            "PyInstaller",
+            "--onedir",
+            "--name",
+            "opsmesh" if kind == "cli" else "opsmesh-server",
+            "--distpath",
+            str(work / "frozen"),
+            "--workpath",
+            str(work / "analysis"),
+            "--specpath",
+            str(work),
+            "--recursive-copy-metadata",
+            "opsmesh-operator" if kind == "cli" else "opsmesh",
+            "--collect-all",
+            "docker",
+            "--collect-all",
+            "dotenv",
+            "--collect-all",
+            "psycopg",
+            "--collect-all",
+            "psycopg_binary",
+            *(server_freeze_options() if kind == "server" else []),
+            str(ROOT / "scripts" / ("cli_entry.py" if kind == "cli" else "server_entry.py")),
+        )
+        bundle = work / "frozen" / ("opsmesh" if kind == "cli" else "opsmesh-server")
+        shutil.copy2(ROOT / "deploy/DISTRIBUTIONS.md", bundle / "DISTRIBUTION.md")
+        if kind == "server":
             copy_server_assets(bundle)
-            shutil.copy2(requirements, bundle / "requirements.lock.txt")
         for name in ("LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"):
             shutil.copy2(ROOT / name, bundle / name)
         # Preserve the installed distribution licenses alongside the native executable.
         site = Path(
             subprocess.check_output(
-                [str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+                [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
                 text=True,
             ).strip()
         )
@@ -234,6 +221,7 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str)
                     "commit": commit,
                     "platform": target_platform,
                     "kind": kind,
+                    "format": "pyinstaller-onedir",
                     "python": PYTHON_VERSION,
                 },
                 indent=2,

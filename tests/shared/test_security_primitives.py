@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
+from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.shared.security.encryption import SecretCipher
 from opsmesh.shared.security.redaction import (
     REDACTED_VALUE,

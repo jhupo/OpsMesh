@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TypeAlias
 from uuid import UUID, uuid4
 
-JsonValue: TypeAlias = dict[str, "JsonValue"] | list["JsonValue"] | str | int | float | bool | None
-JsonObject: TypeAlias = dict[str, JsonValue]
+type JsonValue = dict[str, JsonValue] | list[JsonValue] | str | int | float | bool | None
+type JsonObject = dict[str, JsonValue]
 Identifier = UUID
 
 

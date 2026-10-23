@@ -9,21 +9,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENTS = {
-    "identity": {
-        "capabilities",
+    "users": {
         "resources",
-        "orchestration",
-        "extensions",
-        "channels",
+        "plugins",
+        "gateway",
+        "agents",
+        "workflows",
+        "execution",
         "platform",
     },
-    "capabilities": {"extensions", "orchestration", "channels"},
-    "resources": {"extensions", "orchestration", "channels"},
-    "platform": {"capabilities", "extensions", "orchestration", "channels"},
-    "extensions": {"orchestration", "channels"},
-    "orchestration": {"channels"},
-    "temporal": {"identity", "extensions", "orchestration", "platform"},
-    "telemetry": {"bootstrap", "temporal", "identity", "resources", "platform"},
+    "plugins": {"agents", "gateway", "execution", "workflows"},
+    "resources": {"agents", "execution", "workflows", "gateway"},
+    "platform": {"execution", "workflows"},
+    "agents": {"workflows", "execution"},
+    "execution": {"workflows", "gateway"},
+    "workflows": {"bootstrap"},
+    "gateway": {"bootstrap"},
+    "temporal": {"workflows", "bootstrap"},
+    "telemetry": {"bootstrap", "temporal", "users", "resources", "platform"},
 }
 NATIVE_SANDBOX_TEST = "tests/execution/test_sandbox_docker.py"
 
@@ -44,7 +47,7 @@ def select_tests(changed: list[str]) -> list[str]:
             path.suffix == ".py"
             and path.name.startswith("test_")
             and (ROOT / path).is_file()
-            and name.startswith(("tests/", "sdk/python/tests/", "operator/tests/"))
+            and name.startswith(("tests/", "sdk/python/tests/", "deploy/cli/tests/"))
         ):
             selected.add(path.as_posix())
         if name.startswith("src/opsmesh/"):
@@ -57,20 +60,28 @@ def select_tests(changed: list[str]) -> list[str]:
         if name in {"pyproject.toml", "uv.lock", "scripts/ci_tests.py"} or name.startswith(
             "migrations/"
         ):
-            directories.update({"tests", "sdk/python/tests", "operator/tests"})
+            directories.update({"tests", "sdk/python/tests", "deploy/cli/tests"})
         if name.startswith("sdk/python/"):
-            directories.update({"sdk/python/tests", "tests/bootstrap"})
-            features.update({"capabilities", "extensions", "orchestration", "channels"})
-        if name.startswith(("operator/", "deploy/", ".github/", "scripts/")):
-            directories.update({"operator/tests", "tests/engineering", "tests/platform"})
+            directories.update(
+                {
+                    "sdk/python/tests",
+                    "tests/plugins",
+                    "tests/agents",
+                    "tests/workflows",
+                    "tests/gateway",
+                    "tests/platform",
+                    "tests/bootstrap",
+                    "deploy/cli/tests",
+                }
+            )
+        if name.startswith(("deploy/cli/", "deploy/", ".github/", "scripts/")):
+            directories.update({"deploy/cli/tests", "tests/engineering", "tests/platform"})
     pending = list(features)
     while pending:
         for feature in DEPENDENTS.get(pending.pop(), set()) - features:
             features.add(feature)
             pending.append(feature)
     directories.update(f"tests/{feature}" for feature in features)
-    if "orchestration" in features:
-        directories.add("tests/execution")
     for directory in directories:
         folder = ROOT / directory
         if folder.is_dir():

@@ -17,10 +17,6 @@ def current_log_context() -> dict[str, str | None]:
     return dict.fromkeys(LOG_CONTEXT_FIELDS) | (_context.get() or {}) | current_trace_context()
 
 
-def current_context_attributes() -> dict[str, str]:
-    return {field: value for field, value in current_log_context().items() if value is not None}
-
-
 def set_log_context(
     *, replace: bool = False, **values: object
 ) -> Token[dict[str, str | None] | None]:

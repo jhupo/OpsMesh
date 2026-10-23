@@ -1,0 +1,1 @@
+"""Native qq transport adapter."""

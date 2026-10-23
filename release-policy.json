@@ -1,5 +1,5 @@
 {
-  "upgrade_from_revisions": [],
+  "upgrade_from_revisions": ["0001_v4_initial", "0002_execution_instances", "0003_workflow_instances", "0004_native_gateway"],
   "rollback_database_revisions": [],
   "platforms": ["linux/amd64"]
 }

@@ -13,9 +13,7 @@ from wsgiref.simple_server import WSGIServer
 from prometheus_client import (
     CollectorRegistry,
     Counter,
-    Gauge,
     Histogram,
-    generate_latest,
     start_http_server,
 )
 from prometheus_client.core import GaugeMetricFamily
@@ -24,8 +22,8 @@ from prometheus_client.platform_collector import PlatformCollector
 from prometheus_client.process_collector import ProcessCollector
 from prometheus_client.registry import Collector
 
-MetricKind = Literal["counter", "histogram", "gauge"]
-PrometheusMetric = Counter | Histogram | Gauge
+MetricKind = Literal["counter", "histogram"]
+PrometheusMetric = Counter | Histogram
 MetricKey = tuple[MetricKind, str, tuple[str, ...]]
 
 
@@ -142,39 +140,6 @@ def observe_histogram(
     target.observe(float(value))
 
 
-def set_gauge(
-    name: str,
-    value: float,
-    *,
-    labels: Mapping[str, object] | None = None,
-    registry: CollectorRegistry | None = None,
-) -> None:
-    normalized = _string_labels(labels or {})
-    metric = cast(Gauge, _metric("gauge", name, normalized, None, registry=registry))
-    target = metric.labels(**normalized) if normalized else metric
-    target.set(value)
-
-
-def render_prometheus(
-    *, gauges: Iterable[GaugeMetric] = (), registry: CollectorRegistry | None = None
-) -> str:
-    rendered = generate_latest(registry if registry is not None else _registry)
-    snapshot_gauges = tuple(gauges)
-    if snapshot_gauges:
-        snapshots = CollectorRegistry(auto_describe=True)
-        snapshots.register(SnapshotGaugeCollector(snapshot_gauges))
-        rendered += generate_latest(snapshots)
-    return rendered.decode("utf-8")
-
-
-def reset_metrics() -> None:
-    """Start a fresh process registry without modifying caller-owned registries."""
-    global _registry
-    with _lock:
-        _metrics.pop(_registry, None)
-        _registry = create_metrics_registry()
-
-
 def _metric(
     kind: MetricKind,
     name: str,
@@ -196,8 +161,6 @@ def _metric(
             metric: PrometheusMetric = Counter(
                 name, description, labelnames=label_names, registry=target
             )
-        elif kind == "gauge":
-            metric = Gauge(name, description, labelnames=label_names, registry=target)
         else:
             metric = Histogram(
                 name, description, labelnames=label_names, buckets=buckets, registry=target

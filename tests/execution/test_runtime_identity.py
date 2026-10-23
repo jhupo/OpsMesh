@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from opsmesh.orchestration.runtime.sandbox import trusted_manifest, validate_container
+from opsmesh.execution.runtime.manifest import trusted_manifest
+from opsmesh.execution.runtime.sandbox import validate_container
 from opsmesh.shared.errors import ConflictError
 
 

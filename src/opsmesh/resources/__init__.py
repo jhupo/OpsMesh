@@ -1,1 +1,1 @@
-"""User-scope files, directories, versions, grants and runtime policies."""
+"""Shared storage mechanisms and user-directory management."""

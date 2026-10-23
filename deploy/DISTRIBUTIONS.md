@@ -12,6 +12,10 @@ platform/protocol fields, check package SHA-256 values, and retain digest-pinned
 
 ## Decision and scope
 
+Production deployment has exactly two modes: Docker (`--mode compose`) and native Linux
+installation (`--mode systemd`). Both use the same `opsmesh-server` commands. Source
+checkouts and Python developer packages are development inputs, not a third production mode.
+
 The native operator CLI uses PyInstaller onedir builds on each native runner (Linux amd64/arm64,
 Windows amd64, macOS amd64/arm64). It bundles Python and operator host dependencies, but not the
 backend or model SDK dependency trees. Host administration still requires Linux; desktop CLIs
@@ -21,28 +25,29 @@ macOS 15 Intel and macOS 14 Apple Silicon. Older OS versions are not claimed as 
 attestations authenticate every archive; these are not Windows Authenticode or Apple notarization
 certificates. Local OS security prompts may therefore still apply.
 
-The server distribution supports the existing Linux amd64/glibc deployment. It contains CPython
-3.12.14 from uv's python-build-standalone distribution, locked production wheels, migrations and
-deployment assets. It does not require system Python, pip or uv to run, install or update. This is
-a self-contained Python application, not a claim of Go-like static machine-code compilation.
+The server distribution is a Linux amd64 PyInstaller onedir executable. It contains the
+runtime and native libraries needed by the server, migrations and deployment assets;
+it does not ship a complete `python/` installation or require system Python, pip or uv.
+It is not a static machine-code build. Updates replace one immutable executable directory.
 PostgreSQL, Redis and Docker remain infrastructure dependencies. Compose mode owns their declared services; direct systemd mode requires pre-provisioned PostgreSQL and Redis. Neither distribution contains a frontend.
 
-PyInstaller is build-only. Its documented dynamic-import collection limitations make freezing
-the entire plugin/SDK-heavy backend less reliable than shipping its complete Python environment.
-Nuitka would add a compiler toolchain and plugin maintenance without removing native SDK/data
-requirements. PEX/shiv would still require a suitable interpreter. Existing uv owns interpreter
-distribution and locked package installation; there is no custom dependency resolver or updater
-daemon.
+PyInstaller is build-only. Native dependencies and dynamically loaded modules are collected
+from locked wheels; Temporal sandbox imports retain necessary source files. The release gate
+must exercise the frozen directory before upload. Plugin code is installed separately in the
+persistent host plugin directory. API, Worker and Gateway watch published plugin generations
+and reload them; service restart is not required for normal package activation.
 
 References: https://pyinstaller.org/en/stable/operating-mode.html and
 https://docs.astral.sh/uv/guides/install-python/ .
 
 ## Runtime contract
 
-`opsmesh-server version`, `check`, `api`, `worker`, `migrate`, `bootstrap-admin`,
-`reset-admin-password` also uses only the interpreter
-and wheels inside the extracted archive. Paths are resolved relative to the executable launcher;
-configuration remains in the caller's working directory/environment. No secrets enter archives.
+`opsmesh-server version`, `check`, `api`, `worker`, `gateway`, `migrate`, `init-admin`,
+`bootstrap-admin`, `reset-admin-password` and `cleanup-login-sessions` use the shared
+server command implementation in either deployment mode.
+Native installations resolve paths relative to the executable directory; Docker uses `/app`.
+`--directory` explicitly selects another working directory. Configuration is read from that
+directory's `.env` and process environment. No secrets enter archives.
 Systemd uses the same launcher. Host release operations run only when explicitly invoked by an
 administrator and are independent of the application API lifecycle.
 
@@ -53,31 +58,33 @@ API/worker readiness. Only those tested archives enter signing/publication.
 The release manifest and checksums enumerate native archives as well as Python developer packages.
 
 Source code is packaged from `src/opsmesh` under the `opsmesh` import name. Server archives copy
-Alembic assets into `migrations/`; native launchers import `opsmesh.bootstrap.server_cli`.
-Old `backend.*` packages and path aliases are not shipped. Build with `uv build --all-packages`
+Alembic assets into `migrations/`; native launchers import `opsmesh.bootstrap.cli`.
+Build with `uv build --all-packages`
 to produce source distributions and then wheels from those distributions. Direct wheel builds
 can reuse a stale setuptools `build/lib` directory; the release gate compares wheel contents
 with current source before accepting the artifacts.
 
 ## Required release acceptance configuration
 
-The release gate runs `scripts/check_product_acceptance.py` against disposable PostgreSQL,
-Redis, Temporal and Docker infrastructure. It exercises external inference, MCP, approval,
-installed extensions, configuration/flow execution, resident concurrency, cancellation and
-replay. Missing configuration, skipped scenarios and failed scenarios block publication.
+CI runs current tests against disposable PostgreSQL, Redis, Temporal and Docker.
+Release validation additionally requires the native SDK model/tool/session smoke and
+`scripts/check_runtime_image.py` for a Docker sandbox and MCP stdio round trip.
+These focused checks do not certify the complete OpsMesh Agent/Workflow lifecycle;
+the retired provider/revision acceptance runner has been removed. Coverage gaps are
+listed in [tests/README.md](../tests/README.md).
 Ordinary pull requests do not receive the external model credential.
 
-Configure the repository secret `OPSMESH_TEST_MODEL_API_KEY` and repository variables
+Configure the repository secrets `OPSMESH_TEST_MODEL_API_KEY`,
 `OPSMESH_TEST_MODEL_BASE_URL` and `OPSMESH_TEST_MODEL_NAME` for an isolated acceptance upstream.
 `OPSMESH_TEST_MODEL_REASONING_EFFORT` selects the reasoning effort (defaults to `medium`).
 The selected model must support the Responses API and tool calls. Keep credentials out of
-repository files. The reusable release workflow passes the secret only to the product
-acceptance step; release packaging and publication jobs do not receive it.
+repository files. The reusable release workflow passes the secret only to the native SDK
+smoke step; release packaging and publication jobs do not receive it.
 
-Local Linux acceptance uses the same script with the `OPSMESH_TEST_*` infrastructure variables
-listed in that script and a freshly built SDK wheel. Use a disposable database: the fixture
-creates the initial schema and truncates feature tables between scenarios. Product reports
-are recorded under `reports/`; the workflow uploads redacted diagnostics.
+Run local checks only when explicitly requested. Use the `OPSMESH_TEST_*` variables declared
+by the selected tests and a disposable database: fixtures migrate to head and truncate
+current and known retired feature tables between scenarios. Redacted CI diagnostics are
+recorded under `reports/`. A skipped external check is unverified.
 
 The default container Worker and compute image both run as UID/GID 10001 so bind-mounted
 working directories remain writable without world-write permissions. Systemd uses separate

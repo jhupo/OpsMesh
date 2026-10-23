@@ -1,8 +1,4 @@
-"""Exercise an attested V4 release on a disposable Linux Actions host.
-
-First-version acceptance installs from an empty database. It never imports a
-pre-V4 installation or treats an old release as a supported schema predecessor.
-"""
+"""Exercise fresh installation, a workflow instance and snapshot restore on Linux."""
 
 from __future__ import annotations
 
@@ -13,7 +9,6 @@ import os
 import secrets
 import time
 from pathlib import Path
-from uuid import uuid4
 
 import httpx
 from opsmesh_operator.backups import BackupStore
@@ -22,7 +17,6 @@ from opsmesh_operator.deployments import deployment_for
 from opsmesh_operator.files import atomic_write
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.installer import install
-from opsmesh_operator.releases_apply import change_admission
 
 
 def prepare_systemd(root: Path) -> None:
@@ -37,7 +31,7 @@ def prepare_systemd(root: Path) -> None:
         "OPSMESH_TEMPORAL_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal",
         "OPSMESH_TEMPORAL_VISIBILITY_DATABASE_URL": f"postgresql://temporal:{temporal_password}@127.0.0.1:5433/temporal_visibility",
         "OPSMESH_STORAGE_ROOT": str(root / "data/storage"),
-        "OPSMESH_TEMPORAL_WORKER_IDENTITY": "v4-managed-acceptance",
+        "OPSMESH_TEMPORAL_WORKER_IDENTITY": "managed-acceptance",
         "OPSMESH_INVITATION_HASH_PEPPER": secrets.token_hex(32),
         "OPSMESH_CREDENTIAL_ENCRYPTION_KEY": base64.urlsafe_b64encode(
             secrets.token_bytes(32)
@@ -60,7 +54,7 @@ def main() -> None:
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0:
         raise ValueError("Managed acceptance requires a disposable GitHub Actions Linux root host")
-    root = Path("/opt/opsmesh-v4-acceptance")
+    root = Path("/opt/opsmesh-managed-acceptance")
     if root.exists() or Path("/opt/opsmesh/installation.json").exists():
         raise ValueError("Refusing to overwrite an installation")
     root.mkdir(mode=0o750)
@@ -69,14 +63,32 @@ def main() -> None:
     installation = Installation(
         root=root,
         mode=args.mode,
-        temporal_service_unit="v4-acceptance-temporal.service" if args.mode == "systemd" else None,
+        temporal_service_unit=(
+            "opsmesh-acceptance-temporal.service" if args.mode == "systemd" else None
+        ),
     )
     credentials = install(installation, args.tag, "https://acceptance.invalid")
-    manifest = installation.current()
-    if manifest.database_revision != "0001_v4_initial" or manifest.upgrade_from_revisions:
-        raise AssertionError(
-            "First V4 acceptance requires the initial schema without historical predecessors"
+    from opsmesh_operator.commands import run_command
+
+    executable = root / "operator/opsmesh"
+    assert json.loads(run_command([str(executable), "version"]))["version"] == args.tag[1:]
+    discovered = json.loads(
+        run_command(
+            [
+                str(executable),
+                "--root",
+                str(root),
+                "update",
+                "--check",
+                "--version",
+                args.tag,
+            ]
         )
+    )
+    assert discovered["update_available"] is False
+    manifest = installation.current()
+    if not manifest.database_revision:
+        raise AssertionError("The release must declare its current migration head")
     with httpx.Client(base_url="http://127.0.0.1:8000", timeout=30, trust_env=False) as api:
         login = api.post(
             "/api/v1/auth/login",
@@ -91,34 +103,41 @@ def main() -> None:
             response.raise_for_status()
             return response.json()
 
-        path = "/platform/settings/acceptance/snapshot"
-        request("PUT", path, {"value": {"marker": "before"}})
         definition = request(
             "POST",
-            "/orchestration/definitions",
+            "/workflows",
             {
                 "name": "Snapshot evidence",
-                "spec": {
-                    "graph": {"nodes": [{"key": "receipt", "kind": "wait", "wait_seconds": 1}]}
-                },
+                "spec": {"graph": {"nodes": [{"key": "receipt", "kind": "wait", "seconds": 1}]}},
             },
         )
         revision = request(
             "POST",
-            f"/orchestration/definitions/{definition['id']}/publish",
+            f"/workflows/{definition['id']}/publish",
             {"expected_revision": definition["revision"]},
         )
-        response = api.post(
-            "/api/v1/orchestration/runs",
-            params={"idempotency_key": "snapshot-flow"},
-            json={"revision_id": revision["id"]},
+        instance = request(
+            "POST",
+            "/workflows/instances",
+            {
+                "revision_id": revision["id"],
+                "name": "Snapshot instance",
+                "request_key": "snapshot-instance",
+            },
         )
-        response.raise_for_status()
-        run_id = response.json()["id"]
+        run_id = request(
+            "POST",
+            "/workflows/runs",
+            {
+                "instance_id": instance["id"],
+                "request_key": "snapshot-flow",
+                "input": {},
+            },
+        )["id"]
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
-            flow = request("GET", f"/orchestration/runs/{run_id}")
-            if flow["status"] == "succeeded":
+            flow = request("GET", f"/workflows/runs/{run_id}")
+            if flow["status"] == "completed":
                 break
             if flow["status"] in {"failed", "needs_attention", "cancelled"}:
                 raise AssertionError("The installed Worker failed the real flow")
@@ -135,19 +154,26 @@ def main() -> None:
         backup = command("backup", "create")
         backup_id = str(backup["id"])
         checked = BackupStore(installation).verify(backup_id, restore_check=True)
-        assert checked["database_revision"] == "0001_v4_initial"
-        request("PUT", path, {"value": {"marker": "after"}, "expected_revision": 1})
+        assert checked["database_revision"] == manifest.database_revision
+        request(
+            "PUT",
+            f"/workflows/{definition['id']}",
+            {
+                "name": "Changed after snapshot",
+                "expected_revision": definition["revision"] + 1,
+                "spec": {"graph": {"nodes": [{"key": "receipt", "kind": "wait", "seconds": 1}]}},
+            },
+        )
         marker.write_text("after", encoding="utf-8")
         command("backup", "restore", backup_id, "--acknowledge-data-loss")
-        assert request("GET", path)["value"] == {"marker": "before"}
+        assert request("GET", f"/workflows/{definition['id']}")["name"] == "Snapshot evidence"
         assert marker.read_text(encoding="utf-8") == "before"
-        assert request("GET", f"/orchestration/runs/{run_id}")["status"] == "succeeded"
-        change_admission(request, drained=False, operation_id=str(uuid4()), timeout=120)
+        assert request("GET", f"/workflows/runs/{run_id}")["status"] == "completed"
         deployment = deployment_for(installation)
         deployment.stop()
         deployment.start(manifest)
         deployment.healthy()
-        assert request("GET", f"/orchestration/runs/{run_id}")["status"] == "succeeded"
+        assert request("GET", f"/workflows/runs/{run_id}")["status"] == "completed"
         assert command("status")["version"] == args.tag.removeprefix("v")
         # Verify a corrupted snapshot is denied before restoring any database.
         dump = BackupStore(installation).path(backup_id) / "database.dump"
@@ -165,7 +191,7 @@ def main() -> None:
                 "mode": args.mode,
                 "schema": manifest.database_revision,
                 "installed": True,
-                "flow": "succeeded",
+                "flow": "completed",
                 "cohort_restored": True,
                 "tamper_denied": True,
             }

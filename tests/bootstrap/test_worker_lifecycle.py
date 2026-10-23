@@ -2,11 +2,16 @@
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import opsmesh.bootstrap.worker as workers
 from tests.conftest import build_test_settings
+
+
+async def wait_for_stop(stop):
+    await stop.wait()
 
 
 def test_worker_failure_stops_dispatch_and_releases_resources(monkeypatch):
@@ -32,7 +37,11 @@ def test_worker_failure_stops_dispatch_and_releases_resources(monkeypatch):
 
         async def assemble(settings, resources):
             resources.callback(released.append, "resources")
-            return SimpleNamespace(worker=Worker(), dispatcher=Dispatcher())
+            return SimpleNamespace(
+                worker=Worker(),
+                dispatcher=Dispatcher(),
+                schedules=SimpleNamespace(run=AsyncMock(side_effect=wait_for_stop)),
+            )
 
         monkeypatch.setattr(workers, "build_dispatch_worker", assemble)
         stop = asyncio.Event()
@@ -73,7 +82,11 @@ def test_process_cancellation_stops_both_tasks_and_releases_resources(monkeypatc
 
         async def assemble(settings, resources):
             resources.callback(released.append, "resources")
-            return SimpleNamespace(worker=Worker(), dispatcher=Dispatcher())
+            return SimpleNamespace(
+                worker=Worker(),
+                dispatcher=Dispatcher(),
+                schedules=SimpleNamespace(run=AsyncMock(side_effect=wait_for_stop)),
+            )
 
         monkeypatch.setattr(workers, "build_dispatch_worker", assemble)
         stop = asyncio.Event()
@@ -116,7 +129,11 @@ def test_normal_dispatch_stop_waits_for_native_worker_shutdown(monkeypatch):
 
         async def assemble(settings, resources):
             resources.callback(finished.append, "resources")
-            return SimpleNamespace(worker=Worker(), dispatcher=Dispatcher())
+            return SimpleNamespace(
+                worker=Worker(),
+                dispatcher=Dispatcher(),
+                schedules=SimpleNamespace(run=AsyncMock(side_effect=wait_for_stop)),
+            )
 
         monkeypatch.setattr(workers, "build_dispatch_worker", assemble)
         await asyncio.wait_for(

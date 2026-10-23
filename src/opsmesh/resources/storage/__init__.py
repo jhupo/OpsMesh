@@ -1,1 +1,1 @@
-"""Resource content storage and failure compensation."""
+"""Storage contracts and backend implementations, independent of business authorization."""

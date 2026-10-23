@@ -1,5 +1,0 @@
-interface:
-  display_name: "Improve Codebase Architecture"
-  short_description: "Review scoped backend architecture changes"
-policy:
-  allow_implicit_invocation: false

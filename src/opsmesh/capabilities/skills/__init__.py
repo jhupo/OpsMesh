@@ -1,1 +1,0 @@
-"""Standard skill capability definitions."""

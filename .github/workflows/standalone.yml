@@ -62,7 +62,7 @@ jobs:
           name: ${{ inputs.wheels-artifact }}
           path: wheels
       - if: inputs.wheels-artifact == ''
-        run: uv build --package opsmesh-operator --out-dir wheels
+        run: uv build --all-packages --out-dir wheels
       - name: Build native CLI from the locked wheel
         run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocated CLI without system Python
@@ -78,7 +78,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: pgvector/pgvector:0.8.6-pg16-bookworm
+        image: postgres:16-bookworm
         env:
           POSTGRES_DB: opsmesh
           POSTGRES_USER: opsmesh
@@ -106,7 +106,7 @@ jobs:
           path: wheels
       - if: inputs.wheels-artifact == ''
         run: uv build --all-packages --out-dir wheels
-      - name: Build self-contained server from locked wheels and CPython
+      - name: Build frozen server executable from locked wheels
         run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocation, real migrations, API, worker and operator without system Python
         # Namespace initialization is a one-shot job; the server and its DB persist for acceptance.

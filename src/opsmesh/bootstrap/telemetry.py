@@ -16,8 +16,8 @@ from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from opentelemetry.util.types import Attributes, AttributeValue
 from temporalio.contrib.opentelemetry import ReplaySafeTracerProvider, create_tracer_provider
 
+from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.config import Settings
-from opsmesh.platform.policies.redaction import PLATFORM_REDACTION
 from opsmesh.shared.security.redaction import is_sensitive_payload_key, redact_sensitive_text
 from opsmesh.telemetry.exporters import configure_log_export, configure_trace_export
 from opsmesh.telemetry.instrumentation import (

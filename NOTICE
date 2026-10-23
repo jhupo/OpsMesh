@@ -9,9 +9,19 @@ The original copyright and permission notice is retained in LICENSE-MIT.
 This change does not revoke licenses already granted for earlier versions.
 Third-party dependencies retain their respective licenses.
 
-The backend skills under `.agents/skills` retain MIT-licensed material from
-wshobson/agents, mattpocock/skills and obra/superpowers.
-The code-simplifier skill contains adapted Apache-2.0-licensed material from
-anthropics/claude-plugins-official.
-Pinned sources are recorded in `.agents/skills/README.md`; each skill directory
-retains its upstream LICENSE file. License trailing whitespace is normalized.
+Native QQ and DingTalk adapters reference the protocol implementations in
+TencentCloud/octop-gateway 1.0.3 under the MIT License.
+Copyright (c) 2026 Octop.
+Source: https://github.com/TencentCloud/octop-gateway
+Commit: 224ed078ce20042fb5fa59240d6e3c7c34bcd67f
+The upstream runtime is no longer embedded or imported.
+The original license is retained at
+src/opsmesh/gateway/adapters/UPSTREAM-LICENSE.
+
+The openai-knowledge and docs-sync skills under `.agents/skills` are adapted
+from openai/openai-agents-python, Copyright (c) 2025 OpenAI, under the MIT License.
+The pinned source and adaptation scope are recorded in `.agents/README.md`;
+the license is retained in `.agents/UPSTREAM-LICENSE`.
+The find-skills skill is from vercel-labs/skills under the MIT License;
+its pinned source is recorded in `.agents/skills/README.md` and its license
+is retained in `.agents/skills/find-skills/LICENSE`.

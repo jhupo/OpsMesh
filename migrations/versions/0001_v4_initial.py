@@ -1,11 +1,12 @@
-"""Initial basic orchestration schema, sealed from empty PostgreSQL.
+"""Initial current-framework schema for an empty PostgreSQL database.
 
-No historical schema upgrade or downgrade is supported. This revision owns
-all table definitions; application metadata is never used to create tables.
+No historical upgrade or downgrade is supported. All definitions are frozen
+here; application metadata is not imported when applying the migration.
 """
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import Text
 from sqlalchemy.dialects import postgresql
 
 revision = "0001_v4_initial"
@@ -47,75 +48,6 @@ def upgrade() -> None:
         op.f("ix_account_invitations_email"), "account_invitations", ["email"], unique=False
     )
     op.create_table(
-        "approval_requests",
-        sa.Column("request_key", sa.String(length=200), nullable=False),
-        sa.Column("approver_role", sa.String(length=100), nullable=True),
-        sa.Column("kind", sa.String(length=100), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("title", sa.String(length=200), nullable=False),
-        sa.Column("summary", sa.String(length=2000), nullable=False),
-        sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("target_type", sa.String(length=100), nullable=False),
-        sa.Column("target_id", sa.String(length=200), nullable=False),
-        sa.Column("target_version", sa.String(length=100), nullable=True),
-        sa.Column("approver_user_id", sa.UUID(), nullable=True),
-        sa.Column("requester_user_id", sa.UUID(), nullable=True),
-        sa.Column("requester_installation_id", sa.UUID(), nullable=True),
-        sa.Column("requester_invocation_id", sa.UUID(), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("decided_by_user_id", sa.UUID(), nullable=True),
-        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("decision_reason", sa.Text(), nullable=True),
-        sa.Column("decision_idempotency_key", sa.String(length=200), nullable=True),
-        sa.Column("cancelled_reason", sa.Text(), nullable=True),
-        sa.Column("input_digest", sa.String(length=64), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "(approver_user_id IS NULL) <> (approver_role IS NULL)",
-            name=op.f("ck_approval_requests_ck_approval_requests_one_approver"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_approval_requests")),
-        sa.UniqueConstraint(
-            "kind", "target_type", "target_id", "request_key", name="uq_approval_requests_attempt"
-        ),
-    )
-    op.create_table(
-        "audit_append_receipts",
-        sa.Column("idempotency_scope", sa.String(length=255), nullable=False),
-        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
-        sa.Column("input_digest", sa.String(length=64), nullable=False),
-        sa.Column("event_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_append_receipts")),
-        sa.UniqueConstraint(
-            "idempotency_scope", "idempotency_key", name="uq_audit_receipts_scope_key"
-        ),
-    )
-    op.create_table(
         "audit_events",
         sa.Column("sequence", sa.BigInteger(), sa.Identity(always=False), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
@@ -129,122 +61,16 @@ def upgrade() -> None:
         sa.Column("trace_id", sa.String(length=128), nullable=True),
         sa.Column("actor_type", sa.String(length=20), nullable=False),
         sa.Column("actor_id", sa.String(length=128), nullable=True),
-        sa.Column("configuration_id", sa.UUID(), nullable=True),
-        sa.Column("installation_id", sa.UUID(), nullable=True),
-        sa.Column("instance_id", sa.UUID(), nullable=True),
-        sa.Column("invocation_id", sa.UUID(), nullable=True),
-        sa.Column("package_key", sa.String(length=100), nullable=True),
-        sa.Column("configuration_revision", sa.String(length=100), nullable=True),
         sa.Column("action", sa.String(length=200), nullable=False),
         sa.Column("target_type", sa.String(length=200), nullable=False),
         sa.Column("target_id", sa.String(length=200), nullable=False),
         sa.Column("summary", sa.String(length=2000), nullable=False),
-        sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("evidence_refs", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("details", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("evidence_refs", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("source", sa.String(length=30), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_events")),
         sa.UniqueConstraint("sequence", name=op.f("uq_audit_events_sequence")),
-    )
-    op.create_table(
-        "execution_environments",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("principal_id", sa.Uuid(), nullable=False),
-        sa.Column("owner_ref", sa.String(length=200), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("capacity_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("active_operation_id", sa.String(length=240), nullable=True),
-        sa.Column("native_session_id", sa.Uuid(), nullable=True),
-        sa.Column("encrypted_state", sa.Text(), nullable=True),
-        sa.Column("encryption_key_id", sa.String(length=100), nullable=True),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('pending','creating','ready','resuming','closing','closed','needs_attention')",
-            name=op.f("ck_execution_environments_valid_status"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_environments")),
-        sa.UniqueConstraint(
-            "native_session_id", name=op.f("uq_execution_environments_native_session_id")
-        ),
-    )
-    op.create_index(
-        op.f("ix_execution_environments_scope_id"),
-        "execution_environments",
-        ["scope_id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_execution_environments_scope_owner",
-        "execution_environments",
-        ["scope_id", "owner_ref"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_sessions",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("principal_id", sa.Uuid(), nullable=False),
-        sa.Column("configuration_id", sa.Uuid(), nullable=True),
-        sa.Column("owner_ref", sa.String(length=512), nullable=False),
-        sa.Column("status", sa.String(length=16), server_default="open", nullable=False),
-        sa.Column("next_sequence", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("history_revision", sa.BigInteger(), server_default="0", nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('open', 'closing', 'closed', 'blocked')",
-            name=op.f("ck_execution_sessions_valid_status"),
-        ),
-        sa.CheckConstraint(
-            "next_sequence >= 1", name=op.f("ck_execution_sessions_positive_sequence")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_sessions")),
-    )
-    op.create_index(
-        op.f("ix_execution_sessions_configuration_id"),
-        "execution_sessions",
-        ["configuration_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_execution_sessions_scope_id"), "execution_sessions", ["scope_id"], unique=False
-    )
-    op.create_index(
-        "ix_execution_sessions_scope_owner",
-        "execution_sessions",
-        ["scope_id", "owner_ref"],
-        unique=False,
-    )
-    op.create_index(
-        "uq_execution_sessions_configuration_user_open",
-        "execution_sessions",
-        ["configuration_id", "principal_id"],
-        unique=True,
-        postgresql_where=sa.text("status = 'open' AND configuration_id IS NOT NULL"),
     )
     op.create_table(
         "http_creation_receipts",
@@ -267,58 +93,6 @@ def upgrade() -> None:
             "key_digest",
             name=op.f("pk_http_creation_receipts"),
         ),
-    )
-    op.create_table(
-        "platform_admission",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("drained", sa.Boolean(), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_admission")),
-    )
-    op.create_table(
-        "platform_policies",
-        sa.Column("key", sa.String(length=100), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_policies")),
-        sa.UniqueConstraint("key", name=op.f("uq_platform_policies_key")),
-    )
-    op.create_table(
-        "resource_file_contents",
-        sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("size", sa.BigInteger(), nullable=False),
-        sa.Column("storage_key", sa.String(length=1000), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_file_contents")),
-    )
-    op.create_index(
-        op.f("ix_resource_file_contents_digest"), "resource_file_contents", ["digest"], unique=False
     )
     op.create_table(
         "temporal_dispatches",
@@ -375,8 +149,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=320), nullable=False),
         sa.Column("display_name", sa.String(length=100), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("platform_roles", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("work_root", sa.String(length=500), nullable=True),
+        sa.Column("platform_roles", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("avatar_content", sa.LargeBinary(), nullable=True),
         sa.Column("avatar_content_type", sa.String(length=50), nullable=True),
         sa.Column("avatar_updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -397,15 +170,70 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
     op.create_table(
+        "agent_definitions",
+        sa.Column("owner_user_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=120), nullable=False),
+        sa.Column("description", sa.String(length=2000), nullable=False),
+        sa.Column("visibility", sa.String(length=16), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("published_number", sa.Integer(), nullable=False),
+        sa.Column("draft", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "status IN ('active', 'archived')", name=op.f("ck_agent_definitions_agent_status")
+        ),
+        sa.CheckConstraint(
+            "visibility IN ('private', 'public')",
+            name=op.f("ck_agent_definitions_agent_visibility"),
+        ),
+        sa.CheckConstraint(
+            "revision > 0 AND published_number >= 0",
+            name=op.f("ck_agent_definitions_agent_revision"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["owner_user_id"], ["users.id"], name=op.f("fk_agent_definitions_owner_user_id_users")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_definitions")),
+    )
+    op.create_index(
+        op.f("ix_agent_definitions_owner_user_id"),
+        "agent_definitions",
+        ["owner_user_id"],
+        unique=False,
+    )
+    op.create_table(
         "capability_definitions",
-        sa.Column("type", sa.String(length=20), nullable=False),
+        sa.Column("type", sa.String(length=16), nullable=False),
         sa.Column("key", sa.String(length=100), nullable=False),
         sa.Column("name", sa.String(length=160), nullable=False),
         sa.Column("description", sa.String(length=2000), nullable=False),
         sa.Column("visibility", sa.String(length=16), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("source", sa.String(length=16), nullable=False),
-        sa.Column("created_by_user_id", sa.UUID(), nullable=True),
+        sa.Column("created_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("version", sa.String(length=100), nullable=False),
+        sa.Column("publication_status", sa.String(length=16), nullable=False),
+        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("resource_manifest", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("dependencies", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("digest", sa.String(length=64), nullable=True),
+        sa.Column("package_digest", sa.String(length=64), nullable=True),
+        sa.Column("package_size", sa.BigInteger(), nullable=True),
+        sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("published_by_user_id", sa.UUID(), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -419,295 +247,53 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "publication_status IN ('draft', 'published')",
+            name=op.f("ck_capability_definitions_capability_publication_status"),
+        ),
+        sa.CheckConstraint(
+            "source IN ('user', 'system')", name=op.f("ck_capability_definitions_capability_source")
+        ),
+        sa.CheckConstraint(
+            "status IN ('active', 'disabled', 'deleted')",
+            name=op.f("ck_capability_definitions_capability_status"),
+        ),
+        sa.CheckConstraint(
+            "type IN ('tool','mcp','skill')", name=op.f("ck_capability_definitions_capability_type")
+        ),
+        sa.CheckConstraint(
+            "visibility IN ('private', 'public')",
+            name=op.f("ck_capability_definitions_capability_visibility"),
+        ),
         sa.ForeignKeyConstraint(
             ["created_by_user_id"],
             ["users.id"],
             name=op.f("fk_capability_definitions_created_by_user_id_users"),
-            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["published_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_capability_definitions_published_by_user_id_users"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_capability_definitions")),
-        sa.UniqueConstraint("type", "key", name="uq_capability_definitions_type_key"),
+        sa.UniqueConstraint(
+            "created_by_user_id",
+            "type",
+            "key",
+            name=op.f("uq_capability_definitions_created_by_user_id"),
+        ),
+    )
+    op.create_index(
+        op.f("ix_capability_definitions_created_by_user_id"),
+        "capability_definitions",
+        ["created_by_user_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_capability_definitions_status"), "capability_definitions", ["status"], unique=False
     )
     op.create_index(
         op.f("ix_capability_definitions_type"), "capability_definitions", ["type"], unique=False
-    )
-    op.create_table(
-        "execution_environment_files",
-        sa.Column("environment_id", sa.UUID(), nullable=False),
-        sa.Column("path", sa.String(length=240), nullable=False),
-        sa.Column("storage_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("size", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["environment_id"],
-            ["execution_environments.id"],
-            name=op.f("fk_execution_environment_files_environment_id_execution_environments"),
-        ),
-        sa.PrimaryKeyConstraint(
-            "environment_id", "path", name=op.f("pk_execution_environment_files")
-        ),
-    )
-    op.create_table(
-        "execution_environment_operation_receipts",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("environment_id", sa.UUID(), nullable=False),
-        sa.Column("run_id", sa.Uuid(), nullable=True),
-        sa.Column("action", sa.String(length=32), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("workflow_id", sa.String(length=240), nullable=True),
-        sa.Column("revision", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("storage_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("file_path", sa.String(length=240), nullable=True),
-        sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("encrypted_result", sa.Text(), nullable=True),
-        sa.Column("encryption_key_id", sa.String(length=100), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "action IN ('create', 'resume', 'close', 'command', 'read', 'write')",
-            name=op.f("ck_execution_environment_operation_receipts_environment_receipt_action"),
-        ),
-        sa.CheckConstraint(
-            "status IN ('pending', 'started', 'completed', 'uncertain')",
-            name=op.f("ck_execution_environment_operation_receipts_valid_status"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["environment_id"],
-            ["execution_environments.id"],
-            name=op.f(
-                "fk_execution_environment_operation_receipts_environment_id_execution_environments"
-            ),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint(
-            "scope_id", "operation_id", name=op.f("pk_execution_environment_operation_receipts")
-        ),
-    )
-    op.create_index(
-        op.f("ix_execution_environment_operation_receipts_environment_id"),
-        "execution_environment_operation_receipts",
-        ["environment_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_execution_environment_operation_receipts_run_id"),
-        "execution_environment_operation_receipts",
-        ["run_id"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_mcp_connections",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("principal_id", sa.Uuid(), nullable=False),
-        sa.Column("owner_ref", sa.String(length=200), nullable=False),
-        sa.Column("name", sa.String(length=100), nullable=False),
-        sa.Column("transport", sa.String(length=32), nullable=False),
-        sa.Column("endpoint", sa.Text(), nullable=True),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("tools", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("environment_id", sa.UUID(), nullable=True),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('pending','connecting','ready','failed','closed')",
-            name=op.f("ck_execution_mcp_connections_valid_status"),
-        ),
-        sa.CheckConstraint(
-            "transport IN ('streamable_http', 'sse', 'stdio')",
-            name=op.f("ck_execution_mcp_connections_mcp_connection_transport"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["environment_id"],
-            ["execution_environments.id"],
-            name=op.f("fk_execution_mcp_connections_environment_id_execution_environments"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_mcp_connections")),
-        sa.UniqueConstraint("scope_id", "name", name="uq_execution_mcp_connections_scope_name"),
-    )
-    op.create_index(
-        op.f("ix_execution_mcp_connections_environment_id"),
-        "execution_mcp_connections",
-        ["environment_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_execution_mcp_connections_scope_id"),
-        "execution_mcp_connections",
-        ["scope_id"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_model_operations",
-        sa.Column("principal_id", sa.UUID(), nullable=False),
-        sa.Column("configuration_id", sa.Uuid(), nullable=True),
-        sa.Column("source_ref", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("request_ciphertext", sa.Text(), nullable=False),
-        sa.Column("result_ciphertext", sa.Text(), nullable=True),
-        sa.Column("reconciliation_ciphertext", sa.Text(), nullable=True),
-        sa.Column("token_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("capacity_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["principal_id"],
-            ["users.id"],
-            name=op.f("fk_execution_model_operations_principal_id_users"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_model_operations")),
-    )
-    op.create_table(
-        "execution_runs",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("principal_id", sa.Uuid(), nullable=False),
-        sa.Column("initiated_by_id", sa.Uuid(), nullable=True),
-        sa.Column("owner_ref", sa.String(length=200), nullable=False),
-        sa.Column("session_id", sa.UUID(), nullable=False),
-        sa.Column("sequence", sa.BigInteger(), nullable=False),
-        sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("request_ciphertext", sa.Text(), nullable=False),
-        sa.Column("result_ciphertext", sa.Text(), nullable=True),
-        sa.Column("usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("event_sequence", sa.BigInteger(), nullable=False),
-        sa.Column("capacity_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("capacity_epoch", sa.BigInteger(), server_default="0", nullable=False),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('queued','preparing','running','waiting_approval','cancelling','finalizing','succeeded','failed','cancelled','timed_out','needs_attention')",
-            name=op.f("ck_execution_runs_run_status"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["session_id"],
-            ["execution_sessions.id"],
-            name=op.f("fk_execution_runs_session_id_execution_sessions"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_runs")),
-        sa.UniqueConstraint("session_id", "sequence", name="uq_execution_runs_session_sequence"),
-    )
-    op.create_index(
-        op.f("ix_execution_runs_scope_id"), "execution_runs", ["scope_id"], unique=False
-    )
-    op.create_index(
-        "ix_execution_runs_scope_owner",
-        "execution_runs",
-        ["scope_id", "owner_ref", "created_at"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_session_history_batches",
-        sa.Column("session_id", sa.UUID(), nullable=False),
-        sa.Column("run_id", sa.Uuid(), nullable=True),
-        sa.Column("committed_revision", sa.BigInteger(), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["session_id"],
-            ["execution_sessions.id"],
-            name=op.f("fk_execution_session_history_batches_session_id_execution_sessions"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_session_history_batches")),
-        sa.UniqueConstraint("run_id", name="uq_execution_session_history_batch_run"),
-        sa.UniqueConstraint("session_id", "committed_revision", name="uq_session_history_revision"),
-    )
-    op.create_index(
-        op.f("ix_execution_session_history_batches_session_id"),
-        "execution_session_history_batches",
-        ["session_id"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_session_operation_receipts",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("operation_id", sa.String(length=512), nullable=False),
-        sa.Column("session_id", sa.UUID(), nullable=False),
-        sa.Column("run_id", sa.Uuid(), nullable=True),
-        sa.Column("method", sa.String(length=32), nullable=False),
-        sa.Column("status", sa.String(length=16), server_default="completed", nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("result", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "method IN ('get_items', 'add_items', 'pop_item', 'clear_session')",
-            name=op.f("ck_execution_session_operation_receipts_session_receipt_method"),
-        ),
-        sa.CheckConstraint(
-            "status = 'completed'",
-            name=op.f("ck_execution_session_operation_receipts_session_receipt_status"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["session_id"],
-            ["execution_sessions.id"],
-            name=op.f("fk_execution_session_operation_receipts_session_id_execution_sessions"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint(
-            "operation_id", "session_id", name=op.f("pk_execution_session_operation_receipts")
-        ),
-    )
-    op.create_index(
-        op.f("ix_execution_session_operation_receipts_scope_id"),
-        "execution_session_operation_receipts",
-        ["scope_id"],
-        unique=False,
     )
     op.create_table(
         "login_sessions",
@@ -737,41 +323,13 @@ def upgrade() -> None:
     )
     op.create_index("ix_login_sessions_user_id", "login_sessions", ["user_id"], unique=False)
     op.create_table(
-        "orchestration_definitions",
-        sa.Column("owner_id", sa.UUID(), nullable=False),
+        "model_providers",
         sa.Column("name", sa.String(length=120), nullable=False),
-        sa.Column("kind", sa.String(length=20), nullable=False),
-        sa.Column("visibility", sa.String(length=16), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("owner_user_id", sa.UUID(), nullable=True),
+        sa.Column("protocol", sa.String(length=32), nullable=False),
         sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("published_number", sa.Integer(), nullable=False),
-        sa.Column("draft", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["owner_id"], ["users.id"], name=op.f("fk_orchestration_definitions_owner_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_definitions")),
-    )
-    op.create_table(
-        "platform_model_connections",
-        sa.Column("name", sa.String(length=120), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("provider", sa.String(length=32), nullable=False),
         sa.Column("base_url", sa.String(length=500), nullable=False),
         sa.Column("default_model", sa.String(length=200), nullable=False),
-        sa.Column("models", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("encrypted_key", sa.Text(), nullable=False),
         sa.Column("key_id", sa.String(length=100), nullable=False),
         sa.Column("key_fingerprint", sa.String(length=100), nullable=False),
@@ -780,6 +338,7 @@ def upgrade() -> None:
         sa.Column("last_probe_detail", sa.String(length=100), nullable=True),
         sa.Column("last_probe_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("probe_id", sa.Uuid(), nullable=True),
+        sa.Column("discovered_models", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("created_by_user_id", sa.UUID(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
@@ -795,146 +354,46 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "provider = 'openai'",
-            name=op.f("ck_platform_model_connections_model_connection_provider"),
+            "protocol = 'openai_responses'", name=op.f("ck_model_providers_provider_protocol")
         ),
         sa.CheckConstraint(
-            "status IN ('active', 'disabled')",
-            name=op.f("ck_platform_model_connections_model_connection_status"),
+            "status IN ('active', 'disabled')", name=op.f("ck_model_providers_provider_status")
         ),
-        sa.CheckConstraint(
-            "revision >= 1", name=op.f("ck_platform_model_connections_model_connection_revision")
-        ),
+        sa.CheckConstraint("revision >= 1", name=op.f("ck_model_providers_provider_revision")),
         sa.ForeignKeyConstraint(
             ["created_by_user_id"],
             ["users.id"],
-            name=op.f("fk_platform_model_connections_created_by_user_id_users"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_model_connections")),
-        sa.UniqueConstraint("name", name=op.f("uq_platform_model_connections_name")),
-    )
-    op.create_table(
-        "platform_operations",
-        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
-        sa.Column("owner", sa.String(length=80), nullable=False),
-        sa.Column("command", sa.String(length=120), nullable=False),
-        sa.Column("target", sa.JSON(), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("result", sa.JSON(), nullable=False),
-        sa.Column("failure_code", sa.String(length=120), nullable=True),
-        sa.Column("requested_by_user_id", sa.UUID(), nullable=False),
-        sa.Column("error_detail", sa.Text(), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
+            name=op.f("fk_model_providers_created_by_user_id_users"),
         ),
         sa.ForeignKeyConstraint(
-            ["requested_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_platform_operations_requested_by_user_id_users"),
+            ["owner_user_id"], ["users.id"], name=op.f("fk_model_providers_owner_user_id_users")
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_operations")),
-        sa.UniqueConstraint("idempotency_key", name=op.f("uq_platform_operations_idempotency_key")),
-    )
-    op.create_table(
-        "platform_policy_revisions",
-        sa.Column("policy_id", sa.UUID(), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("policy", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("actor_id", sa.Uuid(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["policy_id"],
-            ["platform_policies.id"],
-            name=op.f("fk_platform_policy_revisions_policy_id_platform_policies"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_platform_policy_revisions")),
-        sa.UniqueConstraint(
-            "policy_id", "revision", name=op.f("uq_platform_policy_revisions_policy_id")
-        ),
-    )
-    op.create_table(
-        "resource_artifacts",
-        sa.Column("source_kind", sa.String(length=20), nullable=False),
-        sa.Column("source_id", sa.Uuid(), nullable=False),
-        sa.Column("owner_user_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=260), nullable=False),
-        sa.Column("content_id", sa.UUID(), nullable=False),
-        sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("size", sa.BigInteger(), nullable=False),
-        sa.Column("media_type", sa.String(length=200), nullable=True),
-        sa.Column("storage_key", sa.String(length=1000), nullable=False),
-        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["content_id"],
-            ["resource_file_contents.id"],
-            name=op.f("fk_resource_artifacts_content_id_resource_file_contents"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["owner_user_id"],
-            ["users.id"],
-            name=op.f("fk_resource_artifacts_owner_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_artifacts")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_model_providers")),
     )
     op.create_index(
-        op.f("ix_resource_artifacts_owner_user_id"),
-        "resource_artifacts",
-        ["owner_user_id"],
-        unique=False,
+        op.f("ix_model_providers_owner_user_id"), "model_providers", ["owner_user_id"], unique=False
     )
     op.create_index(
-        op.f("ix_resource_artifacts_source_id"), "resource_artifacts", ["source_id"], unique=False
+        "uq_private_provider_name",
+        "model_providers",
+        ["owner_user_id", "name"],
+        unique=True,
+        postgresql_where=sa.text("owner_user_id IS NOT NULL"),
     )
     op.create_index(
-        op.f("ix_resource_artifacts_source_kind"),
-        "resource_artifacts",
-        ["source_kind"],
-        unique=False,
+        "uq_public_provider_name",
+        "model_providers",
+        ["name"],
+        unique=True,
+        postgresql_where=sa.text("owner_user_id IS NULL"),
     )
     op.create_table(
         "resource_directories",
         sa.Column("owner_user_id", sa.UUID(), nullable=False),
-        sa.Column("path", sa.String(length=1000), nullable=False),
-        sa.Column("parent_id", sa.UUID(), nullable=True),
+        sa.Column("name", sa.String(length=200), nullable=False),
+        sa.Column("storage_key", sa.String(length=100), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("is_default", sa.Boolean(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -947,23 +406,17 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
+        ),
+        sa.CheckConstraint(
+            "status IN ('active', 'deleted')", name=op.f("ck_resource_directories_directory_status")
         ),
         sa.ForeignKeyConstraint(
             ["owner_user_id"],
             ["users.id"],
             name=op.f("fk_resource_directories_owner_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["parent_id"],
-            ["resource_directories.id"],
-            name=op.f("fk_resource_directories_parent_id_resource_directories"),
-            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_directories")),
-        sa.UniqueConstraint(
-            "owner_user_id", "path", name="uq_resource_directories_owner_user_id_path"
-        ),
+        sa.UniqueConstraint("storage_key", name=op.f("uq_resource_directories_storage_key")),
     )
     op.create_index(
         op.f("ix_resource_directories_owner_user_id"),
@@ -971,42 +424,12 @@ def upgrade() -> None:
         ["owner_user_id"],
         unique=False,
     )
-    op.create_table(
-        "storage_reservations",
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("amount", sa.BigInteger(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("settled_amount", sa.BigInteger(), nullable=True),
-        sa.Column("idempotency_scope", sa.String(length=255), nullable=False),
-        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
-        sa.Column("input_digest", sa.String(length=64), nullable=False),
-        sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_storage_reservations_user_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_storage_reservations")),
-        sa.UniqueConstraint(
-            "user_id",
-            "idempotency_scope",
-            "idempotency_key",
-            name="uq_storage_reservations_scope_key",
-        ),
-    )
     op.create_index(
-        op.f("ix_storage_reservations_user_id"), "storage_reservations", ["user_id"], unique=False
+        "uq_resource_default_directory",
+        "resource_directories",
+        ["owner_user_id"],
+        unique=True,
+        postgresql_where=sa.text("is_default AND status = 'active'"),
     )
     op.create_table(
         "token_reservations",
@@ -1164,23 +587,11 @@ def upgrade() -> None:
         "user_quota_limits",
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("token_limit", sa.BigInteger(), nullable=True),
-        sa.Column("storage_limit_bytes", sa.BigInteger(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
             ["user_id"], ["users.id"], name=op.f("fk_user_quota_limits_user_id_users")
         ),
         sa.PrimaryKeyConstraint("user_id", name=op.f("pk_user_quota_limits")),
-    )
-    op.create_table(
-        "user_storage_accounts",
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("used_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("reserved_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_user_storage_accounts_user_id_users")
-        ),
-        sa.PrimaryKeyConstraint("user_id", name=op.f("pk_user_storage_accounts")),
     )
     op.create_table(
         "user_token_accounts",
@@ -1194,19 +605,57 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id", name=op.f("pk_user_token_accounts")),
     )
     op.create_table(
-        "capability_versions",
-        sa.Column("definition_id", sa.UUID(), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
+        "workflow_definitions",
+        sa.Column("owner_user_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=120), nullable=False),
+        sa.Column("description", sa.String(length=2000), nullable=False),
+        sa.Column("visibility", sa.String(length=16), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("resource_manifest", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("dependencies", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("flow_templates", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("digest", sa.String(length=64), nullable=True),
-        sa.Column("package_digest", sa.String(length=64), nullable=True),
-        sa.Column("package_size", sa.BigInteger(), nullable=True),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("published_by_user_id", sa.UUID(), nullable=True),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("published_number", sa.Integer(), nullable=False),
+        sa.Column("draft", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "status IN ('active', 'archived')", name=op.f("ck_workflow_definitions_workflow_status")
+        ),
+        sa.CheckConstraint(
+            "visibility IN ('private', 'public')",
+            name=op.f("ck_workflow_definitions_workflow_visibility"),
+        ),
+        sa.CheckConstraint(
+            "revision > 0 AND published_number >= 0",
+            name=op.f("ck_workflow_definitions_workflow_revision"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["owner_user_id"],
+            ["users.id"],
+            name=op.f("fk_workflow_definitions_owner_user_id_users"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workflow_definitions")),
+    )
+    op.create_index(
+        op.f("ix_workflow_definitions_owner_user_id"),
+        "workflow_definitions",
+        ["owner_user_id"],
+        unique=False,
+    )
+    op.create_table(
+        "agent_grants",
+        sa.Column("agent_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("permissions", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -1221,158 +670,26 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["definition_id"],
-            ["capability_definitions.id"],
-            name=op.f("fk_capability_versions_definition_id_capability_definitions"),
-            ondelete="RESTRICT",
+            ["agent_id"],
+            ["agent_definitions.id"],
+            name=op.f("fk_agent_grants_agent_id_agent_definitions"),
         ),
         sa.ForeignKeyConstraint(
-            ["published_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_capability_versions_published_by_user_id_users"),
-            ondelete="RESTRICT",
+            ["user_id"], ["users.id"], name=op.f("fk_agent_grants_user_id_users")
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_capability_versions")),
-        sa.UniqueConstraint(
-            "definition_id", "version", name="uq_capability_versions_definition_id_version"
-        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_grants")),
+        sa.UniqueConstraint("agent_id", "user_id", name=op.f("uq_agent_grants_agent_id")),
     )
-    op.create_index(
-        op.f("ix_capability_versions_definition_id"),
-        "capability_versions",
-        ["definition_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_capability_versions_status"), "capability_versions", ["status"], unique=False
-    )
+    op.create_index(op.f("ix_agent_grants_agent_id"), "agent_grants", ["agent_id"], unique=False)
+    op.create_index(op.f("ix_agent_grants_user_id"), "agent_grants", ["user_id"], unique=False)
     op.create_table(
-        "execution_mcp_operation_receipts",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("connection_id", sa.UUID(), nullable=False),
-        sa.Column("run_id", sa.Uuid(), nullable=True),
-        sa.Column("action", sa.String(length=32), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("workflow_id", sa.String(length=240), nullable=True),
-        sa.Column("revision", sa.Integer(), server_default="0", nullable=False),
+        "agent_invitations",
+        sa.Column("agent_id", sa.UUID(), nullable=False),
+        sa.Column("invited_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("recipient_user_id", sa.UUID(), nullable=False),
+        sa.Column("permissions", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column(
-            "result", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "action IN ('connect', 'discover', 'close')",
-            name=op.f("ck_execution_mcp_operation_receipts_mcp_receipt_action"),
-        ),
-        sa.CheckConstraint(
-            "status IN ('pending', 'started', 'completed', 'uncertain')",
-            name=op.f("ck_execution_mcp_operation_receipts_valid_status"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["connection_id"],
-            ["execution_mcp_connections.id"],
-            name=op.f(
-                "fk_execution_mcp_operation_receipts_connection_id_execution_mcp_connections"
-            ),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint(
-            "scope_id", "operation_id", name=op.f("pk_execution_mcp_operation_receipts")
-        ),
-    )
-    op.create_index(
-        op.f("ix_execution_mcp_operation_receipts_connection_id"),
-        "execution_mcp_operation_receipts",
-        ["connection_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_execution_mcp_operation_receipts_run_id"),
-        "execution_mcp_operation_receipts",
-        ["run_id"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_operation_receipts",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("kind", sa.String(length=16), nullable=False),
-        sa.Column("accounted", sa.Boolean(), nullable=False),
-        sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("result_ciphertext", sa.Text(), nullable=True),
-        sa.Column("usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("token_reservation_id", sa.Uuid(), nullable=True),
-        sa.Column("reconciliation_ciphertext", sa.Text(), nullable=True),
-        sa.Column("connection_id", sa.Uuid(), nullable=True),
-        sa.Column("environment_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "kind IN ('model', 'tool', 'mcp')",
-            name=op.f("ck_execution_operation_receipts_run_receipt_kind"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["run_id"],
-            ["execution_runs.id"],
-            name=op.f("fk_execution_operation_receipts_run_id_execution_runs"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["connection_id"],
-            ["execution_mcp_connections.id"],
-            name=op.f(
-                "fk_execution_operation_receipts_connection_id_execution_mcp_connections"
-            ),
-        ),
-        sa.PrimaryKeyConstraint(
-            "scope_id", "operation_id", name=op.f("pk_execution_operation_receipts")
-        ),
-    )
-    op.create_index(
-        op.f("ix_execution_operation_receipts_run_id"),
-        "execution_operation_receipts",
-        ["run_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_execution_operation_receipts_connection_id"),
-        "execution_operation_receipts",
-        ["connection_id"],
-        unique=False,
-    )
-    op.create_table(
-        "execution_run_approvals",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("checkpoint_key", sa.String(length=240), nullable=False),
-        sa.Column("approval_id", sa.Uuid(), nullable=True),
-        sa.Column("state_ciphertext", sa.Text(), nullable=False),
-        sa.Column("interruptions_ciphertext", sa.Text(), nullable=False),
-        sa.Column("approved", sa.Boolean(), nullable=True),
-        sa.Column("decided_by", sa.Uuid(), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
@@ -1387,127 +704,51 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'accepted', 'declined', 'revoked')",
+            name=op.f("ck_agent_invitations_agent_invitation_status"),
+        ),
         sa.ForeignKeyConstraint(
-            ["run_id"],
-            ["execution_runs.id"],
-            name=op.f("fk_execution_run_approvals_run_id_execution_runs"),
+            ["agent_id"],
+            ["agent_definitions.id"],
+            name=op.f("fk_agent_invitations_agent_id_agent_definitions"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_run_approvals")),
-        sa.UniqueConstraint(
-            "run_id", "checkpoint_key", name="uq_execution_run_approvals_run_checkpoint"
+        sa.ForeignKeyConstraint(
+            ["invited_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_agent_invitations_invited_by_user_id_users"),
         ),
+        sa.ForeignKeyConstraint(
+            ["recipient_user_id"],
+            ["users.id"],
+            name=op.f("fk_agent_invitations_recipient_user_id_users"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_invitations")),
     )
     op.create_index(
-        op.f("ix_execution_run_approvals_approval_id"),
-        "execution_run_approvals",
-        ["approval_id"],
+        op.f("ix_agent_invitations_agent_id"), "agent_invitations", ["agent_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_agent_invitations_recipient_user_id"),
+        "agent_invitations",
+        ["recipient_user_id"],
         unique=False,
     )
     op.create_index(
-        op.f("ix_execution_run_approvals_scope_id"),
-        "execution_run_approvals",
-        ["scope_id"],
-        unique=False,
+        "uq_agent_pending_invitation",
+        "agent_invitations",
+        ["agent_id", "recipient_user_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'pending'"),
     )
     op.create_table(
-        "execution_run_events",
-        sa.Column("scope_id", sa.Uuid(), nullable=False),
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("sequence", sa.BigInteger(), nullable=False),
-        sa.Column("event_key", sa.String(length=240), nullable=False),
-        sa.Column("kind", sa.String(length=64), nullable=False),
-        sa.Column("payload_ciphertext", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["run_id"],
-            ["execution_runs.id"],
-            name=op.f("fk_execution_run_events_run_id_execution_runs"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_run_events")),
-        sa.UniqueConstraint("event_key", name=op.f("uq_execution_run_events_event_key")),
-        sa.UniqueConstraint("run_id", "sequence", name="uq_execution_run_events_run_sequence"),
-    )
-    op.create_index(
-        op.f("ix_execution_run_events_scope_id"), "execution_run_events", ["scope_id"], unique=False
-    )
-    op.create_table(
-        "execution_session_history_items",
-        sa.Column("session_id", sa.UUID(), nullable=False),
-        sa.Column("batch_id", sa.UUID(), nullable=False),
-        sa.Column("position", sa.BigInteger(), nullable=False),
-        sa.Column("committed_revision", sa.BigInteger(), nullable=True),
-        sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["batch_id"],
-            ["execution_session_history_batches.id"],
-            name=op.f(
-                "fk_execution_session_history_items_batch_id_execution_session_history_batches"
-            ),
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["session_id"],
-            ["execution_sessions.id"],
-            name=op.f("fk_execution_session_history_items_session_id_execution_sessions"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_session_history_items")),
-        sa.UniqueConstraint("batch_id", "position", name="uq_session_history_item_position"),
-    )
-    op.create_index(
-        op.f("ix_execution_session_history_items_session_id"),
-        "execution_session_history_items",
-        ["session_id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_session_history_item_revision",
-        "execution_session_history_items",
-        ["session_id", "committed_revision"],
-        unique=False,
-    )
-    op.create_table(
-        "orchestration_definition_grants",
-        sa.Column("definition_id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["definition_id"],
-            ["orchestration_definitions.id"],
-            name=op.f("fk_orchestration_definition_grants_definition_id_orchestration_definitions"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_orchestration_definition_grants_user_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_definition_grants")),
-        sa.UniqueConstraint(
-            "definition_id",
-            "user_id",
-            name=op.f("uq_orchestration_definition_grants_definition_id"),
-        ),
-    )
-    op.create_table(
-        "orchestration_definition_revisions",
-        sa.Column("definition_id", sa.UUID(), nullable=False),
+        "agent_revisions",
+        sa.Column("agent_id", sa.UUID(), nullable=False),
         sa.Column("number", sa.Integer(), nullable=False),
+        sa.Column("visibility", sa.String(length=16), nullable=False),
         sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("spec", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("published_by", sa.UUID(), nullable=False),
+        sa.Column("spec", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("published_by_user_id", sa.UUID(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -1521,77 +762,65 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "visibility IN ('private', 'public')",
+            name=op.f("ck_agent_revisions_agent_release_visibility"),
+        ),
+        sa.CheckConstraint("number > 0", name=op.f("ck_agent_revisions_agent_release_number")),
         sa.ForeignKeyConstraint(
-            ["definition_id"],
-            ["orchestration_definitions.id"],
-            name=op.f(
-                "fk_orchestration_definition_revisions_definition_id_orchestration_definitions"
-            ),
+            ["agent_id"],
+            ["agent_definitions.id"],
+            name=op.f("fk_agent_revisions_agent_id_agent_definitions"),
         ),
         sa.ForeignKeyConstraint(
-            ["published_by"],
+            ["published_by_user_id"],
             ["users.id"],
-            name=op.f("fk_orchestration_definition_revisions_published_by_users"),
+            name=op.f("fk_agent_revisions_published_by_user_id_users"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_definition_revisions")),
-        sa.UniqueConstraint(
-            "definition_id",
-            "number",
-            name=op.f("uq_orchestration_definition_revisions_definition_id"),
-        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_revisions")),
+        sa.UniqueConstraint("agent_id", "number", name=op.f("uq_agent_revisions_agent_id")),
     )
     op.create_index(
-        op.f("ix_orchestration_definition_revisions_definition_id"),
-        "orchestration_definition_revisions",
-        ["definition_id"],
-        unique=False,
+        op.f("ix_agent_revisions_agent_id"), "agent_revisions", ["agent_id"], unique=False
     )
     op.create_table(
-        "platform_model_connection_grants",
-        sa.Column("connection_id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("models", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("is_default", sa.Boolean(), nullable=False),
-        sa.Column("granted_by_user_id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
+        "provider_models",
+        sa.Column("provider_id", sa.UUID(), nullable=False),
+        sa.Column("model_id", sa.String(length=200), nullable=False),
+        sa.Column("display_name", sa.String(length=200), nullable=True),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("context_tokens", sa.Integer(), nullable=True),
+        sa.Column("max_output_tokens", sa.Integer(), nullable=True),
+        sa.Column("supports_tools", sa.Boolean(), nullable=True),
+        sa.Column("supports_structured_output", sa.Boolean(), nullable=True),
+        sa.Column("supports_images", sa.Boolean(), nullable=True),
+        sa.Column("supports_reasoning", sa.Boolean(), nullable=True),
+        sa.Column("reasoning_efforts", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("default_parameters", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.CheckConstraint(
+            "context_tokens IS NULL OR context_tokens > 0",
+            name=op.f("ck_provider_models_model_context"),
         ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
+        sa.CheckConstraint(
+            "context_tokens IS NULL OR max_output_tokens IS NULL OR max_output_tokens <= context_tokens",
+            name=op.f("ck_provider_models_model_output_within_context"),
         ),
-        sa.ForeignKeyConstraint(
-            ["connection_id"],
-            ["platform_model_connections.id"],
-            name=op.f(
-                "fk_platform_model_connection_grants_connection_id_platform_model_connections"
-            ),
-        ),
-        sa.ForeignKeyConstraint(
-            ["granted_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_platform_model_connection_grants_granted_by_user_id_users"),
+        sa.CheckConstraint(
+            "max_output_tokens IS NULL OR max_output_tokens > 0",
+            name=op.f("ck_provider_models_model_output"),
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"],
-            ["users.id"],
-            name=op.f("fk_platform_model_connection_grants_user_id_users"),
+            ["provider_id"],
+            ["model_providers.id"],
+            name=op.f("fk_provider_models_provider_id_model_providers"),
         ),
-        sa.PrimaryKeyConstraint(
-            "connection_id", "user_id", name=op.f("pk_platform_model_connection_grants")
-        ),
+        sa.PrimaryKeyConstraint("provider_id", "model_id", name=op.f("pk_provider_models")),
     )
     op.create_table(
-        "resource_files",
-        sa.Column("owner_user_id", sa.UUID(), nullable=False),
+        "resource_directory_grants",
         sa.Column("directory_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=260), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("grantee_user_id", sa.UUID(), nullable=False),
+        sa.Column("permissions", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -1607,36 +836,75 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["directory_id"],
             ["resource_directories.id"],
-            name=op.f("fk_resource_files_directory_id_resource_directories"),
-            ondelete="RESTRICT",
+            name=op.f("fk_resource_directory_grants_directory_id_resource_directories"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["grantee_user_id"],
+            ["users.id"],
+            name=op.f("fk_resource_directory_grants_grantee_user_id_users"),
+        ),
+        sa.PrimaryKeyConstraint(
+            "directory_id", "grantee_user_id", name=op.f("pk_resource_directory_grants")
+        ),
+    )
+    op.create_table(
+        "sandbox_environments",
+        sa.Column("owner_user_id", sa.UUID(), nullable=False),
+        sa.Column("directory_id", sa.UUID(), nullable=False),
+        sa.Column("image", sa.String(length=500), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("active_operation_id", sa.Uuid(), nullable=True),
+        sa.Column("active_run_id", sa.Uuid(), nullable=True),
+        sa.Column("capacity_reservation_id", sa.Uuid(), nullable=False),
+        sa.Column("encrypted_state", sa.Text(), nullable=True),
+        sa.Column("state_key_id", sa.String(length=100), nullable=True),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending','ready','busy','closed','needs_attention')",
+            name=op.f("ck_sandbox_environments_status"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["directory_id"],
+            ["resource_directories.id"],
+            name=op.f("fk_sandbox_environments_directory_id_resource_directories"),
         ),
         sa.ForeignKeyConstraint(
             ["owner_user_id"],
             ["users.id"],
-            name=op.f("fk_resource_files_owner_user_id_users"),
-            ondelete="RESTRICT",
+            name=op.f("fk_sandbox_environments_owner_user_id_users"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_files")),
-        sa.UniqueConstraint(
-            "owner_user_id",
-            "directory_id",
-            "name",
-            name="uq_resource_files_owner_user_id_directory_id_name",
-        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_sandbox_environments")),
     )
     op.create_index(
-        op.f("ix_resource_files_owner_user_id"), "resource_files", ["owner_user_id"], unique=False
+        op.f("ix_sandbox_environments_directory_id"),
+        "sandbox_environments",
+        ["directory_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_sandbox_environments_owner_user_id"),
+        "sandbox_environments",
+        ["owner_user_id"],
+        unique=False,
     )
     op.create_table(
-        "capability_bindings",
-        sa.Column("owner_user_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=100), nullable=False),
-        sa.Column("version_id", sa.UUID(), nullable=False),
-        sa.Column("version_digest", sa.String(length=64), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("created_by", sa.UUID(), nullable=False),
+        "workflow_grants",
+        sa.Column("workflow_id", sa.UUID(), nullable=False),
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("permissions", postgresql.JSONB(astext_type=Text()), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -1651,30 +919,136 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["created_by"], ["users.id"], name=op.f("fk_capability_bindings_created_by_users")
+            ["user_id"], ["users.id"], name=op.f("fk_workflow_grants_user_id_users")
         ),
         sa.ForeignKeyConstraint(
-            ["owner_user_id"], ["users.id"], name=op.f("fk_capability_bindings_owner_user_id_users")
+            ["workflow_id"],
+            ["workflow_definitions.id"],
+            name=op.f("fk_workflow_grants_workflow_id_workflow_definitions"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workflow_grants")),
+        sa.UniqueConstraint("workflow_id", "user_id", name=op.f("uq_workflow_grants_workflow_id")),
+    )
+    op.create_index(
+        op.f("ix_workflow_grants_user_id"), "workflow_grants", ["user_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_workflow_grants_workflow_id"), "workflow_grants", ["workflow_id"], unique=False
+    )
+    op.create_table(
+        "workflow_invitations",
+        sa.Column("workflow_id", sa.UUID(), nullable=False),
+        sa.Column("invited_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("recipient_user_id", sa.UUID(), nullable=False),
+        sa.Column("permissions", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'accepted', 'declined', 'revoked')",
+            name=op.f("ck_workflow_invitations_workflow_invitation_status"),
         ),
         sa.ForeignKeyConstraint(
-            ["version_id"],
-            ["capability_versions.id"],
-            name=op.f("fk_capability_bindings_version_id_capability_versions"),
+            ["invited_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_workflow_invitations_invited_by_user_id_users"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_capability_bindings")),
+        sa.ForeignKeyConstraint(
+            ["recipient_user_id"],
+            ["users.id"],
+            name=op.f("fk_workflow_invitations_recipient_user_id_users"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workflow_id"],
+            ["workflow_definitions.id"],
+            name=op.f("fk_workflow_invitations_workflow_id_workflow_definitions"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workflow_invitations")),
+    )
+    op.create_index(
+        op.f("ix_workflow_invitations_recipient_user_id"),
+        "workflow_invitations",
+        ["recipient_user_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_workflow_invitations_workflow_id"),
+        "workflow_invitations",
+        ["workflow_id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_workflow_pending_invitation",
+        "workflow_invitations",
+        ["workflow_id", "recipient_user_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'pending'"),
+    )
+    op.create_table(
+        "workflow_revisions",
+        sa.Column("workflow_id", sa.UUID(), nullable=False),
+        sa.Column("number", sa.Integer(), nullable=False),
+        sa.Column("visibility", sa.String(length=16), nullable=False),
+        sa.Column("digest", sa.String(length=64), nullable=False),
+        sa.Column("spec", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("published_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "visibility IN ('private', 'public')",
+            name=op.f("ck_workflow_revisions_workflow_release_visibility"),
+        ),
+        sa.CheckConstraint(
+            "number > 0", name=op.f("ck_workflow_revisions_workflow_release_number")
+        ),
+        sa.ForeignKeyConstraint(
+            ["published_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_workflow_revisions_published_by_user_id_users"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workflow_id"],
+            ["workflow_definitions.id"],
+            name=op.f("fk_workflow_revisions_workflow_id_workflow_definitions"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_workflow_revisions")),
         sa.UniqueConstraint(
-            "owner_user_id", "name", name=op.f("uq_capability_bindings_owner_user_id")
+            "workflow_id", "number", name=op.f("uq_workflow_revisions_workflow_id")
         ),
     )
     op.create_index(
-        op.f("ix_capability_bindings_owner_user_id"),
-        "capability_bindings",
-        ["owner_user_id"],
+        op.f("ix_workflow_revisions_workflow_id"),
+        "workflow_revisions",
+        ["workflow_id"],
         unique=False,
     )
     op.create_table(
         "capability_packages",
-        sa.Column("version_id", sa.UUID(), nullable=False),
+        sa.Column("capability_id", sa.UUID(), nullable=False),
         sa.Column("filename", sa.String(length=260), nullable=False),
         sa.Column("size", sa.BigInteger(), nullable=False),
         sa.Column("digest", sa.String(length=64), nullable=False),
@@ -1693,26 +1067,23 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["version_id"],
-            ["capability_versions.id"],
-            name=op.f("fk_capability_packages_version_id_capability_versions"),
-            ondelete="RESTRICT",
+            ["capability_id"],
+            ["capability_definitions.id"],
+            name=op.f("fk_capability_packages_capability_id_capability_definitions"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_capability_packages")),
-        sa.UniqueConstraint("version_id", name=op.f("uq_capability_packages_version_id")),
+        sa.UniqueConstraint("capability_id", name=op.f("uq_capability_packages_capability_id")),
     )
     op.create_table(
-        "extension_installations",
-        sa.Column("version_id", sa.UUID(), nullable=False),
-        sa.Column("requested_by", sa.UUID(), nullable=False),
-        sa.Column("package_digest", sa.String(length=64), nullable=False),
-        sa.Column("namespace", sa.String(length=100), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("manifest", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("permission_ceiling", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("artifact", sa.String(length=240), nullable=True),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
+        "capability_publication_reviews",
+        sa.Column("capability_id", sa.UUID(), nullable=False),
+        sa.Column("digest", sa.String(length=64), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("requested_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("submission_note", sa.String(length=2000), nullable=False),
+        sa.Column("reviewed_by_user_id", sa.UUID(), nullable=True),
+        sa.Column("decision_note", sa.String(length=2000), nullable=True),
+        sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -1727,314 +1098,52 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "status IN ('requested','building','deploying','enabled','disabled','draining','removed','failed','needs_attention')",
-            name=op.f("ck_extension_installations_valid_status"),
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name=op.f("ck_capability_publication_reviews_capability_review_status"),
         ),
         sa.ForeignKeyConstraint(
-            ["requested_by"],
+            ["capability_id"],
+            ["capability_definitions.id"],
+            name=op.f("fk_capability_publication_reviews_capability_id_capability_definitions"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["requested_by_user_id"],
             ["users.id"],
-            name=op.f("fk_extension_installations_requested_by_users"),
+            name=op.f("fk_capability_publication_reviews_requested_by_user_id_users"),
         ),
         sa.ForeignKeyConstraint(
-            ["version_id"],
-            ["capability_versions.id"],
-            name=op.f("fk_extension_installations_version_id_capability_versions"),
+            ["reviewed_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_capability_publication_reviews_reviewed_by_user_id_users"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_installations")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_capability_publication_reviews")),
     )
     op.create_index(
-        op.f("ix_extension_installations_status"),
-        "extension_installations",
+        op.f("ix_capability_publication_reviews_capability_id"),
+        "capability_publication_reviews",
+        ["capability_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_capability_publication_reviews_status"),
+        "capability_publication_reviews",
         ["status"],
         unique=False,
     )
-    op.create_table(
-        "orchestration_configurations",
-        sa.Column("owner_user_id", sa.UUID(), nullable=False),
-        sa.Column("definition_revision_id", sa.UUID(), nullable=False),
-        sa.Column("root_directory_id", sa.UUID(), nullable=False),
-        sa.Column("name", sa.String(length=120), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["definition_revision_id"],
-            ["orchestration_definition_revisions.id"],
-            name=op.f(
-                "fk_orchestration_configurations_definition_revision_id_orchestration_definition_revisions"
-            ),
-        ),
-        sa.ForeignKeyConstraint(
-            ["owner_user_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configurations_owner_user_id_users"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["root_directory_id"],
-            ["resource_directories.id"],
-            name=op.f("fk_orchestration_configurations_root_directory_id_resource_directories"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configurations")),
-    )
     op.create_index(
-        op.f("ix_orchestration_configurations_owner_user_id"),
-        "orchestration_configurations",
-        ["owner_user_id"],
-        unique=False,
+        "uq_capability_pending_review",
+        "capability_publication_reviews",
+        ["capability_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'pending'"),
     )
     op.create_table(
-        "resource_file_grants",
-        sa.Column("file_id", sa.UUID(), nullable=False),
-        sa.Column("grantee_user_id", sa.UUID(), nullable=False),
-        sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("created_by_user_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["created_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_resource_file_grants_created_by_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["file_id"],
-            ["resource_files.id"],
-            name=op.f("fk_resource_file_grants_file_id_resource_files"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["grantee_user_id"],
-            ["users.id"],
-            name=op.f("fk_resource_file_grants_grantee_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_file_grants")),
-        sa.UniqueConstraint(
-            "file_id", "grantee_user_id", name="uq_resource_file_grants_file_id_grantee_user_id"
-        ),
-    )
-    op.create_index(
-        op.f("ix_resource_file_grants_file_id"), "resource_file_grants", ["file_id"], unique=False
-    )
-    op.create_table(
-        "resource_file_versions",
-        sa.Column("file_id", sa.UUID(), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("content_id", sa.UUID(), nullable=False),
-        sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("size", sa.BigInteger(), nullable=False),
-        sa.Column("media_type", sa.String(length=200), nullable=True),
-        sa.Column("created_by_user_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["content_id"],
-            ["resource_file_contents.id"],
-            name=op.f("fk_resource_file_versions_content_id_resource_file_contents"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["created_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_resource_file_versions_created_by_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["file_id"],
-            ["resource_files.id"],
-            name=op.f("fk_resource_file_versions_file_id_resource_files"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_file_versions")),
-        sa.UniqueConstraint("file_id", "version", name="uq_resource_file_versions_file_id_version"),
-    )
-    op.create_index(
-        op.f("ix_resource_file_versions_file_id"),
-        "resource_file_versions",
-        ["file_id"],
-        unique=False,
-    )
-    op.create_table(
-        "resource_runtime_policies",
-        sa.Column("file_id", sa.UUID(), nullable=False),
-        sa.Column("frozen_input_versions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("relative_paths", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("output_declarations", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("use_in_execution", sa.Boolean(), nullable=False),
-        sa.Column("updated_by_user_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["file_id"],
-            ["resource_files.id"],
-            name=op.f("fk_resource_runtime_policies_file_id_resource_files"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["updated_by_user_id"],
-            ["users.id"],
-            name=op.f("fk_resource_runtime_policies_updated_by_user_id_users"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_resource_runtime_policies")),
-        sa.UniqueConstraint("file_id", name=op.f("uq_resource_runtime_policies_file_id")),
-    )
-    op.create_table(
-        "channel_accounts",
-        sa.Column("owner_id", sa.UUID(), nullable=False),
-        sa.Column("configuration_id", sa.UUID(), nullable=True),
-        sa.Column("channel_type", sa.String(length=50), nullable=False),
-        sa.Column("external_account_id", sa.String(length=200), nullable=False),
-        sa.Column("installation_id", sa.UUID(), nullable=False),
-        sa.Column("version_id", sa.UUID(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("epoch", sa.Integer(), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f("fk_channel_accounts_configuration_id_orchestration_configurations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["installation_id"],
-            ["extension_installations.id"],
-            name=op.f("fk_channel_accounts_installation_id_extension_installations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["owner_id"], ["users.id"], name=op.f("fk_channel_accounts_owner_id_users")
-        ),
-        sa.ForeignKeyConstraint(
-            ["version_id"],
-            ["capability_versions.id"],
-            name=op.f("fk_channel_accounts_version_id_capability_versions"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_channel_accounts")),
-        sa.UniqueConstraint(
-            "owner_id",
-            "channel_type",
-            "external_account_id",
-            name=op.f("uq_channel_accounts_owner_id"),
-        ),
-    )
-    op.create_index(
-        op.f("ix_channel_accounts_configuration_id"),
-        "channel_accounts",
-        ["configuration_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_channel_accounts_owner_id"), "channel_accounts", ["owner_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_channel_accounts_status"), "channel_accounts", ["status"], unique=False
-    )
-    op.create_table(
-        "extension_instances",
-        sa.Column("installation_id", sa.UUID(), nullable=False),
-        sa.Column("owner_id", sa.UUID(), nullable=False),
-        sa.Column("environment_id", sa.Uuid(), nullable=True),
-        sa.Column("configuration_id", sa.Uuid(), nullable=True),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("model_connections", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("state_limit_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["installation_id"],
-            ["extension_installations.id"],
-            name=op.f("fk_extension_instances_installation_id_extension_installations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["owner_id"], ["users.id"], name=op.f("fk_extension_instances_owner_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_instances")),
-    )
-    op.create_index(
-        op.f("ix_extension_instances_owner_id"), "extension_instances", ["owner_id"], unique=False
-    )
-    op.create_table(
-        "flow_triggers",
-        sa.Column("principal_id", sa.UUID(), nullable=False),
-        sa.Column("initiated_by_id", sa.UUID(), nullable=False),
-        sa.Column("configuration_id", sa.UUID(), nullable=True),
+        "execution_sessions",
+        sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("revision_id", sa.UUID(), nullable=False),
-        sa.Column("kind", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("configuration", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("secret_ciphertext", sa.String(), nullable=True),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.Column("next_sequence", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -2048,36 +1157,32 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f("fk_flow_triggers_configuration_id_orchestration_configurations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["initiated_by_id"], ["users.id"], name=op.f("fk_flow_triggers_initiated_by_id_users")
-        ),
-        sa.ForeignKeyConstraint(
-            ["principal_id"], ["users.id"], name=op.f("fk_flow_triggers_principal_id_users")
-        ),
+        sa.CheckConstraint("generation > 0", name=op.f("ck_execution_sessions_session_generation")),
         sa.ForeignKeyConstraint(
             ["revision_id"],
-            ["orchestration_definition_revisions.id"],
-            name=op.f("fk_flow_triggers_revision_id_orchestration_definition_revisions"),
+            ["agent_revisions.id"],
+            name=op.f("fk_execution_sessions_revision_id_agent_revisions"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_triggers")),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"], name=op.f("fk_execution_sessions_user_id_users")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_sessions")),
     )
     op.create_index(
-        op.f("ix_flow_triggers_configuration_id"),
-        "flow_triggers",
-        ["configuration_id"],
-        unique=False,
+        op.f("ix_execution_sessions_user_id"), "execution_sessions", ["user_id"], unique=False
     )
     op.create_table(
-        "orchestration_configuration_closures",
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("requested_by_id", sa.UUID(), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("detail", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        "mcp_connections",
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("capability_id", sa.UUID(), nullable=False),
+        sa.Column("capability_digest", sa.String(length=64), nullable=False),
+        sa.Column("environment_id", sa.UUID(), nullable=True),
+        sa.Column("request_key", sa.String(length=200), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("host_id", sa.Uuid(), nullable=True),
+        sa.Column("tools", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("tools_digest", sa.String(length=64), nullable=True),
+        sa.Column("operation_id", sa.Uuid(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -2092,322 +1197,36 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f(
-                "fk_orchestration_configuration_closures_configuration_id_orchestration_configurations"
-            ),
+            ["capability_id"],
+            ["capability_definitions.id"],
+            name=op.f("fk_mcp_connections_capability_id_capability_definitions"),
         ),
         sa.ForeignKeyConstraint(
-            ["requested_by_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configuration_closures_requested_by_id_users"),
+            ["environment_id"],
+            ["sandbox_environments.id"],
+            name=op.f("fk_mcp_connections_environment_id_sandbox_environments"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configuration_closures")),
-        sa.UniqueConstraint(
-            "configuration_id",
-            name=op.f("uq_orchestration_configuration_closures_configuration_id"),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"], name=op.f("fk_mcp_connections_user_id_users")
         ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_mcp_connections")),
+        sa.UniqueConstraint("user_id", "request_key", name=op.f("uq_mcp_connections_user_id")),
+    )
+    op.create_index(
+        op.f("ix_mcp_connections_user_id"), "mcp_connections", ["user_id"], unique=False
     )
     op.create_table(
-        "orchestration_configuration_invitations",
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("invited_user_id", sa.UUID(), nullable=False),
-        sa.Column("invited_by_id", sa.UUID(), nullable=False),
-        sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("directory_access", sa.Boolean(), nullable=False),
+        "sandbox_operations",
+        sa.Column("environment_id", sa.UUID(), nullable=False),
+        sa.Column("requested_by_user_id", sa.UUID(), nullable=False),
+        sa.Column("request_key", sa.String(length=200), nullable=False),
+        sa.Column("action", sa.String(length=16), nullable=False),
+        sa.Column("fingerprint", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f(
-                "fk_orchestration_configuration_invitations_configuration_id_orchestration_configurations"
-            ),
-        ),
-        sa.ForeignKeyConstraint(
-            ["invited_by_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configuration_invitations_invited_by_id_users"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["invited_user_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configuration_invitations_invited_user_id_users"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configuration_invitations")),
-    )
-    op.create_table(
-        "orchestration_configuration_members",
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("permissions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("directory_access", sa.Boolean(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f(
-                "fk_orchestration_configuration_members_configuration_id_orchestration_configurations"
-            ),
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configuration_members_user_id_users"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configuration_members")),
-        sa.UniqueConstraint(
-            "configuration_id",
-            "user_id",
-            name=op.f("uq_orchestration_configuration_members_configuration_id"),
-        ),
-    )
-    op.create_table(
-        "orchestration_configuration_revisions",
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("number", sa.Integer(), nullable=False),
-        sa.Column("specification", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("frozen_bindings", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("created_by_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f(
-                "fk_orchestration_configuration_revisions_configuration_id_orchestration_configurations"
-            ),
-        ),
-        sa.ForeignKeyConstraint(
-            ["created_by_id"],
-            ["users.id"],
-            name=op.f("fk_orchestration_configuration_revisions_created_by_id_users"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configuration_revisions")),
-        sa.UniqueConstraint(
-            "configuration_id",
-            "number",
-            name=op.f("uq_orchestration_configuration_revisions_configuration_id"),
-        ),
-    )
-    op.create_index(
-        op.f("ix_orchestration_configuration_revisions_configuration_id"),
-        "orchestration_configuration_revisions",
-        ["configuration_id"],
-        unique=False,
-    )
-    op.create_table(
-        "channel_deliveries",
-        sa.Column("account_id", sa.UUID(), nullable=False),
-        sa.Column("connection_epoch", sa.Integer(), nullable=False),
-        sa.Column("idempotency_key", sa.String(length=240), nullable=False),
-        sa.Column("conversation_key", sa.String(length=400), nullable=False),
-        sa.Column("payload_ciphertext", sa.String(), nullable=False),
-        sa.Column("payload_key_id", sa.String(length=64), nullable=False),
-        sa.Column("payload_digest", sa.String(length=64), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("external_message_id", sa.String(length=240), nullable=True),
-        sa.Column("failure_code", sa.String(length=100), nullable=True),
-        sa.Column("reconciliation_note", sa.String(length=2000), nullable=True),
-        sa.Column("reconciled_by", sa.UUID(), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["account_id"],
-            ["channel_accounts.id"],
-            name=op.f("fk_channel_deliveries_account_id_channel_accounts"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["reconciled_by"], ["users.id"], name=op.f("fk_channel_deliveries_reconciled_by_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_channel_deliveries")),
-        sa.UniqueConstraint("account_id", "idempotency_key", name="uq_channel_delivery_key"),
-    )
-    op.create_index(
-        op.f("ix_channel_deliveries_account_id"), "channel_deliveries", ["account_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_channel_deliveries_status"), "channel_deliveries", ["status"], unique=False
-    )
-    op.create_table(
-        "channel_identity_mappings",
-        sa.Column("account_id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("external_identity", sa.String(length=200), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["account_id"],
-            ["channel_accounts.id"],
-            name=op.f("fk_channel_identity_mappings_account_id_channel_accounts"),
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_channel_identity_mappings_user_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_channel_identity_mappings")),
-        sa.UniqueConstraint("account_id", "external_identity", name="uq_channel_identity_external"),
-    )
-    op.create_index(
-        op.f("ix_channel_identity_mappings_user_id"),
-        "channel_identity_mappings",
-        ["user_id"],
-        unique=False,
-    )
-    op.create_table(
-        "channel_routes",
-        sa.Column("account_id", sa.UUID(), nullable=False),
-        sa.Column("conversation_key", sa.String(length=400), nullable=False),
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("flow_revision_id", sa.UUID(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("input_mapping", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["account_id"],
-            ["channel_accounts.id"],
-            name=op.f("fk_channel_routes_account_id_channel_accounts"),
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f("fk_channel_routes_configuration_id_orchestration_configurations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_revision_id"],
-            ["orchestration_definition_revisions.id"],
-            name=op.f("fk_channel_routes_flow_revision_id_orchestration_definition_revisions"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_channel_routes")),
-        sa.UniqueConstraint(
-            "account_id", "conversation_key", name=op.f("uq_channel_routes_account_id")
-        ),
-    )
-    op.create_table(
-        "event_subscriptions",
-        sa.Column("trigger_id", sa.UUID(), nullable=False),
-        sa.Column("consumer_revision", sa.Integer(), nullable=False),
-        sa.Column("source_kind", sa.String(length=20), nullable=False),
-        sa.Column("event_type", sa.String(length=200), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["trigger_id"],
-            ["flow_triggers.id"],
-            name=op.f("fk_event_subscriptions_trigger_id_flow_triggers"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_event_subscriptions")),
-        sa.UniqueConstraint(
-            "trigger_id", "consumer_revision", name=op.f("uq_event_subscriptions_trigger_id")
-        ),
-    )
-    op.create_index(
-        op.f("ix_event_subscriptions_event_type"),
-        "event_subscriptions",
-        ["event_type"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_event_subscriptions_source_kind"),
-        "event_subscriptions",
-        ["source_kind"],
-        unique=False,
-    )
-    op.create_table(
-        "extension_managed_deployments",
-        sa.Column("instance_id", sa.UUID(), nullable=False),
-        sa.Column("instance_revision", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("artifact", sa.String(length=240), nullable=False),
-        sa.Column("container_id", sa.String(length=100), nullable=True),
-        sa.Column("capacity_reservation_id", sa.Uuid(), nullable=True),
+        sa.Column("encrypted_arguments", sa.Text(), nullable=False),
+        sa.Column("arguments_key_id", sa.String(length=100), nullable=False),
+        sa.Column("encrypted_result", sa.Text(), nullable=True),
+        sa.Column("result_key_id", sa.String(length=100), nullable=True),
         sa.Column("error_code", sa.String(length=100), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
@@ -2423,64 +1242,56 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "status IN ('starting','ready','stopping','stopped','needs_attention')",
-            name=op.f("ck_extension_managed_deployments_valid_status"),
+            "action IN ('create','resume','close','command','read','write')",
+            name=op.f("ck_sandbox_operations_action"),
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending','started','completed','uncertain','rejected')",
+            name=op.f("ck_sandbox_operations_status"),
         ),
         sa.ForeignKeyConstraint(
-            ["instance_id"],
-            ["extension_instances.id"],
-            name=op.f("fk_extension_managed_deployments_instance_id_extension_instances"),
+            ["environment_id"],
+            ["sandbox_environments.id"],
+            name=op.f("fk_sandbox_operations_environment_id_sandbox_environments"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_managed_deployments")),
+        sa.ForeignKeyConstraint(
+            ["requested_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_sandbox_operations_requested_by_user_id_users"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_sandbox_operations")),
+        sa.UniqueConstraint(
+            "environment_id", "request_key", name=op.f("uq_sandbox_operations_environment_id")
+        ),
     )
     op.create_index(
-        op.f("ix_extension_managed_deployments_instance_id"),
-        "extension_managed_deployments",
-        ["instance_id"],
+        op.f("ix_sandbox_operations_environment_id"),
+        "sandbox_operations",
+        ["environment_id"],
         unique=False,
     )
     op.create_table(
-        "extension_namespaces",
-        sa.Column("instance_id", sa.UUID(), nullable=False),
-        sa.Column("principal_id", sa.UUID(), nullable=False),
-        sa.Column("scope_key", sa.String(length=100), nullable=False),
-        sa.Column("used_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["instance_id"],
-            ["extension_instances.id"],
-            name=op.f("fk_extension_namespaces_instance_id_extension_instances"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["principal_id"], ["users.id"], name=op.f("fk_extension_namespaces_principal_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_namespaces")),
-        sa.UniqueConstraint(
-            "instance_id",
-            "principal_id",
-            "scope_key",
-            name=op.f("uq_extension_namespaces_instance_id"),
-        ),
-    )
-    op.create_table(
-        "orchestration_configuration_runs",
-        sa.Column("configuration_id", sa.UUID(), nullable=False),
-        sa.Column("revision_id", sa.UUID(), nullable=False),
-        sa.Column("run_id", sa.UUID(), nullable=False),
+        "execution_runs",
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("kind", sa.String(length=16), nullable=False),
+        sa.Column("revision_id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.UUID(), nullable=True),
+        sa.Column("sequence", sa.Integer(), nullable=True),
+        sa.Column("generation", sa.Integer(), nullable=True),
+        sa.Column("environment_id", sa.UUID(), nullable=True),
+        sa.Column("request_key", sa.String(length=200), nullable=False),
         sa.Column("fingerprint", sa.String(length=64), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("encrypted_input", sa.Text(), nullable=False),
+        sa.Column("encrypted_prepared", sa.Text(), nullable=True),
+        sa.Column("encrypted_result", sa.Text(), nullable=True),
+        sa.Column("encrypted_state", sa.Text(), nullable=True),
+        sa.Column("approval_id", sa.Uuid(), nullable=True),
+        sa.Column("approval_decision", sa.Boolean(), nullable=True),
+        sa.Column("approved_calls", postgresql.JSONB(astext_type=Text()), nullable=False),
+        sa.Column("key_id", sa.String(length=100), nullable=False),
+        sa.Column("capacity_id", sa.UUID(), nullable=True),
+        sa.Column("error_code", sa.String(length=100), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -2495,316 +1306,94 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f(
-                "fk_orchestration_configuration_runs_configuration_id_orchestration_configurations"
-            ),
+            ["capacity_id"],
+            ["user_capacity_reservations.id"],
+            name=op.f("fk_execution_runs_capacity_id_user_capacity_reservations"),
         ),
         sa.ForeignKeyConstraint(
-            ["revision_id"],
-            ["orchestration_configuration_revisions.id"],
-            name=op.f(
-                "fk_orchestration_configuration_runs_revision_id_orchestration_configuration_revisions"
-            ),
+            ["environment_id"],
+            ["sandbox_environments.id"],
+            name=op.f("fk_execution_runs_environment_id_sandbox_environments"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["execution_sessions.id"],
+            name=op.f("fk_execution_runs_session_id_execution_sessions"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"], name=op.f("fk_execution_runs_user_id_users")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_runs")),
+        sa.UniqueConstraint("session_id", "sequence", name=op.f("uq_execution_runs_session_id")),
+        sa.UniqueConstraint("user_id", "request_key", name=op.f("uq_execution_runs_user_id")),
+    )
+    op.create_index(
+        op.f("ix_execution_runs_revision_id"), "execution_runs", ["revision_id"], unique=False
+    )
+    op.create_index(op.f("ix_execution_runs_status"), "execution_runs", ["status"], unique=False)
+    op.create_index(op.f("ix_execution_runs_user_id"), "execution_runs", ["user_id"], unique=False)
+    op.create_table(
+        "execution_approvals",
+        sa.Column("run_id", sa.UUID(), nullable=False),
+        sa.Column("node_path", sa.Text(), nullable=False),
+        sa.Column("occurrence", sa.Integer(), nullable=False),
+        sa.Column("fingerprint", sa.String(length=64), nullable=False),
+        sa.Column("encrypted_pending", sa.Text(), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("decision", sa.Boolean(), nullable=True),
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["run_id"],
             ["execution_runs.id"],
-            name=op.f("fk_orchestration_configuration_runs_run_id_execution_runs"),
+            name=op.f("fk_execution_approvals_run_id_execution_runs"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_orchestration_configuration_runs")),
-        sa.UniqueConstraint("run_id", name=op.f("uq_orchestration_configuration_runs_run_id")),
-    )
-    op.create_table(
-        "extension_invocations",
-        sa.Column("instance_id", sa.UUID(), nullable=False),
-        sa.Column("installation_id", sa.UUID(), nullable=False),
-        sa.Column("principal_id", sa.UUID(), nullable=False),
-        sa.Column("parent_id", sa.UUID(), nullable=True),
-        sa.Column("namespace_id", sa.UUID(), nullable=False),
-        sa.Column("export_id", sa.String(length=100), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("kind", sa.String(length=20), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("instance_revision", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("input_ciphertext", sa.String(), nullable=False),
-        sa.Column("result_ciphertext", sa.String(), nullable=True),
-        sa.Column("effects", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("cancel_requested", sa.Boolean(), nullable=False),
-        sa.Column("deadline", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("reconciliation", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('queued','started','completed','failed','cancelled','needs_attention')",
-            name=op.f("ck_extension_invocations_valid_status"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["installation_id"],
-            ["extension_installations.id"],
-            name=op.f("fk_extension_invocations_installation_id_extension_installations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["instance_id"],
-            ["extension_instances.id"],
-            name=op.f("fk_extension_invocations_instance_id_extension_instances"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["namespace_id"],
-            ["extension_namespaces.id"],
-            name=op.f("fk_extension_invocations_namespace_id_extension_namespaces"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["parent_id"],
-            ["extension_invocations.id"],
-            name=op.f("fk_extension_invocations_parent_id_extension_invocations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["principal_id"], ["users.id"], name=op.f("fk_extension_invocations_principal_id_users")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_invocations")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_approvals")),
         sa.UniqueConstraint(
-            "instance_id",
-            "principal_id",
-            "operation_id",
-            name=op.f("uq_extension_invocations_instance_id"),
+            "run_id", "node_path", "occurrence", name=op.f("uq_execution_approvals_run_id")
         ),
     )
     op.create_index(
-        op.f("ix_extension_invocations_instance_id"),
-        "extension_invocations",
-        ["instance_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_extension_invocations_principal_id"),
-        "extension_invocations",
-        ["principal_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_extension_invocations_status"), "extension_invocations", ["status"], unique=False
+        op.f("ix_execution_approvals_run_id"), "execution_approvals", ["run_id"], unique=False
     )
     op.create_table(
-        "extension_state",
-        sa.Column("namespace_id", sa.UUID(), nullable=False),
-        sa.Column("key", sa.String(length=512), nullable=False),
-        sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("size", sa.BigInteger(), nullable=False),
-        sa.Column("storage_reservation_id", sa.Uuid(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["namespace_id"],
-            ["extension_namespaces.id"],
-            name=op.f("fk_extension_state_namespace_id_extension_namespaces"),
-        ),
-        sa.PrimaryKeyConstraint("namespace_id", "key", name=op.f("pk_extension_state")),
-    )
-    op.create_table(
-        "extension_events",
-        sa.Column("invocation_id", sa.UUID(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("event_type", sa.String(length=200), nullable=False),
-        sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["invocation_id"],
-            ["extension_invocations.id"],
-            name=op.f("fk_extension_events_invocation_id_extension_invocations"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_events")),
-        sa.UniqueConstraint(
-            "invocation_id", "operation_id", name=op.f("uq_extension_events_invocation_id")
-        ),
-    )
-    op.create_table(
-        "extension_host_calls",
-        sa.Column("invocation_id", sa.UUID(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("result_ciphertext", sa.String(), nullable=True),
-        sa.Column("request_ciphertext", sa.String(), nullable=False),
-        sa.Column("reconciliation", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["invocation_id"],
-            ["extension_invocations.id"],
-            name=op.f("fk_extension_host_calls_invocation_id_extension_invocations"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_extension_host_calls")),
-        sa.UniqueConstraint(
-            "invocation_id", "operation_id", name=op.f("uq_extension_host_calls_invocation_id")
-        ),
-    )
-    op.create_table(
-        "flow_runs",
-        sa.Column("revision_id", sa.UUID(), nullable=True),
-        sa.Column("principal_id", sa.UUID(), nullable=False),
-        sa.Column("configuration_id", sa.UUID(), nullable=True),
-        sa.Column("initiated_by_id", sa.UUID(), nullable=False),
-        sa.Column("root_id", sa.UUID(), nullable=False),
-        sa.Column("parent_id", sa.UUID(), nullable=True),
-        sa.Column("parent_invocation_id", sa.UUID(), nullable=True),
-        sa.Column("depth", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("command_sequence", sa.Integer(), nullable=False),
-        sa.Column("workflow_generation", sa.Integer(), nullable=False),
-        sa.Column("control_actor_id", sa.UUID(), nullable=True),
-        sa.Column("deadline", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("limits", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("graph_ciphertext", sa.String(), nullable=False),
-        sa.Column("input_ciphertext", sa.String(), nullable=False),
-        sa.Column("output_ciphertext", sa.String(), nullable=True),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("started_steps", sa.Integer(), nullable=False),
-        sa.Column("active_steps", sa.Integer(), nullable=False),
-        sa.Column("allocated_tokens", sa.Integer(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["configuration_id"],
-            ["orchestration_configurations.id"],
-            name=op.f("fk_flow_runs_configuration_id_orchestration_configurations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["control_actor_id"], ["users.id"], name=op.f("fk_flow_runs_control_actor_id_users")
-        ),
-        sa.ForeignKeyConstraint(
-            ["initiated_by_id"], ["users.id"], name=op.f("fk_flow_runs_initiated_by_id_users")
-        ),
-        sa.ForeignKeyConstraint(
-            ["parent_id"], ["flow_runs.id"], name=op.f("fk_flow_runs_parent_id_flow_runs")
-        ),
-        sa.ForeignKeyConstraint(
-            ["parent_invocation_id"],
-            ["extension_invocations.id"],
-            name=op.f("fk_flow_runs_parent_invocation_id_extension_invocations"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["principal_id"], ["users.id"], name=op.f("fk_flow_runs_principal_id_users")
-        ),
-        sa.ForeignKeyConstraint(
-            ["revision_id"],
-            ["orchestration_definition_revisions.id"],
-            name=op.f("fk_flow_runs_revision_id_orchestration_definition_revisions"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["root_id"], ["flow_runs.id"], name=op.f("fk_flow_runs_root_id_flow_runs")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_runs")),
-    )
-    op.create_index(
-        op.f("ix_flow_runs_configuration_id"), "flow_runs", ["configuration_id"], unique=False
-    )
-    op.create_index(op.f("ix_flow_runs_parent_id"), "flow_runs", ["parent_id"], unique=False)
-    op.create_index(op.f("ix_flow_runs_principal_id"), "flow_runs", ["principal_id"], unique=False)
-    op.create_index(op.f("ix_flow_runs_root_id"), "flow_runs", ["root_id"], unique=False)
-    op.create_index(op.f("ix_flow_runs_status"), "flow_runs", ["status"], unique=False)
-    op.create_table(
-        "channel_inbox",
-        sa.Column("account_id", sa.UUID(), nullable=False),
-        sa.Column("connection_epoch", sa.Integer(), nullable=False),
-        sa.Column("external_message_id", sa.String(length=240), nullable=False),
-        sa.Column("conversation_key", sa.String(length=400), nullable=False),
-        sa.Column("payload_ciphertext", sa.String(), nullable=False),
-        sa.Column("payload_key_id", sa.String(length=64), nullable=False),
-        sa.Column("payload_digest", sa.String(length=64), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("flow_run_id", sa.UUID(), nullable=True),
-        sa.Column("failure_code", sa.String(length=100), nullable=True),
-        sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["account_id"],
-            ["channel_accounts.id"],
-            name=op.f("fk_channel_inbox_account_id_channel_accounts"),
-        ),
-        sa.ForeignKeyConstraint(
-            ["flow_run_id"], ["flow_runs.id"], name=op.f("fk_channel_inbox_flow_run_id_flow_runs")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_channel_inbox")),
-        sa.UniqueConstraint("account_id", "external_message_id", name="uq_channel_inbox_message"),
-    )
-    op.create_index(
-        op.f("ix_channel_inbox_account_id"), "channel_inbox", ["account_id"], unique=False
-    )
-    op.create_index(op.f("ix_channel_inbox_status"), "channel_inbox", ["status"], unique=False)
-    op.create_table(
-        "flow_commands",
+        "execution_mcp_uses",
         sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("command_id", sa.Uuid(), nullable=False),
-        sa.Column("sequence", sa.Integer(), nullable=False),
-        sa.Column("kind", sa.String(length=24), nullable=False),
+        sa.Column("connection_id", sa.UUID(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["connection_id"],
+            ["mcp_connections.id"],
+            name=op.f("fk_execution_mcp_uses_connection_id_mcp_connections"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["run_id"],
+            ["execution_runs.id"],
+            name=op.f("fk_execution_mcp_uses_run_id_execution_runs"),
+        ),
+        sa.PrimaryKeyConstraint("run_id", "connection_id", name=op.f("pk_execution_mcp_uses")),
+    )
+    op.create_table(
+        "execution_operations",
+        sa.Column("id", sa.String(length=500), nullable=False),
+        sa.Column("run_id", sa.UUID(), nullable=False),
+        sa.Column("kind", sa.String(length=32), nullable=False),
         sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("payload_ciphertext", sa.String(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("reservation_id", sa.UUID(), nullable=True),
+        sa.Column("encrypted_result", sa.Text(), nullable=True),
+        sa.Column("key_id", sa.String(length=100), nullable=True),
+        sa.Column("reconciliation", postgresql.JSONB(astext_type=Text()), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -2818,77 +1407,27 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_commands_run_id_flow_runs")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_commands")),
-        sa.UniqueConstraint("run_id", "command_id", name="uq_flow_commands_identity"),
-        sa.UniqueConstraint("run_id", "sequence", name="uq_flow_commands_sequence"),
-    )
-    op.create_index(op.f("ix_flow_commands_run_id"), "flow_commands", ["run_id"], unique=False)
-    op.create_table(
-        "flow_events",
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("sequence", sa.Integer(), nullable=False),
-        sa.Column("kind", sa.String(length=40), nullable=False),
-        sa.Column("summary", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
+            ["reservation_id"],
+            ["token_reservations.id"],
+            name=op.f("fk_execution_operations_reservation_id_token_reservations"),
         ),
         sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_events_run_id_flow_runs")
+            ["run_id"],
+            ["execution_runs.id"],
+            name=op.f("fk_execution_operations_run_id_execution_runs"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_events")),
-        sa.UniqueConstraint("run_id", "sequence", name=op.f("uq_flow_events_run_id")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_operations")),
     )
-    op.create_index(op.f("ix_flow_events_run_id"), "flow_events", ["run_id"], unique=False)
-    op.create_table(
-        "flow_plan_applications",
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("step_path", sa.String(length=500), nullable=False),
-        sa.Column("source_invocation_id", sa.UUID(), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("digest", sa.String(length=64), nullable=False),
-        sa.Column("graph_ciphertext", sa.String(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_plan_applications_run_id_flow_runs")
-        ),
-        sa.ForeignKeyConstraint(
-            ["source_invocation_id"],
-            ["extension_invocations.id"],
-            name=op.f("fk_flow_plan_applications_source_invocation_id_extension_invocations"),
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_plan_applications")),
-        sa.UniqueConstraint("run_id", "step_path", name=op.f("uq_flow_plan_applications_run_id")),
+    op.create_index(
+        op.f("ix_execution_operations_run_id"), "execution_operations", ["run_id"], unique=False
     )
     op.create_table(
-        "flow_projection_receipts",
+        "execution_signals",
         sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("projection_id", sa.String(length=240), nullable=False),
+        sa.Column("node_path", sa.Text(), nullable=False),
+        sa.Column("name", sa.String(length=64), nullable=False),
         sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
@@ -2903,90 +1442,27 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_projection_receipts_run_id_flow_runs")
+            ["run_id"],
+            ["execution_runs.id"],
+            name=op.f("fk_execution_signals_run_id_execution_runs"),
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_projection_receipts")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_signals")),
         sa.UniqueConstraint(
-            "run_id", "projection_id", name=op.f("uq_flow_projection_receipts_run_id")
-        ),
-    )
-    op.create_table(
-        "flow_signal_receipts",
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("step_path", sa.String(length=500), nullable=False),
-        sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(length=100), nullable=False),
-        sa.Column("command_id", sa.Uuid(), nullable=False),
-        sa.Column("value_ciphertext", sa.String(), nullable=False),
-        sa.Column("consumed", sa.Boolean(), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_signal_receipts_run_id_flow_runs")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_signal_receipts")),
-        sa.UniqueConstraint(
-            "run_id", "step_path", "generation", "name", name=op.f("uq_flow_signal_receipts_run_id")
-        ),
-    )
-    op.create_table(
-        "flow_step_attempts",
-        sa.Column("run_id", sa.UUID(), nullable=False),
-        sa.Column("path", sa.String(length=500), nullable=False),
-        sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("node_ciphertext", sa.String(), nullable=False),
-        sa.Column("input_ciphertext", sa.String(), nullable=False),
-        sa.Column("result_ciphertext", sa.String(), nullable=True),
-        sa.Column("child_kind", sa.String(length=24), nullable=True),
-        sa.Column("child_id", sa.Uuid(), nullable=True),
-        sa.Column("wait_deadline", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("error_code", sa.String(length=100), nullable=True),
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["flow_runs.id"], name=op.f("fk_flow_step_attempts_run_id_flow_runs")
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_step_attempts")),
-        sa.UniqueConstraint(
-            "run_id", "path", "generation", name=op.f("uq_flow_step_attempts_run_id")
+            "run_id", "node_path", "name", name=op.f("uq_execution_signals_run_id")
         ),
     )
     op.create_index(
-        op.f("ix_flow_step_attempts_child_id"), "flow_step_attempts", ["child_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_flow_step_attempts_run_id"), "flow_step_attempts", ["run_id"], unique=False
+        op.f("ix_execution_signals_run_id"), "execution_signals", ["run_id"], unique=False
     )
     op.create_table(
-        "flow_token_grants",
-        sa.Column("root_id", sa.UUID(), nullable=False),
-        sa.Column("operation_id", sa.String(length=240), nullable=False),
-        sa.Column("tokens", sa.Integer(), nullable=False),
+        "gateway_channels",
         sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("owner_id", sa.UUID(), nullable=False),
+        sa.Column("kind", sa.String(100), nullable=False),
+        sa.Column("name", sa.String(200), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("encrypted_settings", sa.Text(), nullable=False),
+        sa.Column("key_id", sa.String(100), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -3000,20 +1476,19 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["root_id"], ["flow_runs.id"], name=op.f("fk_flow_token_grants_root_id_flow_runs")
+            ["owner_id"], ["users.id"], name=op.f("fk_gateway_channels_owner_id_users")
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_flow_token_grants")),
-        sa.UniqueConstraint("root_id", "operation_id", name=op.f("uq_flow_token_grants_root_id")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_gateway_channels")),
     )
+    op.create_index(op.f("ix_gateway_channels_owner_id"), "gateway_channels", ["owner_id"])
     op.create_table(
-        "trigger_receipts",
-        sa.Column("trigger_id", sa.UUID(), nullable=False),
-        sa.Column("consumer_revision", sa.Integer(), nullable=False),
-        sa.Column("event_id", sa.String(length=240), nullable=False),
-        sa.Column("fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("flow_run_id", sa.UUID(), nullable=True),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
+        "gateway_senders",
+        sa.Column("channel_id", sa.UUID(), nullable=False),
+        sa.Column("sender_id", sa.String(500), nullable=False),
+        sa.Column("conversation_id", sa.String(500), nullable=False),
+        sa.Column("user_id", sa.UUID(), nullable=False),
+        sa.Column("session_id", sa.UUID(), nullable=False),
+        sa.Column("environment_id", sa.UUID(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -3027,27 +1502,54 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["flow_run_id"],
-            ["flow_runs.id"],
-            name=op.f("fk_trigger_receipts_flow_run_id_flow_runs"),
+            ["channel_id"],
+            ["gateway_channels.id"],
+            name=op.f("fk_gateway_senders_channel_id_gateway_channels"),
         ),
         sa.ForeignKeyConstraint(
-            ["trigger_id"],
-            ["flow_triggers.id"],
-            name=op.f("fk_trigger_receipts_trigger_id_flow_triggers"),
+            ["user_id"], ["users.id"], name=op.f("fk_gateway_senders_user_id_users")
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_trigger_receipts")),
-        sa.UniqueConstraint(
-            "trigger_id",
-            "consumer_revision",
-            "event_id",
-            name=op.f("uq_trigger_receipts_trigger_id"),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["execution_sessions.id"],
+            name=op.f("fk_gateway_senders_session_id_execution_sessions"),
         ),
+        sa.ForeignKeyConstraint(
+            ["environment_id"],
+            ["sandbox_environments.id"],
+            name=op.f("fk_gateway_senders_environment_id_sandbox_environments"),
+        ),
+        sa.PrimaryKeyConstraint(
+            "channel_id", "sender_id", "conversation_id", name=op.f("pk_gateway_senders")
+        ),
+    )
+    op.create_index(op.f("ix_gateway_senders_user_id"), "gateway_senders", ["user_id"])
+    op.create_table(
+        "gateway_subjects",
+        sa.Column("channel_id", sa.UUID(), nullable=False),
+        sa.Column("subject_id", sa.String(500), nullable=False),
+        sa.Column("encrypted_route", sa.Text(), nullable=False),
+        sa.Column("key_id", sa.String(100), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["channel_id"],
+            ["gateway_channels.id"],
+            name=op.f("fk_gateway_subjects_channel_id_gateway_channels"),
+        ),
+        sa.PrimaryKeyConstraint("channel_id", "subject_id", name=op.f("pk_gateway_subjects")),
     )
     # ### end Alembic commands ###
-    op.execute(
-        sa.text("INSERT INTO platform_admission (id, drained, revision) VALUES (1, false, 1)")
-    )
 
 
 def downgrade() -> None:
