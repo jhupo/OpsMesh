@@ -64,3 +64,27 @@ def test_registration_rejects_invalid_and_duplicate_names(tmp_path):
         context.tool("echo", echo)
     with pytest.raises(TypeError):
         context.config["prefix"] = "overwrite"
+
+
+def test_message_filter_registration_is_explicit_and_bounded(tmp_path):
+    context = PluginContext(
+        manifest=PluginManifest(
+            id="example", version="0.1.0", name="Example", kind="message_filter"
+        ),
+        source_path=tmp_path,
+        data_directory=tmp_path / "data",
+    )
+
+    async def moderate(message, media):
+        from opsmesh_sdk import MessageFilterResult
+
+        return MessageFilterResult(action="allow")
+
+    with pytest.raises(TypeError, match="async"):
+        context.message_filter("check", lambda message, media: True)
+    with pytest.raises(ValueError, match="timeout"):
+        context.message_filter("check", moderate, timeout_seconds=0)
+    context.message_filter("check", moderate, timeout_seconds=2)
+    assert context.contributions()["message_filter"]["check"].handler is moderate
+    with pytest.raises(ValueError, match="unique"):
+        context.message_filter("check", moderate)

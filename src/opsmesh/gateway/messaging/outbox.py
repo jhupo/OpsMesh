@@ -5,13 +5,16 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from opsmesh_sdk.channels import ContentPart, OutboundMessage
+from opsmesh_sdk.messages import MessageFilterResult
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from opsmesh.gateway.channels.leases import require_lease
 from opsmesh.gateway.contracts import GatewayEvents, GatewayTurn
+from opsmesh.gateway.routing.service import authorize_turn
 from opsmesh.gateway.storage.models import GatewayChannel, GatewayDelivery, GatewayInbox
 from opsmesh.gateway.storage.store import GatewayStore
+from opsmesh.shared.errors import ConflictError, ForbiddenError
 
 
 def reconcile_stream_text(accepted: str, incoming: str) -> str:
@@ -38,7 +41,7 @@ class Outbox:
         turn: GatewayTurn,
         content: list[ContentPart],
         *,
-        event: Literal["message", "delta", "completed", "typing"] = "message",
+        event: Literal["message", "delta", "completed", "typing", "recall"] = "message",
         transient: bool = False,
     ) -> list[UUID]:
         first = (
@@ -61,12 +64,18 @@ class Outbox:
             )
             or 0
         )
-        for ordinal, part in enumerate(content, start=first):
+        if event == "recall" and (
+            content
+            or turn.message.conversation.kind != "group"
+            or not turn.policy.group_for(turn.message).allow_recall
+        ):
+            raise ForbiddenError("Message recall is not authorized for this conversation")
+        for ordinal, part in enumerate([None] if event == "recall" else content, start=first):
             delivery_id = uuid4()
             value = OutboundMessage(
                 delivery_id=delivery_id,
                 address={**turn.message.reply_address, "msg_seq": ordinal},
-                content=[part],
+                content=[part] if part is not None else [],
                 event=event,
                 stream_id=str(turn.inbox_id),
                 stream_index=stream_index + ordinal - first,
@@ -118,9 +127,17 @@ class Outbox:
         row.encrypted_payload, row.key_id = encrypted.ciphertext, encrypted.key_id
         row.kind = value.event
 
-    def complete(self, turn: GatewayTurn, content: list[ContentPart]) -> None:
+    def complete(
+        self,
+        turn: GatewayTurn,
+        content: list[ContentPart],
+        *,
+        event: Literal["message", "recall"] = "message",
+        admission: MessageFilterResult | None = None,
+    ) -> None:
         with self.store.sessions.begin() as session:
             require_lease(session, turn.channel_id, turn.lease_owner)
+            authorize_turn(session, turn)
             row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
             assert row is not None
             if row.status == "completed":
@@ -146,6 +163,14 @@ class Outbox:
                 if row.encrypted_context
                 else {}
             )
+            if admission is not None:
+                channel = session.get(GatewayChannel, turn.channel_id)
+                if channel is None or channel.revision != turn.channel_revision:
+                    raise ConflictError("Channel configuration changed during message admission")
+                if row.status != "pending":
+                    raise ConflictError("Only a pending message can receive an admission decision")
+                context["admission"] = admission.model_dump(mode="json")
+                row.encrypted_context = self.store.cipher.encrypt_payload(context).ciphertext
             if context.get("stream_text") and content:
                 self.stream(
                     session,
@@ -155,19 +180,13 @@ class Outbox:
                 )
                 self.enqueue(session, turn, [part for part in content if part.type != "text"])
             else:
-                self.enqueue(session, turn, content)
+                self.enqueue(session, turn, content, event=event)
             row.status = "completed"
-            if (
-                turn.policy.group_for(turn.message).clear_after_reply
-                and content
-                and turn.context_ids
-            ):
-                for item in session.scalars(
-                    select(GatewayInbox)
-                    .where(GatewayInbox.id.in_(turn.context_ids), GatewayInbox.status == "passive")
-                    .with_for_update()
-                ):
-                    item.status = "context_consumed"
+            for part in turn.batch:
+                if part.inbox_id != row.id:
+                    child = session.get(GatewayInbox, part.inbox_id, with_for_update=True)
+                    if child is not None:
+                        child.status, child.run_id = "completed", row.run_id
 
     def events(self, turn: GatewayTurn, batch: GatewayEvents) -> None:
         with self.store.sessions.begin() as session:

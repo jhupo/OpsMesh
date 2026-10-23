@@ -27,7 +27,7 @@ kind: plugin
 entry: main.py
 ```
 
-`kind` 可取 `tool/skill/mcp/hook/middleware/channel/plugin`。
+`kind` 可取 `tool/skill/mcp/hook/middleware/channel/message_filter/plugin`。
 同一个插件可以同时提供多种资源；组合插件使用 `plugin`，特定分类必须注册对应资源。
 兼容原有 `hook` 分类注册模型中间件。
 `version` 表示当前包版本。读取清单或检查归档不会执行插件入口。
@@ -226,8 +226,13 @@ def setup(ctx: PluginContext) -> None:
 
 `InvocationSource` 还包含宿主观察到的 external_role、external_id、identity_scope，
 以及用于会话隔离的 session_scope；外部角色不自动成为 Principal.roles。
+多人合批的 participants 保留每条消息的发送者与群角色，此时顶层 external_role 和
+identity_id 留空，不能将第一位成员的权限授予整批消息。插件授权应拒绝无法确认的操作者。
+Skill 是行为指导，不提供授权；工具执行与 MCP 实际调用的代码授权不能被提示词替代。
 通道的 `MessageContext` 保留提及、引用和可见性，`OutboundMessage.event` 区分
-message/delta/completed/typing。ContentPart 媒体必须指定 media_key、公共 URL、base64 data
+message/delta/completed/typing/recall。recall 的 content 必须为空，其他事件必须有内容。
+recall 仅针对当前入站消息，要求目标群显式授权和适配器声明 recall 能力，仍需厂商权限。
+ContentPart 媒体必须指定 media_key、公共 URL、base64 data
 之一；MessageContext.recent_messages 表示平台随当前事件提供的有界上下文，不是授权声明。
 声明 streaming、typing、proactive、qr_binding、probe 等能力
 只说明适配器接口范围，不能使厂商授予额外权限；QQ 扫码入口由内置宿主管理。
@@ -237,7 +242,29 @@ probe 仅探测认证，不启动入站连接或消费消息。
 在工具执行中用 `get_plugin_credential("api_key")` 获取宿主解析的 SecretStr。
 引用由管理员安装配置决定，模型工具参数不能选择任意 secret；setup 不读取凭据或联网。
 调用结束后上下文恢复，凭据不进入工具参数、描述或结果。
-非 OpenAI 决策协议的实例见 [TypeSafe Decision](examples/typesafe-decision/README.md)。
+非 OpenAI 审核协议的实例见 [TypeSafe Moderation](examples/typesafe-decision/README.md)。
+
+## 入站消息过滤插件
+
+```python
+from opsmesh_sdk import MessageFilterResult, PluginContext
+
+
+async def inspect_message(message, media):
+    return MessageFilterResult(action="allow")
+
+
+def setup(ctx: PluginContext) -> None:
+    ctx.message_filter("inspect", inspect_message, timeout_seconds=5)
+```
+
+管理员在通道 `policy.message_filters` 按顺序绑定资源 ID，例如
+`my-plugin/message_filter/inspect`。宿主对每条原始消息调用异步函数，返回
+allow、drop 或 recall，再进行激活判断和合批。过滤器不返回 Agent 选择或回复文本。
+过滤器异常与超时只进入有界重试，耗尽后 blocked，不能自动放行或撤回。
+recall 仍需目标群显式授权、适配器能力及厂商权限。
+上下文与凭据使用同一 get_invocation/get_plugin_credential 接口；setup 不联网。
+插件更新只影响后续审核调用；已提交的 Run 不会因为更新而重新审核或重跑。
 
 `ctx.mcp(..., authorize=...)` 也支持同类策略，resource 使用
 `plugin-id/mcp/name/connect`、`.../tools`、`.../tools/tool_name`、`.../prompts`、

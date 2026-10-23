@@ -59,6 +59,8 @@ class QQClient:
             raise DeliveryUncertain("QQ server delivery outcome is unknown")
         if response.status_code >= 300:
             raise DeliveryRejected("QQ API rejected request")
+        if response.status_code == 204:
+            return {}
         try:
             value: dict[str, Any] = response.json()
         except ValueError as error:

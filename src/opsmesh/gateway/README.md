@@ -13,8 +13,8 @@ OpsMesh 自己管理通道、外部身份、账号绑定、路由与可靠投递
 | api/ | 管理路由和 HTTP 输入；不启动连接 |
 | channels/ | 配置策略、注册、插件适配、租约、生命周期与扫码任务 |
 | identity/ | 外部身份、账号绑定、已见会话与成员事实 |
-| routing/ | 路由选择、提交前授权、私有 Session 映射 |
-| messaging/ | 收件、上下文、调度、命令、发件、恢复、推送与附件 |
+| routing/ | 身份/群路由、提交前授权、原生 Session 映射 |
+| messaging/ | 原始收件、过滤插件、合批、输入转换、调度、发件、恢复、推送与附件 |
 | storage/ | ORM、加密配置与事务审计 |
 | adapters/qq、adapters/dingtalk | 配置校验、官方认证、连接、事件解析和发送 |
 
@@ -27,7 +27,7 @@ gateway/
   channels/     manager.py, leases.py, registry.py, plugins.py, policy.py, bindings.py
   identity/     identities.py, conversations.py
   routing/      service.py, sessions.py
-  messaging/    inbox.py, dispatcher.py, commands.py, outbox.py, recovery.py, push.py, media.py
+  messaging/    inbox.py, filters.py, inputs.py, dispatcher.py, commands.py, outbox.py, recovery.py, push.py, media.py
   storage/      models.py, store.py
   adapters/
     qq/         adapter.py, config.py, client.py, connection.py, events.py, content.py, messages.py, binding.py
@@ -69,45 +69,79 @@ Compose 使用 API 镜像运行 gateway 服务，不额外暴露端口或 Docker
 `GET .../conversations` 与 `.../conversations/{key}/members` 只返回已观察事实，
 不是全量组织目录。钉钉 `isAdmin` 是外部角色提示，绝不升级为平台管理员。
 QQ 的 user_openid、member_openid 和 guild_user_id 分别保存，不能互相推断。
-解绑会禁用相关路由并移除映射，但保留原用户的私有历史。修改路由要提供当前 revision。
+解绑会禁用该身份的个人路由，但保留原用户的 Session 和历史。修改路由要提供当前 revision。
 `POST .../probe` 只校验凭据，不启动消息连接；QQ 查询机器人身份，钉钉验证令牌获取。
 
-Agent 路由按路由、身份与会话隔离创建私有 Session，群成员之间不共享历史。
-`/help`、`/new`、`/reset`、`/cancel`、`/stop` 支持 Agent 路由。
+公开群可另外创建共享群路由：省略 identity_id，提交已观察会话的 conversation_key、
+受限平台账号 user_id、target_kind/target_id 和 allow_group: true。
+conversation_key 包含通道范围、会话类型和外部 ID，私聊不能命中这个路由。
+共享群路由优先于成员个人路由，关闭后拒绝该群，不回退到成员的个人权限。
+群友不必逐个绑定账号；平台权限来自明确配置的服务账号，外部 ID 与群角色逐条保留。
+
+Agent Session 按通道、平台账号、目标实例与会话范围隔离。默认同群同账号同 Agent
+共享 Session；`session_scope: "user"` 可显式按发送者隔离。私聊始终按身份隔离。
+路由 revision 更新本身不丢失历史，切换账号或目标实例会进入不同 Session。
+`/help`、`/new`、`/reset`、`/cancel`、`/stop` 支持 Agent 路由；群内非 help 命令还需
+匹配 control_roles，默认 owner/admin。未知角色不获得控制权限。
 Workflow 输入为 `{"messages":[{"role":"user","content":[...]}],"gateway":{...}}`。
-gateway 包含平台用户及角色、外部身份、会话、提及/引用和有界历史；不包含回复凭据。
+gateway 包含平台用户及角色、外部身份、会话、提及/引用和当前批次；不包含回复凭据或历史拼接。
 实例的输入 schema 必须接受该结构，其 Agent 节点继续继承可信调用来源。
-网关来源的编排 Agent Session 按路由代际、用户、会话、编排实例和 Agent 绑定隔离，
+网关来源的编排 Agent Session 按用户、会话范围、编排实例和 Agent 绑定隔离，
 不会复用其他用户的固定 Session；非网关编排仍使用显式实例绑定。
 
-路由默认 `output_mode: "text"`。编排决策入口使用 `output_mode: "message"`，
+路由默认 `output_mode: "text"`。Agent 或 Workflow 可显式使用 `output_mode: "message"`，
 输出必须为 `{"action":"reply","content":[{"type":"text","text":"..."}]}` 或
 `{"action":"ignore","content":[]}`。其他对象不会被当作决策指令，结构错误会阻断该收件。
-Typesafe 只存在于[独立决策插件示例](../../../sdk/python/examples/typesafe-decision/README.md)，
+显式开启目标群的 `allow_recall: true` 后，还可返回
+`{"action":"recall","content":[]}`，撤回当前入站消息。目标群和消息 ID 仅从原始收件
+回复地址取得，模型不能指定其他目标。撤回仍经过持久发件、发送前授权与适配器能力检查；
+QQ 需有厂商授予的群管理权限，钉钉当前不支持。默认不允许撤回。
+TypeSafe 只存在于[独立审核插件示例](../../../sdk/python/examples/typesafe-decision/README.md)，
 网关不选择决策厂商、不根据外部群角色授权工具、不固定业务分支。
 
 ## 消息策略
 
 通道 `policy` 独立于厂商 `config` 加密存储。`private_enabled` 控制私聊激活；
 `group` 设置默认群策略，`groups` 按具体会话 ID 覆盖完整群策略。
-默认只在提及机器人时激活，历史最多 10 条、保留 300 秒，只读取当前绑定用户的被动消息。
-`history_scope: "group"` 显式允许共享同会话已绑定、仍有有效路由的发送者上下文；
-这会向当前 Agent/决策服务公开其他成员消息，不能作为私有群资料授权。
-`history_limit/history_ttl_seconds` 任一为 0 时不取历史。
-`clear_after_reply` 默认开启，成功生成回复后将引用消息标为已消费。
-
-`visibility` 支持 auto/all/mention_recent/mention_only。mention_only 不读取被动历史；
-其余模式使用本地实际收到的事件，以及 QQ 事件附带的有界近期上下文，
-不调用厂商历史目录补全。平台附带上下文按发送者、TTL、数量与 history_scope 过滤；
-启用 group 范围后可包含平台提供的其他群成员消息，不要求这些成员已经绑定平台账号。
-本地保存的跨用户上下文则要求绑定与路由有效，提交前再次核对。
+默认只在提及机器人时激活。`visibility` 描述收到事件的可见性，不负责读取历史。
 `activation: "always"` 必须同时显式配置 visibility=all，且该厂商事件确认为全消息可见；
 配置不能使 QQ/钉钉获得厂商未授予的事件订阅权限。
 
-`workers` 控制每通道调度并发，同一身份与会话的普通消息按收件顺序处理，
+消息顺序为：接收入库 → 配置的 message_filter 逐条审核 → 激活检查 → 有界合批 →
+目标 Agent/Workflow。审核使用原始消息，禁止把未审核的后续收件先拼进当前消息。
+每个过滤器返回 allow/drop/recall；异常与超时进入有界重试，默认 3 次、间隔 1 秒，
+耗尽后 blocked，管理员可以修复配置后显式 retry。审核结果加密保存在原始收件。
+recall 指向被拒绝的那一条原文，受群授权、适配器能力与厂商权限限制。
+配置版本变化时待提交消息重新审核；已经提交的 Run 不重新执行。
+
+过滤插件只审核内容。需要按机器人名字或接续对话判断回复时，由 Agent 配置/业务插件
+负责；全消息激活后可由结构化 Agent 返回 reply/ignore。单 Agent 不需要额外编排。
+只有原始消息的协议值转换为原生 SDK 输入。历史由原生 Session 读取和保存，
+不保留 history_limit/history_ttl_seconds/history_scope/clear_after_reply 旧配置接口，
+不从本地收件或平台 recent_messages 构造另一份聊天历史。
+
+公开群聊可由部署策略把该群外部身份路由到受限机器人服务账号，无需群成员各自注册。
+此时外部发送者、群角色和会话隔离仍保留；平台权限来自服务账号而非群主或管理员身份。
+管理员应限制可接入群、Agent 和工具；网关本身不自动创建用户或绑定未知身份。
+
+`workers` 控制每通道独立任务并发，慢审核不会等待整轮任务结束才调度其他会话。
+同一 Session 的普通消息按收件顺序处理，
 控制命令可以越过正在运行的请求以执行取消。
-`debounce_seconds` 控制合并前的静默窗口，0 表示关闭；每批最多合并后续 20 条消息、
-100 个内容项和 1 MB 收件内容，持续输入最多等待 30 秒。
+入站落库后立即唤醒调度，生成发件后立即唤醒投递；运行中结果每 200 ms 检查，
+空闲时保留每秒一次恢复扫描，不依赖定时扫描才发现本进程新收到的消息。
+`debounce_seconds` 控制合并前的静默窗口，0 表示关闭；batch_max_messages 默认 20，
+最多 100 条，每批约束 1 MB 序列化收件。batch_max_wait_seconds 默认 2 秒、最多 30 秒。
+原始收件、每条发送者、消息 ID 与路由快照保留；运行中到达的消息形成下一批。
+混合发送者的 InvocationSource 顶层身份/群角色留空，participants 逐条提供事实；
+不能把首位管理员的角色继承给整批。执行提交、恢复和发送前重新核对所有成员的路由。
+
+多人群聊始终把每条原文作为独立 user 消息提交，保留发送者、消息 ID、提及和引用；
+不把窗口内所有人合成一个发言者，也不把群友标成 assistant。
+需要理解未提及机器人的接话时，部署方可配置 visibility=all、activation=always、
+session_scope=group 和 output_mode=message，让 Agent 根据共享 Session 返回 reply/ignore。
+只激活提及消息时，其他闲聊不会进入模型记忆。称呼、接话与避免重复回复属于 Agent 配置，
+不写入网关的通用提示词。滑动窗口只合并尚未提交的新收件，不重复搬运 Session 历史。
+
 `send_limit/send_window_seconds` 使用持久固定窗口计数，
 发送失败重试同样占用次数；`send_timeout_seconds` 限制单次发送。
 `response_timeout_seconds` 传给 Agent Run，编排总时限由 WorkflowSpec.limits 控制。
@@ -144,7 +178,7 @@ SDK 接收可信 Principal 与 InvocationSource，工具支持发现过滤和执
 
 QQ 的富媒体标签、语音转写、引用消息与事件附带近期上下文在适配器内解析。
 钉钉短文本使用 Markdown 模板，超过 3500 字符使用纯文本模板；Webhook 和主动消息一致。
-当前消息和历史附件通过执行桥转换为原生 SDK 多模态消息；模型是否接受音视频与文件
+当前批次附件通过执行桥转换为原生 SDK 多模态消息；模型是否接受音视频与文件
 仍取决于所选模型和接口。编排 Agent 节点用 `input_mode: "messages"` 接收原生 messages，
 默认 json 模式继续把节点参数作为 JSON 文本。
 
@@ -189,7 +223,7 @@ recipients 是本通道已完成或被动收件的 UUID，作为已核实身份�
 | 统一消息、媒体与适配器扩展 | SDK 合同；内置 QQ/钉钉，其他通道走插件 |
 | 多通道、工作池与批处理 | 通道租约、受限并发、会话顺序、静默合并、控制命令、配置/插件热重载 |
 | 消息、完成、错误与工具事件 | 持久 Run 事件和终态、节流步骤提示、公开推理摘要；错误不静默重跑 |
-| 群提及、可见性、激活与短期上下文 | 默认/分群策略、TTL/条数/清理、QQ 平台附带近期消息、本地授权历史 |
+| 群提及、可见性、激活与会话 | 默认/分群策略、共享群路由、原生 Session；不复制上游短期历史拼接 |
 | 已知会话与观察用户 | subjects、conversations、members；上游同样主要依赖已见消息，不等于全量群目录 |
 | 流式文本与 typing | QQ C2C，合并 replace 帧、独立索引、已接受前缀、结束帧；守卫/内部 Agent 有公开限制 |
 | 超时、占位提示、发送限流 | 已接入；编排总时限由其定义管理 |
@@ -211,9 +245,11 @@ ID 类型和可信绑定依据，不能自动迁移成新权限。管理员需�
 先执行数据库迁移，再部署 API、Worker 和 Gateway；程序版本升级需要重启这些进程，
 日常配置与插件变更无需整体重启。
 
-新增消息处理状态、推送、扫码和编排会话映射使用迁移 `0006_gateway_processing`；
-升级后再启用相应 API 和 Gateway Worker。该迁移已在隔离测试数据库执行，
-升级/降级循环与 ORM 一致性通过；生产数据库升级和真实通道仍未验收。
+0.1.2 使用迁移 `0007_gateway_admission`，增加共享群路由、审核状态和 Session 范围映射。
+先暂停通道并排空 submitted 消息和旧 Run，再备份、迁移和部署新进程。
+迁移将旧 group.history_scope 转为 session_scope，删除旧历史拼接选项；不保留运行时兼容分支。
+旧原始收件、Session 文件和映射记录保留，新范围从新 Session 开始，不合并不同旧用户历史。
+该迁移不支持安全反向拆分共享 Session；降级必须恢复升级前的协调备份。
 完整证据与限制见 [验收记录](../../../docs/acceptance.md)。
 本次同时改变 Agent 模型引用与 Temporal 流式调用路径。发布前必须针对已有历史做重放验收；
 未完成重放验证时，先排空旧 Agent Workflow，再切换新 Worker，不能直接热替换运行中的历史。

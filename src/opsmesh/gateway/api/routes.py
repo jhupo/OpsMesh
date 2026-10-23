@@ -28,9 +28,8 @@ from opsmesh.gateway.identity.identities import Identities
 from opsmesh.gateway.messaging import push
 from opsmesh.gateway.messaging.media import GatewayMedia
 from opsmesh.gateway.messaging.recovery import resolve_delivery, retry_inbox
-from opsmesh.gateway.routing.service import Routing
+from opsmesh.gateway.routing.service import Routing, route_principal
 from opsmesh.gateway.storage.models import (
-    GatewayAccountBinding,
     GatewayDelivery,
     GatewayIdentity,
     GatewayInbox,
@@ -307,10 +306,7 @@ async def routes(channel_id: UUID, request: Request, user: CurrentUserDep) -> li
 async def save_route(value: Gateway, route: RouteDefinition, actor_id: UUID) -> RouteDefinition:
     def account() -> UUID:
         with value.store.sessions() as session:
-            binding = session.get(GatewayAccountBinding, route.identity_id)
-            if binding is None:
-                raise ConflictError("Bind the external identity first")
-            return binding.user_id
+            return route_principal(session, route)
 
     user_id = await asyncio.to_thread(account)
     await value.execution.authorize(user_id, route)

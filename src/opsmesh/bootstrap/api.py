@@ -34,6 +34,7 @@ from opsmesh.bootstrap.workflows import configure_workflows
 from opsmesh.config import Settings, get_settings
 from opsmesh.gateway import Gateway
 from opsmesh.gateway.api.routes import router as gateway_router
+from opsmesh.gateway.messaging.filters import MessageFilters
 from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.platform.audit.service import SecurityAuditRecorder
 from opsmesh.platform.evaluations.contracts import EvaluatorRegistry
@@ -174,6 +175,12 @@ def create_app(
                     store=GatewayStore(database.sessions, database.cipher),
                     media_root=layout.gateway_media,
                     execution=execution,
+                    filters=MessageFilters(
+                        lambda: plugins.current.resources,
+                        managed.credential,
+                        execution.filter_actor,
+                        layout.gateway_media,
+                    ),
                 )
                 app.state.gateway = gateway
                 resources.push_async_callback(gateway.stop)

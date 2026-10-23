@@ -2,6 +2,17 @@
 
 All notable changes to OpsMesh will be documented here.
 
+## 0.1.2
+
+- Moderate each original message through optional plugin message filters before activation and batching. Bound admission retries and preserve exact-message recall receipts.
+- Use native Agents SDK Sessions as the only conversation memory; remove gateway history reconstruction and the extra TypeSafe decision Workflow.
+- Share a group's Session for the same authorized account and Agent, preserve every batched sender, and avoid inheriting one member's administrator role.
+- Add explicit shared group routes for a restricted platform account so members can chat without individual registration. Preserve private-route isolation and enforce current route permissions.
+- Dispatch messages independently so a slow filter does not hold an entire scheduling cycle. Keep bounded quiet windows, batch limits, FIFO and recoverable submissions.
+- Keep Jev integration in an optional moderation adapter; remove the vendor dependency from the framework. Reply policy remains Agent/plugin configuration.
+- Add migration 0007 and document coordinated upgrade, stopped/drained ingress and retained historical Session files. No runtime compatibility layer is added.
+- Preserve native model retries and expose an explicit opt-in backoff policy for compatible services returning long 5xx Retry-After headers.
+
 ## 0.1.1
 
 - Organize the native gateway into transport, channel, identity, routing, messaging, API and storage modules without compatibility import paths.

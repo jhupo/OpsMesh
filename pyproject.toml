@@ -1,6 +1,6 @@
 [project]
 name = "opsmesh"
-version = "0.1.1"
+version = "0.1.2"
 description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
 license = "LGPL-3.0-only"
@@ -10,7 +10,7 @@ license-files = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "opsmesh-sdk==0.1.1",
+    "opsmesh-sdk==0.1.2",
     "alembic>=1.18.4",
     "cryptography>=50.0.0",
     "docker>=7.2.0,<8.0.0",
@@ -31,7 +31,6 @@ dependencies = [
     "websockets>=12.0",
     "temporalio[opentelemetry,pydantic]>=1.33.0,<2.0.0",
     "temporalio-openai-agents[mcp,openinference]==1.1.0",
-    "typesafe-sdk==0.7.5",
     "opentelemetry-api>=1.44.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
@@ -66,7 +65,7 @@ build-backend = "setuptools.build_meta"
 compute = ["mcp>=2.0.0,<3.0.0"]
 packaging = ["pyinstaller==6.22.2"]
 dev = [
-    "opsmesh-operator[host]==0.1.1",
+    "opsmesh-operator[host]==0.1.2",
     "aiosqlite>=0.22.1",
     "fakeredis[lua]>=2.35.1",
     "import-linter>=2.11,<3.0",

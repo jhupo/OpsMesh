@@ -44,6 +44,11 @@ Provider 配置如下：
 的单请求传输超时，`request_timeout` 是 OpsMesh 单次模型操作的总时限，包含 SDK 重试及退避，
 最大 330 秒。Run 的 `timeout_seconds` 进一步限制整次执行，先到的时限生效。
 
+`server_error_retry_after` 默认 `respect`，遵守服务端的 Retry-After。
+对需要低延迟的兼容接口，可显式设为 `backoff`：仅对 HTTP 5xx 移除等待时间响应头，
+由原生 SDK 执行带抖动的指数退避，仍受 `max_retries` 和总时限约束。
+HTTP 429 限流始终保留服务端等待时间。该选项不增加第二层重试，也不保证厂商响应速度。
+
 连接错误、传输超时和可重试 HTTP 状态使用原生 SDK 的退避策略；认证失败、无效参数等错误
 不属于通用重试范围。流式输出已经开始后不重新发送一整段输出。Temporal 模型 Activity
 保留一次执行策略，不叠加另一层模型重试；工具和 MCP 外部效果也不随模型重试再次执行。
@@ -61,8 +66,13 @@ base_url、模型、API 凭据和代理可各自不同，不要求整个 Agent �
 新增环境引用需配置到实际执行进程；Provider/插件配置更新不等于自动分发服务器环境变量。
 
 非 OpenAI 协议的决策服务通过独立插件适配，示例见
-[TypeSafe Decision](../sdk/python/examples/typesafe-decision/README.md)。它使用自己的官方 SDK
-和重试配置，不伪装成 OpenAI Chat Completions。网关只调用配置的编排，不固定决策厂商。
+[TypeSafe Moderation](../sdk/python/examples/typesafe-decision/README.md)。该可选插件使用
+System One HTTP 协议审核原始消息，不选择回答 Agent、不判断是否相关。网关提供通用
+message_filter 扩展与有界失败重试；单 Agent 回答可以直接路由，不需要额外编排。
+
+Provider 的 `server_error_retry_after` 默认 respect，保留原生 SDK 对 Retry-After 的处理。
+仅当某个兼容服务的 5xx 返回过长等待且需要改用 SDK 退避时，显式设为 backoff；
+429 限流头仍保留。`max_retries` 控制额外重试次数，不重跑整个 Agent Run 或外部工具。
 
 ## 运行事件和追踪
 

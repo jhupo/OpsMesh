@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 from opsmesh_sdk.channels import ContentPart, InboundMessage
-from opsmesh_sdk.identity import InvocationSource
+from opsmesh_sdk.identity import InvocationSource, MessageParticipant
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from opsmesh.gateway.channels.policy import GatewayPolicy
@@ -27,7 +27,9 @@ class RouteDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: UUID
     channel_id: UUID
-    identity_id: UUID
+    identity_id: UUID | None = None
+    conversation_key: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    user_id: UUID | None = None
     conversation_id: str = Field(default="", max_length=500)
     target_kind: str = Field(pattern="^(agent|workflow)$")
     target_id: UUID
@@ -37,10 +39,26 @@ class RouteDefinition(BaseModel):
     revision: int = 1
 
     @model_validator(mode="after")
-    def validate_output(self) -> "RouteDefinition":
-        if self.output_mode == "message" and self.target_kind != "workflow":
-            raise ValueError("Typed gateway replies require a Workflow route")
+    def validate_subject(self) -> "RouteDefinition":
+        if self.identity_id is not None:
+            if self.conversation_key is not None or self.user_id is not None:
+                raise ValueError("Identity routes use their verified account binding")
+        elif (
+            self.conversation_key is None
+            or self.user_id is None
+            or not self.allow_group
+            or self.conversation_id
+        ):
+            raise ValueError("Shared routes require an exact conversation key and platform account")
         return self
+
+
+class BatchMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    inbox_id: UUID
+    identity_id: UUID
+    route: RouteDefinition
+    message: InboundMessage
 
 
 class GatewayTurn(BaseModel):
@@ -54,30 +72,37 @@ class GatewayTurn(BaseModel):
     message: InboundMessage
     session_id: UUID | None = None
     policy: GatewayPolicy = Field(default_factory=GatewayPolicy)
-    recent_messages: list[InboundMessage] = Field(default_factory=list)
-    context_ids: list[UUID] = Field(default_factory=list)
+    batch: list[BatchMessage] = Field(default_factory=list)
     event_cursor: int = 0
+    status: str = "pending"
+    channel_revision: int = 1
+    queue_key: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @property
     def source(self) -> InvocationSource:
+        mixed = len({item.identity_id for item in self.batch}) > 1
         return InvocationSource(
             channel_id=self.channel_id,
             conversation_id=self.message.conversation.external_id,
-            identity_id=self.identity_id,
+            identity_id=None if mixed else self.identity_id,
             reply_scope="private" if self.message.conversation.kind == "private" else "group",
-            external_role=self.message.actor.external_role,
-            external_id=self.message.actor.external_id,
+            external_role=None if mixed else self.message.actor.external_role,
+            external_id=None if mixed else self.message.actor.external_id,
             identity_scope=self.message.actor.scope,
             stream_output=(
                 (self.policy.streaming or self.policy.show_thinking)
                 and self.route.output_mode == "text"
                 and self.route.target_kind == "agent"
             ),
-            session_scope=payload_digest(
+            session_scope=self.queue_key
+            or payload_digest(
                 {
-                    "route": str(self.route.id),
-                    "revision": self.route.revision,
-                    "identity": str(self.identity_id),
+                    "channel": str(self.channel_id),
+                    "target": [self.route.target_kind, str(self.route.target_id)],
+                    "identity": str(self.identity_id)
+                    if self.message.conversation.kind == "private"
+                    or self.policy.group_for(self.message).session_scope == "user"
+                    else None,
                     "user": str(self.user_id),
                     "conversation": {
                         "kind": self.message.conversation.kind,
@@ -86,12 +111,21 @@ class GatewayTurn(BaseModel):
                     },
                 }
             ),
+            participants=[
+                MessageParticipant(
+                    message_id=item.message.event_id,
+                    identity_id=item.identity_id,
+                    external_id=item.message.actor.external_id,
+                    external_role=item.message.actor.external_role,
+                )
+                for item in self.batch
+            ],
         )
 
 
 class GatewayReply(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    action: str = Field(pattern="^(reply|ignore)$")
+    action: Literal["reply", "ignore", "recall"]
     content: list[ContentPart] = Field(default_factory=list, max_length=100)
 
     @classmethod

@@ -27,6 +27,7 @@ class QQAdapter(ChannelAdapter):
         proactive=True,
         qr_binding=True,
         probe=True,
+        recall=True,
     )
 
     def __init__(self, config: dict[str, Any], sink: EventSink, media: ChannelMedia) -> None:

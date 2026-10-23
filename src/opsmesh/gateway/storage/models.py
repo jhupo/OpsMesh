@@ -3,7 +3,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -62,9 +71,20 @@ class GatewayMember(TimestampMixin, Base):
 
 class GatewayRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "gateway_routes"
-    __table_args__ = (UniqueConstraint("identity_id", "conversation_id"),)
+    __table_args__ = (
+        UniqueConstraint("identity_id", "conversation_id"),
+        UniqueConstraint("channel_id", "conversation_key"),
+        CheckConstraint(
+            "(identity_id IS NOT NULL AND conversation_key IS NULL AND user_id IS NULL) OR "
+            "(identity_id IS NULL AND conversation_key IS NOT NULL AND user_id IS NOT NULL "
+            "AND allow_group AND conversation_id = '')",
+            name="subject",
+        ),
+    )
     channel_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_channels.id"), index=True)
-    identity_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_identities.id"))
+    identity_id: Mapped[UUID | None] = mapped_column(ForeignKey("gateway_identities.id"))
+    conversation_key: Mapped[str | None] = mapped_column(String(64))
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     conversation_id: Mapped[str] = mapped_column(String(500), default="")
     target_kind: Mapped[str] = mapped_column(String(16))
     target_id: Mapped[UUID]
@@ -76,8 +96,7 @@ class GatewayRoute(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class GatewaySession(TimestampMixin, Base):
     __tablename__ = "gateway_sessions"
-    route_id: Mapped[UUID] = mapped_column(ForeignKey("gateway_routes.id"), primary_key=True)
-    conversation_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_key: Mapped[str] = mapped_column(String(128), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     session_id: Mapped[UUID] = mapped_column(ForeignKey("execution_sessions.id"))
 
@@ -87,16 +106,7 @@ class GatewayInbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("channel_id", "event_key"),
         Index(
-            "ix_gateway_inbox_session_queue",
-            "channel_id",
-            "identity_id",
-            "conversation_key",
-            "status",
-            "created_at",
-            "id",
-        ),
-        Index(
-            "ix_gateway_inbox_group_history",
+            "ix_gateway_inbox_conversation_queue",
             "channel_id",
             "conversation_key",
             "status",
@@ -119,6 +129,10 @@ class GatewayInbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     encrypted_context: Mapped[str | None] = mapped_column(Text)
     event_cursor: Mapped[int] = mapped_column(Integer, default=0)
     control: Mapped[str | None] = mapped_column(String(16))
+    queue_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    filter_revision: Mapped[int | None] = mapped_column(Integer)
+    filter_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    filter_retry_at: Mapped[datetime | None]
 
 
 class GatewayDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):

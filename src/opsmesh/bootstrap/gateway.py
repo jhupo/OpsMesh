@@ -1,24 +1,22 @@
 """Compose transport ports with authorized execution and workflow services."""
 
 import asyncio
-import base64
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from opsmesh_sdk.channels import ContentPart
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.gateway.contracts import GatewayEvent, GatewayEvents, GatewayTurn, RouteDefinition
+from opsmesh.gateway.messaging.inputs import native_messages
 from opsmesh.gateway.messaging.media import GatewayMedia
 from opsmesh.gateway.routing.service import authorize_turn
 from opsmesh.gateway.routing.sessions import mapped_session
-from opsmesh.gateway.storage.models import GatewayInbox
+from opsmesh.gateway.storage.models import GatewayChannel, GatewayInbox
 from opsmesh.shared.errors import ConflictError
 from opsmesh.shared.security.encryption import SecretCipher
-from opsmesh.shared.serialization import canonical_json
 
 
 class GatewayExecution:
@@ -51,49 +49,20 @@ class GatewayExecution:
 
         await asyncio.to_thread(check)
 
+    async def filter_actor(self, turn: GatewayTurn) -> Any:
+        def current() -> Any:
+            from opsmesh.users.service import current_user
+
+            with self.sessions() as session:
+                authorize_turn(session, turn)
+                return current_user(session, turn.user_id)
+
+        return await asyncio.to_thread(current)
+
     async def submit(self, turn: GatewayTurn) -> UUID:
         media = GatewayMedia(self.media_root / str(turn.channel_id))
 
-        async def native_content(parts: list[ContentPart]) -> list[dict[str, Any]]:
-            content: list[dict[str, Any]] = []
-            for part in await media.prepare(parts):
-                if part.type == "text":
-                    content.append({"type": "input_text", "text": part.text})
-                elif part.media_key:
-                    data = base64.b64encode(await media.read(part.media_key)).decode()
-                    url = f"data:{part.mime_type};base64,{data}"
-                    content.append(
-                        {"type": "input_image", "image_url": url}
-                        if part.type == "image"
-                        else {"type": "input_file", "filename": part.filename, "file_data": url}
-                    )
-            return content
-
-        content = await native_content(turn.message.content)
-        history: list[dict[str, Any]] = []
-        seen = {turn.message.event_id}
-        for identifier, sender, parts in [
-            (item.event_id, item.actor.external_id, item.content) for item in turn.recent_messages
-        ] + [
-            (item.message_id, item.sender_id, item.content)
-            for item in turn.message.context.recent_messages
-        ]:
-            if identifier in seen:
-                continue
-            seen.add(identifier)
-            history.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Untrusted recent group message: "
-                            + canonical_json({"message_id": identifier, "sender_id": sender}),
-                        },
-                        *await native_content(parts),
-                    ],
-                }
-            )
+        messages = await native_messages(turn, media)
 
         def submit() -> UUID:
             from opsmesh.execution.runs.schemas import RunCreate
@@ -107,31 +76,35 @@ class GatewayExecution:
             with self.sessions.begin() as session:
                 authorize_turn(session, turn)
                 actor = self.check(session, turn.user_id, turn.route)
+                session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                    {"key": "gateway-queue:" + str(turn.source.session_scope)},
+                )
                 row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
                 assert row is not None
                 if row.run_id is not None:
                     return row.run_id
+                if row.status != "dispatching":
+                    raise ConflictError("Only an admitted conversation batch can be submitted")
+                channel = session.get(GatewayChannel, turn.channel_id)
+                if channel is None or row.filter_revision != channel.revision:
+                    raise ConflictError("Channel configuration changed before submission")
                 request_key = "gateway:" + str(turn.inbox_id)
                 facts = {
                     "user_id": str(actor.user_id),
                     "platform_roles": sorted(actor.platform_roles),
                     "external": turn.message.actor.model_dump(mode="json"),
                     "conversation": turn.message.conversation.model_dump(mode="json"),
-                    "message_context": turn.message.context.model_dump(mode="json"),
-                    "recent_messages": [
-                        {
-                            "event_id": item.event_id,
-                            "sender_id": item.actor.external_id,
-                            "content": [part.model_dump(mode="json") for part in item.content],
-                        }
-                        for item in turn.recent_messages
-                    ]
-                    + [
-                        item.model_dump(mode="json")
-                        for item in turn.message.context.recent_messages
+                    "message_context": turn.message.context.model_dump(
+                        mode="json", exclude={"recent_messages"}
+                    ),
+                    "batch": [
+                        item.message.model_dump(
+                            mode="json", exclude={"context": {"recent_messages"}}
+                        )
+                        for item in turn.batch
                     ],
                 }
-                messages = [*history, {"role": "user", "content": content}]
                 if turn.route.target_kind == "agent":
                     session_id = mapped_session(
                         session,
@@ -279,6 +252,10 @@ class GatewayExecution:
             with self.sessions.begin() as session:
                 authorize_turn(session, turn)
                 actor = self.check(session, turn.user_id, turn.route)
+                session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                    {"key": "gateway-queue:" + str(turn.source.session_scope)},
+                )
                 inbox = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
                 assert inbox is not None
                 if inbox.status == "completed":
@@ -308,9 +285,9 @@ class GatewayExecution:
                     reset_session(
                         session, actor=actor, session_id=session_id, history_root=self.history_root
                     )
-                    result = "Private conversation history reset."
+                    result = "Conversation history reset."
                 elif command == "new":
-                    result = "Switched to a new private conversation."
+                    result = "Switched to a new conversation."
                 else:
                     raise ConflictError("Unknown gateway command")
                 # Command effects and reply intent commit together, making reconnects idempotent.

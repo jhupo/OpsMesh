@@ -1,18 +1,24 @@
-# TypeSafe Decision Plugin
+# TypeSafe Moderation Plugin
 
-This optional plugin evaluates relevance and whether a reply is requested, then selects
-one configured handler. It uses the official `typesafe-sdk==0.7.5` and `jev-latest`.
-It does not implement authorization, execute tools chosen by the model, or install QQ
-credentials. The gateway has no TypeSafe dependency in its processing code.
+This optional adapter submits each original message to `jev-latest` through the
+public System One HTTP endpoint. It only checks configured moderation categories.
+It does not decide relevance, reply triggers, Agent selection or tool permissions.
+The core framework has no TypeSafe dependency or embedded credentials.
 
-## Install And Configure
+The package ID remains `typesafe-decision`; version 0.1.2 contributes
+`typesafe-decision/message_filter/moderate`. Replace the old decision Workflow
+binding with a channel filter binding. No Workflow is required for a single Agent.
 
-Build this directory using `opsmesh-plugin build`, install the ZIP through the normal
-plugin API or CLI, configure the plugin, then enable it. The host includes the locked
-vendor runtime in its server distribution; the plugin SDK itself has no vendor dependency.
-No plugin is installed or enabled automatically.
+## Install and Configure
 
-Installation configuration, using credential references rather than secret values:
+```bash
+opsmesh-plugin build sdk/python/examples/typesafe-decision --output ./moderation.zip
+opsmesh-plugin check ./moderation.zip
+opsmesh plugin install ./moderation.zip
+opsmesh plugin enable typesafe-decision
+```
+
+Configure the installed plugin with credential references:
 
 ```json
 {
@@ -20,64 +26,75 @@ Installation configuration, using credential references rather than secret value
   "model": "jev-latest",
   "network_mode": "proxy",
   "proxy_ref": "env:TYPESAFE_PROXY_URL",
-  "max_retries": 2,
-  "timeout_seconds": 10,
-  "budget_seconds": 20,
-  "handlers": {"assistant": "General questions and tasks"}
-}
-```
-
-Store those environment values in every process that invokes the plugin, or replace
-the references with administrator-managed `secret:<id>` catalog credentials.
-The proxy value must be an HTTP(S) URL with an explicit port. For direct access use
-`network_mode: "direct", proxy_ref: null`; for environment routing use
-`network_mode: "environment", proxy_ref: null`.
-
-The API endpoint is `https://api.typesafe.ai`; the console is not the inference API.
-The SDK handles retryable failures with up to two additional attempts by default.
-The total call budget includes retries and waiting. Authentication and other terminal
-SDK errors produce the configured `on_error` action, default `clarify`; cancellation
-propagates to the caller. The plugin never silently switches to another provider.
-
-## Bind A Workflow
-
-Publish [workflow.json](workflow.json) as the workflow spec, then create a workflow
-instance with an existing, authorized Agent instance in slot `assistant` and:
-
-```json
-{
-  "tools": {
-    "decision": {
-      "kind": "plugin",
-      "resource_id": "typesafe-decision",
-      "allowed_operations": ["decide"],
-      "require_approval": false
-    }
+  "timeout_seconds": 4,
+  "threshold": 0.95,
+  "blocked_action": "recall",
+  "categories": {
+    "advertising": "Unsolicited advertising, scams, or commercial spam.",
+    "violence": "Threats or incitement to violent wrongdoing.",
+    "sexual": "Prohibited sexually explicit content or sexual exploitation."
   }
 }
 ```
 
-Add the `agents.assistant` binding for the actual Agent instance. It must produce a
-string result; its own tools, permissions, model provider and network settings belong
-to that Agent configuration. A decision handler is a closed label, never a Python
-name, tool name, URL or executable expression. To support more handlers, add explicit
-branches and bindings to the graph as well as labels to the plugin configuration.
+Set the referenced environment variables in each Gateway process, or use managed
+`secret:<id>` references. Proxy URLs require an HTTP(S) scheme and explicit port.
+For direct access use `network_mode: "direct", proxy_ref: null`; environment mode
+also uses a null proxy_ref. This client's routing is independent of QQ and Agent
+model providers. The adapter uses host-provided httpx; setup does not connect.
 
-Point a gateway Workflow route at this instance with `output_mode: "message"`.
-The sample maps `ignore` to an empty reply, `clarify` to a fixed clarification, and
-`dispatch/assistant` to the bound Agent. The gateway supplies current messages and
-trusted identity/conversation facts; quoted and recent messages remain untrusted input.
-The Agent node uses `input_mode: "messages"` to pass the gateway's message array as
-native multimodal Agent input. Other nodes retain the default JSON argument mode.
+## Bind the Channel
 
-The supplied configuration has no enterprise domain rules. Customize responsibilities,
-labels, graph conditions and application tools in your own plugin/workflow package.
-Classification probabilities do not grant platform or tool permissions.
+Add these fields to the existing channel policy, preserving other settings:
 
-Plugin model calls are recorded as plugin effects. Reported TypeSafe token counts are
-returned in the decision result, but are not native OpenAI model cost/quota receipts.
-No real API or channel verification is implied by this example.
+```json
+{
+  "message_filters": ["typesafe-decision/message_filter/moderate"],
+  "filter_max_attempts": 3,
+  "filter_retry_seconds": 1,
+  "debounce_seconds": 0.4,
+  "batch_max_wait_seconds": 2,
+  "batch_max_messages": 20
+}
+```
 
-Official references: [async client](https://docs.typesafe.ai/sdk/python/api/clients/async),
-[retries](https://docs.typesafe.ai/sdk/python/api/retries),
-[confidence](https://docs.typesafe.ai/confidence).
+For a selected group, `allow_recall: true` is required for recall. The channel
+adapter must support recall and the platform must grant the bot permission.
+The group and message ID come from the original receipt; the model cannot select
+another message. Failed moderation never becomes an automatic recall or allow.
+
+The adapter has one HTTP attempt per invocation. The host retries transient or
+malformed evaluations within the configured attempt count, then marks the receipt
+blocked for administrative recovery. Credential resolution and HTTP/media work have
+bounded timeouts. A category score at or above the threshold selects blocked_action.
+Text and image attachments are inspected. Unsupported audio/video/files fail closed;
+use another filter adapter if the deployment must admit those formats.
+
+## Reply and Identity Policy
+
+Configure an explicit shared group route with the observed conversation key, an
+authorized restricted platform account and an Agent instance. Members keep their
+own external IDs and roles without each registering a platform account.
+
+The default group activation only admits mentions to the Agent. To let an Agent
+decide whether names or follow-ups need a reply, explicitly configure that group
+with `visibility: "all", activation: "always"` and `session_scope: "group"`.
+The platform must actually provide all-message events. Configure the Agent's own
+instructions and structured output schema to return a typed gateway reply or ignore,
+then select route `output_mode: "message"`. The schema is GatewayReply in the host
+contract; ordinary text routes do not interpret JSON as control instructions.
+
+Messages are moderated individually, queued, and batched without merging sender
+identities. New receipts during an active Agent Run form its next batch. Native
+Agents SDK Session storage owns the transcript. The gateway does not reconstruct
+past exchanges or give platform-supplied history an unaudited path to the model.
+
+For multiple participants the invocation source contains every sender and role;
+its top-level external identity/role is empty. A plugin must not infer that all
+batched messages have one administrator's authority. Group roles never grant
+platform permissions. Classification scores are not authorization or OpenAI billing
+receipts. This example does not imply a real API, proxy or QQ acceptance result.
+
+Protocol reference: [TypeSafe Python SDK](https://docs.typesafe.ai/sdk/python/api/clients/async).
+The adapter follows the System One request/response contract in SDK 0.7.5, with
+strict numeric validation and bounded responses; the vendor package is not bundled.

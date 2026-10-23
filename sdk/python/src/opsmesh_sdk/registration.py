@@ -17,6 +17,7 @@ from opsmesh_sdk.channels import ChannelAdapter
 from opsmesh_sdk.hooks import HOOK_POINTS, HookHandler, HookPoint, HookRegistration
 from opsmesh_sdk.identity import InvocationSource, Principal, ToolAuthorizer
 from opsmesh_sdk.manifest import PluginManifest
+from opsmesh_sdk.messages import MessageFilter, MessageFilterRegistration
 from opsmesh_sdk.middleware import ModelMiddleware
 
 
@@ -122,6 +123,7 @@ class PluginContext:
     hooks: list[HookRegistration] = field(default_factory=list, init=False)
     channels: dict[str, ChannelRegistration] = field(default_factory=dict, init=False)
     mcps: dict[str, MCPRegistration] = field(default_factory=dict, init=False)
+    message_filters: dict[str, MessageFilterRegistration] = field(default_factory=dict, init=False)
     skills_directory: Path | None = field(default=None, init=False)
     credential_refs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
@@ -206,6 +208,19 @@ class PluginContext:
             raise TypeError("Register a ModelMiddleware instance")
         self.middlewares.append(MiddlewareRegistration(instance, priority))
 
+    def message_filter(
+        self, name: str, handler: MessageFilter, *, timeout_seconds: float = 15
+    ) -> None:
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) or name in self.message_filters:
+            raise ValueError("Message filter names must be unique public identifiers")
+        if not callable(handler) or not (
+            iscoroutinefunction(handler) or iscoroutinefunction(type(handler).__call__)
+        ):
+            raise TypeError("Message filters must be async functions")
+        if not 0 < timeout_seconds <= 60:
+            raise ValueError("Message filter timeout must be between zero and 60 seconds")
+        self.message_filters[name] = MessageFilterRegistration(handler, timeout_seconds)
+
     def mcp(
         self,
         name: str,
@@ -238,6 +253,7 @@ class PluginContext:
             "hook": {"hooks": tuple(self.hooks)} if self.hooks else {},
             "middleware": {"middleware": tuple(self.middlewares)} if self.middlewares else {},
             "channel": dict(self.channels),
+            "message_filter": dict(self.message_filters),
         }
 
     def hook(

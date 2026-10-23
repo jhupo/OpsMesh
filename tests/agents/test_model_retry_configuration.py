@@ -3,6 +3,7 @@
 from contextlib import AsyncExitStack
 from unittest.mock import patch
 
+import httpx2
 import pytest
 from agents.models.openai_responses import OpenAIResponsesModel
 from openai import AsyncOpenAI
@@ -10,7 +11,7 @@ from pydantic import SecretStr, ValidationError
 
 from opsmesh.agents.config.model import ModelRef
 from opsmesh.agents.providers.config import ProviderConfig
-from opsmesh.agents.providers.factory import create_model
+from opsmesh.agents.providers.factory import create_model, use_server_error_backoff
 from opsmesh.agents.providers.models import ModelInfo
 from opsmesh.agents.providers.registry import ProviderRegistry
 
@@ -65,3 +66,16 @@ def test_retry_and_deadline_limits_are_finite_and_bounded(invalid):
             models=[ModelInfo(id="m")],
             **invalid,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [429, 500, 502, 503])
+async def test_backoff_override_preserves_rate_limit_waits(status):
+    response = httpx2.Response(status, headers={"Retry-After": "60", "retry-after-ms": "60000"})
+    await use_server_error_backoff(response)
+    if status == 429:
+        assert response.headers["retry-after"] == "60"
+        assert response.headers["retry-after-ms"] == "60000"
+    else:
+        assert "retry-after" not in response.headers
+        assert "retry-after-ms" not in response.headers

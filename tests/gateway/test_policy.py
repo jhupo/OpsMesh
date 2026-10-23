@@ -49,7 +49,7 @@ def test_only_explicit_typed_routes_accept_reply_control_values() -> None:
         GatewayReply.parse({"action": "ignore", "content": [{"text": "Hidden output"}]})
     with pytest.raises(ValueError):
         GatewayReply.parse({"action": "reply", "content": []})
-    with pytest.raises(ValidationError):
+    assert (
         RouteDefinition(
             id=uuid4(),
             channel_id=uuid4(),
@@ -57,10 +57,12 @@ def test_only_explicit_typed_routes_accept_reply_control_values() -> None:
             target_kind="agent",
             target_id=uuid4(),
             output_mode="message",
-        )
+        ).output_mode
+        == "message"
+    )
 
 
-def test_session_scope_ignores_display_names_and_changes_with_route_generation() -> None:
+def test_group_session_scope_shares_members_but_isolates_authorized_destinations() -> None:
     channel_id, identity_id = uuid4(), uuid4()
     turn = GatewayTurn(
         inbox_id=uuid4(),
@@ -90,7 +92,7 @@ def test_session_scope_ignores_display_names_and_changes_with_route_generation()
         == turn.model_copy(update={"message": renamed}).source.session_scope
     )
     changed = turn.model_copy(update={"route": turn.route.model_copy(update={"revision": 2})})
-    assert turn.source.session_scope != changed.source.session_scope
+    assert turn.source.session_scope == changed.source.session_scope
     other_actor = turn.message.model_copy(
         update={
             "actor": ExternalActor(scope="app", id_kind="member_openid", external_id="different")
@@ -98,43 +100,37 @@ def test_session_scope_ignores_display_names_and_changes_with_route_generation()
     )
     assert (
         turn.source.session_scope
-        != turn.model_copy(
+        == turn.model_copy(
             update={"identity_id": uuid4(), "message": other_actor}
         ).source.session_scope
     )
-
-
-def test_platform_context_respects_expiry_sender_and_duplicate_boundaries() -> None:
-    value = message(mentioned=True).model_dump(mode="json")
-    value["context"]["recent_messages"] = [
-        {
-            "message_id": identifier,
-            "sender_id": sender,
-            "timestamp": sent,
-            "content": [{"text": identifier}],
-        }
-        for identifier, sender, sent in [
-            ("expired", "member", 1),
-            ("other-user", "other", 999),
-            ("retained", "member", 998),
-            ("retained", "member", 999),
-            ("future", "member", 1001),
-        ]
-    ]
-    incoming = InboundMessage.model_validate(value)
-    assert [
-        item.message_id
-        for item in GatewayPolicy().prepare_context(incoming, 1000).context.recent_messages
-    ] == ["retained"]
     assert (
-        not GatewayPolicy(group=GroupPolicy(visibility="mention_only"))
-        .prepare_context(incoming, 1000)
-        .context.recent_messages
+        turn.source.session_scope
+        != turn.model_copy(update={"user_id": uuid4()}).source.session_scope
     )
     assert (
-        not GatewayPolicy(group=GroupPolicy(history_limit=0))
-        .prepare_context(incoming, 1000)
-        .context.recent_messages
+        turn.source.session_scope
+        != turn.model_copy(
+            update={"route": turn.route.model_copy(update={"target_id": uuid4()})}
+        ).source.session_scope
+    )
+    private = turn.model_copy(
+        update={
+            "message": turn.message.model_copy(
+                update={"conversation": Conversation(kind="private", external_id="private")}
+            )
+        }
+    )
+    assert (
+        private.source.session_scope
+        != private.model_copy(update={"identity_id": uuid4()}).source.session_scope
+    )
+    user_scope = turn.model_copy(
+        update={"policy": GatewayPolicy(group=GroupPolicy(session_scope="user"))}
+    )
+    assert (
+        user_scope.source.session_scope
+        != user_scope.model_copy(update={"identity_id": uuid4()}).source.session_scope
     )
 
 
