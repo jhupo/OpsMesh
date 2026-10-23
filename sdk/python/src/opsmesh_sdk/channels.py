@@ -77,10 +77,16 @@ class InboundMessage(ChannelValue):
 class OutboundMessage(ChannelValue):
     delivery_id: UUID
     address: dict[str, Any] = Field(repr=False)
-    content: list[ContentPart] = Field(min_length=1, max_length=100)
-    event: Literal["message", "delta", "completed", "typing"] = "message"
+    content: list[ContentPart] = Field(max_length=100)
+    event: Literal["message", "delta", "completed", "typing", "recall"] = "message"
     stream_id: str | None = None
     stream_index: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "OutboundMessage":
+        if (self.event == "recall") == bool(self.content):
+            raise ValueError("Recall requires empty content; other events require content")
+        return self
 
 
 class DeliveryReceipt(ChannelValue):
@@ -96,6 +102,7 @@ class ChannelCapabilities(ChannelValue):
     proactive: bool = False
     qr_binding: bool = False
     probe: bool = False
+    recall: bool = False
 
 
 EventSink = Callable[[InboundMessage], Awaitable[None]]

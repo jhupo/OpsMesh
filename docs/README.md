@@ -10,7 +10,7 @@
 | [发行格式](../deploy/DISTRIBUTIONS.md) | 原生包、镜像、平台矩阵和校验合同 |
 | [观测](../deploy/server/observability.md) | 日志、指标、追踪和告警 |
 | [平台管理与自动化](platform-management.md) | 模型配置、重试、事件、调度、评测与预算 |
-| [0.1.1 发行说明](releases/0.1.1.md) | 当前版本范围、升级注意事项和已知限制 |
+| [0.1.2 发行说明](releases/0.1.2.md) | 当前版本范围、升级注意事项和已知限制 |
 | [0.1.0 发行说明](releases/0.1.0.md) | 首个正式版本的历史说明 |
 
 HTTP API 合同来自运行中服务的 `/openapi.json`，不维护手写或生成后入库的副本。

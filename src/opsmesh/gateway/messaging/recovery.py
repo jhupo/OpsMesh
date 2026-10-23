@@ -15,8 +15,29 @@ def retry_inbox(store: GatewayStore, channel_id: UUID, inbox_id: UUID, actor_id:
             raise NotFoundError("Inbox event does not exist")
         if row.status != "blocked":
             raise ConflictError("Only blocked inbox events can be retried")
+        if row.run_id is None:
+            context = (
+                store.cipher.decrypt_payload(row.encrypted_context) if row.encrypted_context else {}
+            )
+            batch = context.get("batch", [])
+            for item in batch if isinstance(batch, list) else []:
+                if not isinstance(item, dict):
+                    raise ConflictError("Invalid stored gateway batch")
+                child = session.get(GatewayInbox, UUID(str(item["inbox_id"])), with_for_update=True)
+                if child is not None and child.id != row.id and child.status == "batched":
+                    child.status = "pending"
+                    child.route_id, child.route_revision, child.user_id = None, None, None
+                    child.queue_key, child.filter_revision, child.encrypted_context = (
+                        None,
+                        None,
+                        None,
+                    )
+                    child.filter_attempts, child.filter_retry_at = 0, None
+            row.route_id, row.route_revision, row.user_id = None, None, None
+            row.queue_key, row.filter_revision, row.encrypted_context = None, None, None
         row.status = "submitted" if row.run_id else "pending"
         row.error_code = None
+        row.filter_attempts, row.filter_retry_at = 0, None
         store.audit(session, "inbox.retry", actor_id, inbox_id)
 
 

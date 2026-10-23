@@ -10,7 +10,7 @@
 | `bootstrap` | 宿主 Agent/模型目录、API 装配、管理员初始化、Worker 生命周期、指标、登录维护、备份静默检查；部分需要 PostgreSQL/Redis |
 | `engineering` | 迁移链与当前 ORM、CI 选择、沙箱持久路径；迁移比较需要 PostgreSQL |
 | `execution` | 模型真实用量回执、公开 handoff 与内部工具 Agent 的流式边界、插件热更新后的审批边界、工作区 manifest/Skill 准备、容器身份和持久目录、真实 Docker、原生 SDK 模型/工具/SQLiteSession；模型 smoke 需要独立凭据 |
-| `gateway` | 首次附件存储、群激活权限、显式回复合同、会话隔离键、平台上下文过滤、广播目标合同和流式前缀；真实 PostgreSQL 用例覆盖审计、去重、持久合批恢复、FIFO、限流、投递对账、广播和解绑授权；真实本地存储需要 POSIX |
+| `gateway` | 原始消息审核、过滤器凭据/超时、逐条身份、原生消息输入、共享群路由、群激活、结构化回复、会话隔离和独立调度；真实 PostgreSQL 覆盖去重、合批恢复、审核隔离、FIFO、限流、投递对账、广播与路由撤销；媒体本地存储需要 POSIX |
 | `platform` | 审计隔离、公开 HTTP 合同、配置发布/回滚、金额预留结算、触发与 Outbox 幂等、数据集版本；部分需要 PostgreSQL |
 | `users` | 身份、额度、删除与头像；部分需要 PostgreSQL |
 | `shared` | 通用安全、日志脱敏、审计合同和底层机制 |

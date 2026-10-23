@@ -10,7 +10,6 @@ from opsmesh.gateway.storage.models import (
     GatewayAccountBinding,
     GatewayIdentity,
     GatewayRoute,
-    GatewaySession,
 )
 from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.shared.errors import ConflictError, NotFoundError
@@ -62,13 +61,6 @@ class Identities:
         with self.store.sessions.begin() as session:
             if session.get(GatewayIdentity, identity_id, with_for_update=True) is None:
                 raise NotFoundError("External identity does not exist")
-            session.execute(
-                delete(GatewaySession).where(
-                    GatewaySession.route_id.in_(
-                        select(GatewayRoute.id).where(GatewayRoute.identity_id == identity_id)
-                    )
-                )
-            )
             for route in session.scalars(
                 select(GatewayRoute)
                 .where(GatewayRoute.identity_id == identity_id)

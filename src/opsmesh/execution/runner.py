@@ -119,6 +119,9 @@ async def run_agent(
                     "external_role": context.source.external_role,
                     "external_id": context.source.external_id,
                     "identity_scope": context.source.identity_scope,
+                    "participants": [
+                        item.model_dump(mode="json") for item in context.source.participants
+                    ],
                 }
             )
             for agent in built.agents.values():

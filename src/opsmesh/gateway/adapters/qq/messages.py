@@ -26,6 +26,16 @@ async def send_message(
         "channel": f"/channels/{target}/messages",
         "dm": f"/dms/{target}/messages",
     }
+    if message.event == "recall":
+        if kind != "group" or message.content:
+            raise DeliveryRejected("QQ recall requires a group message without content")
+        message_id = address.get("msg_id")
+        if not message_id:
+            raise DeliveryRejected("QQ recall requires the original message ID")
+        await client.request(
+            "DELETE", paths[kind] + "/" + quote(str(message_id), safe=""), sending=True
+        )
+        return DeliveryReceipt(remote_id=str(message_id))
     if kind not in paths or len(message.content) != 1:
         raise DeliveryRejected("Unsupported QQ delivery")
     part = message.content[0]

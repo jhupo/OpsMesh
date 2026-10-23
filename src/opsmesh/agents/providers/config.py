@@ -22,6 +22,7 @@ class ProviderConfig(ConfigValue):
     enabled: bool = True
     timeout: float = Field(default=60, gt=0, allow_inf_nan=False)
     max_retries: int = Field(default=2, ge=0, le=10)
+    server_error_retry_after: Literal["respect", "backoff"] = "respect"
     request_timeout: float = Field(default=300, gt=0, le=330, allow_inf_nan=False)
     organization: str | None = None
     project: str | None = None

@@ -33,7 +33,9 @@ class AccountBind(BaseModel):
 
 class RouteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    identity_id: UUID
+    identity_id: UUID | None = None
+    conversation_key: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    user_id: UUID | None = None
     conversation_id: str = Field(default="", max_length=500)
     target_kind: str = Field(pattern="^(agent|workflow)$")
     target_id: UUID

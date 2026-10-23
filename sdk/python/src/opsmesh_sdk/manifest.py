@@ -15,7 +15,9 @@ class PluginManifest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
     icon: str = Field(default="", max_length=200)
-    kind: Literal["tool", "skill", "mcp", "hook", "middleware", "channel", "plugin"]
+    kind: Literal[
+        "tool", "skill", "mcp", "hook", "middleware", "channel", "message_filter", "plugin"
+    ]
     entry: str = "main.py"
 
     @field_validator("entry")

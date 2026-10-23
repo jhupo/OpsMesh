@@ -1,23 +1,24 @@
-"""Acknowledge transport input only after encrypted durable receipt."""
+"""Durable receipts, individual admission and ordered conversation batches."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from opsmesh_sdk.channels import InboundMessage
+from opsmesh_sdk.messages import MessageFilterResult
 from pydantic import TypeAdapter
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import func, or_, select, text, true, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
 from opsmesh.gateway.channels.leases import require_lease
-from opsmesh.gateway.contracts import GatewayTurn
+from opsmesh.gateway.contracts import BatchMessage, GatewayTurn
 from opsmesh.gateway.identity.conversations import Conversations, conversation_key
 from opsmesh.gateway.identity.identities import Identities
 from opsmesh.gateway.messaging.commands import command
-from opsmesh.gateway.routing.service import resolve_route
-from opsmesh.gateway.storage.models import GatewayAccountBinding, GatewayChannel, GatewayInbox
+from opsmesh.gateway.routing.service import authorize_turn, resolve_route
+from opsmesh.gateway.storage.models import GatewayChannel, GatewayInbox
 from opsmesh.gateway.storage.store import GatewayStore
-from opsmesh.shared.errors import ConflictError, DomainError
+from opsmesh.shared.errors import ConflictError, InvalidArgumentError
 from opsmesh.shared.serialization import canonical_json, payload_digest
 
 
@@ -34,15 +35,20 @@ class Inbox:
             session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {
-                    "key": "gateway-ingress:"
+                    "key": "gateway-identity:"
                     + payload_digest(
                         {
                             "channel": str(channel_id),
                             "scope": message.actor.scope,
+                            "kind": message.actor.id_kind,
                             "actor": message.actor.external_id,
                         }
                     )
                 },
+            )
+            session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"gateway-ingress:{channel_id}:{conversation_key(message)}"},
             )
             channel = session.get(GatewayChannel, channel_id)
             if channel is None or not channel.enabled:
@@ -75,54 +81,35 @@ class Inbox:
             channel = session.get(GatewayChannel, channel_id)
             if channel is None or not channel.enabled:
                 return []
-            debounce = self.store.definition(channel).policy.debounce_seconds
-            cutoff = datetime.now(UTC) - timedelta(seconds=debounce)
-            earlier, later = aliased(GatewayInbox), aliased(GatewayInbox)
             result: list[UUID] = []
-            for status in ("pending", "submitted"):
+            earlier = aliased(GatewayInbox)
+            for statuses in (("submitted", "dispatching"), ("pending",), ("ready",)):
+                head_only = (
+                    or_(
+                        GatewayInbox.control.is_not(None),
+                        ~select(earlier.id)
+                        .where(
+                            earlier.queue_key == GatewayInbox.queue_key,
+                            earlier.status == "ready",
+                            earlier.control.is_(None),
+                            tuple_(earlier.created_at, earlier.id)
+                            < tuple_(GatewayInbox.created_at, GatewayInbox.id),
+                        )
+                        .exists(),
+                    )
+                    if statuses == ("ready",)
+                    else true()
+                )
                 result.extend(
                     session.scalars(
                         select(GatewayInbox.id)
                         .where(
                             GatewayInbox.channel_id == channel_id,
-                            GatewayInbox.status == status,
+                            GatewayInbox.status.in_(statuses),
+                            head_only,
                             or_(
-                                GatewayInbox.control.is_not(None),
-                                ~select(earlier.id)
-                                .where(
-                                    earlier.channel_id == GatewayInbox.channel_id,
-                                    earlier.identity_id == GatewayInbox.identity_id,
-                                    earlier.conversation_key == GatewayInbox.conversation_key,
-                                    earlier.status.in_(("pending", "submitted")),
-                                    or_(
-                                        earlier.created_at < GatewayInbox.created_at,
-                                        and_(
-                                            earlier.created_at == GatewayInbox.created_at,
-                                            earlier.id < GatewayInbox.id,
-                                        ),
-                                    ),
-                                )
-                                .exists(),
-                            ),
-                            *(
-                                [
-                                    or_(
-                                        GatewayInbox.control.is_not(None),
-                                        GatewayInbox.created_at
-                                        <= datetime.now(UTC) - timedelta(seconds=30),
-                                        ~select(later.id)
-                                        .where(
-                                            later.channel_id == GatewayInbox.channel_id,
-                                            later.identity_id == GatewayInbox.identity_id,
-                                            later.conversation_key == GatewayInbox.conversation_key,
-                                            later.status == "pending",
-                                            later.created_at > cutoff,
-                                        )
-                                        .exists(),
-                                    )
-                                ]
-                                if status == "pending" and debounce
-                                else []
+                                GatewayInbox.filter_retry_at.is_(None),
+                                GatewayInbox.filter_retry_at <= datetime.now(UTC),
                             ),
                         )
                         .order_by(GatewayInbox.created_at, GatewayInbox.id)
@@ -139,9 +126,8 @@ class Inbox:
             if channel_id is None:
                 raise ConflictError("Inbox event no longer exists")
             require_lease(session, channel_id, owner)
-            row = session.get(GatewayInbox, inbox_id, with_for_update=True)
-            if row is None:
-                raise ConflictError("Inbox event no longer exists")
+            row = session.get(GatewayInbox, inbox_id)
+            assert row is not None
             message = InboundMessage.model_validate(
                 self.store.cipher.decrypt_payload(row.encrypted_payload, key_id=row.key_id)
             )
@@ -149,142 +135,18 @@ class Inbox:
             channel = session.get(GatewayChannel, row.channel_id)
             if channel is None or not channel.enabled or channel.deleted:
                 raise ConflictError("Channel is disabled")
-            policy = self.store.definition(channel).policy
-            if row.route_id and (
-                row.user_id != user_id
-                or row.route_id != route.id
-                or row.route_revision != route.revision
+            if row.route_id and (row.user_id, row.route_id, row.route_revision) != (
+                user_id,
+                route.id,
+                route.revision,
             ):
-                raise ConflictError("Account binding or route changed after dispatch")
-            context: dict[str, object] = {"messages": [], "ids": []}
-            if row.encrypted_context is not None:
-                context = self.store.cipher.decrypt_payload(row.encrypted_context)
-                if "message" in context:
-                    message = InboundMessage.model_validate(context["message"])
-            elif row.run_id is None and policy.activates(message):
-                group_policy = policy.group_for(message)
-                if (
-                    message.conversation.kind != "private"
-                    and group_policy.visibility != "mention_only"
-                    and group_policy.history_limit
-                    and group_policy.history_ttl_seconds
-                ):
-                    cutoff = datetime.now(UTC) - timedelta(seconds=group_policy.history_ttl_seconds)
-                    candidates = session.scalars(
-                        select(GatewayInbox)
-                        .join(
-                            GatewayAccountBinding,
-                            GatewayAccountBinding.identity_id == GatewayInbox.identity_id,
-                        )
-                        .where(
-                            GatewayInbox.channel_id == row.channel_id,
-                            GatewayInbox.conversation_key == row.conversation_key,
-                            GatewayInbox.status == "passive",
-                            GatewayInbox.created_at >= cutoff,
-                            GatewayInbox.created_at <= row.created_at,
-                            GatewayInbox.user_id == GatewayAccountBinding.user_id,
-                            *(
-                                [GatewayInbox.user_id == user_id]
-                                if group_policy.history_scope == "user"
-                                else []
-                            ),
-                        )
-                        .order_by(GatewayInbox.created_at.desc(), GatewayInbox.id.desc())
-                        .limit(group_policy.history_limit)
-                    ).all()
-                    messages, identifiers = [], []
-                    for item in reversed(candidates):
-                        previous = InboundMessage.model_validate(
-                            self.store.cipher.decrypt_payload(
-                                item.encrypted_payload, key_id=item.key_id
-                            )
-                        )
-                        try:
-                            previous_user, previous_route = resolve_route(
-                                session, row.channel_id, item.identity_id, previous
-                            )
-                        except DomainError:
-                            continue
-                        if (
-                            previous_user != item.user_id
-                            or previous_route.id != item.route_id
-                            or previous_route.revision != item.route_revision
-                        ):
-                            continue
-                        messages.append(previous.model_dump(mode="json"))
-                        identifiers.append(str(item.id))
-                    context = {"messages": messages, "ids": identifiers}
-                if policy.debounce_seconds and command(message) is None:
-                    content = list(message.content)
-                    batched = []
-                    for item in session.scalars(
-                        select(GatewayInbox)
-                        .where(
-                            GatewayInbox.channel_id == row.channel_id,
-                            GatewayInbox.identity_id == row.identity_id,
-                            GatewayInbox.conversation_key == row.conversation_key,
-                            GatewayInbox.status == "pending",
-                            GatewayInbox.id != row.id,
-                            GatewayInbox.created_at >= row.created_at,
-                        )
-                        .order_by(GatewayInbox.created_at, GatewayInbox.id)
-                        .limit(20)
-                        .with_for_update()
-                    ):
-                        following = InboundMessage.model_validate(
-                            self.store.cipher.decrypt_payload(
-                                item.encrypted_payload, key_id=item.key_id
-                            )
-                        )
-                        if (
-                            command(following) is not None
-                            or following.actor != message.actor
-                            or not policy.activates(following)
-                            or len(content) + len(following.content) > 100
-                        ):
-                            break
-                        content.extend(following.content)
-                        merged = message.model_copy(update={"content": content})
-                        if len(canonical_json(merged.model_dump(mode="json")).encode()) > 1_000_000:
-                            content = content[: -len(following.content)]
-                            break
-                        batched.append(item)
-                    if batched:
-                        message = message.model_copy(update={"content": content})
-                        context["message"] = message.model_dump(mode="json")
-                        context["batched_ids"] = [str(item.id) for item in batched]
-                        for item in batched:
-                            item.status = "batched"
-                            item.user_id, item.route_id, item.route_revision = (
-                                user_id,
-                                route.id,
-                                route.revision,
-                            )
-                row.encrypted_context = self.store.cipher.encrypt_payload(context).ciphertext
-            if row.run_id is None:
-                group = policy.group_for(message)
-                for identifier in TypeAdapter(list[UUID]).validate_python(context["ids"]):
-                    previous_row = session.get(GatewayInbox, identifier)
-                    if previous_row is None:
-                        raise ConflictError("A captured context receipt no longer exists")
-                    previous_message = InboundMessage.model_validate(
-                        self.store.cipher.decrypt_payload(
-                            previous_row.encrypted_payload, key_id=previous_row.key_id
-                        )
-                    )
-                    previous_user, previous_route = resolve_route(
-                        session, row.channel_id, previous_row.identity_id, previous_message
-                    )
-                    if (
-                        previous_user != previous_row.user_id
-                        or previous_route.id != previous_row.route_id
-                        or previous_route.revision != previous_row.route_revision
-                        or previous_row.status != "passive"
-                        or (group.history_scope == "user" and previous_user != user_id)
-                    ):
-                        raise ConflictError("A captured context binding or route changed")
-            message = policy.prepare_context(message, datetime.now(UTC).timestamp())
-            return GatewayTurn(
+                raise ConflictError("Account binding or route changed after admission")
+            context = (
+                self.store.cipher.decrypt_payload(row.encrypted_context)
+                if row.encrypted_context
+                else {}
+            )
+            turn = GatewayTurn(
                 inbox_id=row.id,
                 channel_id=row.channel_id,
                 identity_id=row.identity_id,
@@ -292,40 +154,203 @@ class Inbox:
                 route=route,
                 message=message,
                 lease_owner=owner,
-                policy=policy,
-                recent_messages=TypeAdapter(list[InboundMessage]).validate_python(
-                    context["messages"]
-                ),
-                context_ids=TypeAdapter(list[UUID]).validate_python(context["ids"]),
+                policy=self.store.definition(channel).policy,
+                channel_revision=channel.revision,
+                status=row.status,
+                queue_key=row.queue_key,
+                batch=TypeAdapter(list[BatchMessage]).validate_python(context.get("batch", [])),
                 event_cursor=row.event_cursor,
-            ), row.run_id
+            )
+            authorize_turn(session, turn)
+            return turn, row.run_id
 
-    def passive(self, turn: GatewayTurn) -> None:
+    def approved(self, turn: GatewayTurn, result: MessageFilterResult) -> None:
+        with self.store.sessions.begin() as session:
+            authorize_turn(session, turn)
+            row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
+            channel = session.get(GatewayChannel, turn.channel_id)
+            assert row is not None and channel is not None
+            if channel.revision != turn.channel_revision:
+                raise ConflictError("Channel configuration changed during message admission")
+            if row.status != "pending" or result.action != "allow":
+                raise ConflictError("Only a pending allowed message can enter the queue")
+            row.status, row.filter_revision, row.queue_key = (
+                "ready",
+                channel.revision,
+                turn.source.session_scope,
+            )
+            row.user_id, row.route_id, row.route_revision = (
+                turn.user_id,
+                turn.route.id,
+                turn.route.revision,
+            )
+            row.error_code, row.filter_retry_at = None, None
+            row.encrypted_context = self.store.cipher.encrypt_payload(
+                {
+                    "admission": result.model_dump(mode="json"),
+                    "filters": list(turn.policy.message_filters),
+                }
+            ).ciphertext
+
+    def filter_failed(self, turn: GatewayTurn, error: str) -> None:
         with self.store.sessions.begin() as session:
             require_lease(session, turn.channel_id, turn.lease_owner)
             row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
             assert row is not None
-            if row.run_id is not None:
-                raise ConflictError("A submitted event cannot become passive context")
-            row.status = "passive" if turn.message.conversation.kind != "private" else "completed"
-            row.route_id, row.route_revision, row.user_id = (
-                turn.route.id,
-                turn.route.revision,
-                turn.user_id,
+            if row.status != "pending":
+                return
+            row.filter_attempts += 1
+            row.error_code = error
+            row.filter_retry_at = datetime.now(UTC) + timedelta(
+                seconds=turn.policy.filter_retry_seconds
             )
+            if row.filter_attempts >= turn.policy.filter_max_attempts:
+                row.status = "blocked"
+
+    def claim(self, turn: GatewayTurn) -> GatewayTurn | None:
+        with self.store.sessions.begin() as session:
+            authorize_turn(session, turn)
+            session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": "gateway-queue:" + str(turn.source.session_scope)},
+            )
+            row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
+            assert row is not None
+            if row.status not in {"ready", "dispatching"}:
+                return None
+            channel = session.get(GatewayChannel, turn.channel_id)
+            assert channel is not None
+            if row.filter_revision != channel.revision:
+                for identifier in [item.inbox_id for item in turn.batch] or [row.id]:
+                    child = session.get(GatewayInbox, identifier, with_for_update=True)
+                    if child is not None and child.run_id is None:
+                        child.status, child.encrypted_context = "pending", None
+                        child.queue_key, child.filter_revision = None, None
+                        child.filter_attempts, child.filter_retry_at = 0, None
+                return None
+            if row.status == "dispatching":
+                return turn
+            if command(turn.message) is not None:
+                row.status = "dispatching"
+                return turn
+            active = (
+                GatewayInbox.channel_id == turn.channel_id,
+                GatewayInbox.conversation_key == row.conversation_key,
+                GatewayInbox.control.is_(None),
+                GatewayInbox.status.in_(("pending", "ready", "dispatching", "submitted")),
+            )
+            if session.scalar(
+                select(GatewayInbox.id)
+                .where(
+                    *active,
+                    tuple_(GatewayInbox.created_at, GatewayInbox.id) < (row.created_at, row.id),
+                    or_(GatewayInbox.status == "pending", GatewayInbox.queue_key == row.queue_key),
+                )
+                .limit(1)
+            ):
+                return None
+            latest = session.scalar(select(func.max(GatewayInbox.created_at)).where(*active))
+            assert latest is not None
+            candidates = session.scalars(
+                select(GatewayInbox)
+                .where(
+                    *active,
+                    tuple_(GatewayInbox.created_at, GatewayInbox.id) >= (row.created_at, row.id),
+                    or_(GatewayInbox.status == "pending", GatewayInbox.queue_key == row.queue_key),
+                )
+                .order_by(GatewayInbox.created_at, GatewayInbox.id)
+                .limit(turn.policy.batch_max_messages)
+                .with_for_update()
+            ).all()
+            # Unadmitted earlier receipts remain an ordering barrier. Different authorized
+            # principals/destinations have separate queues even in a shared external group.
+            now = datetime.now(UTC)
+            if turn.policy.debounce_seconds and (
+                (now - latest).total_seconds() < turn.policy.debounce_seconds
+                and (now - row.created_at).total_seconds() < turn.policy.batch_max_wait_seconds
+            ):
+                return None
+            batch: list[BatchMessage] = []
+            total = 0
+            for item in candidates:
+                if (item.created_at, item.id) < (row.created_at, row.id):
+                    continue
+                if item.status == "pending":
+                    break
+                if item.queue_key != row.queue_key:
+                    continue
+                if item.status != "ready" or item.filter_revision != channel.revision:
+                    break
+                if len(batch) >= turn.policy.batch_max_messages or (
+                    batch and not turn.policy.debounce_seconds
+                ):
+                    break
+                following = InboundMessage.model_validate(
+                    self.store.cipher.decrypt_payload(item.encrypted_payload, key_id=item.key_id)
+                )
+                user_id, route = resolve_route(
+                    session, turn.channel_id, item.identity_id, following
+                )
+                if (item.user_id, item.route_id, item.route_revision) != (
+                    user_id,
+                    route.id,
+                    route.revision,
+                ):
+                    raise ConflictError("An admitted message account binding or route changed")
+                if user_id != turn.user_id or (
+                    route.target_kind,
+                    route.target_id,
+                    route.output_mode,
+                ) != (turn.route.target_kind, turn.route.target_id, turn.route.output_mode):
+                    if not batch:
+                        raise ConflictError("Conversation queue authorization changed")
+                    break
+                if not turn.policy.activates(following):
+                    break
+                part = BatchMessage(
+                    inbox_id=item.id, identity_id=item.identity_id, route=route, message=following
+                )
+                size = len(canonical_json(part.model_dump(mode="json")).encode())
+                if size > 1_000_000:
+                    raise InvalidArgumentError("An individual message exceeds the batch size limit")
+                if batch and total + size > 1_000_000:
+                    break
+                total += size
+                batch.append(part)
+                if item.id != row.id:
+                    item.status = "batched"
+            if not batch:
+                return None
+            context = (
+                self.store.cipher.decrypt_payload(row.encrypted_context)
+                if row.encrypted_context
+                else {}
+            )
+            context["batch"] = [item.model_dump(mode="json") for item in batch]
+            row.encrypted_context = self.store.cipher.encrypt_payload(context).ciphertext
+            row.status = "dispatching"
+            return turn.model_copy(update={"batch": batch})
+
+    def ignore(self, turn: GatewayTurn) -> None:
+        with self.store.sessions.begin() as session:
+            authorize_turn(session, turn)
+            row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
+            assert row is not None
+            if row.run_id is not None:
+                raise ConflictError("A submitted event cannot be ignored")
+            row.status = "completed"
 
     def submitted(self, turn: GatewayTurn, run_id: UUID) -> None:
         with self.store.sessions.begin() as session:
             require_lease(session, turn.channel_id, turn.lease_owner)
             row = session.get(GatewayInbox, turn.inbox_id, with_for_update=True)
             assert row is not None
-            row.status, row.run_id, row.route_id, row.user_id = (
-                "submitted",
-                run_id,
+            row.status, row.run_id = "submitted", run_id
+            row.route_id, row.user_id, row.route_revision = (
                 turn.route.id,
                 turn.user_id,
+                turn.route.revision,
             )
-            row.route_revision = turn.route.revision
 
     def fail(self, inbox_id: UUID, owner: str, error: str) -> None:
         with self.store.sessions.begin() as session:
@@ -336,5 +361,6 @@ class Inbox:
                 return
             require_lease(session, channel_id, owner)
             row = session.get(GatewayInbox, inbox_id, with_for_update=True)
-            if row and row.status != "completed":
+            assert row is not None
+            if row.status != "completed":
                 row.status, row.error_code = "blocked", error

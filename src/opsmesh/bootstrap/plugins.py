@@ -20,6 +20,7 @@ from opsmesh.agents.plugins.skills import skill_packages
 from opsmesh.config import Settings
 from opsmesh.gateway.channels.plugins import ChannelAdapter
 from opsmesh.gateway.channels.registry import ChannelRegistry
+from opsmesh.gateway.messaging.filters import MessageFilterAdapter
 from opsmesh.plugins.base import PreparedResource
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.packages import PluginPackages
@@ -64,6 +65,7 @@ def create_plugin_manager(
         HookAdapter(),
         MiddlewareAdapter(),
         ChannelAdapter(),
+        MessageFilterAdapter(),
     ):
         registry.register(adapter)
     layout = layout or StorageLayout(Path(settings.storage_root), settings.plugins_root)

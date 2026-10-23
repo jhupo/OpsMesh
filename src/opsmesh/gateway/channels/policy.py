@@ -8,12 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class GroupPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    visibility: Literal["auto", "all", "mention_recent", "mention_only"] = "auto"
+    visibility: Literal["all", "mention_only"] = "mention_only"
     activation: Literal["mention", "always"] = "mention"
-    history_limit: int = Field(default=10, ge=0, le=100)
-    history_ttl_seconds: int = Field(default=300, ge=0, le=3600)
-    history_scope: Literal["user", "group"] = "user"
-    clear_after_reply: bool = True
+    session_scope: Literal["user", "group"] = "group"
+    allow_recall: bool = False
+    control_roles: frozenset[str] = frozenset({"owner", "admin"})
 
     @model_validator(mode="after")
     def validate_activation(self) -> "GroupPolicy":
@@ -29,6 +28,11 @@ class GatewayPolicy(BaseModel):
     groups: dict[str, GroupPolicy] = Field(default_factory=dict, max_length=1000)
     workers: int = Field(default=4, ge=1, le=32)
     debounce_seconds: float = Field(default=0, ge=0, le=10)
+    batch_max_wait_seconds: float = Field(default=2, gt=0, le=30)
+    batch_max_messages: int = Field(default=20, ge=1, le=100)
+    message_filters: list[str] = Field(default_factory=list, max_length=20)
+    filter_max_attempts: int = Field(default=3, ge=1, le=10)
+    filter_retry_seconds: float = Field(default=1, gt=0, le=60)
     send_limit: int = Field(default=20, ge=1, le=1000)
     send_window_seconds: int = Field(default=60, ge=1, le=3600)
     send_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -41,6 +45,14 @@ class GatewayPolicy(BaseModel):
     streaming: bool = False
     typing_interval_seconds: int = Field(default=0, ge=0, le=60)
 
+    @model_validator(mode="after")
+    def validate_filters(self) -> "GatewayPolicy":
+        if len(set(self.message_filters)) != len(self.message_filters):
+            raise ValueError("Message filter bindings must be unique")
+        if any(not value or len(value) > 200 for value in self.message_filters):
+            raise ValueError("Invalid message filter resource ID")
+        return self
+
     def group_for(self, message: InboundMessage) -> GroupPolicy:
         return self.groups.get(message.conversation.external_id, self.group)
 
@@ -52,30 +64,4 @@ class GatewayPolicy(BaseModel):
             policy.activation == "always"
             and policy.visibility == "all"
             and message.context.visibility == "all"
-        )
-
-    def prepare_context(self, message: InboundMessage, now: float) -> InboundMessage:
-        policy = self.group_for(message)
-        recent = []
-        if (
-            message.conversation.kind != "private"
-            and policy.visibility != "mention_only"
-            and policy.history_limit
-            and policy.history_ttl_seconds
-        ):
-            seen = {message.event_id}
-            for item in sorted(message.context.recent_messages, key=lambda item: item.timestamp):
-                if (
-                    item.message_id not in seen
-                    and now - policy.history_ttl_seconds <= item.timestamp <= now
-                    and (
-                        policy.history_scope == "group"
-                        or item.sender_id == message.actor.external_id
-                    )
-                ):
-                    recent.append(item)
-                    seen.add(item.message_id)
-            recent = recent[-policy.history_limit :] if policy.history_limit else []
-        return message.model_copy(
-            update={"context": message.context.model_copy(update={"recent_messages": recent})}
         )

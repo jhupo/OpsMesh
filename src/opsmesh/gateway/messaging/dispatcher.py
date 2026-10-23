@@ -6,14 +6,16 @@ from pathlib import Path
 from uuid import UUID
 
 from opsmesh_sdk.channels import ContentPart
+from opsmesh_sdk.messages import MessageFilterResult
 
 from opsmesh.gateway.contracts import GatewayReply
 from opsmesh.gateway.messaging.commands import command
+from opsmesh.gateway.messaging.filters import MessageFilters
 from opsmesh.gateway.messaging.inbox import Inbox
 from opsmesh.gateway.messaging.media import GatewayMedia
 from opsmesh.gateway.messaging.outbox import Outbox
 from opsmesh.gateway.ports import ExecutionPort
-from opsmesh.shared.errors import DomainError, InvalidArgumentError
+from opsmesh.shared.errors import DomainError, ForbiddenError, InvalidArgumentError
 
 
 def reply_parts(output: object) -> list[ContentPart]:
@@ -28,20 +30,66 @@ def reply_parts(output: object) -> list[ContentPart]:
 
 class Dispatcher:
     def __init__(
-        self, inbox: Inbox, outbox: Outbox, execution: ExecutionPort, media_root: Path
+        self,
+        inbox: Inbox,
+        outbox: Outbox,
+        execution: ExecutionPort,
+        media_root: Path,
+        filters: MessageFilters | None = None,
     ) -> None:
         self.inbox, self.outbox, self.execution = inbox, outbox, execution
         self.media_root = media_root
+        self.filters = filters
 
     async def process(self, inbox_id: UUID, owner: str) -> None:
         try:
             turn, run_id = await asyncio.to_thread(self.inbox.turn, inbox_id, owner)
-            await self.execution.authorize(turn.user_id, turn.route)
-            if run_id is None and not turn.policy.activates(turn.message):
-                await asyncio.to_thread(self.inbox.passive, turn)
+            if turn.status not in {"pending", "ready", "dispatching", "submitted"}:
                 return
+            if turn.status == "pending":
+                try:
+                    if turn.policy.message_filters and self.filters is None:
+                        raise InvalidArgumentError(
+                            "Message filtering is not configured on this host"
+                        )
+                    result = (
+                        await self.filters.evaluate(turn)
+                        if self.filters
+                        else MessageFilterResult(action="allow")
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    await asyncio.to_thread(self.inbox.filter_failed, turn, type(error).__name__)
+                    return
+                if result.action != "allow":
+                    await asyncio.to_thread(
+                        self.outbox.complete,
+                        turn,
+                        [],
+                        event="recall" if result.action == "recall" else "message",
+                        admission=result,
+                    )
+                    return
+                await asyncio.to_thread(self.inbox.approved, turn, result)
+            if run_id is None and not turn.policy.activates(turn.message):
+                await asyncio.to_thread(self.inbox.ignore, turn)
+                return
+            await self.execution.authorize(turn.user_id, turn.route)
+            if run_id is None:
+                claimed = await asyncio.to_thread(self.inbox.claim, turn)
+                if claimed is None:
+                    return
+                turn = claimed
             control = command(turn.message)
             if run_id is None and control:
+                if (
+                    control != "help"
+                    and turn.message.conversation.kind != "private"
+                    and turn.message.actor.external_role
+                    not in turn.policy.group_for(turn.message).control_roles
+                ):
+                    raise ForbiddenError("Conversation control requires an authorized group role")
                 value = (
                     "/help /new /reset /cancel"
                     if control == "help"
@@ -72,10 +120,18 @@ class Dispatcher:
             if status == "completed":
                 if turn.route.output_mode == "message":
                     try:
+                        reply = GatewayReply.parse(output)
+                        if reply.action == "recall":
+                            if len(turn.batch) > 1:
+                                raise InvalidArgumentError(
+                                    "A batched Agent reply cannot recall an ambiguous message"
+                                )
+                            await asyncio.to_thread(self.outbox.complete, turn, [], event="recall")
+                            return
                         content = await GatewayMedia(
                             self.media_root / str(turn.channel_id)
                         ).prepare(
-                            GatewayReply.parse(output).content,
+                            reply.content,
                             preserve_image_url=turn.message.reply_address.get("kind")
                             in {"channel", "dm"},
                         )

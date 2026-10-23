@@ -5,6 +5,7 @@ import signal
 from contextlib import AsyncExitStack
 from pathlib import Path
 
+from opsmesh.agents.catalog.service import ManagedCatalog
 from opsmesh.bootstrap.connections import build_database_resources
 from opsmesh.bootstrap.gateway import GatewayExecution
 from opsmesh.bootstrap.models import register_models
@@ -12,6 +13,7 @@ from opsmesh.bootstrap.plugins import create_plugin_manager, watch_plugins
 from opsmesh.bootstrap.policies import PLATFORM_REDACTION
 from opsmesh.config import Settings
 from opsmesh.gateway.channels.manager import Gateway
+from opsmesh.gateway.messaging.filters import MessageFilters
 from opsmesh.gateway.storage.store import GatewayStore
 from opsmesh.plugins.manager import PluginSnapshot
 from opsmesh.resources.layout import StorageLayout
@@ -36,12 +38,20 @@ async def run_gateway(settings: Settings) -> None:
         plugins = create_plugin_manager(settings, database.cipher, role="gateway", layout=layout)
         resources.callback(plugins.close)
         await plugins.reload()
+        execution = GatewayExecution(
+            database.sessions, database.cipher, layout.history, layout.gateway_media
+        )
+        managed = ManagedCatalog(database.sessions, database.cipher)
         gateway = Gateway(
             registry=plugins.current.views["channels"],
             store=GatewayStore(database.sessions, database.cipher),
             media_root=layout.gateway_media,
-            execution=GatewayExecution(
-                database.sessions, database.cipher, layout.history, layout.gateway_media
+            execution=execution,
+            filters=MessageFilters(
+                lambda: plugins.current.resources,
+                managed.credential,
+                execution.filter_actor,
+                layout.gateway_media,
             ),
         )
 

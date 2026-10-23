@@ -22,7 +22,7 @@ def known_subjects(store: GatewayStore, channel_id: UUID) -> list[GatewayTurn]:
             select(GatewayInbox)
             .where(
                 GatewayInbox.channel_id == channel_id,
-                GatewayInbox.status.in_(("completed", "passive", "context_consumed")),
+                GatewayInbox.status == "completed",
             )
             .distinct(GatewayInbox.identity_id, GatewayInbox.conversation_key)
             .order_by(
@@ -94,7 +94,7 @@ def recipients(store: GatewayStore, channel_id: UUID, body: PushCreate) -> list[
             row = session.get(GatewayInbox, identifier)
             if row is None or row.channel_id != channel_id:
                 raise NotFoundError("Push recipient receipt does not exist")
-            if row.status not in {"completed", "passive", "context_consumed"}:
+            if row.status != "completed":
                 raise ConflictError("Push recipients require a settled conversation receipt")
             message = InboundMessage.model_validate(
                 store.cipher.decrypt_payload(row.encrypted_payload, key_id=row.key_id)

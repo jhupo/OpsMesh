@@ -13,6 +13,7 @@ from opsmesh.gateway.channels.leases import ChannelLeases
 from opsmesh.gateway.channels.registry import ChannelRegistry
 from opsmesh.gateway.contracts import ChannelDefinition
 from opsmesh.gateway.messaging.dispatcher import Dispatcher
+from opsmesh.gateway.messaging.filters import MessageFilters
 from opsmesh.gateway.messaging.inbox import Inbox
 from opsmesh.gateway.messaging.media import GatewayMedia
 from opsmesh.gateway.messaging.outbox import Outbox
@@ -31,6 +32,7 @@ class Gateway:
         store: GatewayStore,
         media_root: Path,
         execution: ExecutionPort,
+        filters: MessageFilters | None = None,
     ) -> None:
         self.registry, self.store, self.media_root, self.execution = (
             registry,
@@ -40,7 +42,7 @@ class Gateway:
         )
         self.leases = ChannelLeases(store)
         self.inbox, self.outbox = Inbox(store), Outbox(store)
-        self.dispatcher = Dispatcher(self.inbox, self.outbox, execution, media_root)
+        self.dispatcher = Dispatcher(self.inbox, self.outbox, execution, media_root, filters)
         self.tasks: dict[UUID, tuple[ChannelDefinition, asyncio.Task[None]]] = {}
         self.supervisor: asyncio.Task[None] | None = None
 
@@ -138,9 +140,11 @@ class Gateway:
         adapter: ChannelAdapter | None = None
         try:
             media = GatewayMedia(self.media_root / str(definition.id))
+            dispatch_wakeup, delivery_wakeup = asyncio.Event(), asyncio.Event()
 
             async def receive(message: InboundMessage) -> None:
                 await asyncio.to_thread(self.inbox.receive, definition.id, owner, message)
+                dispatch_wakeup.set()
 
             adapter = self.registry.create(definition, receive, media)
             await asyncio.to_thread(self.outbox.recover, definition.id, owner)
@@ -152,29 +156,41 @@ class Gateway:
                         raise RuntimeError("Gateway lease lost")
 
             async def dispatch() -> None:
-                slots = asyncio.Semaphore(definition.policy.workers)
+                running: dict[UUID, asyncio.Task[None]] = {}
 
                 async def process(inbox_id: UUID) -> None:
-                    async with slots:
-                        try:
-                            await self.dispatcher.process(inbox_id, owner)
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            logger.warning(
-                                "Gateway event pending after error: %s", type(error).__name__
-                            )
-
-                while True:
-                    await asyncio.gather(
-                        *(
-                            process(inbox_id)
-                            for inbox_id in await asyncio.to_thread(
-                                self.inbox.pending, definition.id
-                            )
+                    try:
+                        await self.dispatcher.process(inbox_id, owner)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        logger.warning(
+                            "Gateway event pending after error: %s", type(error).__name__
                         )
-                    )
-                    await asyncio.sleep(1)
+                    finally:
+                        delivery_wakeup.set()
+
+                try:
+                    while True:
+                        dispatch_wakeup.clear()
+                        for identifier, task in list(running.items()):
+                            if task.done():
+                                task.result()
+                                del running[identifier]
+                        pending = await asyncio.to_thread(self.inbox.pending, definition.id)
+                        for identifier in pending:
+                            if len(running) >= definition.policy.workers:
+                                break
+                            if identifier not in running:
+                                running[identifier] = asyncio.create_task(process(identifier))
+                        with suppress(TimeoutError):
+                            await asyncio.wait_for(
+                                dispatch_wakeup.wait(), timeout=0.2 if pending or running else 1
+                            )
+                finally:
+                    for task in running.values():
+                        task.cancel()
+                    await asyncio.gather(*running.values(), return_exceptions=True)
 
             async def connect() -> None:
                 assert adapter is not None
@@ -185,7 +201,7 @@ class Gateway:
                 group.create_task(connect())
                 group.create_task(renew())
                 group.create_task(dispatch())
-                group.create_task(self.deliver(definition, owner, adapter))
+                group.create_task(self.deliver(definition, owner, adapter, delivery_wakeup))
         finally:
             if adapter is not None:
                 with suppress(Exception):
@@ -193,10 +209,15 @@ class Gateway:
             await asyncio.to_thread(self.leases.release, definition.id, owner)
 
     async def deliver(
-        self, definition: ChannelDefinition, owner: str, adapter: ChannelAdapter
+        self,
+        definition: ChannelDefinition,
+        owner: str,
+        adapter: ChannelAdapter,
+        wakeup: asyncio.Event,
     ) -> None:
         channel_id = definition.id
         while True:
+            wakeup.clear()
             message = await asyncio.to_thread(
                 self.outbox.next,
                 channel_id,
@@ -205,7 +226,8 @@ class Gateway:
                 send_window_seconds=definition.policy.send_window_seconds,
             )
             if message is None:
-                await asyncio.sleep(1)
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(wakeup.wait(), timeout=1)
                 continue
             try:
                 turn = await asyncio.to_thread(
@@ -226,6 +248,12 @@ class Gateway:
                 continue
             try:
                 async with asyncio.timeout(definition.policy.send_timeout_seconds):
+                    if message.event == "recall" and not adapter.capabilities.recall:
+                        raise DeliveryRejected("This channel does not support message recall")
+                    if message.event == "recall" and (
+                        turn is None or not turn.policy.group_for(turn.message).allow_recall
+                    ):
+                        raise DeliveryRejected("Message recall permission was revoked")
                     receipt = await adapter.send(message)
             except asyncio.CancelledError:
                 raise
