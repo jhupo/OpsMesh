@@ -39,6 +39,7 @@ class PluginPackages:
         path = self.root / f".registry-{uuid4().hex}.tmp"
         try:
             with path.open("x", encoding="utf-8") as stream:
+                # Other service UIDs need read access for plugin generation reloads.
                 os.chmod(path, 0o640)
                 json.dump(records, stream, indent=2, allow_nan=False)
                 stream.flush()

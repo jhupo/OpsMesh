@@ -25,6 +25,7 @@ def native_session(
     if os.name == "posix":
         LocalFileStorage(directory).ensure_directory(".opsmesh/session")
         try:
+            # API, Worker and sandbox use the same restricted service GID across distinct UIDs.
             descriptor = os.open(
                 database, os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW, 0o660
             )

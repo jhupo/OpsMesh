@@ -29,6 +29,7 @@ def main() -> None:
             if len(data) > int(limit):
                 raise ValueError("Oversized staged file")
         temporary = ".opsmesh-write-" + os.path.basename(staged)
+        # Preserve write access for the API/Worker service group; all other users are denied.
         destination = os.open(
             temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o660, dir_fd=directory
         )

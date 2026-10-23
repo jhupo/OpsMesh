@@ -212,6 +212,7 @@ def run_server_command(args: argparse.Namespace, directory: Path) -> int:
                 raise ValueError("The distribution is missing its migration assets")
         print(json.dumps({"version": package_version()}))
     elif args.command in {"bootstrap-admin", "reset-admin-password"}:
+        # Explicit host-owner handoff, captured by the installer; never send this to logging.
         print(
             json.dumps(
                 administrator_handoff(

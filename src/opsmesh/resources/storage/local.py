@@ -136,6 +136,7 @@ class LocalFileStorage(LocalDirectoryStorage):
         parts = _parts(path)
         with self._directory(storage_key, "/".join(parts[:-1])) as parent:
             temporary = f".upload-{uuid4().hex}"
+            # Separate service UIDs share this setgid tree through the private service group.
             descriptor = os.open(
                 temporary,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
