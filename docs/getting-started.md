@@ -2,7 +2,7 @@
 
 ## 选择部署方式
 
-0.2.0 服务端支持 Linux amd64，生产部署有两种方式：
+0.1.1 服务端支持 Linux amd64，生产部署有两种方式：
 
 | 方式 | 应用运行形式 | 基础设施 |
 | --- | --- | --- |
@@ -17,8 +17,8 @@ API 默认只监听主机 `127.0.0.1:8000`。服务端不包含 Web 管理界面
 下载固定版本的脚本，检查内容后执行：
 
 ```sh
-curl -fLO https://github.com/jhupo/OpsMesh/releases/download/v0.2.0/install.sh
-sudo sh install.sh --version v0.2.0 --mode compose --origin https://agents.example.com
+curl -fLO https://github.com/jhupo/OpsMesh/releases/download/v0.1.1/install.sh
+sudo sh install.sh --version v0.1.1 --mode compose --origin https://agents.example.com
 ```
 
 系统前置工具的安装和服务管理需要 root。脚本下载原生运维 CLI，由其校验发行清单、

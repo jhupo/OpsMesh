@@ -31,8 +31,8 @@ OpsMesh 目前交付后端 API 和命令行工具，**不包含 Web 管理界面
 在使用 systemd 的 Debian/Ubuntu amd64 主机上下载并检查安装脚本：
 
 ```sh
-curl -fLO https://github.com/jhupo/OpsMesh/releases/download/v0.2.0/install.sh
-sudo sh install.sh --version v0.2.0 --mode compose --origin https://agents.example.com
+curl -fLO https://github.com/jhupo/OpsMesh/releases/download/v0.1.1/install.sh
+sudo sh install.sh --version v0.1.1 --mode compose --origin https://agents.example.com
 ```
 
 将 `--origin` 替换为自己的 HTTPS 地址，并配置反向代理到本机 `127.0.0.1:8000`。安装器准备 Docker/Compose 和主机工具，部署 API、Worker、Gateway、PostgreSQL、Redis 及持久 Temporal，校验发行清单、包摘要和固定镜像 digest。
@@ -74,7 +74,7 @@ API 管理身份和业务状态；Worker 执行持久任务并承载沙箱操作
 - [文档索引](docs/README.md)：部署、首次使用、平台管理与模块说明。
 - [安装、升级与恢复](deploy/server/delivery-operations.md)：不可变发行目录、更新、备份和恢复。
 - [插件开发 SDK](sdk/python/README.md)：注册协议、打包和安装。
-- [更新日志](CHANGELOG.md)与 [0.2.0 发行说明](docs/releases/0.2.0.md)：版本范围、升级注意事项和限制。
+- [更新日志](CHANGELOG.md)与 [0.1.1 发行说明](docs/releases/0.1.1.md)：版本范围、升级注意事项和限制。
 - [贡献指南](CONTRIBUTING.md)与[测试说明](tests/README.md)：源码开发和验证范围。
 
 发现问题请提交 [Issue](https://github.com/jhupo/OpsMesh/issues)，附上版本、部署方式和已脱敏日志。安全问题按[安全策略](SECURITY.md)私下报告。
