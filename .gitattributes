@@ -1,8 +1,10 @@
-.gitattributes text eol=lf
+* text=auto
 *.py text eol=lf
-*.md text eol=lf
-*.example text eol=lf
 *.sh text eol=lf
-Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.service text eol=lf
+*.target text eol=lf
+*.timer text eol=lf

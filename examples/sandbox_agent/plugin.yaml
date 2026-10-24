@@ -1,0 +1,4 @@
+id: sandbox-agent
+name: Sandbox Agent
+version: 1.0.0
+description: Native SDK sandbox with isolated persistent conversations

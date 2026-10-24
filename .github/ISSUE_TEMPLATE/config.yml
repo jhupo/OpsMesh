@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Security Vulnerability
-    url: https://github.com/jhupo/opsmesh/security/advisories/new
-    about: Please report vulnerabilities privately.
+  - name: Security disclosure
+    url: https://github.com/jhupo/OpsMesh/security/policy
+    about: Report vulnerabilities privately following our security policy.

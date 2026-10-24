@@ -1,33 +1,16 @@
-"""Frozen migration tables that have no current application owner.
-
-Keep this explicit: ignoring every reflected-only table would hide schema drift.
-Retirement here does not authorize dropping historical user data.
-"""
-
-RETIRED_TABLES = frozenset(
-    {
-        "gateway_senders",
-        "gateway_subjects",
-        "agent_definitions",
-        "agent_grants",
-        "agent_invitations",
-        "agent_revisions",
-        "capability_definitions",
-        "capability_packages",
-        "capability_publication_reviews",
-        "execution_mcp_uses",
-        "execution_approvals",
-        "execution_signals",
-        "http_creation_receipts",
-        "mcp_connections",
-        "model_providers",
-        "provider_models",
-    }
-)
+"""Assemble the application's SQLAlchemy model registry before opening sessions."""
 
 
-def include_schema_object(
-    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
-) -> bool:
-    """Exclude only known retired tables from autogenerate/model comparison."""
-    return not (type_ == "table" and reflected and compare_to is None and name in RETIRED_TABLES)
+def load_models() -> None:
+    from opsmesh.agents import models as agents
+    from opsmesh.catalog import models as catalog
+    from opsmesh.gateway import models as gateway
+    from opsmesh.plugins import models as plugins
+    from opsmesh.quotas import models as quotas
+    from opsmesh.resources import models as resources
+    from opsmesh.sessions import models as sessions
+    from opsmesh.shared import models as shared
+    from opsmesh.tasks import models as tasks
+    from opsmesh.users import models as users
+
+    _ = agents, catalog, gateway, plugins, quotas, resources, sessions, shared, tasks, users

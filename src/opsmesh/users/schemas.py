@@ -1,83 +1,73 @@
-"""User profile, roles and account status HTTP contracts."""
-
-from __future__ import annotations
+"""User, group and access token HTTP contracts."""
 
 from datetime import datetime
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 
-from opsmesh.users.auth.passwords import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
-from opsmesh.users.models import (
-    MAX_DISPLAY_NAME_LENGTH,
-    UserProfile,
-)
+from opsmesh.shared.schemas import RecordView, RequestSchema, ResourceView
 
 
-class UserProfileView(BaseModel):
-    """One account profile; avatar bytes are fetched from their own route."""
+class SaveUserRequest(RequestSchema):
+    name: str = Field(min_length=1, max_length=100)
+    roles: list[str] = Field(default_factory=lambda: ["user"], max_length=8)
+    enabled: bool = True
+    password: SecretStr | None = Field(default=None, min_length=12, max_length=1000)
 
-    model_config = ConfigDict(extra="forbid")
-
-    user_id: UUID
-    email: EmailStr
-    display_name: str
-    status: str
-    platform_roles: list[str]
-    has_avatar: bool
-    avatar_content_type: str | None
-    avatar_updated_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
+    @field_validator("roles")
+    @classmethod
+    def valid_roles(cls, value: list[str]) -> list[str]:
+        if not set(value) <= {"user", "admin"}:
+            raise ValueError("Unknown platform role")
+        return sorted(set(value))
 
 
-class UpdateProfileRequest(BaseModel):
-    """The fields an account may change on its own profile."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    display_name: str | None = Field(default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
+class CreateGroupRequest(RequestSchema):
+    name: str = Field(min_length=1, max_length=100)
 
 
-class AdminCreateUserRequest(BaseModel):
-    """Administrator-supplied account fields; no login session is issued."""
+class CreateAccessTokenRequest(RequestSchema):
+    label: str = Field(min_length=1, max_length=100)
+    expires_at: datetime | None = None
 
-    model_config = ConfigDict(extra="forbid")
-
-    email: EmailStr
-    display_name: str = Field(min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
-    password: SecretStr = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
-    platform_roles: list[str] = Field(default_factory=lambda: ["member"], max_length=8)
-    token_limit: int | None = Field(default=None, ge=0)
-
-
-class AdminUpdateUserRequest(BaseModel):
-    """The administrator-writable fields of one account."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    display_name: str | None = Field(default=None, min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
-    status: str | None = Field(default=None, max_length=20)
-    platform_roles: list[str] | None = Field(default=None, max_length=8)
+    @field_validator("expires_at")
+    @classmethod
+    def aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.utcoffset() is None or value <= datetime.now(value.tzinfo)):
+            raise ValueError("Expiry must be a future time with timezone")
+        return value
 
 
-class UserPage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class UserIdentityView(ResourceView):
+    user_id: str
+    roles: list[str]
+    group_ids: list[str]
 
-    users: list[UserProfileView]
-    total: int
+
+class UserView(RecordView):
+    name: str
+    roles: list[str]
+    enabled: bool
 
 
-def profile_view(profile: UserProfile) -> UserProfileView:
-    return UserProfileView(
-        user_id=profile.id,
-        email=profile.email,
-        display_name=profile.display_name,
-        status=profile.status,
-        platform_roles=sorted(profile.platform_roles),
-        has_avatar=profile.avatar_content is not None,
-        avatar_content_type=profile.avatar_content_type,
-        avatar_updated_at=profile.avatar_updated_at,
-        created_at=profile.created_at,
-        updated_at=profile.updated_at,
-    )
+class GroupView(RecordView):
+    name: str
+
+
+class AccessTokenView(RecordView):
+    user_id: str
+    label: str
+    expires_at: datetime | None
+    revoked: bool
+
+
+class IssuedAccessTokenView(ResourceView):
+    token: str
+
+
+class LoginRequest(RequestSchema):
+    username: str = Field(min_length=1, max_length=100)
+    password: SecretStr = Field(min_length=1, max_length=1000)
+
+
+class ChangePasswordRequest(RequestSchema):
+    password: SecretStr = Field(min_length=12, max_length=1000)

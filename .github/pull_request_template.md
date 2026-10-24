@@ -1,16 +1,11 @@
-## Summary
+## Change
 
-<!-- What changed and why? -->
+Describe the problem, final behavior and any public API, SDK or deployment changes.
 
-## Tests
+## Verification
 
-<!-- List static checks and explicitly requested tests actually run; explain unverified scope. -->
+List exact static checks and distribution builds performed. State tests actually executed and runtime/service/model validation not performed. Automated contributors must obtain explicit user authorization before running tests or services.
 
-## Safety Checklist
+## Compatibility and operations
 
-- [ ] User ownership, grants and private histories are preserved.
-- [ ] Secrets and provider URLs are redacted from API responses, logs, and events.
-- [ ] Configuration, instance, Run and plugin lifetimes remain separate.
-- [ ] Risky execution remains sandboxed or approval-gated.
-- [ ] Migrations are included when database schema changes.
-
+Document migrations, checkpoint/plugin SDK changes, permissions, cancellation/idempotency, quota implications and deployment steps when applicable. Link related issues. Confirm documentation and changelog updates where needed.

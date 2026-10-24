@@ -1,7 +1,0 @@
-id: demo-agent-plugin
-version: 0.1.0
-name: Demo Agent Plugin
-description: Tools, Skills and lifecycle hooks in one plugin
-icon: ""
-kind: plugin
-entry: main.py

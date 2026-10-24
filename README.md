@@ -1,84 +1,211 @@
 # OpsMesh
 
-基于 OpenAI Agents Python SDK 和 Temporal 的开源 Agent 执行与编排平台。
-提供持久智能体、隔离沙箱、工具审批、插件扩展和多用户权限，适合通过 API 集成到自己的产品或运维系统。
+基于 OpenAI Agents Python SDK 的插件应用宿主，负责身份、发布发现、私有目录、持久任务、定时触发和消息网关。Agent、工具调用、模型选择、Session、MCP、技能和业务编排由插件直接使用原生 SDK 实现。
 
-[安装](#安装) · [文档](docs/README.md) · [发布版本](https://github.com/jhupo/OpsMesh/releases) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md)
+[![Static checks](https://github.com/jhupo/OpsMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/jhupo/OpsMesh/actions/workflows/ci.yml) [![Security](https://github.com/jhupo/OpsMesh/actions/workflows/security.yml/badge.svg)](https://github.com/jhupo/OpsMesh/actions/workflows/security.yml)
 
-## 核心能力
+独立插件 SDK 位于 [`sdk` 分支](https://github.com/jhupo/OpsMesh/tree/sdk)，也随宿主 Release 提供独立 wheel 和源码包。
 
-| 能力 | 说明 |
-| --- | --- |
-| 智能体 | 管理 Agent/Provider 配置、草稿、发布及回滚；创建持久 Agent 与 SandboxAgent 实例 |
-| 执行 | 私有 Session、运行事件、原生工具审批、取消、用量回执和外部效果对账 |
-| 编排 | 定义与绑定实例分离，支持依赖、条件、并行、循环、工具节点和信号等待 |
-| 持久任务 | Temporal 引擎适配、事务 Outbox、定时触发与签名 Webhook |
-| 插件 | ZIP 安装、适配器注册和热更新；扩展工具、MCP、Skill、Hook、中间件与通道 |
-| 权限与审计 | 用户所有权、显式授权、Token/并发/环境额度、金额预算和敏感状态加密 |
-| 评测与观测 | 版本化数据集、评测实验、用户反馈、可续传事件及 OpenTelemetry/Prometheus |
-| 通道 | 自研网关，内置 QQ 与钉钉，管理外部身份绑定、消息路由和持久投递 |
+## 安装与启动
 
-OpsMesh 目前交付后端 API 和命令行工具，**不包含 Web 管理界面**。插件 SDK 用于系统插件开发、注册和打包；业务集成直接调用 HTTP API。企业 SSO、组织管理、内置知识库及插件市场不在此版本范围内。
+生产部署使用 Linux 独立可执行包，支持 x86_64、aarch64，包含 systemd 安装和可选自动更新；部署主机不需要 Python 或项目源码。具体命令见 [部署说明](deploy/README.md)。Tag 发布同时提供 Linux 可执行压缩包、源码 tar.gz/ZIP、安装脚本、宿主与 SDK wheel/sdist、校验清单、SBOM、安全报告和构建来源证明，以及 GHCR 的 amd64/arm64 镜像。版本号必须与宿主及 SDK 元数据一致。当前仓库配置不代表 Release 已实际发布，见 [发布页](https://github.com/jhupo/OpsMesh/releases)。
 
-## 安装
+以下为源码开发环境：
 
-正式部署支持 **Docker Compose** 和 **本机二进制 + systemd** 两种方式。安装器下载已构建的镜像和发行包；目标主机不需要 Git、Python、pip 或 uv，不从源码构建服务。
-
-服务端当前支持 Linux amd64。独立运维 CLI 另提供 Linux arm64、Windows amd64 和 macOS amd64/arm64 下载；这些平台的 CLI 用于远程管理，不代表服务端支持这些系统。
-
-### Docker Compose
-
-在使用 systemd 的 Debian/Ubuntu amd64 主机上下载并检查安装脚本：
+需要 Python 3.12+、uv 和 PostgreSQL。插件 SDK 单独支持 Python 3.11.8+。
 
 ```sh
-curl -fLO https://github.com/jhupo/OpsMesh/releases/download/v0.1.2/install.sh
-sudo sh install.sh --version v0.1.2 --mode compose --origin https://agents.example.com
+uv sync --frozen --extra dev
+uv run opsmesh keygen
 ```
 
-将 `--origin` 替换为自己的 HTTPS 地址，并配置反向代理到本机 `127.0.0.1:8000`。安装器准备 Docker/Compose 和主机工具，部署 API、Worker、Gateway、PostgreSQL、Redis 及持久 Temporal，校验发行清单、包摘要和固定镜像 digest。
+按 `.env.example` 创建本机 `.env`，配置**全新 PostgreSQL 数据库**和上一步的加密密钥。然后执行：
 
-### 本机安装
-
-使用相同安装脚本，将 `--mode` 改为 `systemd`。先准备 PostgreSQL、Redis、持久 Temporal 及其命名空间，并按[部署手册](deploy/server/DEPLOYMENT.md)配置连接、专用 Temporal 服务和备份条件。服务由包含运行时的 `opsmesh-server` 二进制目录包提供，不依赖系统 Python。
-
-完整步骤、首次登录和故障排查见[快速开始](docs/getting-started.md)。发行资产及支持矩阵见[发行格式](deploy/DISTRIBUTIONS.md)。GitHub 自动生成的 Source code 压缩包用于开发，不是部署包。
-
-## 首次使用
-
-安装结束后妥善保存一次性管理员密码。通过 `/api/v1/auth/login` 登录，请求使用返回的 `session_token` 作为 `X-Session-ID`。创建可执行实例前，先通过 `/api/v1/agent-catalog` 配置模型 Provider、凭据和 Agent，并发布配置。
-
-工作流程为：发布 Agent 配置 → 创建执行实例与 Session → 提交 Run；编排则先发布定义、创建资源绑定实例，再提交编排 Run。Run 完成或取消不会自动删除持久智能体、沙箱或目录。
-
-API 的 OpenAPI 合同由运行中服务生成；按需启用 `OPSMESH_ENABLE_API_DOCS` 后，通过受控网络访问 `/docs` 和 `/openapi.json`。生产环境默认关闭文档入口。
-
-## 架构
-
-```mermaid
-flowchart LR
-    Client[HTTP 客户端] --> API[API]
-    Channels[QQ / 钉钉] --> Gateway[Gateway]
-    Gateway --> PG[(PostgreSQL / Outbox)]
-    API --> PG
-    PG --> Worker[Worker]
-    Worker <--> Temporal[Temporal]
-    Worker --> SDK[OpenAI Agents SDK]
-    SDK --> Model[模型 Provider]
-    SDK --> Tools[工具 / MCP / Docker 沙箱]
+```sh
+uv run opsmesh migrate
+uv run opsmesh run
 ```
 
-API 管理身份和业务状态；Worker 执行持久任务并承载沙箱操作；Gateway 独立管理通道连接。
-仅 Worker 持有 Docker 权限。多 Worker 使用同一 Docker 沙箱时必须连接同一个 daemon；当前部署拓扑不提供跨机器沙箱故障转移。
+`run` 启动 API、任务、调度和网关四个独立进程，默认监听 `0.0.0.0:8000`。API 首次启动创建超级管理员：可用 `OPSMESH_ADMIN_USERNAME`、`OPSMESH_ADMIN_PASSWORD` 设置，缺少的值自动生成并在创建成功后打印一次。已有管理员时不覆盖账密。
 
-## 文档与维护
+任务 Worker 未配置并发数时，启动时按可用 CPU、内存及容器 cgroup v2 限额自动估算并记录结果；设置 `OPSMESH_WORKER_CONCURRENCY` 可覆盖。每个 Session 仍串行，不同 Session 可并发，调用用户的并发额度独立生效。计算规则及部署约束见 [运行合同](docs/runtime.md)。
 
-- [文档索引](docs/README.md)：部署、首次使用、平台管理与模块说明。
-- [安装、升级与恢复](deploy/server/delivery-operations.md)：不可变发行目录、更新、备份和恢复。
-- [插件开发 SDK](sdk/python/README.md)：注册协议、打包和安装。
-- [更新日志](CHANGELOG.md)与 [0.1.2 发行说明](docs/releases/0.1.2.md)：版本范围、升级注意事项和限制。
-- [贡献指南](CONTRIBUTING.md)与[测试说明](tests/README.md)：源码开发和验证范围。
+通过 `POST /v1/auth/login` 提交 `username` 和 `password` 获取 24 小时令牌，请求使用 `Authorization: Bearer <token>`。本机管理员可使用 `opsmesh issue-token <user_id>` 恢复访问，再调用密码接口；修改密码撤销已有令牌。密钥与数据库、数据目录一起备份，丢失密钥无法解密已有记录。
 
-发现问题请提交 [Issue](https://github.com/jhupo/OpsMesh/issues)，附上版本、部署方式和已脱敏日志。安全问题按[安全策略](SECURITY.md)私下报告。
+也可以分别管理各进程，API 不持有通道长连接：
 
-## 许可证
+```sh
+uv run opsmesh-worker tasks
+uv run opsmesh-worker scheduler
+uv run opsmesh-worker gateway
+```
 
-OpsMesh 使用 [LGPL-3.0-only](LICENSE)。第三方代码来源和许可证见 [NOTICE](NOTICE)；发行包保留依赖元数据与许可证。
+只启动 API 使用 `uv run opsmesh serve`。发行版统一使用 `opsmesh worker tasks|scheduler|gateway` 启动各 Worker。
+
+启动后的交互文档为 `http://127.0.0.1:8000/docs`，实际 HTTP 合同来自 `/openapi.json`。`/health` 只表示 API 进程存活，不表示数据库、Worker 或第三方服务可用。
+
+Docker 配置见 [deploy/README.md](deploy/README.md)，实际检查记录与联调范围见 [校验边界](docs/verification.md)。
+
+## 第一条调用
+
+1. 管理员打包并安装可信插件：`uv run opsmesh-plugin package examples/native_agent native-agent.zip`，通过 `POST /v1/plugins` 上传 multipart 文件字段 `content`。
+2. 在环境变量设置 `OPSMESH_MODEL_API_KEY`、`OPSMESH_MODEL_NAME`、`OPSMESH_MODEL_BASE_URL` 作为框架默认模型；或通过 `POST /v1/connections` 登记自己的模型配置，填写 `name`、`api_key`、`model_name`、`base_url`、`api_mode`、`reasoning_effort`、`is_default`。思考等级仅支持 `low`、`medium`、`high`、`xhigh`，默认 `medium`。用户连接默认只允许 `api.openai.com`，其他域名由管理员通过 `OPSMESH_ALLOWED_MODEL_HOSTS` 启用。
+3. 调用 `POST /v1/agents`，填写安装 ID、`entry: "chat"`。示例的 `config` 可为空以使用默认模型，也可显式指定 `connection_id`、`model`。需要文件目录时，先创建自己的 workspace，再填写 `workspace_id`。
+4. 调用 `POST /v1/tasks`，提交 `agent_id`、`input` 和稳定的 `idempotency_key`，通过 `GET /v1/tasks/{id}` 查看状态与结果。
+5. 示例里的 `confirm_text` 使用原生 SDK 人工审批。查看 `GET /v1/interactions`，以布尔值提交 `POST /v1/interactions/{id}/respond`，Worker 从保存的 RunState 继续执行。
+
+没有模型连接和调用权限时不能运行模型。示例不会使用假结果，也不会在安装时调用模型。
+
+模型配置支持 `GET /v1/connections`、`GET/PATCH/DELETE /v1/connections/{id}`。Key 不在响应中返回；删除后后续调用拒绝使用该连接。`await context.resources.model()` 的选择顺序为显式连接、Agent 所有者的个人默认连接、环境变量默认连接，继续保留原调用者的 Token 计量。思考等级通过原生 ModelSettings 传入，插件的显式设置可覆盖默认值。
+
+本机也可导入插件 ZIP：`uv run opsmesh plugins import native-agent.zip --owner-id <user-id>`。省略 owner 时使用已有管理员，导入命令不执行插件入口。独立 SDK 仍只提供插件开发和打包能力。
+
+## 身份与目录
+
+`UserIdentity` 只有用户 ID、平台角色和组 ID。HTTP 根据令牌构造；网关根据管理员维护的外部身份绑定构造。`metadata` 是业务输入，不能覆盖身份或平台权限。
+
+同组成员可以发现和使用彼此的 Agent 实例，**不能读取配置、浏览或编辑对方的 workspace**。任务输入、结果和人工交互按调用者归属隔离。管理员具有管理访问权。
+
+Agent 实例可关联一个自己的 workspace，也可以没有。`resources` 提供统一的目录列表、文件下载、写入覆盖、删除和创建目录接口；参数为 `kind=workspace|sandbox`、`root_id` 和相对路径 `path`。工作区通过 Workspace ID 定位，沙箱通过 Session ID 定位，不接收服务器绝对路径。插件使用 `context.resources.workspace` 操作分配的目录，用 `artifact(...)` 将选定文件复制成调用者可下载的结果附件。
+
+Agent 配置使用创建、查询和修改接口管理，通过 catalog 发布供其他用户使用；不提供 Agent ZIP 导入导出。插件代码仍通过插件 ZIP 安装。
+
+发布 Agent 时会固化入口、配置和依赖，发布版本**不挂载发布者的私有 workspace**。宿主提供隔离、加密的原生 SDK Session；插件也可自行选择其他原生实现并承担对应的隔离与保留职责。
+
+## 会话与沙箱
+
+`context.session.history` 默认是原生 `EncryptedSession(SQLiteSession(...))`，直接支持 `get_items`、`add_items`、`pop_item`、`clear_session`，传入 `Runner.run(..., session=context.session.history)` 即可使用。清空历史不删除沙箱、文件或任务。保留期由 `OPSMESH_SESSION_TTL_SECONDS` 配置，默认一年。
+
+HTTP 任务不传 `session_id` 时创建会话，后续提交同一 ID 继续对话。也可先调用 `POST /v1/agents/{id}/sessions`。QQ/钉钉自动按 Agent、通道、私聊/群聊类型和会话 ID 绑定；私聊还包含用户 ID。相同群的用户共享该群对话历史，私聊与群聊、不同群之间各自隔离，工作区管理权限仍归所有者。
+
+每个会话同时只有一轮任务执行；等待人工输入仍占用该会话。会话进入后续轮次后不能恢复更早轮次的检查点。`POST /v1/sessions/{id}/close` 关闭空闲会话且保留数据，通道下次消息创建新会话。
+
+沙箱插件通过 `async with context.session.sandbox(client, options, manifest=...) as sandbox` 获得原生 `SandboxRunConfig`。默认初始化 `/workspace/input`、`output` 和 `.opsmesh/{session,skills,cache}`；使用 native Manifest 扩展初始化内容。宿主保存加密会话状态和本地快照，后续重连相同后端；Manifest 只初始化新沙箱，不重置恢复中的文件。
+
+公共文件路由直接操作所选工作区；容器沙箱通过插件注册的原生客户端访问原沙箱，不建立宿主文件副本。所有者可管理沙箱工作目录下的文件和目录，`.opsmesh` 保留给内部设施。文件操作期间占用会话，避免与 Agent 执行冲突。异常时不能确认沙箱状态会保留 `sandbox_dirty`，阻止新任务静默复用；有可恢复状态时可恢复原任务，否则应显式关闭会话。示例见 `examples/sandbox_agent`，公共文件接口和目录约束见 [会话说明](docs/sessions.md)。
+
+## 发布与依赖
+
+`POST /v1/catalog` 发布 `plugin`、`agent`、`tool`、`mcp` 或 `skill`，指定 `private`、`group` 或 `public` 可见性。发布不可覆盖；新版本创建新记录，撤回会阻止后续使用。
+
+`GET /v1/catalog` 可按 `kind`、`name`、`owner_id`、`version` 筛选。消费者取得发布 ID 后，用别名引用具体版本：
+
+```json
+{
+  "dependencies": {
+    "identity": {"kind": "tool", "id": "发布 ID", "version": "1.0.0"},
+    "analyst": {"kind": "agent", "id": "发布 ID", "version": "1.0.0"}
+  }
+}
+```
+
+插件清单的依赖与实例依赖合并，禁止覆盖同名声明。运行时使用 `context.dependencies` 取原生工具、MCP 连接或技能路径，或调用已发布的 Agent。直接调用已发布 Agent 使用 `POST /v1/catalog/{publication_id}/tasks`。依赖图限制为 12 层、100 个发布版本。
+
+发布 `plugin` 表示允许消费者使用该安装包创建实例；工具、MCP、技能分别发布其注册项。发布资源不安装任意 Python 依赖，也不让普通用户上传和执行 Python 包。代码安装只对管理员开放。
+
+## 任务与恢复
+
+任务保存调用输入、调用来源、入口配置、插件安装 ID、依赖版本和执行尝试。Worker 通过 PostgreSQL 锁领取任务，续租并处理取消；进程失联后的任务变为 `interrupted`，不自动重跑。
+
+插件可显式保存检查点，或返回 `Suspended` 进入 `waiting_input`。状态与通知 Outbox 在同一数据库事务内保存。响应只接受指定用户，绑定当前检查点；超时、重复响应、取消和过期决定均有状态检查。
+
+`POST /v1/tasks/{id}/resume` 只恢复有检查点的失败、中断或超时任务。恢复使用固定插件和原 SDK 版本，并重建当前身份与资源连接。原生 RunState 表示 SDK 支持的恢复边界，不能恢复任意 Python 调用栈或保证外部副作用自动幂等。业务工具应使用自己的幂等键或效果回执。
+
+子 Agent 调用保留原调用者并生成独立任务，稳定调用键可复用已成功的结果。子任务等待人工输入时，父插件必须设计自己的检查点和恢复逻辑；宿主不替插件编排恢复顺序。
+
+`POST /v1/schedules` 支持一次性、固定秒间隔和五字段 cron，包含时区及首次时间。cron 的首次时间是开始边界，按表达式取第一个匹配时刻。默认跳过重叠任务，不补发停机期间每一个错过的时刻；每次触发使用计划 ID 与计划时间去重。
+
+## 额度与可观测性
+
+原调用者承担模型 Token，目录所有者承担自己的存储。`resources.model` 与 `resources.model_provider` 在每次模型请求前预留额度，限制输出上限，按供应商返回的实际 usage 结算。原生 MultiProvider 使用登记的 `prefix/model`；连接可选择 Responses 或 Chat Completions。
+
+预留并不等于供应商侧的硬 Token 上限：输入长度、工具信息等会影响真实使用量。实际量超过预留时仍完整记账，后续请求受额度限制。网络异常、取消或缺失 usage 时保留预留，管理员根据供应商账单通过结算接口核对，不能直接记成零。插件直接使用自己的模型客户端时不在托管计量范围内。
+
+文件接口和附件导出在用户额度锁下检查目录大小，执行结束也会扫描目录。插件直接写盘和沙箱文件系统的硬限制需要部署侧文件系统配额或沙箱配额；进程内路径检查不能限制可信 Python 代码的全部文件操作。数据库记录及服务日志不计入个人目录额度。
+
+统一 JSON 日志包含任务、尝试、用户、插件、Trace 和 Span 标识。每个进程使用独立轮转文件，避免多进程争用一个轮转文件；生产可收集 stdout。SDK 默认 OpenAI Trace 导出器被本地处理器替换，只记录标识与生命周期。修改请求的审计记录与数据库修改一起提交；不记录请求正文和凭据。
+
+## 网关
+
+内置 QQ 官方机器人（nonebot-adapter-qq 1.7.3）和钉钉 Stream（dingtalk-stream 0.24.4b1）适配器，按平台分目录组织，插件通过 `ChannelAdapter` 添加其他通道。QQ 支持 C2C、群、频道和频道私信、原生富消息及 SDK 提供的 80 个 API；钉钉支持消息、事件、卡片/Graph 回调、主动消息、媒体与官方 OpenAPI。具体可用性取决于应用权限。配置、回执与调用示例见 [网关说明](docs/gateway.md)。
+
+管理员创建 Channel 后，为每个外部用户绑定平台用户；未绑定消息与非消息事件只记录，不执行任务。外部群主或管理员角色不会转换成平台角色。管理员操作通过持久队列执行，插件可通过 `context.channel.reply(...)` 回复当前对话，管理员身份还可调用 `context.channel.request(...)`。
+
+优先复用 NoneBot 生态的成熟平台适配器，保留少量事件/回复映射。NoneBot 核心与平台包分开发布；钉钉适配器在当前上游目录标为暂不可用，因此仍使用官方 Stream SDK。分层与扩展方法见 [网关架构](docs/gateway-architecture.md)。
+
+入站消息落库去重，出站使用持久 Outbox。送达结果不确定时标记 `uncertain`，只允许显式重试，不能承诺外部消息恰好发送一次。QQ SDK 的事件分发也不能提供应用落库之前崩溃时的零丢失保证。
+
+群聊人工交互只发送提醒，内容在指定用户的交互收件箱。钉钉使用有有效期的 session webhook，过期后保留待核对记录，不静默改用其他身份或通道发送。
+
+## 目录
+
+```text
+src/opsmesh/
+  agents/            # 实例配置、可见性、固定执行快照
+  bootstrap/         # 应用装配、ASGI、CLI、三类 Worker 入口
+  catalog/           # 发布、检索、版本依赖与运行时访问
+  gateway/           # 通道配置、身份绑定、收发记录、连接 Worker
+    adapters/
+      qq/            # 原生 NoneBot 驱动、事件、消息和 API
+      dingtalk/      # 原生 Stream、事件、消息和 OpenAPI
+  infra/             # PostgreSQL、加密、版本化迁移
+  plugins/           # ZIP 安装、注册表、版本加载
+  quotas/            # 用户额度、模型连接、预留与结算
+  resources/         # 私有 workspace、文件和结果附件
+  sessions/          # 会话隔离、原生历史、沙箱状态和生命周期
+  shared/            # 错误、HTTP 依赖、日志、Trace、审计
+  tasks/             # 持久任务、调度、检查点、人工交互、执行器
+    runtime/         # 执行生命周期、租约、调用上下文和子任务
+  users/             # 平台身份、组、认证与令牌
+sdk/python/          # 独立插件开发 SDK 与打包 CLI
+examples/            # 原生 Agent、可发布贡献、插件内组合
+deploy/              # Linux systemd、安装、更新与可执行包容器
+scripts/             # 可执行包构建入口
+.github/workflows/   # 静态检查、安全扫描、双架构构建、Python 包、镜像与 Release 发布
+.agents/skills/      # OpenAI、QQ、钉钉集成维护技能
+docs/                # 插件与运行合同
+```
+
+HTTP 模块均使用 `routes.py`；请求及响应在 `schemas.py`；数据库实体在 `models.py`，业务规则在 `service.py` 或明确职责的运行时模块。
+
+任务执行内部模块收在 `tasks/runtime/`，管理接口和定时调度留在 `tasks/`。其他模块按领域组织：Session 路径及沙箱初始化布局在 `sessions/layout.py`，原生会话生命周期在 `sessions/runtime.py`；网关连接在 `gateway/worker.py`，出站入队与发送在 `gateway/delivery.py`。具体职责树见 [运行合同](docs/runtime.md)。
+
+业务错误统一在 `shared/errors.py` 定义，携带稳定 `code`、`message`、`status_code` 与公开 `details`；HTTP 错误响应为 `{code, message, details}`。首次管理员初始化在 `bootstrap/initialization.py`，完整 ORM 注册在 `bootstrap/schema.py`；`infra/database.py` 只负责数据库基础设施，不反向导入业务模型。
+
+开发参考：[插件合同](docs/plugins.md)、[运行与恢复](docs/runtime.md)、[校验边界](docs/verification.md)。
+
+## SSE 流式事件
+
+创建任务后，用相同身份订阅 `GET /v1/tasks/{task_id}/events`：
+
+```sh
+curl -N -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:8000/v1/tasks/$TASK_ID/events"
+# 断线后，从已处理的最后事件 ID 继续：
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Last-Event-ID: 12' \
+  "http://127.0.0.1:8000/v1/tasks/$TASK_ID/events"
+```
+
+连接先返回当前 `task.snapshot`，再按 ID 顺序回放加密持久日志中的 `task.status`、`task.result`、`plugin.*` 事件。也可使用 `?after=12`；请求头优先，超前或非法游标在建立流之前拒绝。任务终止或等待人工输入时发送 `stream.end` 并关闭连接；提交审批或恢复后重新连接。客户端收到结束事件后应停止自动重连。SDK 保活心跳默认 15 秒；代理应关闭缓冲并放宽读取超时。
+
+插件通过 `await context.events.emit("progress", {"step": 1})` 发布 JSON 数据，客户端收到 `plugin.progress`。`examples/native_agent` 直接消费原生 `Runner.run_streamed()`，将文本增量发布为 `plugin.text.delta`，不替换 SDK 的执行器。事件每条最多 64 KiB，每任务插件事件受 10,000 条事件序列与 8 MB 日志预算约束，超额明确失败。
+
+SSE 按任务调用者/管理员权限访问，并在每次读取时重新验证令牌和身份；撤销访问后发送 `stream.error` 结束。每轮读取使用短事务，不占用跨连接数据库事务。事件 ID 可用于去重，插件事件与状态事件一起保留；模型供应商是否逐字输出取决于插件与原生模型实现。
+
+## 独立 SDK
+
+SDK 只提供插件开发合同与 ZIP 打包 CLI，不包含宿主业务 API 客户端，也不依赖服务端源码。可从 Release 下载 `opsmesh_sdk-0.2.0-py3-none-any.whl` 安装，或安装独立分支：
+
+```sh
+pip install 'git+https://github.com/jhupo/OpsMesh.git@sdk'
+# wheel 下载完成后：
+pip install ./opsmesh_sdk-0.2.0-py3-none-any.whl
+```
+
+生产项目应固定 Release wheel 的版本和 SHA-256，或固定 Git 提交；`sdk` 分支随开发前进。目前未配置 PyPI 发布，不能假定 `pip install opsmesh-sdk` 已可从 PyPI 获取。独立开发与示例见 [SDK README](sdk/python/README.md)。
+
+## 参与与许可
+
+开发规范见 [AGENTS.md](AGENTS.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，漏洞披露见 [SECURITY.md](SECURITY.md)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+OpsMesh 与插件 SDK 使用 **MIT**，见 [LICENSE](LICENSE)。发行包内第三方依赖保留各自版权与许可声明。

@@ -1,6 +1,0 @@
-id: typesafe-decision
-version: 0.1.2
-name: TypeSafe Moderation
-description: Optional per-message content moderation through Jev
-kind: message_filter
-entry: main.py

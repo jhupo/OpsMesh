@@ -1,12 +1,12 @@
-from opsmesh_sdk import PluginContext
+from typing import Any
 
-from .tools import echo_prefix
+from opsmesh_sdk import InvocationContext, PluginContext
 
 
-def setup(ctx: PluginContext) -> None:
-    ctx.tool(
-        "echo_prefix",
-        echo_prefix,
-        description="Return a message with a configured prefix",
-        config_fields=[{"name": "prefix", "type": "text", "default": "Hello, "}],
-    )
+async def invoke(context: InvocationContext, value: Any) -> Any:
+    await context.events.emit("progress", {"message": "Echoing input"})
+    return {"user_id": context.user.user_id, "input": value}
+
+
+def setup(context: PluginContext) -> None:
+    context.entry("echo", invoke)

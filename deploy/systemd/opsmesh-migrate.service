@@ -1,0 +1,20 @@
+[Unit]
+Description=OpsMesh database migrations
+Wants=network-online.target
+After=network-online.target
+PartOf=opsmesh.target
+
+[Service]
+Type=oneshot
+User=opsmesh
+Group=opsmesh
+WorkingDirectory=/etc/opsmesh
+ExecStart=/opt/opsmesh/current/bin/opsmesh migrate
+RemainAfterExit=yes
+TimeoutStartSec=300
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/opsmesh /var/log/opsmesh

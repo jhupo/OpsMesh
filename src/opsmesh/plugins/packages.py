@@ -1,96 +1,108 @@
-"""One package store for online installation and generation coordination."""
-
 import hashlib
-import json
-import os
-from collections.abc import Callable
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any
-from uuid import uuid4
+import io
+import shutil
+import stat
+import zipfile
+from pathlib import Path, PurePosixPath
 
-from filelock import FileLock
-from opsmesh_sdk import PluginManifest
-from opsmesh_sdk.packages import extract_package, inspect_package
+import yaml
+from opsmesh_sdk.manifest import PluginManifest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from opsmesh.infra.database import new_id
+from opsmesh.shared.errors import ConflictError, InvalidArgumentError
+
+from .models import Plugin
 
 
-class PluginPackages:
-    def __init__(self, root: Path) -> None:
-        self.root = root.resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+def package_path(root: Path, plugin_id: str) -> Path:
+    from uuid import UUID
 
-    def lock(self) -> FileLock:
-        return FileLock(self.root / ".registry.lock", timeout=30, mode=0o660)
+    return root / "packages" / str(UUID(plugin_id))
 
-    def read(self) -> dict[str, Any]:
-        path = self.root / "registry.json"
-        result = json.loads(path.read_bytes()) if path.exists() else {}
-        if not isinstance(result, dict):
-            raise ValueError("Plugin registry must be an object")
-        for plugin_id, record in result.items():
-            if not isinstance(record, dict):
-                raise ValueError("Invalid plugin installation record")
-            manifest = PluginManifest.model_validate(record["manifest"])
-            if manifest.id != plugin_id or not isinstance(record.get("config", {}), dict):
-                raise ValueError("Invalid plugin installation identity or configuration")
-        return result
 
-    def write(self, records: dict[str, Any]) -> None:
-        path = self.root / f".registry-{uuid4().hex}.tmp"
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                # Other service UIDs need read access for plugin generation reloads.
-                os.chmod(path, 0o640)
-                json.dump(records, stream, indent=2, allow_nan=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            path.replace(self.root / "registry.json")
-        finally:
-            path.unlink(missing_ok=True)
-
-    def install(
-        self,
-        archive: Path,
-        sha256: str | None = None,
-        *,
-        validate: Callable[[PluginManifest, Path], None],
-    ) -> PluginManifest:
-        manifest = inspect_package(archive)
-        with archive.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        if sha256 is not None and digest != sha256.lower():
-            raise ValueError("Plugin checksum mismatch")
-        parent = self.root / manifest.id
-        if parent.is_symlink():
-            raise ValueError("Plugin parent cannot be a symlink")
-        target = parent / manifest.version
-        with TemporaryDirectory(dir=self.root) as temporary:
-            staged = Path(temporary) / "package"
-            extract_package(archive, staged)
-            validate(manifest, staged)
-            staged.chmod(0o750)
-            for path in staged.rglob("*"):
-                if path.is_symlink():
-                    raise ValueError("Installed packages cannot contain symlinks")
-                path.chmod(0o750 if path.is_dir() else 0o640)
-            if target.exists():
-                if target.is_symlink() or self.contents(target) != self.contents(staged):
-                    raise ValueError("Plugin versions are immutable; choose a new version")
-                return manifest
-            parent.mkdir(exist_ok=True, mode=0o750)
-            staged.rename(target)
-        return manifest
-
-    @staticmethod
-    def contents(directory: Path) -> dict[str, str]:
-        result = {}
-        for path in directory.rglob("*"):
-            relative = path.relative_to(directory)
-            if "__pycache__" in relative.parts or path.suffix == ".pyc":
-                continue
-            if path.is_symlink():
-                raise ValueError("Installed packages cannot contain symlinks")
-            if path.is_file():
-                with path.open("rb") as stream:
-                    result[relative.as_posix()] = hashlib.file_digest(stream, "sha256").hexdigest()
-        return result
+def install(session: Session, root: Path, owner_id: str, content: bytes, limit: int) -> Plugin:
+    if len(content) > limit:
+        raise InvalidArgumentError("Package exceeds the upload limit")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content))
+        members = archive.infolist()
+        if len(members) > 2000 or sum(item.file_size for item in members) > limit:
+            raise InvalidArgumentError("Package expands beyond its size or entry limit")
+        seen: set[str] = set()
+        for item in members:
+            path = PurePosixPath(item.filename)
+            mode = item.external_attr >> 16
+            if (
+                item.orig_filename != item.filename
+                or path.is_absolute()
+                or ".." in path.parts
+                or "\\" in item.filename
+                or ":" in item.filename
+                or stat.S_ISLNK(mode)
+                or item.flag_bits & 1
+                or not path.parts
+                or any(
+                    part.rstrip(" .") != part
+                    or part.split(".")[0].upper()
+                    in {
+                        "CON",
+                        "PRN",
+                        "AUX",
+                        "NUL",
+                        *(f"COM{i}" for i in range(10)),
+                        *(f"LPT{i}" for i in range(10)),
+                    }
+                    for part in path.parts
+                )
+                or item.filename.casefold() in seen
+            ):
+                raise InvalidArgumentError("Unsafe or duplicate package path")
+            seen.add(item.filename.casefold())
+        raw = archive.read("plugin.yaml")
+        if len(raw) > 64000 or "main.py" not in archive.namelist():
+            raise InvalidArgumentError("A package requires plugin.yaml and main.py at its root")
+        manifest = PluginManifest.model_validate(yaml.safe_load(raw))
+    except (zipfile.BadZipFile, KeyError, ValueError, yaml.YAMLError) as exc:
+        raise InvalidArgumentError("Invalid plugin archive or manifest") from exc
+    existing = session.scalar(
+        select(Plugin).where(
+            Plugin.owner_id == owner_id,
+            Plugin.name == manifest.id,
+            Plugin.version == manifest.version,
+        )
+    )
+    if existing is not None:
+        raise ConflictError("Plugin versions are immutable")
+    row = Plugin(
+        id=new_id(),
+        owner_id=owner_id,
+        name=manifest.id,
+        version=manifest.version,
+        digest=hashlib.sha256(content).hexdigest(),
+        manifest=manifest.model_dump(mode="json"),
+    )
+    destination = package_path(root, row.id)
+    destination.mkdir(parents=True, exist_ok=False)
+    try:
+        for item in members:
+            target = destination.joinpath(*PurePosixPath(item.filename).parts)
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(item) as source, target.open("xb") as output:
+                    shutil.copyfileobj(source, output)
+        session.add(row)
+        session.flush()
+    except BaseException:
+        if destination.resolve() == (
+            root / "packages"
+        ).resolve() or not destination.resolve().is_relative_to((root / "packages").resolve()):
+            raise ValueError("Package cleanup target escapes the package directory") from None
+        shutil.rmtree(destination)
+        raise
+    finally:
+        archive.close()
+    return row

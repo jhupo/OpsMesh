@@ -1,0 +1,11 @@
+[Unit]
+Description=Update OpsMesh from its configured GitHub release repository
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/etc/opsmesh
+ExecStart=/opt/opsmesh/current/bin/opsmesh update
+TimeoutStartSec=900
+UMask=0077

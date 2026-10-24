@@ -1,94 +1,47 @@
-"""Replies respect expiring webhook credentials; proactive sends use OpenAPI."""
-
-import json
 import time
-from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
-from opsmesh_sdk.channels import ChannelMedia, DeliveryReceipt, DeliveryRejected, OutboundMessage
-
-from opsmesh.gateway.adapters.dingtalk.client import DingTalkClient
+from opsmesh_sdk.channels import OperationRejected
 
 
-async def send_message(
-    client: DingTalkClient, media: ChannelMedia, message: OutboundMessage
-) -> DeliveryReceipt:
-    if message.event != "message":
-        raise DeliveryRejected("DingTalk does not expose this delivery capability")
-    if len(message.content) != 1:
-        raise DeliveryRejected("DingTalk delivery must contain one part")
-    part, address = message.content[0], message.address
-    text_kind = "markdown" if len(part.text) <= 3500 else "text"
-    text_parameters = (
-        {"title": "OpsMesh", "text": part.text}
-        if text_kind == "markdown"
-        else {"content": part.text}
-    )
-    webhook = address.get("webhook")
-    if part.type == "text" and webhook and int(address.get("expires_at") or 0) > time.time() * 1000:
-        parsed = urlparse(webhook)
+def session_url(target: dict[str, Any]) -> str:
+    url = target.get("webhook")
+    if not isinstance(url, str):
+        raise OperationRejected("missing_dingtalk_session_webhook")
+    try:
+        parsed = urlsplit(url)
         if (
             parsed.scheme != "https"
             or parsed.hostname != "oapi.dingtalk.com"
-            or parsed.username
             or parsed.port not in {None, 443}
+            or parsed.username
+            or parsed.password
+            or parsed.path != "/robot/sendBySession"
+            or parsed.fragment
         ):
-            raise DeliveryRejected("Invalid DingTalk reply address")
-        value = await client.post(
-            webhook,
-            {"msgtype": text_kind, text_kind: text_parameters},
-            authenticated=False,
-            sending=True,
-        )
-    else:
-        if part.type == "text":
-            key = "sampleMarkdown" if text_kind == "markdown" else "sampleText"
-            param = text_parameters
-        elif part.media_key and part.type in {"image", "file", "audio"}:
-            token = await client.access_token()
-            response = await client.http.post(
-                "https://oapi.dingtalk.com/media/upload",
-                params={
-                    "access_token": token,
-                    "type": {"image": "image", "audio": "voice", "file": "file"}[part.type],
-                },
-                files={"media": (part.filename, await media.read(part.media_key), part.mime_type)},
-            )
-            if response.status_code != 200 or response.json().get("errcode", 0):
-                raise DeliveryRejected("DingTalk media upload rejected")
-            media_id = response.json()["media_id"]
-            if part.type == "image":
-                key, param = "sampleImageMsg", {"photoURL": media_id}
-            elif part.type == "audio":
-                key, param = "sampleAudio", {"mediaId": media_id}
-            else:
-                key, param = (
-                    "sampleFile",
-                    {
-                        "mediaId": media_id,
-                        "fileName": part.filename,
-                        "fileType": PurePosixPath(part.filename).suffix.lstrip(".") or "bin",
-                    },
-                )
-        else:
-            raise DeliveryRejected("DingTalk message type is unsupported")
-        body: dict[str, Any] = {
-            "robotCode": client.config.robot_code,
-            "msgKey": key,
-            "msgParam": json.dumps(param, ensure_ascii=False),
-        }
-        if address["kind"] == "group":
-            body["openConversationId"] = address["target"]
-            path = "groupMessages/send"
-        elif address.get("staff_id"):
-            body["userIds"] = [address["staff_id"]]
-            path = "oToMessages/batchSend"
-        else:
-            raise DeliveryRejected("No unexpired webhook or verified staff ID")
-        value = await client.post("https://api.dingtalk.com/v1.0/robot/" + path, body, sending=True)
-        if value.get("invalidStaffIdList") or value.get("flowControlledStaffIdList"):
-            raise DeliveryRejected("DingTalk recipient rejected")
-    return DeliveryReceipt(
-        remote_id=str(value.get("processQueryKey") or value.get("requestId") or "")
-    )
+            raise ValueError("Invalid session webhook")
+        if float(target.get("expires_at", 0)) / 1000 <= time.time():
+            raise OperationRejected("dingtalk_session_webhook_expired")
+    except (ValueError, TypeError) as exc:
+        raise OperationRejected("invalid_dingtalk_session_webhook") from exc
+    return url
+
+
+def webhook_payload(text: str, content: list[dict[str, Any]]) -> dict[str, Any]:
+    if not content:
+        return {"msgtype": "text", "text": {"content": text}}
+    if len(content) != 1:
+        raise OperationRejected("dingtalk_webhook_requires_one_message")
+    segment = content[0]
+    kind, data = segment.get("type"), segment.get("data")
+    if kind not in {
+        "text",
+        "markdown",
+        "link",
+        "actionCard",
+        "feedCard",
+        "image",
+    } or not isinstance(data, dict):
+        raise OperationRejected("invalid_dingtalk_message")
+    return {"msgtype": kind, kind: data}

@@ -1,0 +1,13 @@
+from contextlib import AbstractAsyncContextManager
+from pathlib import Path
+from typing import Any, Protocol
+
+
+class Dependencies(Protocol):
+    async def tool(self, alias: str) -> Any: ...
+
+    def mcp(self, alias: str) -> AbstractAsyncContextManager[Any]: ...
+
+    async def skill(self, alias: str) -> Path: ...
+
+    async def call(self, alias: str, value: Any, *, key: str) -> Any: ...
