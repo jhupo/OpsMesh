@@ -1,0 +1,2 @@
+[console_scripts]
+opsmesh-server = opsmesh.bootstrap.cli:main

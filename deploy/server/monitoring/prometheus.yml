@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 127.0.0.1:9093
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - 127.0.0.1:9090
+
+  - job_name: opsmesh-api
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - 127.0.0.1:9000
+        labels:
+          service: opsmesh-api
+
+  - job_name: alertmanager
+    static_configs:
+      - targets:
+          - 127.0.0.1:9093
+
+  - job_name: loki
+    static_configs:
+      - targets:
+          - 127.0.0.1:3100
+
+  - job_name: tempo
+    static_configs:
+      - targets:
+          - 127.0.0.1:3200
+
+  - job_name: otel-collector
+    static_configs:
+      - targets:
+          - 127.0.0.1:8888

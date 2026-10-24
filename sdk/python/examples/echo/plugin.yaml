@@ -1,0 +1,7 @@
+id: demo-toolkit
+version: 0.1.0
+name: Demo Toolkit
+description: A normal Python function with per-binding configuration
+icon: ""
+kind: tool
+entry: main.py

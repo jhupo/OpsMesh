@@ -1,0 +1,2 @@
+[console_scripts]
+opsmesh = opsmesh_operator.cli:main

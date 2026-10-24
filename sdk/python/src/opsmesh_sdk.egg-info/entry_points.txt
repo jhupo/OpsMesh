@@ -1,0 +1,2 @@
+[console_scripts]
+opsmesh-plugin = opsmesh_sdk.cli:main

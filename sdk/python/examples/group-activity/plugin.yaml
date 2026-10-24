@@ -1,0 +1,6 @@
+id: group-activity
+version: 0.1.1
+name: Group Activity
+description: Optional scheduled conversation starter with durable quiet-time limits
+kind: plugin
+entry: main.py

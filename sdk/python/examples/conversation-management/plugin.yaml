@@ -1,0 +1,6 @@
+id: conversation-management
+version: 0.2.0
+name: Conversation Management
+description: Host-authorized conversation operations and durable receipts
+kind: tool
+entry: main.py

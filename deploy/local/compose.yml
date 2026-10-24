@@ -1,0 +1,172 @@
+name: opsmesh
+x-logging: &id001
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+services:
+  storage-init:
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    image: opsmesh-api:local
+    user: '0:0'
+    environment:
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    entrypoint:
+    - python
+    - -c
+    - |
+      import os
+      root = os.environ['OPSMESH_STORAGE_ROOT']
+      os.makedirs(root, exist_ok=True)
+      os.chown(root, 10001, 10001)
+      os.chmod(root, 0o2770)
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    image: opsmesh-api:local
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+    command:
+    - opsmesh-server
+    - migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    logging: *id001
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    image: opsmesh-api:local
+    env_file:
+    - ../../.env
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      OPSMESH_SERVICE_NAME: opsmesh-api
+      OPSMESH_METRICS_HOST: '0.0.0.0'
+      OPSMESH_METRICS_PORT: '9000'
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
+    ports:
+    - ${OPSMESH_API_PORT:-8000}:8000
+    - 127.0.0.1:${OPSMESH_METRICS_PORT:-9000}:9000
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal-namespace:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready',
+        timeout=3).read()"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  gateway:
+    logging: *id001
+    image: opsmesh-api:local
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: api
+    command: [opsmesh-server, gateway]
+    env_file: [../../.env]
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      OPSMESH_SERVICE_NAME: opsmesh-gateway
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    depends_on:
+      api:
+        condition: service_healthy
+  worker:
+    logging: *id001
+    image: opsmesh-worker:local
+    build:
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
+      target: worker
+    env_file:
+    - ../../.env
+    environment:
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_STORAGE_ROOT: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      OPSMESH_SERVICE_NAME: opsmesh-worker
+      OPSMESH_TEMPORAL_ADDRESS: temporal:7233
+    volumes:
+    - type: bind
+      source: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+      target: ${OPSMESH_DOCKER_STORAGE_ROOT:-/var/lib/opsmesh-local/storage}
+    - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      api:
+        condition: service_healthy
+      temporal-namespace:
+        condition: service_completed_successfully
+    group_add:
+    - ${OPSMESH_DOCKER_GID:-0}
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: opsmesh
+      POSTGRES_USER: opsmesh
+      POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD:-opsmesh}
+    volumes:
+    - opsmesh_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    command:
+    - redis-server
+    - --appendonly
+    - 'yes'
+    volumes:
+    - opsmesh_redis:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  opsmesh_postgres: null
+  opsmesh_redis: null
+include:
+- ../temporal/compose.yml

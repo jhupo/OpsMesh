@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pelican &amp; Pig / A Little Ride</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #bce9f5; color: #24394a; font-family: system-ui, sans-serif; }
+    main { min-height: 100svh; display: grid; grid-template-rows: auto 1fr auto; }
+    header, footer { padding: 22px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: 0; }
+    header span, footer { font-size: 12px; }
+    .landscape { width: 100%; display: grid; align-items: center; overflow: hidden; }
+    svg { width: 100%; height: auto; display: block; max-height: 76svh; }
+    button { width: 42px; height: 42px; padding: 10px; border: 1px solid #24394a55; border-radius: 50%; color: inherit; background: #ffffff66; cursor: pointer; }
+    button:hover { background: white; }
+    button:focus-visible { outline: 3px solid #224b86; outline-offset: 4px; }
+    button svg { width: 20px; height: 20px; }
+    .play-icon { display: none; }
+    button[aria-pressed="true"] .play-icon { display: block; }
+    button[aria-pressed="true"] .pause-icon { display: none; }
+    .outline { stroke: #384455; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .clouds { animation: travel 55s linear infinite; }
+    .hills { animation: travel 22s linear infinite; }
+    .grass { animation: travel 4s linear infinite; }
+    .ride { animation: bounce .7s ease-in-out infinite; }
+    .bird { transform-origin: 480px 340px; animation: sway .7s ease-in-out infinite; }
+    .leg { transform-box: fill-box; transform-origin: 50% 0%; animation: step .7s ease-in-out infinite; }
+    .opposite { animation-delay: -.35s; }
+    .wing { transform-origin: 459px 270px; animation: flap 1.4s ease-in-out infinite; }
+    .scarf { transform-origin: 497px 221px; animation: flutter .7s ease-in-out infinite; }
+    .ear { transform-origin: 617px 327px; animation: flutter .7s ease-in-out infinite reverse; }
+    .tail { transform-origin: 330px 365px; animation: flutter .7s ease-in-out infinite; }
+    .eye { transform-box: fill-box; transform-origin: center; animation: blink 4.8s infinite; }
+    .shadow { transform-origin: 490px 455px; animation: shadow .7s ease-in-out infinite; }
+    .dust { transform-box: fill-box; transform-origin: center; animation: puff 1.4s ease-out infinite; }
+    .dust.second { animation-delay: -.7s; }
+    .paused * { animation-play-state: paused !important; }
+    @keyframes travel { to { transform: translateX(-1000px); } }
+    @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes sway { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg) translateY(-2px); } }
+    @keyframes step { 0%,100% { transform: rotate(25deg); } 50% { transform: rotate(-25deg); } }
+    @keyframes flap { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-12deg); } }
+    @keyframes flutter { 0%,100% { transform: rotate(-7deg); } 50% { transform: rotate(9deg); } }
+    @keyframes blink { 0%,45%,49%,100% { transform: scaleY(1); } 47% { transform: scaleY(.1); } }
+    @keyframes shadow { 0%,100% { transform: scaleX(1); opacity: .18; } 50% { transform: scaleX(.88); opacity: .1; } }
+    @keyframes puff { 0% { opacity: 0; transform: scale(.3); } 20% { opacity: .65; } 100% { opacity: 0; transform: translate(-65px,-18px) scale(1.4); } }
+    @media (max-width: 600px) { header,footer { padding: 18px; } header span { display: none; } h1 { font-size: 20px; } .landscape { min-height: 300px; } svg { min-height: 280px; } button svg { min-height: 0; } }
+    @media (prefers-reduced-motion: reduce) { #scene * { animation: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>Pelican &amp; Pig</h1><span>A LITTLE RIDE / 001</span></header>
+    <div class="landscape">
+      <svg id="scene" viewBox="0 0 1000 560" role="img" aria-labelledby="title description">
+        <title id="title">A pelican riding a running pig</title>
+        <desc id="description">A white pelican with a red scarf rides a pink pig across a green meadow. The pig trots, the pelican bounces, and clouds drift past.</desc>
+        <defs>
+          <g id="clouds" fill="#f9ffff">
+            <path d="M60 115c-25 0-29-28-7-33-2-35 46-41 59-10 28-9 43 29 17 38z"/>
+            <path d="M550 159c-26 0-29-29-6-34 4-33 48-33 58-6 28-7 38 29 11 33z"/>
+            <path d="M860 88c-19 0-23-23-5-28 3-25 38-28 47-5 23-6 33 25 10 29z"/>
+          </g>
+          <g id="hills">
+            <path d="M0 365Q150 208 315 352Q470 239 660 350Q840 217 1000 365V445H0Z" fill="#8dcdb0"/>
+            <path d="M0 406Q180 290 360 390Q530 319 710 394Q870 300 1000 406V460H0Z" fill="#65b78f"/>
+          </g>
+          <g id="grass" stroke-linecap="round">
+            <g stroke="#429b72" stroke-width="3"><path d="M60 489l-4-9m9 9 5-12M247 458l-4-7m8 9 5-9M459 521l-3-9m7 9 5-12M736 480l-2-9m7 10 5-7M910 531l-2-10m6 9 6-9"/></g>
+            <g fill="#fffef3"><circle cx="157" cy="518" r="4"/><circle cx="598" cy="472" r="4"/><circle cx="820" cy="536" r="4"/></g>
+            <g fill="#f1c556"><circle cx="157" cy="518" r="1.5"/><circle cx="598" cy="472" r="1.5"/><circle cx="820" cy="536" r="1.5"/></g>
+          </g>
+        </defs>
+        <rect width="1000" height="560" fill="#bce9f5"/>
+        <circle cx="785" cy="108" r="43" fill="#ffe28a"/>
+        <g class="clouds"><use href="#clouds"/><use href="#clouds" x="1000"/></g>
+        <g class="hills"><use href="#hills"/><use href="#hills" x="1000"/></g>
+        <path d="M0 430Q250 413 500 430T1000 430V560H0Z" fill="#91d3a7"/>
+        <path d="M0 452Q250 437 500 452T1000 452" fill="none" stroke="#bce3b3" stroke-width="5"/>
+        <g class="grass"><use href="#grass"/><use href="#grass" x="1000"/></g>
+        <ellipse class="shadow" cx="490" cy="455" rx="171" ry="13" fill="#25443f"/>
+        <g fill="#d8ecd0"><circle class="dust" cx="315" cy="442" r="12"/><circle class="dust second" cx="295" cy="443" r="8"/></g>
+        <g class="ride outline">
+          <g fill="#c7809b">
+            <g class="leg opposite"><path d="M405 386l-7 46q5 12 19 7l13-48z"/><path d="M399 431l17 7" stroke-width="8"/></g>
+            <g class="leg"><path d="M548 388l-3 42q7 14 21 7l9-48z"/><path d="M547 431l17 6" stroke-width="8"/></g>
+          </g>
+          <path class="tail" d="M339 367c-38 5-51-28-30-36 17-5 26 19 12 28-13 8-28 0-30-9" fill="none" stroke="#b9718e" stroke-width="8"/>
+          <path d="M341 345c21-30 79-41 144-36 73 6 116 26 126 60 16 51-40 65-119 63-77-1-147-7-160-39-6-17-2-35 9-48z" fill="#f1b0c5"/>
+          <path d="M359 358q46-29 108-26" fill="none" stroke="#fbd0db" stroke-width="9"/>
+          <g class="leg" fill="#f1b0c5"><path d="M369 391l-3 44q5 14 20 9l19-46"/><path d="M368 436l17 7" stroke-width="8"/></g>
+          <g class="leg opposite" fill="#f1b0c5"><path d="M523 397l4 41q8 15 23 6l10-48"/><path d="M529 439l19 4" stroke-width="8"/></g>
+          <path d="M559 341q11-43 58-43c41 1 62 33 58 66-3 37-49 48-83 29" fill="#f5bdce"/>
+          <path d="M583 316q-29-45-3-46 26 2 29 38" fill="#ed9fb9"/>
+          <path class="ear" d="M618 318q3-52 27-43 21 10-9 48z" fill="#ed9fb9"/>
+          <ellipse cx="672" cy="363" rx="31" ry="25" fill="#e996b3"/>
+          <path d="M661 359v9m19-9v9" stroke="#9a5b7c" stroke-width="5"/>
+          <ellipse class="eye" cx="617" cy="339" rx="4" ry="6" fill="#384455" stroke="none"/>
+          <ellipse cx="607" cy="358" rx="12" ry="7" fill="#e997b2" stroke="none"/>
+          <path d="M624 381q10 7 17-3" fill="none" stroke-width="3"/>
+          <path d="M422 315q48-13 96 6l-9 17q-40-13-84-5z" fill="#427f8b"/>
+          <g class="bird">
+            <path d="M445 245q-42 4-62 39l33 1-13 18q33-1 54-25z" fill="#d9e0df"/>
+            <path d="M453 217q-42 8-46 51c-3 41 28 65 65 62 40-3 55-34 47-67l-6-46z" fill="#fffef5"/>
+            <path d="M485 252c-3-31-16-57-10-91 5-23 24-39 45-34 25 5 31 30 21 49-14 24-17 37-13 63l-6 37" fill="#fffef5"/>
+            <path d="M481 140l-6-12m14 4-1-13" fill="none"/>
+            <path d="M536 158l128 21q-38 14-127 6z" fill="#f7bf59"/>
+            <path d="M538 185l116-6q-40 63-94 36-16-8-22-30z" fill="#eea15b"/>
+            <path d="M554 193q36 12 66-1" fill="none" stroke="#ce8549" stroke-width="2"/>
+            <ellipse class="eye" cx="521" cy="152" rx="4" ry="5" fill="#384455" stroke="none"/>
+            <circle cx="511" cy="169" r="6" fill="#f3c6b7" stroke="none"/>
+            <path class="scarf" d="M497 219q-45-12-86-4l15 11-16 10q40-2 89 2z" fill="#dc5e5e"/>
+            <path d="M479 215q20 10 46 2l-1 17q-23 7-43-3z" fill="#f0786d"/>
+            <path class="wing" d="M461 255q-40-18-37 19 5 30 40 29 19 0 22-17" fill="#e4eae6"/>
+            <path d="M477 320v24l24 3m-2-25 5 20 22 3" fill="none" stroke="#d39648" stroke-width="6"/>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <footer><span>Good company. No particular destination.</span><button id="pause" type="button" aria-label="Pause animation" aria-pressed="false" aria-controls="scene" title="Pause animation"><svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z" fill="currentColor"/></svg></button></footer>
+  </main>
+  <script>
+    const scene = document.getElementById('scene');
+    const button = document.getElementById('pause');
+    button.addEventListener('click', () => {
+      const paused = scene.classList.toggle('paused');
+      const label = paused ? 'Resume animation' : 'Pause animation';
+      button.setAttribute('aria-pressed', String(paused));
+      button.setAttribute('aria-label', label);
+      button.title = label;
+    });
+  </script>
+</body>
+</html>

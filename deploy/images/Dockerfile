@@ -1,0 +1,37 @@
+FROM python:3.14-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /usr/local/bin/uv
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+COPY pyproject.toml uv.lock README.md alembic.ini ./
+COPY LICENSE COPYING LICENSE-MIT NOTICE ./
+COPY deploy/cli ./deploy/cli
+COPY sdk/python ./sdk/python
+COPY src ./src
+RUN uv sync --frozen --no-dev --no-editable --package opsmesh
+
+FROM python:3.14-slim AS base
+ARG BUILD_COMMIT
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" \
+    OPSMESH_BUILD_COMMIT=${BUILD_COMMIT} OPSMESH_API_BIND=0.0.0.0
+WORKDIR /app
+RUN addgroup --system --gid 10001 opsmesh && adduser --system --uid 10001 --ingroup opsmesh opsmesh \
+    && mkdir -p /app/.opsmesh-storage && chown opsmesh:opsmesh /app/.opsmesh-storage
+COPY --from=builder /app/.venv /app/.venv
+COPY migrations ./migrations
+COPY alembic.ini ./
+COPY deploy/images/entrypoint.sh /usr/local/bin/opsmesh-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/opsmesh-entrypoint \
+    && chmod 755 /usr/local/bin/opsmesh-entrypoint
+USER opsmesh
+EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/opsmesh-entrypoint"]
+
+FROM base AS api
+CMD ["opsmesh-server", "api"]
+
+FROM base AS worker
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends docker-cli acl \
+    && rm -rf /var/lib/apt/lists/*
+USER opsmesh
+CMD ["opsmesh-server", "worker"]

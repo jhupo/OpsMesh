@@ -1,0 +1,62 @@
+"""Typed domain errors with stable codes and HTTP status mapping."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class DomainError(Exception):
+    """Base error carrying a stable machine code and transport-agnostic details."""
+
+    message: str
+    code: str = "domain_error"
+    status_code: int = 400
+    details: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        super().__init__(self.message)
+
+
+class NotFoundError(DomainError):
+    def __init__(
+        self,
+        message: str = "Resource not found",
+        *,
+        code: str = "not_found",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=404, details=details or {})
+
+
+class ForbiddenError(DomainError):
+    def __init__(
+        self,
+        message: str = "Forbidden",
+        *,
+        code: str = "forbidden",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=403, details=details or {})
+
+
+class ConflictError(DomainError):
+    def __init__(
+        self,
+        message: str = "Conflict",
+        *,
+        code: str = "conflict",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=409, details=details or {})
+
+
+class InvalidArgumentError(DomainError):
+    def __init__(
+        self,
+        message: str = "Invalid argument",
+        *,
+        code: str = "invalid_argument",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=400, details=details or {})

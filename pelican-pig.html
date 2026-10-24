@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>鹈鹕骑猪 · 田野漫游</title>
+  <style>
+    :root { color-scheme: light; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #bfe5ec; color: #243d37; }
+    main { position: relative; min-height: 100svh; overflow: hidden; display: grid; align-items: center; }
+    .heading { position: absolute; top: 7%; left: 7%; z-index: 1; pointer-events: none; }
+    .heading p { margin: 0 0 12px; font-size: 12px; letter-spacing: 0; color: #47655d; }
+    h1 { margin: 0; font-size: 36px; font-weight: 600; }
+    .subtitle { margin-top: 14px !important; font-size: 14px !important; }
+    .scene { width: 100%; height: 100svh; min-height: 480px; display: block; }
+    .signature { position: absolute; bottom: 28px; left: 7%; font-size: 11px; color: #47655d; }
+    .controls { position: absolute; right: 7%; bottom: 24px; }
+    button { width: 46px; height: 46px; padding: 12px; display: grid; place-items: center; border: 1px solid #31544655; border-radius: 50%; background: #f8fff1b8; color: #294b3d; cursor: pointer; }
+    button:hover { background: #f8fff1; }
+    button:focus-visible { outline: 3px solid #386c57; outline-offset: 4px; }
+    button svg { width: 20px; height: 20px; fill: currentColor; }
+    .play-icon { display: none; }
+    .paused .pause-icon { display: none; }
+    .paused .play-icon { display: block; }
+    .paused .animated { animation-play-state: paused !important; }
+    .ride { animation: ride 0.68s ease-in-out infinite; }
+    .bird { animation: bird 0.68s ease-in-out infinite; transform-origin: 617px 445px; }
+    .head { animation: head 1.36s ease-in-out infinite; transform-origin: 654px 345px; }
+    .wing { animation: wing 1.36s ease-in-out infinite; transform-origin: 590px 390px; }
+    .leg-front { animation: leg 0.68s ease-in-out infinite; transform-origin: 705px 536px; }
+    .leg-back { animation: leg 0.68s ease-in-out infinite reverse; transform-origin: 532px 536px; }
+    .leg-far-front { animation: leg 0.68s ease-in-out infinite reverse; transform-origin: 681px 536px; }
+    .leg-far-back { animation: leg 0.68s ease-in-out infinite; transform-origin: 510px 536px; }
+    .ear { animation: ear 0.68s ease-in-out infinite; transform-origin: 736px 459px; }
+    .tail { animation: tail 0.68s ease-in-out infinite; transform-origin: 478px 485px; }
+    .shadow { animation: shadow 0.68s ease-in-out infinite; transform-origin: 630px 593px; }
+    .cloud-a { animation: cloud 38s linear infinite; }
+    .cloud-b { animation: cloud 57s linear infinite; }
+    .near-track { animation: track 2.8s linear infinite; }
+    .far-track { animation: track 12s linear infinite; }
+    .dust { animation: dust 1.36s ease-out infinite; }
+    .dust-b { animation-delay: -0.45s; }
+    .dust-c { animation-delay: -0.9s; }
+    .scarf { animation: scarf 0.68s ease-in-out infinite; transform-origin: 654px 335px; }
+    .blink { animation: blink 4.7s infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes ride { 0%,100% { transform: translateY(0) rotate(-0.6deg); } 50% { transform: translateY(-11px) rotate(0.6deg); } }
+    @keyframes bird { 0%,100% { transform: rotate(2deg) translateY(1px); } 50% { transform: rotate(-2deg) translateY(-6px); } }
+    @keyframes head { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(3deg); } }
+    @keyframes wing { 0%,100% { transform: rotate(-5deg); } 50% { transform: rotate(9deg); } }
+    @keyframes leg { 0%,100% { transform: rotate(-19deg); } 50% { transform: rotate(22deg); } }
+    @keyframes ear { 0%,100% { transform: rotate(-7deg); } 50% { transform: rotate(12deg); } }
+    @keyframes tail { 0%,100% { transform: rotate(-9deg); } 50% { transform: rotate(12deg); } }
+    @keyframes shadow { 0%,100% { transform: scaleX(1); opacity: .18; } 50% { transform: scaleX(.86); opacity: .11; } }
+    @keyframes cloud { from { transform: translateX(1400px); } to { transform: translateX(-450px); } }
+    @keyframes track { to { transform: translateX(-400px); } }
+    @keyframes dust { 0% { transform: translate(0,0) scale(.4); opacity: 0; } 15% { opacity: .5; } 100% { transform: translate(-110px,-25px) scale(1.7); opacity: 0; } }
+    @keyframes scarf { 0%,100% { transform: skewY(5deg); } 50% { transform: skewY(-7deg); } }
+    @keyframes blink { 0%,43%,47%,100% { transform: scaleY(1); } 45% { transform: scaleY(.08); } }
+    @media (max-width: 600px) { .heading { top: 8%; } h1 { font-size: 28px; } .scene { width: 160%; max-width: none; margin-left: -30%; } .subtitle { max-width: 230px; line-height: 1.8; } }
+    @media (prefers-reduced-motion: reduce) { .animated { animation-play-state: paused; } }
+  </style>
+</head>
+<body>
+  <main id="artwork">
+    <header class="heading">
+      <p>FIELD NOTES / 001</p>
+      <h1>今天，搭个顺风猪。</h1>
+      <p class="subtitle">风正好，去田野的另一头。</p>
+    </header>
+    <svg class="scene" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" role="img" aria-labelledby="scene-title scene-description">
+      <title id="scene-title">鹈鹕骑着小猪穿过田野</title>
+      <desc id="scene-description">一只系红围巾的白色鹈鹕坐在奔跑的粉色小猪背上，白云缓慢飘过，草地与小花向后移动。</desc>
+      <defs>
+        <g id="cloud" fill="#f8ffff"><path d="M0 30C-8 12 15 0 30 10C34-10 69-14 80 8C100-1 121 13 115 30Z"/></g>
+        <g id="grass" fill="none" stroke="#618d58" stroke-width="3" stroke-linecap="round"><path d="M0 0l-5-10M0 0l5-14M0 0l11-5"/></g>
+        <g id="flower"><path d="M0 0v-22" stroke="#638953" stroke-width="3"/><g fill="#fff8e9"><ellipse cy="-28" rx="4" ry="7"/><ellipse cy="-16" rx="4" ry="7"/><ellipse cx="-6" cy="-22" rx="7" ry="4"/><ellipse cx="6" cy="-22" rx="7" ry="4"/></g><circle cy="-22" r="4" fill="#e8b64d"/></g>
+        <g id="near-unit"><use href="#grass" x="30" y="662"/><use href="#grass" x="230" y="735"/><use href="#flower" x="134" y="708"/><use href="#flower" x="346" y="645"/><ellipse cx="280" cy="620" rx="9" ry="3" fill="#91ad68"/></g>
+        <g id="far-unit" fill="#79a66d"><ellipse cx="100" cy="540" rx="48" ry="9"/><ellipse cx="290" cy="552" rx="24" ry="5"/><path d="M40 530q5-22 10 0q6-30 12 0Z"/></g>
+      </defs>
+      <path fill="#bfe5ec" d="M0 0h1200v800H0z"/>
+      <circle cx="963" cy="154" r="49" fill="#f9e9a5"/>
+      <g class="animated cloud-a" opacity=".85" style="animation-delay:-14s"><use href="#cloud" x="0" y="180" transform="scale(1.3)"/></g>
+      <g class="animated cloud-b" opacity=".65" style="animation-delay:-38s"><use href="#cloud" x="0" y="292"/></g>
+      <path d="M0 465Q140 353 295 430T600 419T915 414T1200 395V800H0Z" fill="#a5c79b"/>
+      <path d="M0 486Q175 433 350 480T700 463T1050 474T1400 455V800H0Z" fill="#b9d18e"/>
+      <g class="animated far-track"><use href="#far-unit" x="0"/><use href="#far-unit" x="400"/><use href="#far-unit" x="800"/><use href="#far-unit" x="1200"/></g>
+      <path d="M-20 609Q280 555 580 594T1240 580" fill="none" stroke="#e4d6a1" stroke-width="70"/>
+      <path d="M-20 609Q280 555 580 594T1240 580" fill="none" stroke="#eddfb0" stroke-width="48"/>
+      <ellipse class="animated shadow" cx="630" cy="593" rx="164" ry="16" fill="#384c38"/>
+      <g fill="#f4e8c5">
+        <circle class="animated dust" cx="490" cy="574" r="10" style="transform-origin:490px 574px"/>
+        <circle class="animated dust dust-b" cx="490" cy="574" r="7" style="transform-origin:490px 574px"/>
+        <circle class="animated dust dust-c" cx="490" cy="574" r="8" style="transform-origin:490px 574px"/>
+      </g>
+      <g class="animated ride">
+        <g stroke="#a45160" stroke-width="3.5" stroke-linejoin="round">
+          <g fill="#cf7e8c">
+            <g class="animated leg-far-back"><path d="M498 520l4 47q5 10 22 5l1-49Z"/><path d="M502 562l1 11h21l1-11" fill="#75565b"/></g>
+            <g class="animated leg-far-front"><path d="M667 521l5 46q5 10 22 5l-1-49Z"/><path d="M672 562l1 11h21l-1-11" fill="#75565b"/></g>
+          </g>
+          <path class="animated tail" d="M484 488q-39-4-30-26q8-15 19-2q10 15-13 20q-15 4-22-7" fill="none" stroke="#b96575" stroke-linecap="round" stroke-width="7"/>
+          <path d="M480 472C505 425 607 419 672 447C711 424 755 438 772 472C804 481 816 500 797 520C787 532 766 534 750 528C706 568 543 566 497 539C474 525 465 496 480 472Z" fill="#efa5b1"/>
+          <path d="M502 478q42-35 104-28" fill="none" stroke="#f7c5cd" stroke-width="11" stroke-linecap="round"/>
+          <g fill="#efa5b1">
+            <g class="animated leg-back"><path d="M519 531l-1 39q6 11 24 5l5-40"/><path d="M518 565v11h24l2-11" fill="#75565b"/></g>
+            <g class="animated leg-front"><path d="M693 531l1 39q6 11 24 5l-1-43"/><path d="M694 565v11h24l-1-11" fill="#75565b"/></g>
+          </g>
+          <path class="animated ear" d="M719 456q-6-41 20-38q28 10 15 49q-16-19-35-11Z" fill="#e991a2"/>
+          <path d="M734 442q8-13 12 4" stroke="#c76f83" fill="none" stroke-linecap="round"/>
+          <ellipse cx="790" cy="498" rx="25" ry="21" fill="#e68d9e"/>
+          <path d="M781 494v7m17-7v7" stroke="#a45160" stroke-width="5" stroke-linecap="round"/>
+          <path d="M738 515q11 10 21 1" fill="none" stroke-linecap="round"/>
+          <ellipse class="animated blink" cx="746" cy="481" rx="4" ry="6" fill="#443a3d" stroke="none"/>
+          <ellipse cx="734" cy="501" rx="11" ry="7" fill="#e27e93" stroke="none" opacity=".7"/>
+        </g>
+        <path d="M546 442q55-15 113 3l-5 15q-56-11-104 0Z" fill="#547d69" stroke="#365b4d" stroke-width="3"/>
+        <g class="animated bird" stroke="#40524e" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M598 429l5 25l26 3m2-32l8 25l25 2" fill="none" stroke="#c58c3d" stroke-width="7"/>
+          <path d="M548 401l-28-16l8 26l-18-4q14 24 45 22" fill="#f5f4e9"/>
+          <path d="M546 373q22-40 72-17l35-9q24 49-6 77q-37 29-80 7q-28-15-21-58Z" fill="#fcfcf1"/>
+          <path class="animated wing" d="M565 377q38-17 61 19q-16 30-55 13m1-11q18 10 35 3m-38-13q18 10 31 8" fill="#e4e9df"/>
+          <g class="animated head">
+            <path d="M628 369q-3-35 11-65q-16-22-4-47q13-25 40-18q28 7 22 34q-4 18-22 27q-11 22-1 61q-13 17-46 8Z" fill="#fffef5"/>
+            <path d="M640 246l-9-14l17 4l2-13l12 15" fill="#fffef5"/>
+            <path d="M682 280L799 294Q777 340 705 335q-26-8-23-55Z" fill="#e9b85b" stroke="#b1843f"/>
+            <path d="M686 280q57-4 127 13q-71 13-128 7Z" fill="#efbf69" stroke="#b1843f"/>
+            <path d="M702 310q24 17 55 1" fill="none" stroke="#f5d993" stroke-width="5"/>
+            <circle class="animated blink" cx="674" cy="267" r="4.5" fill="#293f3c" stroke="none"/>
+            <path d="M665 254q7-5 13 0" fill="none" stroke-width="2.5"/>
+            <ellipse cx="662" cy="283" rx="8" ry="5" fill="#f0bcb0" stroke="none"/>
+          </g>
+          <g stroke="#a74843" fill="#cd6152">
+            <path class="animated scarf" d="M647 335q-36-17-73-5l-23-8l5 18q42-4 85 14Z"/>
+            <path d="M632 330q14 11 36 3l4 15q-22 12-41-2Z"/>
+            <path d="M640 345q-8 21 0 35l15-5q-10-12-4-28Z"/>
+          </g>
+        </g>
+      </g>
+      <g class="animated near-track"><use href="#near-unit" x="0"/><use href="#near-unit" x="400"/><use href="#near-unit" x="800"/><use href="#near-unit" x="1200"/></g>
+    </svg>
+    <span class="signature">一只鹈鹕，一头猪，一路好天气。</span>
+    <div class="controls">
+      <button type="button" id="toggle" aria-label="暂停动画" title="暂停动画" aria-pressed="false">
+        <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
+        <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>
+      </button>
+    </div>
+  </main>
+  <script>
+    const artwork = document.getElementById('artwork');
+    const toggle = document.getElementById('toggle');
+    function setPaused(paused) {
+      artwork.classList.toggle('paused', paused);
+      toggle.setAttribute('aria-pressed', String(paused));
+      toggle.setAttribute('aria-label', paused ? '播放动画' : '暂停动画');
+      toggle.title = paused ? '播放动画' : '暂停动画';
+    }
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPaused(reducedMotion.matches);
+    toggle.addEventListener('click', () => {
+      const paused = !artwork.classList.contains('paused');
+      if (!paused) {
+        artwork.querySelectorAll('.animated').forEach(element => {
+          element.style.animationPlayState = 'running';
+        });
+      }
+      setPaused(paused);
+    });
+  </script>
+</body>
+</html>

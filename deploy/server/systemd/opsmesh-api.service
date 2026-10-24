@@ -1,0 +1,24 @@
+[Unit]
+Description=OpsMesh API
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0007
+User=opsmesh-api
+Group=opsmesh
+WorkingDirectory=/opt/opsmesh/current
+EnvironmentFile=/opt/opsmesh/.env
+EnvironmentFile=/opt/opsmesh/current/images.env
+Environment=OPSMESH_SERVICE_NAME=opsmesh-api
+ExecStart=/opt/opsmesh/current/opsmesh-server api
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/opsmesh
+
+[Install]
+WantedBy=multi-user.target

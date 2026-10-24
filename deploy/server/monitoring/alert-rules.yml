@@ -1,0 +1,129 @@
+groups:
+  - name: opsmesh-control-plane
+    rules:
+      - alert: OpsMeshApiDown
+        expr: up{job="opsmesh-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: opsmesh-api
+        annotations:
+          summary: OpsMesh API metrics target is down
+          description: Prometheus has not scraped the API metrics endpoint for 2 minutes.
+
+      - alert: OpsMeshHighHttp5xxRate
+        expr: |
+          sum(rate(opsmesh_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(opsmesh_http_requests_total[5m])), 0.000001)
+          > 0.05
+          and
+          sum(increase(opsmesh_http_requests_total[5m])) >= 20
+        for: 10m
+        labels:
+          severity: warning
+          service: opsmesh-api
+        annotations:
+          summary: OpsMesh API 5xx rate is elevated
+          description: More than 5 percent of API requests returned 5xx responses for 10 minutes.
+
+      - alert: OpsMeshHighHttpLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(opsmesh_http_request_duration_ms_bucket[5m]))
+          ) > 1000
+          and
+          sum(increase(opsmesh_http_request_duration_ms_count[5m])) >= 20
+        for: 10m
+        labels:
+          severity: warning
+          service: opsmesh-api
+        annotations:
+          summary: OpsMesh API latency is elevated
+          description: Overall API P95 latency exceeded one second for 10 minutes.
+
+      - alert: OpsMeshTemporalDispatchBacklogHigh
+        expr: opsmesh_temporal_dispatches{state="pending"} > 100
+        for: 10m
+        labels:
+          severity: warning
+          service: opsmesh-worker
+        annotations:
+          summary: Temporal command publication backlog is high
+          description: More than 100 committed commands are waiting for Temporal publication.
+
+      - alert: OpsMeshTemporalDispatchStale
+        expr: opsmesh_temporal_oldest_pending_dispatch_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          service: opsmesh-worker
+        annotations:
+          summary: Temporal command publication is delayed
+          description: A committed command has remained unpublished for more than 15 minutes.
+
+      - alert: OpsMeshTemporalPublicationFailed
+        expr: opsmesh_temporal_dispatch_publication_errors > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: opsmesh-worker
+        annotations:
+          summary: Temporal commands have publication failures
+          description: A committed command has a recorded failure and remains unpublished; inspect dispatch diagnostics.
+
+      - alert: OpsMeshRuntimeQuotaHigh
+        expr: opsmesh_user_capacity_max_usage_ratio > 0.85
+        for: 15m
+        labels:
+          severity: warning
+          service: opsmesh-runtime
+        annotations:
+          summary: OpsMesh user capacity usage is high
+          description: Capacity {{ $labels.kind }} is above 85 percent reserved usage.
+
+      - alert: OpsMeshObservabilityTargetDown
+        expr: up{job=~"alertmanager|loki|tempo|otel-collector"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: An observability backend is unavailable
+          description: Prometheus cannot scrape {{ $labels.job }}.
+
+      - alert: OpsMeshMetricsCollectionFailed
+        expr: |
+          opsmesh_metrics_collection_success == 0
+          or absent(opsmesh_metrics_collection_success{source="postgres"})
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: OpsMesh domain metrics collection is failing
+          description: PostgreSQL domain metrics collection failed or stopped reporting.
+
+      - alert: OpsMeshTelemetryExportFailed
+        expr: |
+          sum(increase(otelcol_exporter_send_failed_spans_total[15m]))
+          + sum(increase(otelcol_exporter_send_failed_log_records_total[15m]))
+          > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-observability
+        annotations:
+          summary: OpenTelemetry export is failing
+          description: The Collector failed to export logs or traces during the last 15 minutes.
+
+      - alert: OpsMeshAlertDeliveryFailed
+        expr: increase(alertmanager_notifications_failed_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: opsmesh-alertmanager
+        annotations:
+          summary: Alertmanager notification delivery failed
+          description: Alertmanager failed to deliver at least one operator notification.

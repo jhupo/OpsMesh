@@ -1,0 +1,7 @@
+id: demo-model-hook
+version: 0.1.0
+name: Demo Model Hook
+description: Adds a short response style instruction before model calls
+icon: ""
+kind: hook
+entry: main.py
