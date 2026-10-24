@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opsmesh-sdk"
+version = "0.2.0"
+description = "Typed plugin development contracts and packaging CLI for OpsMesh"
+readme = "README.md"
+requires-python = ">=3.11.8"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["agents", "plugins", "openai", "sdk", "opsmesh"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = ["pydantic>=2.12,<3", "PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+agents = ["openai-agents==0.22.3"]
+dev = ["ruff==0.15.13", "mypy==1.20.2", "types-PyYAML"]
+
+[project.urls]
+Homepage = "https://github.com/jhupo/OpsMesh/tree/sdk"
+Documentation = "https://github.com/jhupo/OpsMesh/blob/sdk/README.md"
+Repository = "https://github.com/jhupo/OpsMesh/tree/sdk"
+Issues = "https://github.com/jhupo/OpsMesh/issues"
+
+[project.scripts]
+opsmesh-plugin = "opsmesh_sdk.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opsmesh_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/opsmesh_sdk", "examples", ".github", ".gitignore", "README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", ".gitattributes", "LICENSE", "pyproject.toml"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+disallow_untyped_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true

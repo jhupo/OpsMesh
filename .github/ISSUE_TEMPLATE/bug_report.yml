@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible OpsMesh defect
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, deployment method, Python/SDK versions if relevant. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps, expected result and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs and relevant configuration
+      description: Remove credentials, bearer tokens and private user data before submitting.
