@@ -34,7 +34,7 @@ sudo sh ./install.sh --config /root/opsmesh-install.env --repository OWNER/REPOS
 /var/log/opsmesh/              # 各进程轮转日志
 ```
 
-`opsmesh.target` 管理 API、tasks、scheduler、gateway 四个服务。迁移 oneshot 必须成功后才启动服务；API 不持有通道长连接。首次启动未配置的管理员账密只在创建成功后打印到 API journal：
+`opsmesh.target` 管理 API、tasks、scheduler、gateway 四个服务。迁移 oneshot 必须成功后才启动服务；API 不持有通道长连接。首次启动未配置的管理员账密写入 `/var/lib/opsmesh/initial-admin-用户ID.json`（服务账户所有，权限 `0600`）；API journal 仅显示文件位置，不记录密码。使用本机管理员权限读取，登录后修改密码并删除该文件：
 
 ```sh
 sudo systemctl status opsmesh.target 'opsmesh-*.service'

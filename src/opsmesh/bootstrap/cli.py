@@ -19,7 +19,7 @@ from opsmesh.users.service import identity, issue_token
 
 from .app import Application
 from .deployment import configure_parser, manage_deployment
-from .initialization import initialize_admin
+from .initialization import initialize_admin, save_initial_credentials
 from .settings import Settings
 from .supervisor import run_services
 from .worker import serve as serve_worker
@@ -110,6 +110,7 @@ def main() -> None:
                             "An administrator already exists; use issue-token for credential recovery"
                         )
                     user_id = credentials.user_id
+                    credentials_path = save_initial_credentials(config.data_dir, credentials)
                 elif arguments.command == "plugins":
                     owner_id = arguments.owner_id
                     if owner_id is None:
@@ -143,7 +144,7 @@ def main() -> None:
                 print(result)
             else:
                 if arguments.command == "bootstrap-admin" and credentials is not None:
-                    print(f"Username: {credentials.username}\nPassword: {credentials.password}")
+                    print(f"Initial administrator credentials saved to {credentials_path}")
                 print(credential)
         finally:
             asyncio.run(application.close())
