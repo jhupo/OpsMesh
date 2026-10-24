@@ -76,7 +76,9 @@ An administrator imports the ZIP into the host and creates an instance referenci
 
 Tools register native `FunctionTool` objects, retaining native approvals, guardrails and timeouts. MCP factories create a fresh native MCP server per invocation. Sandbox factories accept `SandboxContext` and yield a native client through an async context manager; task execution and file management share that backend.
 
-Custom channels implement `ChannelAdapter.connect`, `send`, `close`, call `super().__init__()` and set `ready` once sending is possible. `connect` lasts for the connection lifetime. `send` raises on failure. Message IDs must be stable across retries. Credentials stay in adapter `reply_target`; invocations receive public routing metadata.
+Custom channels implement `ChannelAdapter.connect`, `send`, `execute`, `close` and the JSON `capabilities` property. Call `super().__init__()` and set `ready` only once sending is possible. `connect` lasts for the connection lifetime and publishes `ChannelEvent` values to its sink. Set `is_message=True` only for user messages eligible to invoke an agent; other events are recorded without execution. `OutgoingMessage.content` carries structured segments. `send` and `execute` return JSON receipts, raise `OperationRejected(code)` for definite rejection, and propagate transport failures so the host can mark uncertain effects. IDs must be stable across retries. Credentials stay in encrypted `reply_target`; invocations receive public event metadata.
+
+Gateway invocations also expose optional `context.channel`. `await context.channel.reply("hello", key="reply-1")` queues a reply to the current conversation and returns a delivery ID; `content=[...]` supports native rich segments. `await context.channel.request(operation, parameters, key="action-1")` queues an operation and returns its ID, requiring the caller's current platform administrator role. The worker revalidates that role before execution. HTTP invocations have no channel. Both methods enqueue durable work; their return value does not claim platform delivery.
 
 Installed Python plugins are trusted executable code. These protocols are not an operating system sandbox or a guarantee of idempotent external effects.
 
@@ -94,4 +96,4 @@ This is a library project; its standalone CI resolves declared dependency bounds
 
 ## License
 
-LGPL-3.0-only; see [LICENSE](LICENSE). That single file includes LGPLv3 and the GPLv3 terms it incorporates. Third-party dependencies retain their own licenses.
+MIT; see [LICENSE](LICENSE). Third-party dependencies retain their own copyright and license notices.

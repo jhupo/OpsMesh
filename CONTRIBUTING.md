@@ -6,4 +6,4 @@ Use Python 3.11.8+ and follow [AGENTS.md](AGENTS.md). Install development tools 
 
 Automated contributors run tests, model calls and services only when explicitly requested. Report checks actually performed and any runtime gaps. Do not commit credentials, generated environments, plugin state or private files.
 
-The SDK and host share a release version. Their wheels and source distributions are built from the same tagged host commit and attached to its GitHub Release; PyPI publication is not configured. Contributions use LGPL-3.0-only. For vulnerabilities follow [SECURITY.md](SECURITY.md).
+The SDK and host share a release version. Their wheels and source distributions are built from the same tagged host commit and attached to its GitHub Release; PyPI publication is not configured. Contributions use MIT. For vulnerabilities follow [SECURITY.md](SECURITY.md).

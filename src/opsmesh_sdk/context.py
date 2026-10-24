@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from .deps import Dependencies
 from .events import Events
+from .gateway import Channel
 from .identity import UserIdentity
 from .interactions import Decision
 from .resources import Resources
@@ -39,3 +40,4 @@ class InvocationContext:
     source: InvocationSource = field(default_factory=InvocationSource)
     checkpoint: dict[str, Any] | None = None
     decision: Decision | None = None
+    channel: Channel | None = None

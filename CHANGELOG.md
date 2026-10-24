@@ -6,6 +6,8 @@
 - Declarative setup registrations for entries, tools, MCP, skills, channels and native sandboxes.
 - Trusted caller context, resources, dependencies, native Session access, explicit checkpoints and human-input decisions.
 - Bounded JSON progress events via context.events.emit, relayed through host SSE.
-- Standalone examples, build metadata, development checks and LGPL-3.0-only licensing.
+- Structured ChannelEvent ingress, native operation capabilities and JSON delivery receipts.
+- InvocationContext.channel for durable replies and administrator-only native operations.
+- Standalone examples, build metadata, development checks and MIT licensing.
 
 This section describes planned release contents; it does not imply a release or PyPI publication has occurred.

@@ -1,6 +1,6 @@
 # Security policy
 
-Security fixes target the current SDK matching the latest supported OpsMesh release. Historical `backup` code is unsupported.
+Security fixes target the current SDK matching the latest supported OpsMesh release.
 
 Report vulnerabilities through the repository's private GitHub vulnerability reporting when available, or contact **hi.jhupo@gmail.com** to arrange secure disclosure. Never send credentials, private plugin data or exploit details in a public issue. Include affected version and impact; no response-time guarantee or bounty is offered.
 
