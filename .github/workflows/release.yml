@@ -13,11 +13,13 @@ jobs:
     uses: ./.github/workflows/ci.yml
   security:
     uses: ./.github/workflows/security.yml
+  codeql:
+    uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
       security-events: write
   binaries:
-    needs: [checks, security]
+    needs: [checks, security, codeql]
     strategy:
       fail-fast: false
       matrix:
@@ -77,7 +79,7 @@ jobs:
             linux-*.cdx.json
           if-no-files-found: error
   packages:
-    needs: [checks, security]
+    needs: [checks, security, codeql]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:

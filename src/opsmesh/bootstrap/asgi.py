@@ -26,7 +26,7 @@ from opsmesh.tasks.routes import router as tasks_router
 from opsmesh.users.routes import router as users_router
 
 from .app import Application
-from .initialization import initialize_admin
+from .initialization import initialize_admin, save_initial_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,14 @@ def create_app() -> FastAPI:
                         config.admin_username,
                         config.admin_password.get_secret_value() if config.admin_password else None,
                     )
-                if credentials is not None and credentials.generated:
-                    print(
-                        f"OpsMesh initial administrator\nUsername: {credentials.username}\nPassword: {credentials.password}",
-                        flush=True,
+                    credentials_path = (
+                        save_initial_credentials(config.data_dir, credentials)
+                        if credentials is not None and credentials.generated
+                        else None
+                    )
+                if credentials_path is not None:
+                    logger.warning(
+                        "Initial administrator credentials saved to %s", credentials_path
                     )
 
             await asyncio.to_thread(bootstrap)

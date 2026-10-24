@@ -5,14 +5,17 @@
 ## 静态与构建
 
 - Ruff 格式/规则覆盖 153 个 Python 文件；宿主与 SDK mypy 覆盖 134 个源文件，SDK Python 3.11 边界覆盖 13 个源文件；6 项导入合同通过。
-- 5 个 GitHub Actions 工作流经 actionlint 解析，两个 Linux 安装脚本经 Bash 语法检查。集成维护技能经 skill-creator 校验。
+- GitHub Actions 工作流经 actionlint 解析，两个 Linux 安装脚本经 Bash 语法检查。集成维护技能经 skill-creator 校验。
 - 宿主和 SDK wheel/sdist 可构建，Twine 元数据检查通过。源码 tar.gz/ZIP 使用显式文件清单，SDK 保持独立，不包含宿主实现。
 - QQ 上游依赖上限与安全版本冲突通过仅修改包元数据的固定源码提交解决；宿主锁定 cryptography 50.0.2。锁定运行依赖审计 **79 项，0 跳过、0 已知漏洞**。没有运行时兼容代码或忽略漏洞的规则；发行扫描以 CI 记录为准。
 - 项目、SDK、构建元数据、容器标签和交付文档统一为 MIT；第三方代码保留自身声明。
+- 首轮 GitHub CI 的静态检查、数据库回归和依赖/源码扫描成功；CodeQL 另外发现未引用 SSH 辅助脚本和初始密码进入进程输出。辅助脚本已移除；初始账密改为独占创建的受限文件，日志只显示路径，并补充凭据文件回归。恢复 Python/Actions 的 security-extended 配置，避免扫描配置缺失。
 
 ## 已执行回归
 
 Windows 本机执行全部 33 项 unittest，22 项通过、11 项因未配置本机 PostgreSQL 跳过。随后在隔离 Linux PostgreSQL 16 环境执行 **33 项全部通过，无跳过**；cryptography 50.0.2 下再次执行全部通过。
+
+初始凭据输出加固后，本机新增 3 项文件权限/覆盖保护/写入失败清理回归，共 36 项中 25 项通过、11 项 PostgreSQL 用例跳过。POSIX 权限断言仅在 Linux 等 POSIX 环境执行；Windows 本机结果不证明 Linux 文件模式。
 
 覆盖 QQ 四类会话及结构化消息、原生 API 参数与模型、非法本地文件/上传地址拒绝、SDK Webhook 签名及请求上限、端口冲突不退出 Worker；钉钉消息/事件/卡片/Graph 注册、原生准备状态、会话 webhook、OpenAPI/媒体及鉴权边界；入站去重、拒绝/未绑定记录、加密操作回执、管理员权限撤回、发送不确定与失联恢复。既有取消清理、子任务容量、工具配置、Token usage 和检查点回归也通过。
 
@@ -35,6 +38,7 @@ HTTP 平台请求使用模拟传输，Webhook 签名请求使用原生 SDK ASGI 
 - QQ 未提供测试私聊/群/频道目标及实际消息，未验证真实消息收发、群管理权限、富消息投递、平台 Webhook 回调和长时间断网恢复。连接与只读 API 成功不代表这些能力获批。
 - 钉钉未配置应用凭据，按用户要求保留所有真实平台联调缺口。
 - 回归不涵盖所有多 Worker 竞争、长时间负载、审批/超时竞争、沙箱真实后端、文件系统硬额度及各模型供应商错误组合。
+- 服务器原生二进制验收早于初始凭据输出加固；该加固的验证由后续静态检查、凭据文件回归和 PR CI 单独记录。
 - 未创建发行 Tag 或发布本轮 Release/GHCR 镜像；静态检查不表示 GitHub CodeQL、Trivy、双架构镜像扫描、SBOM 和构建来源证明已经执行。
 
 当前入口见 [tests/README.md](../tests/README.md)、[网关合同](gateway.md) 和 [部署说明](../deploy/README.md)。

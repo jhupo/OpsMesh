@@ -24,6 +24,8 @@ All notable changes are recorded here. Versions follow Semantic Versioning. Date
 - Pin QQ's metadata-only source fix and cryptography >=50.0.2 instead of retaining the upstream vulnerable dependency cap.
 - Unified project licensing under MIT. Redistributed third-party code retains its own notices.
 - The `sdk` branch presents the independent SDK at its branch root.
+- Generated administrator credentials are handed off in owner-only files; process logs print only their location. Remove the file after rotating the initial password.
+- Preserve Python and GitHub Actions security-extended CodeQL configurations; release builds depend on both analyses.
 
 ### Deployment
 

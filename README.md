@@ -26,7 +26,7 @@ uv run opsmesh migrate
 uv run opsmesh run
 ```
 
-`run` 启动 API、任务、调度和网关四个独立进程，默认监听 `0.0.0.0:8000`。API 首次启动创建超级管理员：可用 `OPSMESH_ADMIN_USERNAME`、`OPSMESH_ADMIN_PASSWORD` 设置，缺少的值自动生成并在创建成功后打印一次。已有管理员时不覆盖账密。
+`run` 启动 API、任务、调度和网关四个独立进程，默认监听 `0.0.0.0:8000`。API 首次启动创建超级管理员：可用 `OPSMESH_ADMIN_USERNAME`、`OPSMESH_ADMIN_PASSWORD` 设置，缺少的值自动生成，写入数据目录下的 `initial-admin-用户ID.json`（Linux 权限 `0600`），日志仅显示文件位置。读取后修改初始密码并删除该凭据文件。已有管理员时不覆盖账密。
 
 任务 Worker 未配置并发数时，启动时按可用 CPU、内存及容器 cgroup v2 限额自动估算并记录结果；设置 `OPSMESH_WORKER_CONCURRENCY` 可覆盖。每个 Session 仍串行，不同 Session 可并发，调用用户的并发额度独立生效。计算规则及部署约束见 [运行合同](docs/runtime.md)。
 

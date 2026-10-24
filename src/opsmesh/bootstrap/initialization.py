@@ -1,5 +1,8 @@
+import json
+import os
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -14,6 +17,20 @@ class InitialCredentials:
     username: str
     password: str
     generated: bool
+
+
+def save_initial_credentials(directory: Path, credentials: InitialCredentials) -> Path:
+    """Hand initial credentials to the local operator without sending them to logs."""
+    path = directory / f"initial-admin-{credentials.user_id}.json"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump({"username": credentials.username, "password": credentials.password}, stream)
+            stream.write("\n")
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path
 
 
 def initialize_admin(
