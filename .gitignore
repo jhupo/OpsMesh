@@ -149,6 +149,8 @@ activemq-data/
 
 # Environments
 .env
+/data/
+/logs/
 .envrc
 .opsmesh-storage/
 .opsmesh-test-storage/

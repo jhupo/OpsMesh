@@ -1,93 +1,81 @@
-"""Preserve enterprise scope, sender ID kind, conversation and observed admin hint."""
-
+import hashlib
+import json
 from typing import Any
 
-from opsmesh_sdk.channels import (
-    ChannelMedia,
-    ContentPart,
-    Conversation,
-    ExternalActor,
-    InboundMessage,
-    MessageContext,
-)
-
-from opsmesh.gateway.adapters.dingtalk.client import DingTalkClient
+from dingtalk_stream import CardCallbackMessage, ChatbotMessage
+from opsmesh_sdk.channels import ChannelEvent
 
 
-async def parse_event(
-    data: dict[str, Any], client: DingTalkClient, media: ChannelMedia
-) -> InboundMessage:
-    staff = data.get("senderStaffId")
-    sender = staff or data.get("senderId")
-    corp = data.get("senderCorpId") or client.config.corp_id
-    if not sender or not data.get("conversationId") or not data.get("msgId"):
-        raise ValueError("DingTalk message lacks stable identity")
-    if str(corp) != client.config.corp_id:
-        raise ValueError("DingTalk enterprise differs from configured scope")
-    content = []
+def public_data(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: public_data(item)
+            for key, item in value.items()
+            if key.lower()
+            not in {
+                "sessionwebhook",
+                "sessionwebhookexpiredtime",
+                "access_token",
+                "accesstoken",
+                "authorization",
+                "signature",
+                "token",
+            }
+        }
+    if isinstance(value, list):
+        return [public_data(item) for item in value]
+    return value
 
-    async def attachment(value: dict[str, Any], kind: str) -> None:
-        code = value.get("downloadCode") or value.get("pictureDownloadCode")
-        if not code:
-            return
-        result = await client.post(
-            "https://api.dingtalk.com/v1.0/robot/messageFiles/download",
-            {"downloadCode": code, "robotCode": client.config.robot_code},
-        )
-        key, mime = await media.fetch(result["downloadUrl"])
-        content.append(
-            ContentPart(
-                type=kind,
-                media_key=key,
-                mime_type=mime,
-                filename=value.get("fileName") or "attachment",
-            )
-        )
 
-    msgtype = data.get("msgtype")
-    if msgtype == "text":
-        content.append(ContentPart(text=str(data.get("text", {}).get("content", "")).strip()))
-    elif msgtype == "richText":
-        for item in data.get("content", {}).get("richText", []):
-            if item.get("text"):
-                content.append(ContentPart(text=str(item["text"])))
-            elif item.get("type") == "picture":
-                await attachment(item, "image")
-    elif msgtype in {"picture", "file", "audio", "video"}:
-        await attachment(data.get("content", {}), {"picture": "image"}.get(msgtype, msgtype))
-    if not content:
-        content.append(ContentPart(text="[Unsupported message type. Send text or an attachment.]"))
-    group = str(data.get("conversationType")) == "2"
-    return InboundMessage(
-        event_id=str(data["msgId"]),
-        actor=ExternalActor(
-            scope=client.config.app_key + ":" + str(corp),
-            id_kind="staff_id" if staff else "sender_id",
-            external_id=str(sender),
-            name=str(data.get("senderNick") or ""),
-            external_role="admin" if data.get("isAdmin") is True else None,
-        ),
-        conversation=Conversation(
-            external_id=str(data["conversationId"]),
-            kind="group" if group else "private",
-            name=str(data.get("conversationTitle") or ""),
-        ),
-        content=content,
-        context=MessageContext(
-            event_type="chatbot_message",
-            bot_mentioned=data.get("isInAtList") is True,
-            mentions=[
-                str(item.get("staffId") or item.get("dingtalkId"))
-                for item in data.get("atUsers", [])
-                if item.get("staffId") or item.get("dingtalkId")
-            ],
-        ),
-        reply_address={
-            "webhook": data.get("sessionWebhook"),
-            "expires_at": data.get("sessionWebhookExpiredTime"),
-            "kind": "group" if group else "private",
-            "target": str(data["conversationId"]),
-            "staff_id": str(staff or ""),
-            "msg_id": str(data["msgId"]),
+def stable_id(frame: Any, category: str) -> str:
+    identity = frame.headers.event_id or frame.headers.message_id
+    if not identity:
+        identity = hashlib.sha256(json.dumps(frame.data, sort_keys=True).encode()).hexdigest()
+    return f"{category}:{identity}"
+
+
+def chatbot(frame: Any) -> ChannelEvent:
+    message = ChatbotMessage.from_dict(frame.data)
+    sender = message.sender_staff_id or message.sender_id
+    if not sender or not message.conversation_id or not message.message_id:
+        raise ValueError("DingTalk message has no stable sender, conversation or ID")
+    scope = "private" if str(message.conversation_type) == "1" else "group"
+    parts = [{"type": "text", "data": {"text": text}} for text in message.get_text_list() or []]
+    parts.extend(
+        {"type": "image", "data": {"download_code": code}}
+        for code in message.get_image_list() or []
+    )
+    if not parts:
+        parts = [
+            {"type": str(message.message_type), "data": public_data(frame.data.get("content", {}))}
+        ]
+    return ChannelEvent(
+        id=f"message:{message.message_id}",
+        type=f"message.{message.message_type}",
+        external_user_id=str(sender),
+        conversation_id=f"{scope}:{message.conversation_id}",
+        text="\n".join(message.get_text_list() or []).strip(),
+        is_message=True,
+        scope=scope,
+        external_role="group_admin" if message.is_admin else None,
+        reply_target={
+            "kind": "session",
+            "webhook": message.session_webhook,
+            "expires_at": message.session_webhook_expired_time,
         },
+        content=parts,
+        data=public_data(frame.data),
+    )
+
+
+def callback(frame: Any, category: str) -> ChannelEvent:
+    sender = None
+    if category == "card":
+        message = CardCallbackMessage.from_dict(frame.data)
+        sender = message.user_id or None
+    return ChannelEvent(
+        id=stable_id(frame, category),
+        type=f"{category}.{frame.headers.event_type or frame.headers.topic or 'callback'}",
+        external_user_id=sender,
+        data=public_data(frame.data),
     )

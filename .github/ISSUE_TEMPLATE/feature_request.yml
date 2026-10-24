@@ -1,25 +1,16 @@
-name: Feature Request
-description: Suggest an improvement for OpsMesh.
+name: Feature request
+description: Propose a focused improvement
 title: "[Feature]: "
-labels: ["enhancement"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What user or operator problem should this solve?
+      label: Problem and use case
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed Solution
-      description: Describe the behavior, API, or workflow you want.
+      label: Proposed behavior and alternatives
     validations:
       required: true
-  - type: textarea
-    id: safety
-    attributes:
-      label: Safety And Isolation Notes
-      description: Any user ownership, credential, plugin, runtime, approval, or audit impact?
-

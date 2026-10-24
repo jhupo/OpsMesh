@@ -1,43 +1,30 @@
 # Changelog
 
-All notable changes to OpsMesh will be documented here.
+All notable changes are recorded here. Versions follow Semantic Versioning. Dates use UTC. This file describes planned release contents; a section alone does not mean the release has been published.
 
-## 0.1.3
+## [0.2.0] - Unreleased
 
-- Make configured JSON Schema outputs implement the concrete native Agents SDK schema contract required by Temporal model Activities.
-- Load schema validation dependencies before Workflow execution instead of importing them dynamically inside the Workflow Sandbox.
-- Format exception chains and exception groups without reading source files, preserving error diagnostics in frozen native Workers under Temporal restrictions.
-- Extend real model execution/replay acceptance to structured output and add regressions for schema validation and source-free exception logging.
+### Added
 
-## 0.1.2
+- Plugin application host with immutable publication dependencies and native Agents SDK integration.
+- Persistent tasks, checkpoints, human input, scheduling, session isolation, caller token accounting and private resource management.
+- QQ via nonebot-adapter-qq, with four conversation types, signed webhooks, native rich messages and the SDK's complete callable API catalogue.
+- DingTalk native Stream lifecycle, robot/event/card/Graph callbacks, proactive messages, media and fixed-host OpenAPI operations.
+- Encrypted gateway events, administrator operation queues, delivery receipts and explicit retry for uncertain effects.
+- Repository skills for OpenAI Agents, QQ and DingTalk maintenance.
+- Authenticated SSE task events, encrypted event storage and cursor-based replay after reconnects.
+- Standalone typed Python plugin SDK with a packaging CLI, independent development configuration and examples.
+- Linux x86_64/aarch64 executable bundles, systemd installation, optional updates and multi-platform GHCR images.
+- Tag release automation for server/SDK Python distributions, source tar/ZIP archives, installer, checksums, SBOMs, scan reports and build provenance.
+- Standard contribution/security policies, issue templates and dependency maintenance.
 
-- Moderate each original message through optional plugin message filters before activation and batching. Bound admission retries and preserve exact-message recall receipts.
-- Use native Agents SDK Sessions as the only conversation memory; remove gateway history reconstruction and the extra TypeSafe decision Workflow.
-- Share a group's Session for the same authorized account and Agent, preserve every batched sender, and avoid inheriting one member's administrator role.
-- Add explicit shared group routes for a restricted platform account so members can chat without individual registration. Preserve private-route isolation and enforce current route permissions.
-- Dispatch messages independently so a slow filter does not hold an entire scheduling cycle. Keep bounded quiet windows, batch limits, FIFO and recoverable submissions.
-- Keep Jev integration in an optional moderation adapter; remove the vendor dependency from the framework. Reply policy remains Agent/plugin configuration.
-- Add migration 0007 and document coordinated upgrade, stopped/drained ingress and retained historical Session files. No runtime compatibility layer is added.
-- Preserve native model retries and expose an explicit opt-in backoff policy for compatible services returning long 5xx Retry-After headers.
+### Changed
 
-## 0.1.1
+- Simplified the host around native SDK contracts; orchestration belongs to plugin code.
+- Pin QQ's metadata-only source fix and cryptography >=50.0.2 instead of retaining the upstream vulnerable dependency cap.
+- Unified project licensing under MIT. Redistributed third-party code retains its own notices.
+- The `sdk` branch presents the independent SDK at its branch root.
 
-- Organize the native gateway into transport, channel, identity, routing, messaging, API and storage modules without compatibility import paths.
-- Add durable per-conversation ordering and batching, group context policy, progress and typing events, streamed QQ text, known-subject broadcasts and QR binding.
-- Share authorized model binding between direct execution and Temporal Activities; preserve per-Agent model settings and explicit network routing.
-- Use the official Temporal Agents streaming integration and restrict public deltas to authorized Agents; add native message inputs for workflow Agent nodes.
-- Consolidate current-user checks, graph resolution and cross-module HTTP dependencies; fix the gateway audit origin that prevented channel creation and identity binding.
-- Extend plugin channel contracts and include an optional TypeSafe decision plugin example; external adapters remain separately installed.
-- Add migration 0006, real PostgreSQL gateway regressions and persistent Agent execution/replay acceptance. See docs/acceptance.md for evidence and remaining coverage limits.
-- Publish prebuilt native archives and Docker images through the existing tag-triggered release pipeline. Upgrade requires draining old Agent Workflows and rebuilding plugins against the current SDK.
+### Deployment
 
-## 0.1.0
-
-- Native Agents SDK configuration, persistent execution instances, private Sessions, sandbox environments and Agent Runs.
-- Workflow definitions, immutable publication, binding instances and graph execution through a Temporal engine adapter.
-- Plugin development SDK and generic package host with tool, MCP, Skill, Hook, middleware and gateway adapters.
-- User ownership, grants, quotas, encrypted execution state, effect receipts and audit records.
-- Native distributions, deployment CLI, Compose/systemd topology and backup/recovery tooling.
-- Consolidated process bootstrap and server commands shared by Docker and native installation; removed unused security, database, credential and telemetry helpers and obsolete deployment settings.
-- Repository maintenance references and adapted upstream skills. Current verification scope and remaining integration coverage are documented in tests/README.md.
-
+Initialize a new installation with its own database, data directory and encryption key. Complete or cancel pending work before upgrading. Restoring checkpoints requires the pinned SDK and plugin versions. Production distributions support Linux only.

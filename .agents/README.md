@@ -1,11 +1,16 @@
-# 开发助手资料
+# Repository skills
 
-- [技能](skills/README.md)：如何完成某类工作；根据任务选用。
-- [维护参考](references/README.md)：模块所有权、生命周期和长期不变量；修改对应边界前阅读。
-- [根约定](../AGENTS.md)：执行授权、架构和校验规则。
+Read the relevant integration skill before editing its implementation. These are OpsMesh maintenance instructions, not runtime plugins or permissions to run tests.
 
-结构参考 [openai/openai-agents-python](https://github.com/openai/openai-agents-python)，本次参考提交为 [`841dfdd938bfd4ca052475eb76d6245a356868e0`](https://github.com/openai/openai-agents-python/tree/841dfdd938bfd4ca052475eb76d6245a356868e0)。
+| Skill | Integration | Locked version |
+| --- | --- | --- |
+| [openai-knowledge](skills/openai-knowledge/SKILL.md) | Native Agents, sessions, MCP, sandbox and models | openai-agents 0.22.3 |
+| [adapter-qq](skills/adapter-qq/SKILL.md) | QQ transport, native APIs and messages | nonebot-adapter-qq 1.7.3; nonebot2 2.5.0 |
+| [nonebot](skills/nonebot/SKILL.md) | Driver/Adapter boundaries and safe platform integration | nonebot2 2.5.0 |
+| [dingtalk-sdk](skills/dingtalk-sdk/SKILL.md) | Stream callbacks, robots, cards and OpenAPI | dingtalk-stream 0.24.4b1 |
 
-`openai-knowledge`、`docs-sync` 通过官方 skill-installer 从该提交安装，然后适配 OpsMesh 的路径、语言、文档结构与授权规则。上游贡献发布、翻译和 Make 命令不适用于本仓库；不安装整套只服务于上游发布维护的技能。保留 [上游 MIT 许可](UPSTREAM-LICENSE)。维护参考根据本仓库源码编写，不是将上游内部实现照搬为 OpsMesh 行为。
+The DingTalk SDK version is a deliberate upstream prerelease for its asynchronous lifecycle and shutdown behavior. It remains pinned in `uv.lock`; do not replace it with an older stable version without reviewing the lifecycle contract.
 
-`code-change-verification`、`temporal-python-sdk` 是仓库专用技能；`find-skills` 来源保持其目录说明。更新上游技能时先比较固定版本，不覆盖本地适配，也不修改用户全局 Codex 配置。
+Skills refer to official upstream documentation and the installed source. The lockfile determines available interfaces. Keep secrets, captured platform payloads and local acceptance data outside this directory.
+
+QQ 1.7.3 is installed from commit `e79e4a0830b55107752e706b2807d6651d29d463` on `codex/adapter-qq-crypto50`. It is based on upstream tag `v1.7.3` (`9bf584471e4fa658f276903481b99373c43016fd`) with only the cryptography upper bound raised from `<49` to `<51`. No upstream Python code or license notice changes. The host requires cryptography >=50.0.2.

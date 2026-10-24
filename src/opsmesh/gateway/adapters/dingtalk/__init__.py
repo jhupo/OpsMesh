@@ -1,1 +1,1 @@
-"""Native dingtalk transport adapter."""
+"""DingTalk Stream transport, callbacks, messages and OpenAPI operations."""

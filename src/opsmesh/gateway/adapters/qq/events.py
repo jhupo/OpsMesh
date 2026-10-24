@@ -1,85 +1,68 @@
-"""Typed QQ identities, chats and media; nicknames never identify accounts."""
-
+import hashlib
+import json
 from typing import Any
 
-from opsmesh_sdk.channels import (
-    ChannelMedia,
-    Conversation,
-    ExternalActor,
-    InboundMessage,
-    MessageContext,
-    MessageReference,
+from nonebot.adapters.qq.event import (
+    C2CMessageCreateEvent,
+    DirectMessageCreateEvent,
+    Event,
+    GroupMessageCreateEvent,
+    GuildMessageEvent,
+    MessageEvent,
 )
+from opsmesh_sdk.channels import ChannelEvent
+from pydantic_core import to_jsonable_python
 
-from opsmesh.gateway.adapters.qq.content import attached_context, content_parts
 
-
-async def parse_event(
-    payload: dict[str, Any], app_id: str, media: ChannelMedia
-) -> InboundMessage | None:
-    event = payload.get("t")
-    if event not in {
-        "C2C_MESSAGE_CREATE",
-        "GROUP_AT_MESSAGE_CREATE",
-        "GROUP_MESSAGE_CREATE",
-        "AT_MESSAGE_CREATE",
-        "DIRECT_MESSAGE_CREATE",
-    }:
-        return None
-    data = payload["d"]
-    author = data.get("author", {})
-    if event == "C2C_MESSAGE_CREATE":
-        kind, identity_kind = "private", "user_openid"
-        sender = author.get("user_openid") or data.get("user_openid")
-        destination, reply_kind = sender, "c2c"
-    elif event in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-        kind, identity_kind = "group", "member_openid"
-        sender = author.get("member_openid") or data.get("member_openid")
-        destination, reply_kind = data.get("group_openid"), "group"
-    else:
-        kind, identity_kind = (
-            ("private" if event == "DIRECT_MESSAGE_CREATE" else "guild"),
-            "guild_user_id",
-        )
-        sender = author.get("id")
-        destination = data.get("guild_id") if kind == "private" else data.get("channel_id")
-        reply_kind = "dm" if kind == "private" else "channel"
-    if not sender or not destination or not data.get("id"):
-        raise ValueError("QQ event lacks stable identity or message ID")
-    mentions = [str(item["id"]) for item in data.get("mentions", []) if item.get("id")]
-    reference = data.get("message_reference") or {}
-    role = author.get("member_role")
-    mentioned = event in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
-    content = await content_parts(data, media, mentioned=mentioned)
-    recent, quoted = await attached_context(data, media)
-    content = (quoted + content)[:100]
-    if not content:
-        return None
-    return InboundMessage(
-        event_id=str(data["id"]),
-        actor=ExternalActor(
-            scope=app_id,
-            id_kind=identity_kind,
-            external_id=str(sender),
-            name=str(author.get("username") or ""),
-            external_role=role if role in {"owner", "admin", "member"} else None,
-        ),
-        conversation=Conversation(external_id=str(destination), kind=kind),
+def normalize(event: Event) -> ChannelEvent:
+    data: dict[str, Any] = event.model_dump(mode="json", exclude={"session_id"})
+    event_type = str(event.get_event_name())
+    # EventType is a str Enum; use its wire value, not Enum's display name.
+    event_type = getattr(event.get_event_name(), "value", event_type)
+    native_id = getattr(event, "id", None) if isinstance(event, MessageEvent) else None
+    identity = event.event_id or native_id
+    if not identity:
+        identity = hashlib.sha256(
+            json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    user_id: str | None = None
+    conversation: str | None = None
+    target: dict[str, Any] | None = None
+    scope = "private"
+    try:
+        user_id = event.get_user_id()
+    except ValueError:
+        pass
+    if isinstance(event, DirectMessageCreateEvent):
+        conversation = f"dms:{event.guild_id}:{user_id}"
+        target = {"kind": "dms", "id": event.guild_id}
+    elif isinstance(event, GuildMessageEvent):
+        conversation, scope = f"guild:{event.channel_id}", "group"
+        target = {"kind": "guild", "id": event.channel_id}
+    elif isinstance(event, GroupMessageCreateEvent):
+        conversation, scope = f"group:{event.group_openid}", "group"
+        target = {"kind": "group", "id": event.group_openid}
+    elif isinstance(event, C2CMessageCreateEvent):
+        conversation = f"c2c:{user_id}"
+        target = {"kind": "c2c", "id": user_id}
+    content: list[dict[str, Any]] = []
+    text = ""
+    if isinstance(event, MessageEvent):
+        message = event.get_message()
+        content = [{"type": part.type, "data": to_jsonable_python(part.data)} for part in message]
+        text = message.extract_plain_text().strip()
+    return ChannelEvent(
+        id=f"{event_type}:{identity}",
+        type=event_type,
+        external_user_id=user_id,
+        conversation_id=conversation,
+        text=text,
+        is_message=isinstance(event, MessageEvent),
+        scope=scope,
+        external_role=event.author.member_role
+        if isinstance(event, GroupMessageCreateEvent)
+        else None,
+        reply_target={**target, "message_id": native_id} if target else None,
         content=content,
-        context=MessageContext(
-            event_type=str(event),
-            bot_mentioned=event in {"GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE"}
-            or any(item.get("is_you") is True for item in data.get("mentions", [])),
-            mentions=mentions,
-            reference=MessageReference(message_id=str(reference["message_id"]))
-            if reference.get("message_id")
-            else None,
-            visibility="all"
-            if event == "GROUP_MESSAGE_CREATE"
-            else "mention_recent"
-            if recent
-            else "mention_only",
-            recent_messages=recent,
-        ),
-        reply_address={"kind": reply_kind, "target": str(destination), "msg_id": str(data["id"])},
+        data=data,
     )

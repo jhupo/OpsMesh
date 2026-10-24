@@ -1,0 +1,4 @@
+id: composition
+name: Plugin-owned agent composition
+version: 1.0.0
+description: Sequential agent calls using published immutable dependencies.

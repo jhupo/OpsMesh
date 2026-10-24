@@ -1,286 +1,120 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
 [project]
 name = "opsmesh"
-version = "0.1.3"
-description = "Run AI agent teams with control, isolation, and auditability."
+version = "0.2.0"
+description = "A plugin application host for agents and messaging channels"
 readme = "README.md"
-license = "LGPL-3.0-only"
-license-files = [
-    "LICENSE", "COPYING", "LICENSE-MIT", "NOTICE",
-    "src/opsmesh/gateway/adapters/UPSTREAM-LICENSE",
-]
 requires-python = ">=3.12"
-dependencies = [
-    "opsmesh-sdk==0.1.3",
-    "alembic>=1.18.4",
-    "cryptography>=50.0.0",
-    "docker>=7.2.0,<8.0.0",
-    "email-validator>=2.0.0",
-    "fastapi>=0.116.0,<1.0.0",
-    "filelock>=3.20.0,<4.0.0",
-    "httpx>=0.28.0,<1.0.0",
-    "httpx2>=2.12.0,<3.0.0",
-    "jsonschema>=4.26.0,<5.0.0",
-    "limits>=5.8.0,<6.0.0",
-    "mcp>=2.0.0,<3.0.0",
-    "openai>=3.0.0,<4.0.0",
-    "openai-agents>=0.22.0,<0.23.0",
-    # Native QQ and DingTalk transports.
-    "pydantic>=2.10.0,<3.0.0",
-    "aiohttp>=3.9",
-    "dingtalk-stream>=0.24.3",
-    "websockets>=12.0",
-    "temporalio[opentelemetry,pydantic]>=1.33.0,<2.0.0",
-    "temporalio-openai-agents[mcp,openinference]==1.1.0",
-    "opentelemetry-api>=1.44.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
-    "opentelemetry-instrumentation-fastapi>=0.65b0",
-    "opentelemetry-instrumentation-httpx>=0.65b0",
-    "opentelemetry-instrumentation-logging>=0.65b0",
-    "opentelemetry-instrumentation-redis>=0.65b0",
-    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
-    "opentelemetry-sdk>=1.44.0",
-    "packaging>=26.2,<27.0",
-    "prometheus-client>=0.26.0",
-    "psycopg[binary]>=3.3.4",
-    "pyyaml>=6.0,<7.0",
-    "pydantic-settings>=2.14.2,<3.0.0",
-    "pwdlib[argon2]>=0.3.1,<0.4.0",
-    "python-json-logger>=3.3.0,<4.0.0",
-    "redis>=7.4.0",
-    "referencing>=0.37.0,<1.0.0",
-    "requests>=2.32.0,<3.0.0",
-    "sqlalchemy>=2.0.49",
-    "uvicorn[standard]>=0.35.0,<1.0.0",
-    "pillow>=13.0.0",
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["agents", "plugins", "openai", "automation", "messaging"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
 ]
+dependencies = [
+  "opsmesh-sdk==0.2.0", "openai-agents==0.22.3", "openai==3.28.0",
+  "fastapi>=0.136,<0.137", "uvicorn>=0.34,<1", "sqlalchemy==2.0.49",
+  "psycopg[binary]>=3.3,<4", "alembic>=1.18,<2", "pydantic-settings>=2.12,<3",
+  "cryptography>=50.0.2,<51", "httpx>=0.28,<0.29", "PyYAML>=6,<7",
+  "croniter>=6,<7", "python-multipart>=0.0.20", "websockets>=15,<17",
+  "nonebot-adapter-qq @ git+https://github.com/jhupo/OpsMesh.git@e79e4a0830b55107752e706b2807d6651d29d463", "nonebot2[fastapi,httpx,websockets]==2.5.0",
+  "dingtalk-stream==0.24.4b1",
+  "psutil>=7.2,<8",
+]
+
+[project.optional-dependencies]
+dev = ["ruff==0.15.13", "mypy==1.20.2", "types-PyYAML", "types-croniter", "import-linter>=2,<3"]
+sandbox = ["openai-agents[docker]==0.22.3"]
+build = ["pyinstaller>=6.16,<7"]
 
 [project.scripts]
-opsmesh-server = "opsmesh.bootstrap.cli:main"
+opsmesh = "opsmesh.bootstrap.cli:entrypoint"
+opsmesh-worker = "opsmesh.bootstrap.worker:main"
 
-[build-system]
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
+[project.urls]
+Homepage = "https://github.com/jhupo/OpsMesh"
+Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
+Repository = "https://github.com/jhupo/OpsMesh"
+Issues = "https://github.com/jhupo/OpsMesh/issues"
+Changelog = "https://github.com/jhupo/OpsMesh/blob/master/CHANGELOG.md"
 
-[dependency-groups]
-compute = ["mcp>=2.0.0,<3.0.0"]
-packaging = ["pyinstaller==6.22.2"]
-dev = [
-    "opsmesh-operator[host]==0.1.3",
-    "aiosqlite>=0.22.1",
-    "fakeredis[lua]>=2.35.1",
-    "import-linter>=2.11,<3.0",
-    "mypy>=1.17.0,<2.0.0",
-    "pytest>=8.4.0,<9.0.0",
-    "pytest-asyncio>=1.0.0,<2.0.0",
-    "ruff>=0.12.0,<1.0.0",
-    "types-pyyaml>=6.0.12",
-    "types-docker>=7.2.0.20260827",
-    "types-jsonschema>=4.26.0.20260518",
-    "types-redis>=4.6.0.20241004",
-]
+[tool.hatch.build.targets.wheel]
+packages = ["src/opsmesh"]
 
-[tool.uv]
-package = true
+[tool.hatch.metadata]
+# The fixed QQ source changes only its cryptography upper bound; see docs/gateway.md.
+allow-direct-references = true
 
-[tool.uv.workspace]
-members = ["deploy/cli", "sdk/python"]
+[tool.hatch.build.targets.sdist]
+include = ["src/opsmesh", "sdk/python/src", "sdk/python/pyproject.toml", "sdk/python/README.md", "sdk/python/LICENSE", "sdk/python/AGENTS.md", "sdk/python/CONTRIBUTING.md", "sdk/python/SECURITY.md", "sdk/python/CHANGELOG.md", "sdk/python/.gitattributes", "sdk/python/examples", "sdk/python/.github", "sdk/python/.gitignore", "examples", "deploy", "scripts/build_release.py", "scripts/audit_requirements.py", "scripts/release_assets.py", "scripts/server_entry.py", ".github", ".agents", ".env.example", ".dockerignore", ".gitattributes", "README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "LICENSE", "docs", "pyproject.toml", "uv.lock"]
 
 [tool.uv.sources]
-opsmesh-sdk = { workspace = true }
-opsmesh-operator = { workspace = true }
-
-[tool.setuptools]
-include-package-data = false
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["opsmesh*"]
-
-[tool.setuptools.package-data]
-"opsmesh.gateway.adapters" = ["UPSTREAM-LICENSE"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "."]
-addopts = "-q"
-markers = [
-    "native_sandbox: opt-in product tests requiring a Linux Docker daemon and PostgreSQL",
-    "openai_smoke: opt-in tests that call the real OpenAI Agents SDK over the network",
-]
+opsmesh-sdk = { path = "sdk/python", editable = true }
 
 [tool.ruff]
-line-length = 100
 target-version = "py312"
-extend-exclude = ["backup", "backup_2"]
+line-length = 100
 
 [tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "I",
-    "UP",
-    "B",
-    "SIM",
-]
-
-[tool.ruff.lint.per-file-ignores]
-"migrations/versions/*.py" = ["E501"]
-"src/opsmesh/**/routes.py" = ["B008"]
-"src/opsmesh/**/*_routes.py" = ["B008"]
-"src/opsmesh/**/routes/*.py" = ["B008"]
-"src/opsmesh/**/dependencies.py" = ["B008"]
-"src/opsmesh/**/*_dependencies.py" = ["B008"]
-"src/opsmesh/**/http_common.py" = ["B008"]
-
-[tool.ruff.lint.isort]
-extra-standard-library = ["operator"]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501", "B008"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.12"
 platform = "linux"
-mypy_path = ["src", "deploy/cli", "sdk/python/src"]
-plugins = ["pydantic.mypy"]
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-files = ["src/opsmesh", "sdk/python/src/opsmesh_sdk"]
-
-[[tool.mypy.overrides]]
-module = ["dingtalk_stream"]
+files = ["src", "sdk/python/src"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
 ignore_missing_imports = true
 
 [tool.importlinter]
-root_package = "opsmesh"
+root_packages = ["opsmesh", "opsmesh_sdk"]
 include_external_packages = true
 
-# Enforce infrastructure and execution boundaries for the current feature tree.
-# Ordinary feature calls use public functions; audit_app_layout checks module cycles.
+[[tool.importlinter.contracts]]
+name = "Plugin SDK is independent of the host"
+type = "forbidden"
+source_modules = ["opsmesh_sdk"]
+forbidden_modules = ["opsmesh"]
 
 [[tool.importlinter.contracts]]
-id = "shared-foundation"
-name = "Shared utilities do not depend on application code or execution SDKs"
+name = "Business modules do not import process bootstrap"
 type = "forbidden"
-source_modules = ["opsmesh.shared"]
-forbidden_modules = [
-    "opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config",
-    "opsmesh.users", "opsmesh.resources",
-    "opsmesh.platform", "opsmesh.agents", "opsmesh.workflows",
-    "opsmesh.execution",
-    "opsmesh.gateway",
-    "opsmesh.plugins",
-    "opsmesh.bootstrap",
-    "temporalio", "agents", "openai", "opentelemetry",
-]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "infrastructure-no-business"
-name = "Infrastructure and configuration do not depend on business features"
-type = "forbidden"
-source_modules = ["opsmesh.telemetry", "opsmesh.temporal", "opsmesh.config"]
-forbidden_modules = [
-    "opsmesh.users", "opsmesh.resources",
-    "opsmesh.platform", "opsmesh.agents", "opsmesh.workflows",
-    "opsmesh.execution",
-    "opsmesh.gateway",
-    "opsmesh.bootstrap",
-]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "features-no-bootstrap"
-name = "Business features do not import process startup and assembly"
-type = "forbidden"
-source_modules = [
-    "opsmesh.users", "opsmesh.resources",
-    "opsmesh.platform", "opsmesh.agents", "opsmesh.workflows",
-    "opsmesh.execution",
-    "opsmesh.gateway",
-]
+source_modules = ["opsmesh.agents", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.tasks", "opsmesh.users", "opsmesh.shared", "opsmesh.infra"]
 forbidden_modules = ["opsmesh.bootstrap"]
-allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-id = "gateway-no-agent-or-execution-business"
-name = "Gateway transports receive execution callbacks from bootstrap"
-type = "forbidden"
-source_modules = ["opsmesh.gateway"]
-forbidden_modules = [
-    "opsmesh.agents", "opsmesh.execution", "opsmesh.workflows", "opsmesh.platform",
-    "opsmesh.resources.directories",
-]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "plugin-host-no-feature-runtime"
-name = "The generic plugin host receives feature adapters through bootstrap"
-type = "forbidden"
-source_modules = ["opsmesh.plugins"]
-forbidden_modules = [
-    "opsmesh.agents", "opsmesh.gateway", "opsmesh.execution", "opsmesh.workflows",
-    "opsmesh.resources.directories", "opsmesh.bootstrap", "agents", "temporalio",
-]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "storage-no-business"
-name = "Storage mechanisms and layout do not depend on feature authorization or runtimes"
-type = "forbidden"
-source_modules = ["opsmesh.resources.storage", "opsmesh.resources.layout"]
-forbidden_modules = [
-    "opsmesh.resources.directories", "opsmesh.users", "opsmesh.agents",
-    "opsmesh.execution", "opsmesh.workflows", "opsmesh.gateway", "opsmesh.plugins",
-    "opsmesh.platform", "opsmesh.bootstrap", "opsmesh.config",
-    "sqlalchemy", "agents", "temporalio", "fastapi",
-]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "execution-no-orchestration"
-name = "Execution receives orchestration adapters through bootstrap"
-type = "forbidden"
-source_modules = ["opsmesh.execution"]
-forbidden_modules = ["opsmesh.workflows", "opsmesh.temporal", "temporalio"]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "agent-adapter-no-orm"
-name = "The official Agent adapter does not own persistence or HTTP routes"
-type = "forbidden"
-source_modules = [
-    "opsmesh.agents.assembly", "opsmesh.execution.runner", "opsmesh.execution.tools",
-    "opsmesh.execution.sessions.storage",
-]
-forbidden_modules = ["sqlalchemy", "fastapi"]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "workflow-inputs-no-io"
-name = "Definition values and execution inputs stay independent of I/O frameworks"
-type = "forbidden"
-source_modules = [
-    "opsmesh.agents.config", "opsmesh.workflows.contracts", "opsmesh.execution.contracts",
-]
-forbidden_modules = ["sqlalchemy", "fastapi", "temporalio"]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "workflow-graph-no-engine"
-name = "Workflow graph execution uses injected ports without engine or database imports"
-type = "forbidden"
-source_modules = [
-    "opsmesh.workflows.runner", "opsmesh.workflows.context", "opsmesh.workflows.compiler",
-    "opsmesh.workflows.nodes", "opsmesh.workflows.graph", "opsmesh.workflows.values",
-    "opsmesh.workflows.conditions", "opsmesh.workflows.mappings",
-]
-forbidden_modules = ["opsmesh.workflows.engines", "temporalio", "sqlalchemy", "fastapi"]
-allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-id = "production-no-tests-or-backups"
-name = "Production code does not import test or historical implementations"
+name = "The host has no Temporal runtime dependency"
 type = "forbidden"
 source_modules = ["opsmesh"]
-forbidden_modules = ["pytest", "backup", "backup_2"]
-allow_indirect_imports = true
+forbidden_modules = ["temporalio"]
+
+[[tool.importlinter.contracts]]
+name = "Database infrastructure does not assemble business models"
+type = "forbidden"
+source_modules = ["opsmesh.infra"]
+forbidden_modules = ["opsmesh.agents", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.tasks", "opsmesh.users"]
+
+[[tool.importlinter.contracts]]
+name = "Task management does not depend on execution runtime"
+type = "forbidden"
+source_modules = ["opsmesh.tasks.models", "opsmesh.tasks.schemas", "opsmesh.tasks.service", "opsmesh.tasks.interactions", "opsmesh.tasks.schedules", "opsmesh.tasks.scheduler"]
+forbidden_modules = ["opsmesh.tasks.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "Runtime code does not import HTTP routes"
+type = "forbidden"
+source_modules = ["opsmesh.tasks.runtime", "opsmesh.gateway.worker", "opsmesh.gateway.delivery", "opsmesh.sessions.runtime", "opsmesh.sessions.sandboxes", "opsmesh.resources.runtime"]
+forbidden_modules = ["opsmesh.agents.routes", "opsmesh.catalog.routes", "opsmesh.gateway.routes", "opsmesh.plugins.routes", "opsmesh.quotas.routes", "opsmesh.resources.routes", "opsmesh.sessions.routes", "opsmesh.tasks.routes", "opsmesh.users.routes", "opsmesh.shared.http"]
 

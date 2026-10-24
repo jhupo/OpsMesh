@@ -1,175 +1,222 @@
-"""Account profile, avatar and administrator user APIs."""
+from fastapi import APIRouter, Depends, Request
+from opsmesh_sdk.identity import UserIdentity
+from sqlalchemy import delete, select, update
+from sqlalchemy.orm import Session
 
-from __future__ import annotations
+from opsmesh.shared.errors import ForbiddenError, NotFoundError
+from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record
+from opsmesh.shared.models import AuditEvent
 
-from typing import Annotated
-from uuid import UUID
-
-from fastapi import APIRouter, Body, Header, Query, Request, Response, status
-
-from opsmesh.platform.audit.contracts import AuditActor
-from opsmesh.shared.db.session import session_transaction
-from opsmesh.shared.errors import NotFoundError
-from opsmesh.shared.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageParams
-from opsmesh.users import service
-from opsmesh.users.access import require_platform_admin
-from opsmesh.users.auth.dependencies import CurrentUserDep, DbSession
-from opsmesh.users.schemas import (
-    AdminCreateUserRequest,
-    AdminUpdateUserRequest,
-    UpdateProfileRequest,
-    UserPage,
-    UserProfileView,
-    profile_view,
+from .auth import login
+from .models import AccessToken, Group, GroupMember, User
+from .passwords import hash_password
+from .schemas import (
+    AccessTokenView,
+    ChangePasswordRequest,
+    CreateAccessTokenRequest,
+    CreateGroupRequest,
+    GroupView,
+    IssuedAccessTokenView,
+    LoginRequest,
+    SaveUserRequest,
+    UserIdentityView,
+    UserView,
 )
+from .service import issue_token, require_admin, require_owner
 
 router = APIRouter(tags=["users"])
 
 
-@router.get("/users/me", response_model=UserProfileView, operation_id="users.read_current")
-def read_current_profile(session: DbSession, user: CurrentUserDep) -> UserProfileView:
-    return profile_view(service.get_user(session, user.user_id))
-
-
-@router.patch("/users/me", response_model=UserProfileView, operation_id="users.update_current")
-def update_current_profile(
-    payload: UpdateProfileRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-) -> UserProfileView:
-    with session_transaction(session):
-        profile = service.update_profile(
-            session,
-            user_id=user.user_id,
-            actor=AuditActor.from_user(user),
-            display_name=payload.display_name,
+@router.post("/auth/login", response_model=IssuedAccessTokenView)
+def password_login(body: LoginRequest, request: Request) -> dict[str, str]:
+    app = get_application(request)
+    with app.sessions.begin() as db:
+        credential = login(
+            db,
+            body.username,
+            body.password.get_secret_value(),
+            request.client.host if request.client else "unknown",
         )
-    return profile_view(profile)
+        if credential is not None:
+            db.add(
+                AuditEvent(
+                    user_id=None,
+                    request_id=request.state.request_id,
+                    method="POST",
+                    route="/v1/auth/login",
+                    status=200,
+                )
+            )
+    if credential is None:
+        raise ForbiddenError("Invalid credentials or login limit exceeded")
+    return {"token": credential}
 
 
-@router.put(
-    "/users/me/avatar",
-    status_code=status.HTTP_204_NO_CONTENT,
-    operation_id="users.avatar.upload",
-)
-def upload_current_avatar(
-    session: DbSession,
-    user: CurrentUserDep,
-    content_type: Annotated[str, Header(alias="Content-Type")],
-    body: Annotated[bytes, Body()],
-) -> Response:
-    with session_transaction(session):
-        service.set_avatar(
-            session,
-            user_id=user.user_id,
-            content=body,
-            content_type=content_type,
-            actor=AuditActor.from_user(user),
-        )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.put("/users/{user_id}/password", status_code=204)
+def change_password(
+    user_id: str,
+    body: ChangePasswordRequest,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> None:
+    require_owner(user, user_id)
+    row = db.get(User, user_id, with_for_update=True)
+    if row is None:
+        raise NotFoundError("User not found")
+    row.password_hash = hash_password(body.password.get_secret_value())
+    db.execute(update(AccessToken).where(AccessToken.user_id == user_id).values(revoked=True))
 
 
-@router.get("/users/me/avatar", operation_id="users.avatar.read")
-def read_current_avatar(session: DbSession, user: CurrentUserDep) -> Response:
-    profile = service.get_user(session, user.user_id)
-    if profile.avatar_content is None or profile.avatar_content_type is None:
-        raise NotFoundError("The account has no avatar")
-    return Response(
-        content=profile.avatar_content,
-        media_type=profile.avatar_content_type,
-        headers={"Cache-Control": "no-store"},
-    )
+@router.get("/users/me", response_model=UserIdentityView)
+def me(user: UserIdentity = Depends(get_current_user)) -> UserIdentity:
+    return user
 
 
-@router.delete(
-    "/users/me/avatar",
-    status_code=status.HTTP_204_NO_CONTENT,
-    operation_id="users.avatar.delete",
-)
-def delete_current_avatar(session: DbSession, user: CurrentUserDep) -> Response:
-    with session_transaction(session):
-        service.clear_avatar(session, user_id=user.user_id, actor=AuditActor.from_user(user))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.get("/users", response_model=list[UserView])
+def users(
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> list[dict]:
+    require_admin(user)
+    return [
+        serialize_record(row) for row in db.scalars(select(User).order_by(User.name).limit(200))
+    ]
 
 
-@router.post("/users", status_code=201, response_model=UserProfileView, operation_id="users.create")
+@router.post("/users", status_code=201, response_model=UserView)
 def create_user(
-    payload: AdminCreateUserRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-    request: Request,
-) -> UserProfileView:
-    require_platform_admin(user)
-    with session_transaction(session):
-        profile = service.create_account(
-            session,
-            email=str(payload.email),
-            display_name=payload.display_name,
-            password=payload.password.get_secret_value(),
-            platform_roles=frozenset(payload.platform_roles),
-            token_limit=payload.token_limit,
-            actor=AuditActor.from_user(user),
-            capacity_limits={
-                "concurrency": request.app.state.settings.default_user_concurrency_limit,
-                "environment": request.app.state.settings.default_user_environment_limit,
-            },
+    body: SaveUserRequest,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> dict:
+    require_admin(user)
+    row = User(**body.model_dump(exclude={"password"}))
+    if body.password is not None:
+        row.password_hash = hash_password(body.password.get_secret_value())
+    db.add(row)
+    db.flush()
+    return serialize_record(row)
+
+
+@router.put("/users/{user_id}", response_model=UserView)
+def update_user(
+    user_id: str,
+    body: SaveUserRequest,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> dict:
+    require_admin(user)
+    row = db.get(User, user_id, with_for_update=True)
+    if row is None:
+        raise NotFoundError("User not found")
+    for key, value in body.model_dump(exclude={"password"}).items():
+        setattr(row, key, value)
+    if body.password is not None:
+        row.password_hash = hash_password(body.password.get_secret_value())
+        db.execute(update(AccessToken).where(AccessToken.user_id == user_id).values(revoked=True))
+    return serialize_record(row)
+
+
+@router.post("/users/{user_id}/tokens", status_code=201, response_model=IssuedAccessTokenView)
+def create_token(
+    user_id: str,
+    body: CreateAccessTokenRequest,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> dict:
+    require_owner(user, user_id)
+    return {"token": issue_token(db, user_id, body.label, body.expires_at)}
+
+
+@router.get("/users/{user_id}/tokens", response_model=list[AccessTokenView])
+def tokens(
+    user_id: str,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> list[dict]:
+    require_owner(user, user_id)
+    return [
+        serialize_record(row)
+        for row in db.scalars(select(AccessToken).where(AccessToken.user_id == user_id).limit(100))
+    ]
+
+
+@router.delete("/users/{user_id}/tokens/{token_id}", status_code=204)
+def revoke_token(
+    user_id: str,
+    token_id: str,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> None:
+    require_owner(user, user_id)
+    row = db.get(AccessToken, token_id)
+    if row is None or row.user_id != user_id:
+        raise NotFoundError("Token not found")
+    row.revoked = True
+
+
+@router.get("/groups", response_model=list[GroupView])
+def groups(
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> list[dict]:
+    query = select(Group)
+    if not user.is_admin:
+        query = query.join(GroupMember).where(GroupMember.user_id == user.user_id)
+    return [serialize_record(row) for row in db.scalars(query.order_by(Group.name).limit(200))]
+
+
+@router.post("/groups", status_code=201, response_model=GroupView)
+def create_group(
+    body: CreateGroupRequest,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> dict:
+    require_admin(user)
+    row = Group(name=body.name)
+    db.add(row)
+    db.flush()
+    return serialize_record(row)
+
+
+@router.get("/groups/{group_id}/members", response_model=list[UserView])
+def members(
+    group_id: str,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> list[dict]:
+    if not user.is_admin and group_id not in user.group_ids:
+        raise NotFoundError("Group not found")
+    return [
+        serialize_record(row)
+        for row in db.scalars(
+            select(User).join(GroupMember).where(GroupMember.group_id == group_id).limit(200)
         )
-    return profile_view(profile)
+    ]
 
 
-@router.get("/users", response_model=UserPage, operation_id="users.list")
-def list_users(
-    session: DbSession,
-    user: CurrentUserDep,
-    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_LIMIT)] = DEFAULT_PAGE_LIMIT,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    status_filter: Annotated[str | None, Query(alias="status", max_length=20)] = None,
-    email_query: Annotated[str | None, Query(max_length=320)] = None,
-) -> UserPage:
-    require_platform_admin(user)
-    page = PageParams(limit=limit, offset=offset)
-    profiles, total = service.list_users(
-        session, page=page, status=status_filter, email_query=email_query
+@router.put("/groups/{group_id}/members/{user_id}", status_code=204)
+def add_member(
+    group_id: str,
+    user_id: str,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> None:
+    require_admin(user)
+    if db.get(Group, group_id) is None or db.get(User, user_id) is None:
+        raise NotFoundError("Group or user not found")
+    if db.get(GroupMember, (group_id, user_id)) is None:
+        db.add(GroupMember(group_id=group_id, user_id=user_id))
+
+
+@router.delete("/groups/{group_id}/members/{user_id}", status_code=204)
+def remove_member(
+    group_id: str,
+    user_id: str,
+    user: UserIdentity = Depends(get_current_user),
+    db: Session = Depends(get_db_session, scope="function"),
+) -> None:
+    require_admin(user)
+    db.execute(
+        delete(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
     )
-    return UserPage(users=[profile_view(profile) for profile in profiles], total=total)
-
-
-@router.get("/users/{user_id}", response_model=UserProfileView, operation_id="users.read")
-def read_user(user_id: UUID, session: DbSession, user: CurrentUserDep) -> UserProfileView:
-    require_platform_admin(user)
-    return profile_view(service.get_user(session, user_id))
-
-
-@router.patch("/users/{user_id}", response_model=UserProfileView, operation_id="users.update")
-def admin_update_user(
-    user_id: UUID,
-    payload: AdminUpdateUserRequest,
-    session: DbSession,
-    user: CurrentUserDep,
-) -> UserProfileView:
-    require_platform_admin(user)
-    with session_transaction(session):
-        # One service call owns the whole update and its lock order; calling
-        # the field setters one by one would let a combined request take the
-        # audit chain head before the administrator rows a roles-only request
-        # already holds.
-        profile = service.apply_admin_update(
-            session,
-            user_id=user_id,
-            actor=AuditActor.from_user(user),
-            display_name=payload.display_name,
-            status=payload.status,
-            roles=(
-                frozenset(payload.platform_roles) if payload.platform_roles is not None else None
-            ),
-        )
-    return profile_view(profile)
-
-
-@router.delete("/users/{user_id}", status_code=204, operation_id="users.delete")
-def delete_user(user_id: UUID, session: DbSession, user: CurrentUserDep) -> Response:
-    """Disable access permanently; referenced resources are retained for later cleanup."""
-    require_platform_admin(user)
-    with session_transaction(session):
-        service.delete_account(session, user_id=user_id, actor=AuditActor.from_user(user))
-    return Response(status_code=204)

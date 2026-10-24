@@ -4,33 +4,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    groups:
-      actions:
-        patterns: ['*']
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
     groups:
-      python-minor-patch:
+      python-runtime:
         patterns: ['*']
-        update-types: [minor, patch]
+  - package-ecosystem: pip
+    directory: /sdk/python
+    schedule:
+      interval: weekly
   - package-ecosystem: docker
-    directory: /deploy/images
+    directory: /deploy
     schedule:
       interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-  - package-ecosystem: docker-compose
-    directories:
-      - /deploy/local
-      - /deploy/server
-      - /deploy/server/monitoring
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3

@@ -1,6 +1,0 @@
-id: demo-mcp-plugin
-version: 0.1.0
-name: Demo MCP Plugin
-description: Native Agents SDK MCP factory
-kind: mcp
-entry: main.py

@@ -1,0 +1,21 @@
+[Unit]
+Description=OpsMesh gateway worker
+Requires=opsmesh-migrate.service
+After=opsmesh-migrate.service
+PartOf=opsmesh.target
+
+[Service]
+Type=simple
+User=opsmesh
+Group=opsmesh
+WorkingDirectory=/etc/opsmesh
+ExecStart=/opt/opsmesh/current/bin/opsmesh worker gateway
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/opsmesh /var/log/opsmesh

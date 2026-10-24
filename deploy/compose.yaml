@@ -1,0 +1,82 @@
+name: opsmesh
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: opsmesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: opsmesh_host
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U opsmesh -d opsmesh_host"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
+    environment: &environment
+      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/opsmesh_host
+      OPSMESH_ENCRYPTION_KEY: ${OPSMESH_ENCRYPTION_KEY:?Set OPSMESH_ENCRYPTION_KEY}
+      OPSMESH_DATA_DIR: /app/data
+      OPSMESH_WORKER_CONCURRENCY: ${OPSMESH_WORKER_CONCURRENCY:-}
+      OPSMESH_ADMIN_USERNAME: ${OPSMESH_ADMIN_USERNAME:-}
+      OPSMESH_ADMIN_PASSWORD: ${OPSMESH_ADMIN_PASSWORD:-}
+      OPSMESH_MODEL_BASE_URL: ${OPSMESH_MODEL_BASE_URL:-https://api.openai.com/v1}
+      OPSMESH_MODEL_API_KEY: ${OPSMESH_MODEL_API_KEY:-}
+      OPSMESH_MODEL_NAME: ${OPSMESH_MODEL_NAME:-}
+      OPSMESH_MODEL_API_MODE: ${OPSMESH_MODEL_API_MODE:-responses}
+      OPSMESH_MODEL_REASONING_EFFORT: ${OPSMESH_MODEL_REASONING_EFFORT:-medium}
+      OPSMESH_ALLOWED_MODEL_HOSTS: ${OPSMESH_ALLOWED_MODEL_HOSTS:-["api.openai.com"]}
+      OPSMESH_SESSION_TTL_SECONDS: ${OPSMESH_SESSION_TTL_SECONDS:-31536000}
+      OPSMESH_SANDBOX_ROOT: ${OPSMESH_SANDBOX_ROOT:-/workspace}
+      OPSMESH_FILE_LIMIT_BYTES: ${OPSMESH_FILE_LIMIT_BYTES:-20000000}
+      OPSMESH_PACKAGE_LIMIT_BYTES: ${OPSMESH_PACKAGE_LIMIT_BYTES:-20000000}
+      OPSMESH_LOG_LEVEL: ${OPSMESH_LOG_LEVEL:-INFO}
+      OPSMESH_LOG_CONSOLE: ${OPSMESH_LOG_CONSOLE:-true}
+      OPSMESH_LOG_FILE: ${OPSMESH_LOG_FILE:-true}
+      OPSMESH_LOG_MAX_BYTES: ${OPSMESH_LOG_MAX_BYTES:-10000000}
+      OPSMESH_LOG_BACKUP_COUNT: ${OPSMESH_LOG_BACKUP_COUNT:-5}
+    volumes: &volumes
+      - resources:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - ${OPSMESH_HOST:-0.0.0.0}:${OPSMESH_PORT:-8000}:8000
+    restart: unless-stopped
+  migrate:
+    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
+    command: [migrate]
+    environment: *environment
+    volumes: *volumes
+    depends_on:
+      database:
+        condition: service_healthy
+  tasks:
+    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
+    command: [worker, tasks]
+    environment: *environment
+    volumes: *volumes
+    depends_on: &dependencies
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  scheduler:
+    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
+    command: [worker, scheduler]
+    environment: *environment
+    volumes: *volumes
+    depends_on: *dependencies
+    restart: unless-stopped
+  gateway:
+    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
+    command: [worker, gateway]
+    environment: *environment
+    volumes: *volumes
+    depends_on: *dependencies
+    restart: unless-stopped
+volumes:
+  database:
+  resources:

@@ -1,31 +1,28 @@
-name: Bug Report
-description: Report a reproducible problem in OpsMesh.
+name: Bug report
+description: Report a reproducible OpsMesh defect
 title: "[Bug]: "
-labels: ["bug"]
 body:
-  - type: textarea
-    id: summary
+  - type: input
+    id: version
     attributes:
-      label: Summary
-      description: What happened?
-    validations:
-      required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: Reproduction Steps
-      description: List the shortest steps that reproduce the issue.
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected Behavior
+      label: Version or commit
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: OS, Python version, deployment mode, commit, and relevant services.
-
+      description: OS, architecture, deployment method, Python/SDK versions if relevant. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps, expected result and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs and relevant configuration
+      description: Remove credentials, bearer tokens and private user data before submitting.

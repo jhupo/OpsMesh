@@ -1,32 +1,19 @@
-# Security Policy
+# Security policy
 
-OpsMesh handles model and MCP credentials, user files, plugins, runtime execution, and audit records. Please report security issues privately.
+## Supported versions
 
-## Reporting A Vulnerability
+Security fixes target the current source on `master` and the most recent stable release. The `sdk` branch follows the matching SDK release. There is no commitment to patch older releases.
 
-Open a private security advisory on GitHub, or contact the maintainers through the repository owner if advisories are unavailable. Do not create a public issue for vulnerabilities.
+## Reporting a vulnerability
 
-Please include:
+Use GitHub's **Report a vulnerability** action in this repository's Security tab when private vulnerability reporting is enabled. If it is unavailable, contact the maintainer at **hi.jhupo@gmail.com** and request a secure disclosure channel before sending sensitive data. Do not post exploit credentials, private plugin data or database contents in public issues.
 
-- affected version or commit
-- affected component
-- reproduction steps
-- expected impact
-- any logs or payloads with secrets redacted
+Include affected version/commit, affected component, impact, prerequisites and minimal reproduction details. Coordinate disclosure after a fix is available. No response-time guarantee or bug bounty is offered.
 
-## Supported Versions
+## Trust boundaries
 
-The project is pre-1.0. Security fixes target the default branch unless a maintained release branch is announced.
+Installed Python plugins are trusted executable code. Registration, identity objects and per-user paths do not sandbox arbitrary plugin Python. Restrict plugin installation to administrators and review dependencies. Use the native sandbox backend and deployment-level isolation for untrusted execution; Docker socket access is a privileged capability.
 
-## Security Scope
+Group membership grants agent use, not workspace access. Caller identity is resolved from stored platform bindings, never gateway role text or caller metadata. Keep HTTPS, database access, encryption keys, bearer tokens and model credentials protected. Preserve the encryption key with backups; losing it makes encrypted state unrecoverable.
 
-High-priority reports include:
-
-- cross-user data access or grant bypass
-- credential leakage
-- sandbox escape or host command execution
-- plugin package validation or resource authorization bypass
-- webhook signature weakness
-- audit log tampering
-- privilege escalation in approval or admin APIs
-
+Release automation performs CodeQL, dependency auditing, secret/configuration scanning and native/container vulnerability scans, and publishes checksums, SBOMs and provenance. Passing these checks does not establish runtime correctness or prove the absence of vulnerabilities. Verify checksums and provenance before installation. Keep release archives, the data volume and the database under separate access policies.

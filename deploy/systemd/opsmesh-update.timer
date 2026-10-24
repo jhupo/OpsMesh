@@ -1,0 +1,11 @@
+[Unit]
+Description=Check and apply OpsMesh stable releases daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=opsmesh-update.service
+
+[Install]
+WantedBy=timers.target

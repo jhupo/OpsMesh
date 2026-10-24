@@ -1,0 +1,7 @@
+[Unit]
+Description=OpsMesh application
+Wants=opsmesh-api.service opsmesh-tasks.service opsmesh-scheduler.service opsmesh-gateway.service
+After=opsmesh-api.service opsmesh-tasks.service opsmesh-scheduler.service opsmesh-gateway.service
+
+[Install]
+WantedBy=multi-user.target

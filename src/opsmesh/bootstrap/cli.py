@@ -1,263 +1,170 @@
-"""Shared server commands for Docker images and native installations."""
-
-from __future__ import annotations
-
 import argparse
 import asyncio
-import getpass
-import json
-import os
 import sys
-from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
+from importlib.metadata import version
 from pathlib import Path
-from typing import Literal
 
-from pydantic import EmailStr, TypeAdapter
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+import httpx
+import uvicorn
+from alembic import command
+from alembic.config import Config
+from cryptography.fernet import Fernet
+from sqlalchemy import inspect, select
 
-from opsmesh.bootstrap import accounts
-from opsmesh.bootstrap.accounts import AccountResources
-from opsmesh.bootstrap.connections import DatabaseResources, build_database_resources
-from opsmesh.config import Settings, get_settings
+from opsmesh.infra.database import connect
+from opsmesh.plugins.packages import install
 from opsmesh.shared.errors import DomainError
-from opsmesh.shared.version import package_version
-from opsmesh.users import service as users
-from opsmesh.users.auth.models import UserCredential
-from opsmesh.users.auth.passwords import validate_password_shape
-from opsmesh.users.models import UserProfile
-from opsmesh.users.service import PLATFORM_ADMINISTRATOR, create_account
+from opsmesh.users.models import User
+from opsmesh.users.service import identity, issue_token
 
-InitializationDecision = Literal["create", "already_initialized", "conflict"]
-
-
-@dataclass(frozen=True)
-class InitializationState:
-    """What the database currently says about the requested administrator."""
-
-    account_count: int
-    email_taken: bool
-    credential_present: bool
-    administrator: bool
+from .app import Application
+from .deployment import configure_parser, manage_deployment
+from .initialization import initialize_admin
+from .settings import Settings
+from .supervisor import run_services
+from .worker import serve as serve_worker
 
 
-def decide_initialization(state: InitializationState) -> InitializationDecision:
-    """Re-running the command is safe only for the very administrator it created."""
-    if state.email_taken:
-        if state.credential_present and state.administrator:
-            return "already_initialized"
-        return "conflict"
-    if state.account_count:
-        return "conflict"
-    return "create"
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="opsmesh-server", description=__doc__)
-    parser.add_argument(
-        "--directory",
-        type=Path,
-        default=(
-            Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd()
-        ),
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    init_admin = subparsers.add_parser(
-        "init-admin", help="Initialize the first platform administrator"
-    )
-    init_admin.add_argument("--email", required=True, help="Administrator email address")
-    init_admin.add_argument("--display-name", required=True, help="Administrator display name")
-    init_admin.add_argument(
-        "--password-stdin",
-        action="store_true",
-        help="Read the password from the first line of standard input instead of prompting",
-    )
-    for name in ("version", "check", "api", "worker", "gateway"):
-        subparsers.add_parser(name)
-    migrate = subparsers.add_parser("migrate")
-    migrate.add_argument("migration_action", nargs="?", choices=["check", "current"])
-    for name in ("bootstrap-admin", "reset-admin-password"):
-        command = subparsers.add_parser(name)
-        command.add_argument("--email", default="admin@example.com")
-    cleanup = subparsers.add_parser("cleanup-login-sessions")
-    cleanup.add_argument("--before", type=datetime.fromisoformat)
-    return parser
-
-
-def read_password(*, from_stdin: bool) -> str:
-    """Collect the password without ever echoing it or accepting it as an argument."""
-    if from_stdin:
-        line = sys.stdin.readline().rstrip("\r\n")
-        if not line:
-            raise ValueError("The password read from standard input is empty")
-        return line
-    password = getpass.getpass("Administrator password: ")
-    if password != getpass.getpass("Repeat the password: "):
-        raise ValueError("The two passwords do not match")
-    return password
-
-
-def validated_email(value: str) -> str:
-    return str(TypeAdapter(EmailStr).validate_python(value))
-
-
-def initialization_state(session: Session, *, email: str) -> InitializationState:
-    account_count = session.scalar(select(func.count()).select_from(UserProfile)) or 0
-    profile = users.find_by_email(session, email)
-    if profile is None:
-        return InitializationState(
-            account_count=account_count,
-            email_taken=False,
-            credential_present=False,
-            administrator=False,
-        )
-    credential = session.scalar(select(UserCredential).where(UserCredential.user_id == profile.id))
-    return InitializationState(
-        account_count=account_count,
-        email_taken=True,
-        credential_present=credential is not None,
-        administrator=PLATFORM_ADMINISTRATOR in profile.platform_roles,
-    )
-
-
-def initialize_first_administrator(
-    settings: Settings, *, email: str, display_name: str, password: str
-) -> int:
-    """Create the first administrator, or report why the platform refuses one."""
-    resources: DatabaseResources = build_database_resources(settings)
+def migrate() -> None:
+    settings = Settings()
+    sessions = connect(settings.database_url.get_secret_value())
+    engine = sessions.kw["bind"]
     try:
-        with resources.sessions() as session:
-            decision = decide_initialization(initialization_state(session, email=email))
-            if decision == "already_initialized":
-                print(f"The first administrator already exists: {email}")
-                return 0
-            if decision == "conflict":
-                print(
-                    "The platform already has accounts; only the administrator this "
-                    "command created may be re-initialized",
-                    file=sys.stderr,
+        with engine.connect() as connection:
+            tables = inspect(connection).get_table_names()
+            if tables and "alembic_version" not in tables:
+                raise ValueError(
+                    "Database must be empty or belong to this installation; use a new database"
                 )
-                return 1
-            profile = create_account(
-                session,
-                email=email,
-                display_name=display_name,
-                password=password,
-                platform_roles=frozenset({"admin"}),
-                token_limit=settings.default_user_token_limit,
-                capacity_limits={
-                    "concurrency": settings.default_user_concurrency_limit,
-                    "environment": settings.default_user_environment_limit,
-                },
-            )
-            session.commit()
-    except DomainError as exc:
-        print(f"Initialization refused: {exc.message}", file=sys.stderr)
-        return 1
-    finally:
-        resources.engine.dispose()
-    print(f"Created the first administrator {profile.id} for {email}")
-    return 0
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    directory = args.directory.resolve(strict=True)
-    os.chdir(directory)
-    if args.command != "init-admin":
-        return run_server_command(args, directory)
-    try:
-        email = validated_email(args.email)
-        if not args.display_name.strip():
-            raise ValueError("The display name is empty")
-        password = read_password(from_stdin=args.password_stdin)
-        validate_password_shape(password)
-    except ValueError as exc:
-        print(f"Invalid input: {exc}", file=sys.stderr)
-        return 2
-    return initialize_first_administrator(
-        get_settings(),
-        email=email,
-        display_name=args.display_name.strip(),
-        password=password,
-    )
-
-
-def administrator_handoff(*, reset: bool, email: str) -> dict[str, str]:
-    settings = get_settings()
-    database = build_database_resources(settings)
-    try:
-        with database.sessions() as session, session.begin():
-            return accounts.administrator_handoff(
-                session,
-                reset=reset,
-                email=email,
-                token_limit=settings.default_user_token_limit,
-                provision_resources=AccountResources(settings),
-            )
-    finally:
-        database.engine.dispose()
-
-
-def run_server_command(args: argparse.Namespace, directory: Path) -> int:
-    if args.command in {"version", "check"}:
-        if args.command == "check":
-            from opsmesh.bootstrap.models import register_models
-
-            register_models()
-            if not (directory / "migrations/env.py").is_file():
-                raise ValueError("The distribution is missing its migration assets")
-        print(json.dumps({"version": package_version()}))
-    elif args.command in {"bootstrap-admin", "reset-admin-password"}:
-        # Explicit host-owner handoff, captured by the installer; never send this to logging.
-        print(
-            json.dumps(
-                administrator_handoff(
-                    reset=args.command == "reset-admin-password", email=args.email
-                )
-            )
+        config = Config()
+        config.set_main_option(
+            "script_location", str(Path(__file__).parents[1] / "infra" / "migrations")
         )
-    elif args.command == "cleanup-login-sessions":
-        from opsmesh.bootstrap.maintenance import maintain_database
+        config.set_main_option(
+            "sqlalchemy.url", settings.database_url.get_secret_value().replace("%", "%%")
+        )
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
 
-        print(json.dumps(maintain_database(get_settings(), args.command, before=args.before)))
-    elif args.command == "migrate":
-        from alembic import command
-        from alembic.config import Config
 
-        configuration = Config(str(directory / "alembic.ini"))
-        configuration.set_main_option("script_location", str(directory / "migrations"))
-        if args.migration_action == "check":
-            command.check(configuration)
-        elif args.migration_action == "current":
-            command.current(configuration)
-        else:
-            command.upgrade(configuration, "head")
-    elif args.command == "api":
-        import uvicorn
-
+def main() -> None:
+    parser = argparse.ArgumentParser(description="OpsMesh host management")
+    parser.add_argument("--version", action="version", version=version("opsmesh"))
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("keygen", help="Print a new encryption key")
+    commands.add_parser("migrate", help="Apply migrations to a new OpsMesh database")
+    commands.add_parser("run", help="Run API, task, scheduler and gateway processes")
+    worker = commands.add_parser("worker", help="Run one worker process")
+    worker.add_argument("kind", choices=["tasks", "scheduler", "gateway"])
+    configure_parser(commands)
+    plugins = commands.add_parser("plugins")
+    plugin_commands = plugins.add_subparsers(dest="plugin_command", required=True)
+    package = plugin_commands.add_parser(
+        "import", help="Install a trusted plugin ZIP into the local host"
+    )
+    package.add_argument("archive", type=Path)
+    package.add_argument("--owner-id")
+    admin = commands.add_parser("bootstrap-admin")
+    admin.add_argument("--name")
+    token = commands.add_parser("issue-token")
+    token.add_argument("user_id")
+    api = commands.add_parser("serve")
+    api.add_argument("--host")
+    api.add_argument("--port", type=int)
+    arguments = parser.parse_args()
+    if arguments.command in {"install", "update", "upgrade-ready"}:
+        manage_deployment(arguments)
+    elif arguments.command == "keygen":
+        print(Fernet.generate_key().decode())
+    elif arguments.command == "migrate":
+        migrate()
+    elif arguments.command in {"run", "worker"}:
+        try:
+            asyncio.run(
+                run_services() if arguments.command == "run" else serve_worker(arguments.kind)
+            )
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+    elif arguments.command == "serve":
+        settings = Settings()
         uvicorn.run(
-            "opsmesh.bootstrap.api:create_app",
+            "opsmesh.bootstrap.asgi:create_app",
             factory=True,
-            host=os.environ.get("OPSMESH_API_BIND", "127.0.0.1"),
-            port=int(os.environ.get("OPSMESH_API_PORT", "8000")),
-            proxy_headers=False,
+            host=arguments.host or settings.host,
+            port=arguments.port or settings.port,
         )
-    elif args.command == "gateway":
-        from opsmesh.bootstrap.gateway_worker import run_gateway
-
-        asyncio.run(run_gateway(get_settings()))
-    elif args.command == "worker":
-        from opsmesh.bootstrap.worker import run_worker
-
-        asyncio.run(run_worker())
     else:
-        raise ValueError(f"Unknown server command: {args.command}")
-    return 0
+        application = Application.create()
+        try:
+            with application.sessions.begin() as db:
+                if arguments.command == "bootstrap-admin":
+                    config = application.settings
+                    credentials = initialize_admin(
+                        db,
+                        arguments.name or config.admin_username,
+                        config.admin_password.get_secret_value() if config.admin_password else None,
+                    )
+                    if credentials is None:
+                        raise ValueError(
+                            "An administrator already exists; use issue-token for credential recovery"
+                        )
+                    user_id = credentials.user_id
+                elif arguments.command == "plugins":
+                    owner_id = arguments.owner_id
+                    if owner_id is None:
+                        owner_id = next(
+                            (
+                                row.id
+                                for row in db.scalars(select(User).order_by(User.created_at))
+                                if "admin" in row.roles
+                            ),
+                            None,
+                        )
+                    if owner_id is None:
+                        raise ValueError("Initialize an administrator or provide --owner-id")
+                    identity(db, owner_id)
+                    with arguments.archive.open("rb") as stream:
+                        content = stream.read(application.settings.package_limit_bytes + 1)
+                    installed = install(
+                        db,
+                        application.settings.data_dir,
+                        owner_id,
+                        content,
+                        application.settings.package_limit_bytes,
+                    )
+                    credential = None
+                    result = f"Installed {installed.name}@{installed.version}: {installed.id}"
+                else:
+                    user_id = arguments.user_id
+                if arguments.command != "plugins":
+                    credential = issue_token(db, user_id, "local-cli")
+            if arguments.command == "plugins":
+                print(result)
+            else:
+                if arguments.command == "bootstrap-admin" and credentials is not None:
+                    print(f"Username: {credentials.username}\nPassword: {credentials.password}")
+                print(credential)
+        finally:
+            asyncio.run(application.close())
+
+
+def entrypoint() -> None:
+    try:
+        main()
+    except DomainError as exc:
+        print(f"{exc.code}: {exc.message}", file=sys.stderr)
+        raise SystemExit(3 if exc.code == "update_busy" else 2) from exc
+    except ValueError as exc:
+        print("Invalid command values or configuration", file=sys.stderr)
+        raise SystemExit(2) from exc
+    except (OSError, httpx.HTTPError) as exc:
+        print(
+            f"Operation failed ({type(exc).__name__}); inspect configuration and connectivity",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    entrypoint()
