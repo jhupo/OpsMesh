@@ -169,11 +169,11 @@ def install(arguments: argparse.Namespace) -> None:
         os.chown(CONFIG, 0, group.gr_gid)
         CONFIG.chmod(0o750)
         with open(
-            CONFIG / ".env", "x", opener=lambda path, flags: os.open(path, flags, 0o640)
+            CONFIG / ".env", "x", opener=lambda path, flags: os.open(path, flags, 0o600)
         ) as target:
             target.write(arguments.config.read_text())
-        os.chown(CONFIG / ".env", 0, group.gr_gid)
-        (CONFIG / ".env").chmod(0o640)
+        os.chown(CONFIG / ".env", account.pw_uid, group.gr_gid)
+        (CONFIG / ".env").chmod(0o600)
         (CONFIG / "update.json").write_text(
             json.dumps({"repository": repository, "health_url": str(health_url)}, indent=2) + "\n"
         )

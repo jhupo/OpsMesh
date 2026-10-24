@@ -28,7 +28,7 @@ sudo sh ./install.sh --config /root/opsmesh-install.env --repository OWNER/REPOS
 ```text
 /opt/opsmesh/releases/版本/     # 不可变的运行包，旧版本保留
 /opt/opsmesh/current           # 当前运行包的原子符号链接
-/etc/opsmesh/.env              # root:opsmesh 0640
+/etc/opsmesh/.env              # opsmesh:opsmesh 0600
 /etc/opsmesh/update.json       # root 0600，公开更新源与健康地址
 /var/lib/opsmesh/              # 插件、用户工作区、会话等私有数据
 /var/log/opsmesh/              # 各进程轮转日志
