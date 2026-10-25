@@ -6,15 +6,15 @@ from datetime import timedelta
 from pathlib import Path, PurePosixPath
 
 from agents.sandbox.session.sandbox_session import SandboxSession
-from opsmesh_sdk import UserIdentity
-from opsmesh_sdk.sessions import SandboxContext
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.contracts import UserIdentity
+from opsmesh.contracts.sessions import SandboxContext
 from opsmesh.infra.database import new_id, now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.registry import PluginRegistry
-from opsmesh.quotas.storage import check
+from opsmesh.quotas.storage import check_async
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.users.service import require_owner
 
@@ -118,8 +118,7 @@ class SandboxStorage:
                         clean = True
                         raise
             clean = True
-            with self.sessions.begin() as db:
-                check(db, self.root, row.owner_id, 0)
+            await check_async(self.sessions, self.root, row.owner_id, 0)
         finally:
             renewal.cancel()
             await asyncio.gather(renewal, return_exceptions=True)
@@ -130,9 +129,10 @@ class SandboxStorage:
                     if not attempted or clean:
                         current.sandbox_dirty = False
 
-    def check_write(self, session_id: str, amount: int) -> None:
+    async def check_write(self, session_id: str, amount: int) -> None:
         with self.sessions.begin() as db:
             row = db.get(AgentSession, session_id)
             if row is None:
                 raise NotFoundError("Session not found")
-            check(db, self.root, row.owner_id, amount)
+            owner_id = row.owner_id
+        await check_async(self.sessions, self.root, owner_id, amount)

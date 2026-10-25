@@ -1,8 +1,8 @@
 from typing import Any, Literal
 
-from opsmesh_sdk.manifest import DependencyAlias, DependencyReference
 from pydantic import Field
 
+from opsmesh.contracts.manifest import DependencyAlias, DependencyReference
 from opsmesh.shared.schemas import RecordView, RequestSchema
 
 

@@ -1,10 +1,10 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Request
-from opsmesh_sdk import UserIdentity
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import UserIdentity
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record
 from opsmesh.users.service import require_admin

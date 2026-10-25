@@ -1,7 +1,6 @@
 from threading import RLock
 
-from opsmesh_sdk.registration import PluginContext
-
+from opsmesh.contracts.registration import PluginContext
 from opsmesh.shared.errors import NotFoundError
 
 

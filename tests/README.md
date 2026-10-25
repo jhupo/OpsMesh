@@ -6,7 +6,7 @@ Run tests only with explicit user authorization, as required by root `AGENTS.md`
 uv run --no-sync python -m unittest discover -s tests -v
 ```
 
-`test_gateway.py` covers native QQ events/APIs, signed webhook parsing, rich messages, DingTalk callbacks/OpenAPI/media, and durable event/operation behavior. `test_regressions.py` covers SDK tool options, usage reservation, task cancellation, child capacity and checkpoint/session/quota regressions.
+`test_gateway.py` covers DingTalk callbacks/OpenAPI/media and durable gateway event/operation behavior. QQ uses the official `qq-botpy` client directly; its real WebSocket and platform API behavior is outside this local regression suite. `test_regressions.py` covers SDK tool options, usage reservation, task cancellation, child capacity and checkpoint/session/quota regressions.
 
 `test_initialization.py` checks owner-only initial credential files on POSIX, refusal to overwrite existing files and cleanup after incomplete writes. Credentials are not printed to process logs.
 

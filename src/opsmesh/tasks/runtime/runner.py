@@ -5,9 +5,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from opsmesh_sdk import Suspended
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.contracts import Suspended
 from opsmesh.gateway.delivery import enqueue
 from opsmesh.infra.database import now
 from opsmesh.infra.encryption import SecretCipher
@@ -18,9 +18,9 @@ from opsmesh.shared.context import LogContext, logging_context
 from opsmesh.shared.errors import DomainError
 
 from ..events import append, status
-from ..interactions import suspend
-from ..models import Task, TaskAttempt
-from .children import ChildTasks
+from ..interactions import suspend, validate_checkpoint
+from ..models import Task, TaskAttempt, TaskCheckpoint
+from .children import ChildTaskPending, ChildTasks
 from .invocation import TaskInvoker
 from .leases import TaskLeaseLost, TaskLeases
 
@@ -88,6 +88,20 @@ class TaskRunner:
                 "cancelled" if requested else "worker_stopped",
             )
             raise
+        except ChildTaskPending as exc:
+            try:
+                self._wait_for_child(task_id, attempt_id, exc.child_id)
+            except asyncio.CancelledError:
+                failure = ("cancelled", "cancelled")
+                raise
+            except Exception as wait_error:
+                failure = (
+                    "failed",
+                    wait_error.code
+                    if isinstance(wait_error, DomainError)
+                    else type(wait_error).__name__,
+                )
+                logger.exception("task_child_wait_failed")
         except Exception as exc:
             failure = (
                 "failed",
@@ -110,6 +124,25 @@ class TaskRunner:
                 if failure:
                     self.leases.fail(task_id, attempt_id, *failure)
                 logging_context.reset(logging_token)
+
+    def _wait_for_child(self, task_id: str, attempt_id: str, child_id: str) -> None:
+        with self.sessions.begin() as db:
+            task = self.leases.active(db, task_id, attempt_id)
+            saved = db.get(TaskCheckpoint, task.checkpoint_id) if task.checkpoint_id else None
+            child = db.get(Task, child_id)
+            if (
+                saved is None
+                or saved.task_id != task.id
+                or child is None
+                or child.parent_id != task.id
+            ):
+                raise ChildTaskPending(child_id)
+            validate_checkpoint(db, task, saved)
+            task.status, task.waiting_child_id = "waiting_child", child_id
+            attempt = db.get(TaskAttempt, attempt_id)
+            assert attempt is not None
+            attempt.status, attempt.finished_at = "waiting_child", now()
+            status(db, self.cipher, task)
 
     def _complete(self, task_id: str, attempt_id: str, result: Any) -> None:
         with self.sessions.begin() as db:

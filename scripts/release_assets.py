@@ -5,30 +5,22 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
 
+from generate_sdk import contract_manifest, generate, obsolete_bindings
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PATHS = (
     "src",
-    "sdk/python/src",
-    "sdk/python/pyproject.toml",
-    "sdk/python/README.md",
-    "sdk/python/LICENSE",
-    "sdk/python/AGENTS.md",
-    "sdk/python/CONTRIBUTING.md",
-    "sdk/python/SECURITY.md",
-    "sdk/python/CHANGELOG.md",
-    "sdk/python/.gitattributes",
-    "sdk/python/.gitignore",
-    "sdk/python/.github",
-    "sdk/python/examples",
     "examples",
     "deploy",
     "scripts/build_release.py",
     "scripts/audit_requirements.py",
+    "scripts/generate_sdk.py",
     "scripts/release_assets.py",
     "scripts/server_entry.py",
     ".github",
@@ -48,6 +40,57 @@ SOURCE_PATHS = (
     "docs",
     "tests",
 )
+
+
+def sdk_metadata() -> dict[str, str]:
+    """Resolve release tooling's SDK input, never a framework runtime dependency."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    locked = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    if any(
+        re.match(r"opsmesh[-_]sdk(?:\W|$)", requirement, flags=re.IGNORECASE)
+        for requirement in project["project"]["dependencies"]
+    ) or any(package["name"] == "opsmesh-sdk" for package in locked["package"]):
+        raise ValueError("The framework must not depend on its generated plugin SDK")
+    source = project["tool"]["opsmesh"]["sdk"]
+    commit = source["revision"]
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("The SDK release input must use an immutable Git source pin")
+    return {
+        "name": "opsmesh-sdk",
+        "version": source["version"],
+        "repository": source["repository"],
+        "commit": commit,
+    }
+
+
+def sdk_source(output: Path) -> None:
+    """Stage the independent SDK for release packaging, outside the host source tree."""
+    sdk = sdk_metadata()
+    if output.exists():
+        raise ValueError("SDK staging directory must not exist; preserve previous artifacts")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", str(output)], check=True)
+    subprocess.run(["git", "remote", "add", "origin", sdk["repository"]], cwd=output, check=True)
+    subprocess.run(["git", "fetch", "--depth=1", "origin", sdk["commit"]], cwd=output, check=True)
+    subprocess.run(["git", "checkout", "--detach", sdk["commit"]], cwd=output, check=True)
+    actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=output, text=True).strip()
+    project = tomllib.loads((output / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    if (
+        actual != sdk["commit"]
+        or project["name"] != sdk["name"]
+        or project["version"] != sdk["version"]
+    ):
+        raise ValueError("SDK checkout does not match the locked release identity")
+    # This checkout was created above and verified against the immutable input.
+    # Never prune a developer's SDK checkout in the generator itself.
+    package = output / "src/opsmesh_sdk"
+    if package.is_symlink() or not package.resolve().is_relative_to(output.resolve()):
+        raise ValueError("SDK package must remain inside the fresh staging checkout")
+    for path in obsolete_bindings(package):
+        if path.is_symlink() or not path.resolve().is_relative_to(package.resolve()):
+            raise ValueError("Obsolete SDK bindings cannot be links")
+        path.unlink()
+    generate(output)
 
 
 def source_files() -> list[Path]:
@@ -83,14 +126,16 @@ def sources(output: Path, version: str) -> None:
 
 
 def notes(output: Path, version: str, repository: str) -> None:
+    sdk = sdk_metadata()
+    sdk_version = sdk["version"]
     binaries = [f"opsmesh-v{version}-linux-{arch}.tar.gz" for arch in ("x86_64", "aarch64")]
     required = binaries + [
         f"opsmesh-v{version}-source.tar.gz",
         f"opsmesh-v{version}-source.zip",
         f"opsmesh-{version}-py3-none-any.whl",
         f"opsmesh-{version}.tar.gz",
-        f"opsmesh_sdk-{version}-py3-none-any.whl",
-        f"opsmesh_sdk-{version}.tar.gz",
+        f"opsmesh_sdk-{sdk_version}-py3-none-any.whl",
+        f"opsmesh_sdk-{sdk_version}.tar.gz",
         "install.sh",
         "LICENSE",
         "IMAGE_DIGEST.txt",
@@ -106,6 +151,10 @@ def notes(output: Path, version: str, repository: str) -> None:
     missing = [name for name in required if not (output / name).is_file()]
     if missing:
         raise ValueError(f"Release assets are incomplete: {missing}")
+    contracts = contract_manifest()
+    with zipfile.ZipFile(output / f"opsmesh_sdk-{sdk_version}-py3-none-any.whl") as wheel:
+        if json.loads(wheel.read("opsmesh_sdk/_contracts.json")) != contracts:
+            raise ValueError("SDK wheel contracts do not match the framework being released")
     image = (output / "IMAGE_DIGEST.txt").read_text().strip()
     if not re.fullmatch(r"ghcr\.io/[a-z0-9_./-]+@sha256:[0-9a-f]{64}", image):
         raise ValueError("Missing immutable image digest")
@@ -115,7 +164,7 @@ def notes(output: Path, version: str, repository: str) -> None:
         "source": f"https://github.com/{repository}/tree/v{version}",
         "image": image,
         "platforms": ["linux/amd64", "linux/arm64"],
-        "sdk": {"name": "opsmesh-sdk", "version": version, "python": ">=3.11.8"},
+        "sdk": {**sdk, "python": ">=3.11.8", "runtime_python": ">=3.12", "contracts": contracts},
         "binary_assets": binaries,
     }
     (output / "release-manifest.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -144,16 +193,16 @@ def notes(output: Path, version: str, repository: str) -> None:
 
 - Linux x86_64 and aarch64 executable bundles include systemd units and installation scripts. Ubuntu 22.04 / glibc 2.35 or newer is required.
 - `install.sh` downloads a pinned binary release and verifies its SHA-256 checksum before installation.
-- Explicit `source.tar.gz` and `source.zip` archives contain the matching host, SDK, dependencies lock, deployment files and build scripts.
-- `opsmesh_sdk-*.whl` and `opsmesh_sdk-*.tar.gz` are the standalone, typed plugin SDK for Python 3.11.8+.
-- Host Python distributions are also attached. Install the matching SDK wheel before installing the host wheel.
+- Explicit `source.tar.gz` and `source.zip` archives contain the host, dependency lock, deployment files and build scripts. SDK source is maintained separately on the `sdk` branch.
+- `opsmesh_sdk-*.whl` and `opsmesh_sdk-*.tar.gz` contain generated plugin bindings, standalone typing stubs and a ZIP packaging CLI for Python 3.11.8+. Runtime bindings use the canonical contracts of their Python 3.12+ OpsMesh host.
+- Host Python distributions are also attached. The framework does not depend on or import the plugin SDK. Install the matching generated SDK wheel when hosting plugins that import it; executable bundles include those bindings.
 - `SHA256SUMS`, CycloneDX SBOMs, vulnerability reports and `release-manifest.json` describe the assets. GitHub artifact attestations bind builds to their workflow.
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
 gh attestation verify opsmesh-v{version}-linux-x86_64.tar.gz --repo {repository}
 sudo sh install.sh v{version} --config /root/opsmesh-install.env --start
-pip install ./opsmesh_sdk-{version}-py3-none-any.whl
+pip install ./opsmesh_sdk-{sdk_version}-py3-none-any.whl
 ```
 
 ## Container image
@@ -177,22 +226,21 @@ Publication requires static checks, isolated PostgreSQL regressions, dependency 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("sources", "notes", "check-version"))
+    parser.add_argument("command", choices=("sources", "sdk-source", "notes", "check-version"))
     parser.add_argument("--output", type=Path, default=ROOT / "release")
     parser.add_argument("--tag")
     parser.add_argument("--repository", default="jhupo/OpsMesh")
     args = parser.parse_args()
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
-    sdk_version = tomllib.loads((ROOT / "sdk/python/pyproject.toml").read_text())["project"][
-        "version"
-    ]
-    if (
-        not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
-        or version != sdk_version
-        or (args.tag and args.tag != f"v{version}")
+    sdk_metadata()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or (
+        args.tag and args.tag != f"v{version}"
     ):
-        parser.error("Host version, SDK version and release tag must match")
+        parser.error("Host version and release tag must match")
     if args.command == "check-version":
+        return
+    if args.command == "sdk-source":
+        sdk_source(args.output.resolve())
         return
     args.output.mkdir(parents=True, exist_ok=True)
     if args.command == "sources":

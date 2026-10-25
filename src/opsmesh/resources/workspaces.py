@@ -3,9 +3,9 @@ import re
 import tempfile
 from pathlib import Path
 
-from opsmesh_sdk import UserIdentity
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import UserIdentity
 from opsmesh.quotas.storage import check
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.users.service import require_owner

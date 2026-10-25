@@ -26,7 +26,7 @@ jobs:
           version: '0.13.5'
       - name: Audit locked runtime dependencies
         run: |
-          uv export --frozen --no-dev --extra sandbox --no-editable --no-emit-project --no-emit-package opsmesh-sdk --no-hashes --format requirements-txt --output-file /tmp/opsmesh-export.txt
+          uv export --frozen --no-dev --extra sandbox --no-editable --no-emit-project --no-hashes --format requirements-txt --output-file /tmp/opsmesh-export.txt
           python scripts/audit_requirements.py /tmp/opsmesh-export.txt /tmp/opsmesh-requirements.txt
           uvx --from pip-audit pip-audit --requirement /tmp/opsmesh-requirements.txt --disable-pip --no-deps
       - name: Scan sources and secrets

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Request
-from opsmesh_sdk.identity import UserIdentity
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts.identity import UserIdentity
 from opsmesh.shared.errors import ForbiddenError, NotFoundError
 from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record
 from opsmesh.shared.models import AuditEvent

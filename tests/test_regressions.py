@@ -39,7 +39,9 @@ class RuntimeRegressions(unittest.IsolatedAsyncioTestCase):
                 output=[], usage=Usage(requests=1), response_id=None, raw_usage=None
             )
         )
-        model = MeteredModel(inner, Mock(), "user", "task", 100, Mock())
+        counter = Mock(count=AsyncMock(return_value=25))
+        model = MeteredModel(inner, Mock(), "user", "task", 100, Mock(), counter)
+        model._prepare = AsyncMock(return_value="reservation")
         model._reserve = Mock(return_value="reservation")
         model._settle = Mock()
         await model.get_response(model_settings=ModelSettings())

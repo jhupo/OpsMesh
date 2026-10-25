@@ -6,19 +6,19 @@ from pathlib import Path
 from typing import Any
 
 from agents import trace
-from opsmesh_sdk import Decision, InvocationContext, InvocationSource, Suspended
 from sqlalchemy.orm import sessionmaker
 
 from opsmesh.agents.service import usable
 from opsmesh.catalog.deps import InvocationDependencies
 from opsmesh.catalog.service import authorize_pins
 from opsmesh.catalog.service import get as get_publication
+from opsmesh.contracts import Decision, InvocationContext, InvocationSource, Suspended
 from opsmesh.gateway.context import InvocationChannel
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.registry import PluginRegistry
 from opsmesh.quotas.config import ModelDefaults
-from opsmesh.quotas.storage import check
+from opsmesh.quotas.storage import check_async
 from opsmesh.resources.runtime import InvocationResources
 from opsmesh.sessions.models import AgentSession
 from opsmesh.sessions.runtime import invocation_session
@@ -230,8 +230,7 @@ class TaskInvoker:
                 result = await handler(context, value["value"])
                 if isinstance(result, Suspended) and entry.resume is None:
                     raise ConflictError("Suspending an entry requires a resume handler")
-                with self.sessions.begin() as db:
-                    check(db, self.root, snapshot["owner_id"], 0)
+                await check_async(self.sessions, self.root, snapshot["owner_id"], 0)
                 return result
         finally:
             logging_context.reset(token)

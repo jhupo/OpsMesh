@@ -1,47 +1,61 @@
-# NoneBot 接入架构
+# 网关设计与维护边界
 
-## 结论
+QQAdapter 和 DingTalkAdapter 直接继承 `gateway/adapters/base.py` 的同一个 `Adapter(ABC)`，每个已配置通道对应一个实例。唯一的抽象接口为 `capabilities / run(sink) / send(message) / call(operation, parameters)`。准备状态、事件发布和明确拒绝是公共辅助行为；没有第二层 ChannelAdapter、公共 Bot 或 BotT 泛型。
 
-优先复用 NoneBot 生态已有且持续维护的协议适配器。OpsMesh 负责多用户身份、权限、通道配置、连接租约、持久消息、任务和审计；NoneBot Driver/Adapter 负责网络与平台协议。QQ 当前已经采用这个边界。
+## 所有权与生命周期
 
-NoneBot 核心提供框架，平台实现分布在独立适配器包。安装 NoneBot 不会自动安装或配置全部平台，也不能统一各平台的权限与富消息语义。2026-10-24 查阅的官方仓库将钉钉适配器标为寻找维护者、暂不可用，因此钉钉继续使用官方 Stream SDK。
+Gateway Worker 持有通道租约、加载配置工厂、保存能力目录，并监督连接、Outbox 和操作队列。`run(sink)` 持续接收事件并负责重连，取消或致命错误退出时在 finally 中释放资源。Worker 关闭时先取消并等待发送与操作任务，再取消并等待 run。取消中的副作用记为 uncertain，不自动重发。
 
-## 从源码吸收的设计
+`Adapter.state` 区分 connecting、connected、reconnecting、failed 和 stopped，只有 connected 设置 ready。准备状态属于运行实例，能力目录只描述实现、配置、事件、消息和操作，不以网络状态改变其声明。通道改配置后由 Worker 创建新代际实例。
 
-| NoneBot 层 | 职责 | OpsMesh 使用方式 |
-| --- | --- | --- |
-| Driver / Mixin | HTTP、WebSocket 客户端和 ASGI 服务端，可组合并检查能力 | 复用原生 FastAPI + HTTPX + WebSockets 驱动 |
-| Adapter | 协议连接、鉴权、订阅、重连和 API 分发 | QQ 复用原生 Adapter 生命周期与 API 描述符 |
-| Bot | 机器人实例、统一 `call_api` 与平台发送方法 | Worker 中调用，返回平台原生回执 |
-| Event / Message / MessageSegment | 平台事件、消息和结构化段 | 保留载荷，映射用户/会话/回复目标 |
-| 事件预处理 | 接收消息后的拦截和分发 | 落入 OpsMesh 持久事件，再由任务执行插件 |
+入站去重、身份绑定、权限、审计、配额、加密 Inbox/Outbox 和平台回执属于宿主业务层。适配器不负责组装任务或访问其他用户的工作区；API 进程不启动平台连接。
 
-框架内不再实现 QQ 心跳、鉴权缓存、重连、签名算法和完整平台 API 包装。只保留桥接配置、身份映射、结构化消息转换、持久化与安全边界。
-
-## 扩展新平台
+## 目录
 
 ```text
-Platform
-  -> maintained NoneBot Adapter / vendor SDK
-  -> thin ChannelAdapter bridge
-  -> ChannelEvent + durable event/inbox
-  -> stored external identity + isolated Session
-  -> pinned plugin task
-  -> durable reply/operation queue
-  -> native Bot.call_api / vendor API
+gateway/
+  worker.py                 # 租约、工厂、监督与取消顺序
+  service.py                # 持久 Inbox、身份与任务路由
+  delivery.py               # 持久 Outbox 与投递回执
+  operations.py             # 授权复核、幂等操作与不确定结果
+  adapters/
+    base.py                 # 唯一 Adapter ABC
+    schemas.py              # Event/Message/Capabilities/Operation/Receipt/Result
+    errors.py               # 可公开的明确拒绝代码
+    qq/
+      adapter.py            # QQAdapter(Adapter)
+      api.py                # 官方 BotAPI 的固定操作目录
+      events.py             # botpy 事件及宿主映射
+      messages.py           # 官方消息请求转换
+      SDK.md, SDK.json      # 官方 SDK 来源记录
+    dingtalk/
+      adapter.py            # DingTalkAdapter(Adapter)，官方 Stream SDK
+      config.py, events.py, messages.py
+      handlers.py           # 原生回调与持久化后的 ACK
+      api.py                # 固定主机、鉴权、响应校验与媒体上传
+      schemas.py            # 卡片操作的固定路由与严格参数模型
 ```
 
-使用已有的 `opsmesh_sdk.channels.ChannelAdapter` 注册合同，插件 `setup(ctx)` 声明通道工厂。平台凭据在 `connect()` 生命周期注入，`setup()` 不连接网络。增加已受支持平台通常只需桥接事件、目标和消息表示，避免重写通信协议。仍需逐个平台确认维护状态、应用权限、事件确认时机和必要的业务映射。
+QQ 的连接、分片、令牌、事件解析和 HTTP API 都由官方 `botpy.Client` 与 `botpy.api.BotAPI` 持有。OpsMesh 只在回调边界将官方事件对象标准化，并通过固定目录暴露官方 API。钉钉直接组合锁定的官方 Stream 客户端。
 
-原生适配器经常依赖 `nonebot.init()` / `get_plugin_config()` 的全局状态。OpsMesh 的独立通道配置不能直接混入一个进程全局配置：QQ 的嵌入只调整构造注入，保留原生协议实现；新增适配器必须核对其配置读取与生命周期，必要时隔离进程。不能承诺任意 NoneBot 包无需审核即可安全热加载。
+## 能力与副作用
 
-平台管理员角色不转换为 OpsMesh 管理员；平台会话 ID 不直接作为用户资源目录。模型、SDK Agent、业务工具和工作流继续由 OpsMesh 插件实现。NoneBot matcher/plugin 分发不绕过持久任务、额度、审批和固定版本执行。
+能力目录与 call 的可调用集合一致。每项操作声明参数和结果 JSON Schema，以及管理员权限、禁止自动重试、并发、平台限流和回执约束。QQ 只声明固定的官方 `BotAPI` 消息和媒体方法；钉钉仅声明 message.send、media.upload 和 dingtalk.card.create/deliver/update/stream。方法、端点和鉴权由实现固定，调用者不能指定 URL、路径或鉴权头。
 
-## 上游参考
+操作入队时检查目录，执行前再核对当前目录和数据库中的管理员身份。持久幂等键防止重复提交；一个通道顺序处理操作，消息投递可与操作重叠。参数和回执限制为最多 8 MiB 的有限 JSON。平台限制不触发隐式重试。
 
-- [NoneBot2 仓库与适配器状态](https://github.com/nonebot/nonebot2)
-- [2.5.0 Adapter 合同](https://github.com/nonebot/nonebot2/blob/v2.5.0/nonebot/internal/adapter/adapter.py)
-- [2.5.0 Driver 合同](https://github.com/nonebot/nonebot2/tree/v2.5.0/nonebot/internal/driver)
-- [QQ 原生适配器](https://github.com/nonebot/adapter-qq)
+send 返回 Receipt，表示平台接受或 QQ pending_audit，不证明用户实际收到。call 返回 Result，包含 operation 与 value。明确拒绝记为 failed；超时、取消、连接中断、无有效回执等结果不能确认的情况记为 uncertain。人工核对后才可显式重试。
 
-运行时调用以锁定版本源码为准；仓库首页表示查询时的上游状态。
+QQ 官方 WebSocket 回调和钉钉回调都在宿主 sink 成功后完成事件处理。进程重启仍受平台历史窗口限制，不能承诺端到端恰好一次。群管理员等外部角色只作为业务元数据，不能授予 OpsMesh 平台权限。
+
+## 插件 SDK 边界
+
+传输值、错误和 Adapter 位于 gateway 内部，不再生成 contracts.channels 或 SDK 传输协议。通道插件工厂直接返回匹配宿主的 Adapter；setup(ctx) 只声明工厂，连接由 Worker 管理。任务仍通过 opsmesh.contracts.gateway.Channel 的 reply/request 提交持久操作，不获得连接或凭据。
+
+其他公开扩展合同由 opsmesh.contracts 拥有，框架不导入生成 SDK。SDK 工程在独立 sdk 分支维护，发布阶段从固定输入生成运行绑定与类型声明。生成器在普通开发目录遇到已移除合同的残留文件时拒绝覆盖，发行工具只在刚创建并验证的 staging checkout 中清理这些文件。
+
+## 第三方来源与验证
+
+QQ 直接使用腾讯官方 `qq-botpy==1.2.1`，不复制平台协议或引入其他框架。SDK 身份和仓库记录见 [QQ SDK 来源](../src/opsmesh/gateway/adapters/qq/SDK.md)；安全工具检查锁定依赖中存在该官方包且不存在 NoneBot 依赖。
+
+钉钉使用锁定的 dingtalk-stream 0.24.4b1 预发布版本。卡片端点与字段对照安装源码 card_replier.py 和 [官方源码](https://github.com/open-dingtalk/dingtalk-stream-sdk-python/blob/main/dingtalk_stream/card_replier.py)。原生便捷方法存在吞错或阻塞，因此持久操作使用严格 HTTP 响应检查，同时继续使用 SDK 令牌缓存和 Stream 协议。静态检查与真实平台验收的边界见 [校验记录](verification.md)。

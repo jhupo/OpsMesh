@@ -2,11 +2,11 @@ import hashlib
 import json
 from typing import Any
 
-from opsmesh_sdk import InvocationSource, UserIdentity
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import InvocationSource, UserIdentity
 from opsmesh.infra.database import new_id
 from opsmesh.shared.errors import ConflictError, NotFoundError
 

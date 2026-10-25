@@ -2,10 +2,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
-from opsmesh_sdk import UserIdentity
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import UserIdentity
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record
 from opsmesh.users.service import identity, require_admin, require_owner

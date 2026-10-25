@@ -1,12 +1,12 @@
 from pathlib import Path
 from typing import Any
 
-from opsmesh_sdk import UserIdentity
-from opsmesh_sdk.manifest import PluginManifest
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from opsmesh.catalog.service import authorize_pins, require_plugin_access, resolve
+from opsmesh.contracts import UserIdentity
+from opsmesh.contracts.manifest import PluginManifest
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.models import Plugin

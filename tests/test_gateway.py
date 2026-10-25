@@ -1,48 +1,37 @@
 """Native SDK integration and durable gateway regression cases. No model calls."""
 
 import asyncio
-import base64
 import json
 import os
-import socket
 import tempfile
 import unittest
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from cryptography.fernet import Fernet
 from dingtalk_stream import CallbackMessage
 from dingtalk_stream.frames import Headers
-from nonebot.adapters.qq import Bot
-from nonebot.adapters.qq.config import BotInfo
-from nonebot.adapters.qq.event import (
-    C2CMessageCreateEvent,
-    DirectMessageCreateEvent,
-    GroupAtMessageCreateEvent,
-    MessageCreateEvent,
-    ReadyEvent,
-)
-from nonebot.adapters.qq.models import MessageMarkdown, SetMemberMuteState
-from nonebot.adapters.qq.models import User as QQUser
-from opsmesh_sdk.channels import ChannelAdapter, ChannelEvent, OperationRejected, OutgoingMessage
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from opsmesh.agents.models import AgentInstance
 from opsmesh.bootstrap.schema import load_models
-from opsmesh.gateway.adapters.config import validate_config
-from opsmesh.gateway.adapters.dingtalk.adapter import DingTalkChannelAdapter
+from opsmesh.gateway.adapters.base import Adapter
+from opsmesh.gateway.adapters.dingtalk.adapter import DingTalkAdapter
 from opsmesh.gateway.adapters.dingtalk.events import chatbot
 from opsmesh.gateway.adapters.dingtalk.messages import session_url
-from opsmesh.gateway.adapters.qq.adapter import QQChannelAdapter
-from opsmesh.gateway.adapters.qq.api import call, native_apis
-from opsmesh.gateway.adapters.qq.config import QQConfig
-from opsmesh.gateway.adapters.qq.driver import build_driver
-from opsmesh.gateway.adapters.qq.events import normalize
+from opsmesh.gateway.adapters.errors import OperationRejected
+from opsmesh.gateway.adapters.schemas import (
+    Capabilities,
+    Event,
+    Message,
+    Operation,
+    Receipt,
+    Result,
+)
 from opsmesh.gateway.delivery import enqueue as enqueue_reply
 from opsmesh.gateway.models import (
     ChannelConfiguration,
@@ -59,18 +48,9 @@ from opsmesh.infra.database import Base, new_id, now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.models import Plugin
 from opsmesh.plugins.registry import PluginRegistry
-from opsmesh.shared.errors import ConflictError, InvalidArgumentError
+from opsmesh.shared.errors import ConflictError
 from opsmesh.tasks.models import Task
 from opsmesh.users.models import User
-
-
-def qq_payload():
-    return {
-        "id": "message",
-        "content": "hello",
-        "timestamp": "2026-10-24T01:00:00Z",
-        "author": {"id": "actor", "user_openid": "person"},
-    }
 
 
 def ding_frame(kind="text", **changes):
@@ -91,244 +71,14 @@ def ding_frame(kind="text", **changes):
     return frame
 
 
-class QQIntegration(unittest.IsolatedAsyncioTestCase):
-    async def test_native_webhook_signature_verification_and_size_guard(self):
-        received = []
-
-        async def sink(event):
-            received.append(event)
-
-        driver, native = build_driver(
-            QQConfig(app_id="app", secret="test-secret", transport="webhook"), sink, asyncio.Event()
-        )
-        async with driver.server_app.router.lifespan_context(driver.server_app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=driver.server_app), base_url="http://qq.test"
-            ) as client:
-                headers = {"X-Bot-Appid": "app"}
-                verify = await client.post(
-                    "/qq/webhook",
-                    headers=headers,
-                    json={"op": 13, "d": {"plain_token": "challenge", "event_ts": "123"}},
-                )
-                self.assertEqual(verify.status_code, 200)
-                self.assertEqual(verify.json()["plain_token"], "challenge")
-                invalid = await client.post(
-                    "/qq/webhook",
-                    headers={**headers, "X-Signature-Ed25519": "not-hex"},
-                    json={"op": 0},
-                )
-                self.assertEqual(invalid.status_code, 403)
-                too_large = await client.post(
-                    "/qq/webhook", headers=headers, content=b"x" * (1024 * 1024 + 1)
-                )
-                self.assertEqual(too_large.status_code, 413)
-                body = json.dumps(
-                    {"op": 0, "s": 1, "t": "C2C_MESSAGE_CREATE", "id": "event", "d": qq_payload()}
-                ).encode()
-                bot = Bot(native, "app", native.qq_config.qq_bots[0])
-                signature = native._get_ed25519_key(bot).sign(b"123" + body).hex()
-                with patch.object(
-                    Bot, "me", AsyncMock(return_value=QQUser(id="bot", username="bot"))
-                ):
-                    accepted = await client.post(
-                        "/qq/webhook",
-                        headers={
-                            **headers,
-                            "X-Signature-Timestamp": "123",
-                            "X-Signature-Ed25519": signature,
-                        },
-                        content=body,
-                    )
-                    self.assertEqual(accepted.status_code, 200)
-                    for _ in range(30):
-                        if received:
-                            break
-                        await asyncio.sleep(0.01)
-                self.assertEqual(received[0].text, "hello")
-
-    async def test_conflicting_webhook_port_does_not_exit_worker(self):
-        with socket.create_server(("127.0.0.1", 0)) as occupied:
-            adapter = QQChannelAdapter(
-                {
-                    "app_id": "app",
-                    "secret": "test",
-                    "transport": "webhook",
-                    "webhook_port": occupied.getsockname()[1],
-                }
-            )
-            with self.assertRaises(OSError):
-                await adapter.connect(AsyncMock())
-
-    def test_conversations_and_native_attachments(self):
-        payload = qq_payload()
-        c2c = normalize(C2CMessageCreateEvent.model_validate(payload))
-        self.assertEqual(
-            (c2c.external_user_id, c2c.conversation_id, c2c.scope),
-            ("person", "c2c:person", "private"),
-        )
-        group = normalize(
-            GroupAtMessageCreateEvent.model_validate(
-                {
-                    **payload,
-                    "group_id": "native",
-                    "group_openid": "person",
-                    "author": {
-                        "id": "actor",
-                        "member_openid": "member",
-                        "member_role": "owner",
-                        "bot": False,
-                    },
-                    "attachments": [
-                        {"content_type": "image/png", "url": "https://example.com/image.png"}
-                    ],
-                }
-            )
-        )
-        self.assertEqual(
-            (group.conversation_id, group.scope, group.external_role),
-            ("group:person", "group", "owner"),
-        )
-        self.assertTrue(any(part["type"] == "image" for part in group.content))
-        guild_payload = {
-            "id": "message",
-            "guild_id": "guild",
-            "channel_id": "room",
-            "content": "hello",
-            "author": {"id": "person"},
-        }
-        guild = normalize(MessageCreateEvent.model_validate(guild_payload))
-        direct = normalize(DirectMessageCreateEvent.model_validate(guild_payload))
-        self.assertEqual(guild.conversation_id, "guild:room")
-        self.assertEqual(direct.conversation_id, "dms:guild:person")
-        self.assertEqual(direct.reply_target["kind"], "dms")
-
-    def test_ready_retains_no_resume_secret_and_is_not_a_task(self):
-        event = normalize(
-            ReadyEvent(version=1, session_id="resume-secret", user=QQUser(id="bot"), shard=(0, 1))
-        )
-        self.assertFalse(event.is_message)
-        self.assertNotIn("resume-secret", json.dumps(event.data))
-
-    async def test_native_event_preprocessor_without_global_driver(self):
-        received = []
-
-        async def sink(event):
-            received.append(event)
-
-        config = QQConfig(app_id="app", secret="test-secret")
-        _, native = build_driver(config, sink, asyncio.Event())
-        bot = Bot(native, "app", BotInfo(id="app", secret="test-secret"))
-        bot.self_info = QQUser(id="bot", username="bot")
-        await bot.handle_event(C2CMessageCreateEvent.model_validate(qq_payload()))
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].text, "hello")
-
-    async def test_native_api_models_and_group_management(self):
-        bot = Mock()
-        bot.call_api = AsyncMock(return_value=None)
-        await call(
-            bot,
-            "set_group_members_mute",
-            {"group_id": "g", "members": [{"op": "add", "member_openid": "u"}]},
-        )
-        self.assertIsInstance(bot.call_api.call_args.kwargs["members"][0], SetMemberMuteState)
-        await call(
-            bot,
-            "post_c2c_messages",
-            {"openid": "u", "msg_type": 2, "markdown": {"content": "hello"}},
-        )
-        self.assertIsInstance(bot.call_api.call_args.kwargs["markdown"], MessageMarkdown)
-        for method in (
-            "get_group_info",
-            "get_group_members",
-            "get_group_join_request_list",
-            "approval_join_request",
-        ):
-            self.assertIn(method, native_apis())
-        self.assertEqual(
-            len(QQChannelAdapter({"app_id": "a", "secret": "s"}).capabilities["operations"]),
-            len(native_apis()) + 1,
-        )
-
-    async def test_native_binary_upload_does_not_accept_local_paths(self):
-        bot = Mock(call_api=AsyncMock(return_value=None))
-        await call(
-            bot,
-            "post_messages",
-            {"channel_id": "c", "file_image": {"$base64": base64.b64encode(b"image").decode()}},
-        )
-        self.assertEqual(bot.call_api.call_args.kwargs["file_image"], b"image")
-        with self.assertRaises(OperationRejected):
-            await call(bot, "post_messages", {"channel_id": "c", "file_image": "C:/private.png"})
-        with self.assertRaises(OperationRejected):
-            await call(
-                bot,
-                "put_upload_part",
-                {"presigned_url": "http://127.0.0.1/private", "data": {"$base64": "eA=="}},
-            )
-
-    async def test_native_api_rejects_unknown_or_invalid_before_network(self):
-        bot = Mock(call_api=AsyncMock())
-        for name, parameters in (
-            ("get_authorization_header", {}),
-            ("get_group_info", {}),
-            ("get_group_info", {"group_id": "g", "secret": "s"}),
-        ):
-            with self.assertRaises(OperationRejected):
-                await call(bot, name, parameters)
-        bot.call_api.assert_not_called()
-
-    async def test_all_reply_targets_keep_native_message_id_and_sequence(self):
-        adapter = QQChannelAdapter({"app_id": "app", "secret": "test"})
-        bot = SimpleNamespace(
-            **{
-                name: AsyncMock(return_value={"id": "sent"})
-                for name in ("send_to_c2c", "send_to_group", "send_to_channel", "send_to_dms")
-            }
-        )
-        adapter.native = SimpleNamespace(bots={"app": bot})
-        adapter.ready.set()
-        for kind, method in (
-            ("c2c", "send_to_c2c"),
-            ("group", "send_to_group"),
-            ("guild", "send_to_channel"),
-            ("dms", "send_to_dms"),
-        ):
-            await adapter.send(
-                OutgoingMessage(
-                    "out",
-                    "conversation",
-                    "reply",
-                    reply_to="normalized-id",
-                    sequence=7,
-                    target={"kind": kind, "id": "room", "message_id": "native-id"},
-                )
-            )
-            arguments = getattr(bot, method).call_args
-            self.assertEqual(arguments.kwargs["msg_id"], "native-id")
-            if kind in {"c2c", "group"}:
-                self.assertEqual(arguments.kwargs["msg_seq"], 7)
-
-    def test_configuration_does_not_accept_old_secrets_or_unknown_intents(self):
-        for config in (
-            {"app_id": "a", "app_secret": "old"},
-            {"app_id": "a", "secret": "s", "intents": {"imaginary": True}},
-        ):
-            with self.assertRaises(InvalidArgumentError):
-                validate_config("qq", config)
-        config = validate_config("qq", {"app_id": "a", "secret": "s"})
-        self.assertEqual(config["secret"], "s")
-        self.assertTrue(config["intents"]["c2c_group_at_messages"])
-
-
 class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
     def test_text_rich_media_and_routing_secrets(self):
         text_event = chatbot(ding_frame(isAdmin=True))
         self.assertEqual(text_event.text, "hello")
         self.assertEqual(text_event.external_user_id, "person")
-        self.assertEqual(text_event.external_role, "group_admin")
+        self.assertIsNone(text_event.external_role)
         self.assertNotIn("sessionWebhook", text_event.data)
+        self.assertNotIn("sessionWebhook", text_event.data["payload"])
         self.assertIn("webhook", text_event.reply_target)
         picture = chatbot(ding_frame("picture", content={"downloadCode": "download"}))
         self.assertEqual(picture.content[0]["data"]["download_code"], "download")
@@ -342,7 +92,7 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
         for kind in ("file", "audio", "video"):
             event = chatbot(ding_frame(kind, content={"downloadCode": "blob", "fileName": "name"}))
             self.assertEqual(event.content[0]["type"], kind)
-            self.assertEqual(event.content[0]["data"]["downloadCode"], "blob")
+            self.assertEqual(event.content[0]["data"]["download_code"], "blob")
 
     def test_session_urls_expiration_and_origin(self):
         target = chatbot(ding_frame()).reply_target
@@ -359,12 +109,13 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
             session_url({**target, "expires_at": 1})
 
     async def adapter(self, handler):
-        adapter = DingTalkChannelAdapter({"client_id": "id", "client_secret": "secret"})
+        adapter = DingTalkAdapter({"client_id": "id", "client_secret": "secret"})
+        adapter.set_state("connected")
         await adapter.http.aclose()
         adapter.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         adapter.api.http = adapter.http
         adapter.client.get_access_token = Mock(return_value="private-token")
-        self.addAsyncCleanup(adapter.close)
+        self.addAsyncCleanup(adapter.http.aclose)
         return adapter
 
     async def test_rich_session_reply_and_strict_failure(self):
@@ -376,7 +127,7 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
 
         adapter = await self.adapter(transport)
         await adapter.send(
-            OutgoingMessage(
+            Message(
                 "id",
                 "conversation",
                 "",
@@ -395,32 +146,30 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
 
         def transport(request):
             requests.append(request)
-            return httpx.Response(200, json={"media_id": "uploaded", "outTrackId": "card"})
+            return httpx.Response(
+                200, json={"media_id": "uploaded", "success": True, "processQueryKey": "receipt"}
+            )
 
         adapter = await self.adapter(transport)
-        await adapter.execute(
-            "api.request",
-            {
-                "method": "POST",
-                "path": "/v1.0/card/instances",
-                "body": {"cardTemplateId": "template"},
-            },
+        await adapter.call(
+            "dingtalk.card.create",
+            {"cardTemplateId": "template", "outTrackId": "card", "cardData": {"cardParamMap": {}}},
         )
         self.assertEqual(requests[-1].url.host, "api.dingtalk.com")
         self.assertEqual(requests[-1].headers["x-acs-dingtalk-access-token"], "private-token")
         await adapter.send(
-            OutgoingMessage(
+            Message(
                 "id", "conversation", "hello", target={"kind": "group", "conversation_id": "group"}
             )
         )
         self.assertEqual(requests[-1].url.path, "/v1.0/robot/groupMessages/send")
         await adapter.send(
-            OutgoingMessage(
+            Message(
                 "id", "conversation", "hello", target={"kind": "private", "user_ids": ["staff"]}
             )
         )
         self.assertEqual(requests[-1].url.path, "/v1.0/robot/oToMessages/batchSend")
-        await adapter.execute(
+        await adapter.call(
             "media.upload", {"type": "image", "filename": "image.png", "content_base64": "aW1hZ2U="}
         )
         self.assertEqual(requests[-1].url.host, "oapi.dingtalk.com")
@@ -437,10 +186,20 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
             {"path": "/safe", "headers": {"Authorization": "override"}},
         ):
             with self.assertRaises(OperationRejected):
-                await adapter.execute("api.request", parameters)
+                await adapter.call(
+                    "dingtalk.card.create",
+                    {
+                        "cardTemplateId": "template",
+                        "outTrackId": "card",
+                        "cardData": {"cardParamMap": {}},
+                        **parameters,
+                    },
+                )
+        with self.assertRaises(OperationRejected):
+            await adapter.call("api.request", {})
         transport.assert_not_called()
         with self.assertRaises(OperationRejected):
-            await adapter.execute(
+            await adapter.call(
                 "media.upload", {"type": "file", "filename": "../private", "content_base64": "eA=="}
             )
 
@@ -484,7 +243,8 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
 
         adapter.client.start = start
         adapter.client.stop = AsyncMock()
-        task = asyncio.create_task(adapter.connect(AsyncMock()))
+        adapter.set_state("stopped")
+        task = asyncio.create_task(adapter.run(AsyncMock()))
         await connected.wait()
         await asyncio.wait_for(adapter.ready.wait(), 1)
         task.cancel()
@@ -493,7 +253,7 @@ class DingTalkIntegration(unittest.IsolatedAsyncioTestCase):
         adapter.client.stop.assert_awaited()
 
 
-class MemoryChannel(ChannelAdapter):
+class MemoryChannel(Adapter):
     def __init__(self, action=None):
         super().__init__()
         self.action = action or AsyncMock(return_value={"ok": True})
@@ -501,19 +261,31 @@ class MemoryChannel(ChannelAdapter):
 
     @property
     def capabilities(self):
-        return {"operations": {"native": {}}}
+        return Capabilities(
+            implementation="memory",
+            version="1",
+            conversations=["private", "group"],
+            events=["message"],
+            message_parts=["text"],
+            operations={
+                "native": Operation(parameters={"type": "object"}, result={"type": "object"})
+            },
+        )
 
-    async def connect(self, sink):
-        await asyncio.Event().wait()
+    async def run(self, sink):
+        self.sink = sink
+        self.set_state("connected")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.sink = None
+            self.set_state("stopped")
 
     async def send(self, message):
-        return {"id": "receipt"}
+        return Receipt(value={"id": "receipt"})
 
-    async def execute(self, operation, parameters):
-        return await self.action(operation, parameters)
-
-    async def close(self):
-        self.ready.clear()
+    async def call(self, operation, parameters):
+        return Result(operation=operation, value=await self.action(operation, parameters))
 
 
 @unittest.skipUnless(
@@ -553,6 +325,7 @@ class GatewayPersistence(unittest.IsolatedAsyncioTestCase):
             self.channel = ChannelConfiguration(
                 owner_id=self.user.id,
                 name="test",
+                capabilities=MemoryChannel().capabilities.model_dump(mode="json"),
                 agent_id=agent.id,
                 adapter="qq",
                 encrypted_config=self.cipher.encrypt({}),
@@ -574,7 +347,7 @@ class GatewayPersistence(unittest.IsolatedAsyncioTestCase):
         self.folder.cleanup()
 
     def message(self, message_id="message", conversation="group:room", scope="group"):
-        return ChannelEvent(
+        return Event(
             message_id,
             "message.text",
             "person",
@@ -629,7 +402,7 @@ class GatewayPersistence(unittest.IsolatedAsyncioTestCase):
                 db,
                 self.cipher,
                 self.channel.id,
-                ChannelEvent("notice", "GROUP_JOIN_REQUEST", data={"role": "owner"}),
+                Event("notice", "GROUP_JOIN_REQUEST", data={"role": "owner"}),
             )
             receive(
                 db,
@@ -691,7 +464,10 @@ class GatewayPersistence(unittest.IsolatedAsyncioTestCase):
         await self.run_operations(adapter)
         completed = await self.wait_operation(row.id)
         self.assertEqual(completed.status, "succeeded")
-        self.assertEqual(self.cipher.decrypt(completed.encrypted_result), {"value": {"ok": True}})
+        self.assertEqual(
+            self.cipher.decrypt(completed.encrypted_result),
+            {"value": {"operation": "native", "value": {"ok": True}}},
+        )
         adapter.action.assert_awaited_once()
 
     async def test_native_operation_revalidates_admin_before_side_effect(self):

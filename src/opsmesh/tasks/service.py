@@ -2,12 +2,12 @@ from dataclasses import asdict
 from importlib.metadata import version
 from typing import Any
 
-from opsmesh_sdk import InvocationSource, UserIdentity
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.service import snapshot, usable
 from opsmesh.catalog.service import get as get_publication
+from opsmesh.contracts import InvocationSource, UserIdentity
 from opsmesh.infra.database import now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.sessions.service import bind_session, release_session
@@ -160,7 +160,7 @@ def cancel(db: Session, cipher: SecretCipher, user: UserIdentity, task_id: str) 
     changed = row.status not in TERMINAL and not row.cancel_requested
     if row.status not in TERMINAL:
         row.cancel_requested = True
-    if row.status in {"queued", "waiting_input"}:
+    if row.status in {"queued", "waiting_input", "waiting_child"}:
         row.status, row.finished_at = "cancelled", now()
         release_session(db, row.id, row.session_id)
         db.execute(
@@ -181,7 +181,7 @@ def cancel(db: Session, cipher: SecretCipher, user: UserIdentity, task_id: str) 
         for child in children:
             if child.status not in TERMINAL and not child.cancel_requested:
                 child.cancel_requested = True
-                if child.status in {"queued", "waiting_input"}:
+                if child.status in {"queued", "waiting_input", "waiting_child"}:
                     child.status, child.finished_at = "cancelled", now()
                     release_session(db, child.id, child.session_id)
                     db.execute(

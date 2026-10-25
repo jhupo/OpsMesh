@@ -98,7 +98,7 @@ class SandboxFiles:
         target = self.path(path)
         if len(content) > self.limit:
             raise ValueError("File exceeds the upload limit")
-        self.storage.check_write(self.session_id, len(content))
+        await self.storage.check_write(self.session_id, len(content))
         await self.live.mkdir(target.parent, parents=True)
         await self.live.write(target, io.BytesIO(content))
 

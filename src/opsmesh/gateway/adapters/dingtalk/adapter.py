@@ -5,17 +5,31 @@ from typing import Any
 
 import dingtalk_stream
 import httpx
-from opsmesh_sdk.channels import ChannelAdapter, EventSink, OperationRejected, OutgoingMessage
 from pydantic import ValidationError
 
+from opsmesh.gateway.adapters.errors import OperationRejected
+from opsmesh.gateway.adapters.schemas import (
+    Capabilities,
+    EventSink,
+    EventType,
+    Message,
+    Operation,
+    Receipt,
+    Result,
+)
+
+from ..base import Adapter
 from ..schemas import SendMessageParameters
-from .api import DingTalkAPI
+from .api import DingTalkAPI, MediaUpload
 from .config import DingTalkConfig
 from .handlers import register
 from .messages import session_url, webhook_payload
+from .schemas import CARD_OPERATIONS, CardResponse, CreateCard, DeliverCard
 
 
-class DingTalkChannelAdapter(ChannelAdapter):
+class DingTalkAdapter(Adapter):
+    name = "dingtalk"
+
     def __init__(self, config: dict[str, Any]):
         super().__init__()
         self.config = DingTalkConfig.model_validate(config)
@@ -29,57 +43,127 @@ class DingTalkChannelAdapter(ChannelAdapter):
         self.api = DingTalkAPI(self.client, self.http)
 
     @property
-    def capabilities(self) -> dict[str, Any]:
-        return {
-            "sdk": "dingtalk-stream",
-            "version": "0.24.4b1",
-            "conversations": ["private", "group"],
-            "events": ["robot", "delegate", "subscription", "card", "graph"],
-            "enabled_callbacks": {
-                "subscription": self.config.subscribe_events,
-                "card": self.config.card_callbacks,
-                "graph": self.config.graph_callbacks,
-            },
-            "operations": {
-                "message.send": {"parameters": ["target", "text", "content"]},
-                "api.request": {
-                    "parameters": ["method", "path", "api", "query", "body"],
-                    "hosts": ["api.dingtalk.com", "oapi.dingtalk.com"],
+    def capabilities(self) -> Capabilities:
+        callbacks = ["robot", "delegate"]
+        events = [EventType.MESSAGE_CREATED.value]
+        if self.config.subscribe_events:
+            callbacks.append("subscription")
+        if self.config.card_callbacks:
+            callbacks.append("card")
+            events.append(EventType.INTERACTION_CREATED.value)
+        if self.config.graph_callbacks:
+            callbacks.append("graph")
+        if self.config.subscribe_events or self.config.graph_callbacks:
+            events.append(EventType.PLATFORM_EVENT.value)
+        return Capabilities(
+            implementation="dingtalk-stream",
+            version="0.24.4b1",
+            conversations=["private", "group"],
+            events=events,
+            message_parts=[
+                "text",
+                "image",
+                "file",
+                "audio",
+                "video",
+                "markdown",
+                "link",
+                "mention",
+                "platform",
+            ],
+            operations={
+                "message.send": Operation(
+                    parameters=SendMessageParameters.model_json_schema(),
+                    result=Receipt.model_json_schema(),
+                ),
+                "media.upload": Operation(
+                    parameters=MediaUpload.model_json_schema(),
+                    result={
+                        "type": "object",
+                        "required": ["media_id"],
+                        "properties": {"media_id": {"type": "string"}},
+                    },
+                ),
+                **{
+                    name: Operation(
+                        parameters=model.model_json_schema(),
+                        result=CardResponse.model_json_schema(),
+                    )
+                    for name, (_, _, model) in CARD_OPERATIONS.items()
                 },
-                "media.upload": {"parameters": ["type", "filename", "content_base64"]},
             },
-            "cards": {
-                "create": "POST /v1.0/card/instances",
-                "deliver": "POST /v1.0/card/instances/deliver",
-                "update": "PUT /v1.0/card/instances",
-                "stream": "PUT /v1.0/card/streaming",
+            configuration={
+                "callbacks": callbacks,
+                "inbound_message_parts": [
+                    "text",
+                    "image",
+                    "file",
+                    "audio",
+                    "video",
+                    "mention",
+                    "link",
+                    "platform",
+                ],
+                "native_inbound_message_types": [
+                    "text",
+                    "picture",
+                    "richText",
+                    "file",
+                    "audio",
+                    "video",
+                ],
+                "proactive_message_parts": ["text", "markdown"],
+                "session_message_parts": [
+                    "text",
+                    "markdown",
+                    "link",
+                    "actionCard",
+                    "feedCard",
+                    "image",
+                ],
             },
-        }
+        )
 
-    async def connect(self, sink: EventSink) -> None:
-        register(self.client, self.config, sink, self.transport_logger)
-        connection = asyncio.create_task(self.client.start())
+    async def run(self, sink: EventSink) -> None:
+        self.sink = sink
+        self.set_state("connecting")
+        connection: asyncio.Task[None] | None = None
         try:
+            register(self.client, self.config, self.publish, self.transport_logger)
+            connection = asyncio.create_task(self.client.start())
             while not connection.done():
-                if self.client.websocket is not None:
-                    self.ready.set()
-                else:
-                    self.ready.clear()
+                self.set_state("connected" if self.client.websocket is not None else "reconnecting")
                 await asyncio.sleep(0.1)
             await connection
+            raise RuntimeError("DingTalk transport stopped")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.set_state("failed")
+            raise
         finally:
             self.ready.clear()
-            await self.client.stop()
-            connection.cancel()
-            await asyncio.gather(connection, return_exceptions=True)
+            try:
+                await self.client.stop()
+            finally:
+                if connection is not None:
+                    connection.cancel()
+                    await asyncio.gather(connection, return_exceptions=True)
+                try:
+                    await self.http.aclose()
+                finally:
+                    self.sink = None
+                    if self.state != "failed":
+                        self.set_state("stopped")
 
-    async def send(self, message: OutgoingMessage) -> Any:
+    async def send(self, message: Message) -> Receipt:
+        self.require_ready()
         target = message.target or {}
         if target.get("kind") == "session":
             response = await self.http.post(
                 session_url(target), json=webhook_payload(message.text, message.content)
             )
-            return self.api.response(response, webhook=True)
+            return Receipt(value=self.api.response(response, webhook=True))
         robot_code = self.config.robot_code or self.config.client_id
         if message.content:
             if len(message.content) != 1 or message.content[0].get("type") != "markdown":
@@ -104,22 +188,44 @@ class DingTalkChannelAdapter(ChannelAdapter):
             body["openConversationId"] = target["conversation_id"]
         else:
             raise OperationRejected("invalid_dingtalk_target")
-        return await self.api.request({"method": "POST", "path": path, "body": body})
+        data = await self.api.request("POST", path, body)
+        if not isinstance(data.get("processQueryKey"), str) or not data["processQueryKey"]:
+            raise ValueError("DingTalk send returned no process query key")
+        return Receipt(value=data)
 
-    async def execute(self, operation: str, parameters: dict[str, Any]) -> Any:
-        if operation == "api.request":
-            return await self.api.request(parameters)
+    async def call(self, operation: str, parameters: dict[str, Any]) -> Result:
+        if operation not in self.capabilities.operations:
+            raise OperationRejected("unknown_dingtalk_operation")
+        self.require_ready()
         if operation == "media.upload":
-            return await self.api.upload(parameters)
-        if operation == "message.send":
+            value = await self.api.upload(parameters)
+        elif operation == "message.send":
             try:
                 message = SendMessageParameters.model_validate(parameters).message()
             except ValidationError as exc:
                 raise OperationRejected("invalid_message_parameters") from exc
-            return await self.send(message)
-        raise OperationRejected("unknown_dingtalk_operation")
-
-    async def close(self) -> None:
-        self.ready.clear()
-        await self.client.stop()
-        await self.http.aclose()
+            value = (await self.send(message)).model_dump(mode="json")
+        else:
+            method, path, model = CARD_OPERATIONS[operation]
+            try:
+                request = model.model_validate(parameters)
+                if (
+                    isinstance(request, CreateCard)
+                    and request.callbackType == "HTTP"
+                    and not request.callbackRouteKey
+                ):
+                    raise ValueError("HTTP cards require a callback route key")
+                if isinstance(request, DeliverCard):
+                    group = request.imGroupOpenDeliverModel is not None
+                    robot = request.imRobotOpenDeliverModel is not None
+                    if group == robot or not request.openSpaceId.startswith(
+                        "dtv1.card//IM_GROUP." if group else "dtv1.card//IM_ROBOT."
+                    ):
+                        raise ValueError("Card delivery requires one matching destination")
+            except (ValidationError, ValueError) as exc:
+                raise OperationRejected("invalid_dingtalk_parameters") from exc
+            value = await self.api.request(
+                method, path, request.model_dump(mode="json", exclude_none=True)
+            )
+            CardResponse.model_validate(value)
+        return Result(operation=operation, value=value)

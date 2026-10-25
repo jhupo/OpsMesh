@@ -90,10 +90,11 @@ jobs:
         with:
           version: '0.13.5'
           python-version: '3.13'
-      - name: Build host and independent SDK distributions
+      - name: Build host and generated SDK distributions
         run: |
           uv build --out-dir release
-          uv build sdk/python --out-dir release
+          uv run --no-project --with ruff==0.15.13 python scripts/release_assets.py sdk-source --output "$RUNNER_TEMP/opsmesh-sdk-source"
+          uv build "$RUNNER_TEMP/opsmesh-sdk-source" --out-dir "$GITHUB_WORKSPACE/release"
           uvx --from twine twine check release/*.whl release/*.tar.gz
           uv run --no-project python scripts/release_assets.py sources --output release
       - name: Generate locked source SBOM

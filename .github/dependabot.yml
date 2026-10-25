@@ -11,10 +11,6 @@ updates:
     groups:
       python-runtime:
         patterns: ['*']
-  - package-ecosystem: pip
-    directory: /sdk/python
-    schedule:
-      interval: weekly
   - package-ecosystem: docker
     directory: /deploy
     schedule:

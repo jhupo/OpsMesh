@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 from agents import gen_trace_id
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from opsmesh.infra.database import new_id, now
@@ -18,6 +18,7 @@ from opsmesh.shared.errors import ConflictError
 
 from ..events import status
 from ..models import Task, TaskAttempt
+from ..service import TERMINAL
 
 
 class TaskLeaseLost(ConflictError):
@@ -38,17 +39,29 @@ class TaskLeases:
                 .where(
                     running.owner_id == Task.owner_id,
                     running.status == "running",
-                    running.parent_id.is_(None),
+                    or_(
+                        and_(Task.parent_id.is_(None), running.parent_id.is_(None)),
+                        and_(Task.parent_id.is_not(None), running.parent_id.is_not(None)),
+                    ),
                 )
                 .correlate(Task)
                 .scalar_subquery()
             )
+            parent = aliased(Task)
             tasks = db.scalars(
                 select(Task)
                 .outerjoin(UserQuota, UserQuota.user_id == Task.owner_id)
                 .where(
                     Task.status == "queued",
-                    Task.parent_id.is_(None),
+                    or_(
+                        Task.parent_id.is_(None),
+                        select(parent.id)
+                        .where(
+                            parent.id == Task.parent_id,
+                            parent.status == "waiting_child",
+                        )
+                        .exists(),
+                    ),
                     running_count < func.coalesce(UserQuota.concurrent_tasks, 4),
                     or_(
                         Task.session_id.is_(None),
@@ -111,7 +124,9 @@ class TaskLeases:
                         .where(
                             Task.owner_id == task.owner_id,
                             Task.status == "running",
-                            Task.parent_id.is_(None),
+                            Task.parent_id.is_(None)
+                            if task.parent_id is None
+                            else Task.parent_id.is_not(None),
                         )
                     )
                     or 0
@@ -138,6 +153,7 @@ class TaskLeases:
             conversation.active_task_id = task.id
         task.status, task.attempt_count = "running", task.attempt_count + 1
         task.error_code, task.finished_at = None, None
+        task.waiting_child_id = None
         attempt = TaskAttempt(
             task_id=task.id,
             number=task.attempt_count,
@@ -149,6 +165,23 @@ class TaskLeases:
         db.flush()
         status(db, self.cipher, task)
         return task.id, attempt.id
+
+    def wake_parents(self) -> None:
+        with self.sessions.begin() as db:
+            child = aliased(Task)
+            parents = db.scalars(
+                select(Task)
+                .join(child, child.id == Task.waiting_child_id)
+                .where(Task.status == "waiting_child", child.status.in_(TERMINAL))
+                .order_by(Task.created_at)
+                .with_for_update(skip_locked=True, of=Task)
+                .limit(100)
+            )
+            for parent in parents:
+                # This queues the saved continuation; invoke validates its SDK and session.
+                parent.status = "queued"
+                parent.waiting_child_id = None
+                status(db, self.cipher, parent)
 
     def active(self, db: Session, task_id: str, attempt_id: str, *, cleanup: bool = False) -> Task:
         task = db.get(Task, task_id, with_for_update=True)

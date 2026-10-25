@@ -10,7 +10,8 @@ from dingtalk_stream import (
     GraphMessage,
     GraphRequest,
 )
-from opsmesh_sdk.channels import EventSink
+
+from opsmesh.gateway.adapters.schemas import EventSink
 
 from .config import DingTalkConfig
 from .events import callback, chatbot

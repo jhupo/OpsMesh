@@ -5,10 +5,11 @@ import json
 import logging
 from typing import Any
 
-from opsmesh_sdk.channels import ChannelAdapter, OperationRejected
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from opsmesh.gateway.adapters.base import Adapter
+from opsmesh.gateway.adapters.errors import OperationRejected
 from opsmesh.infra.database import now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.shared.errors import ConflictError, ForbiddenError, InvalidArgumentError, NotFoundError
@@ -59,6 +60,8 @@ def enqueue(
         ):
             raise ConflictError("Idempotency key was used for another operation")
         return existing
+    if operation not in channel.capabilities.get("operations", {}):
+        raise InvalidArgumentError("Operation is not declared by the channel catalogue")
     row = ChannelOperation(
         channel_id=channel_id,
         owner_id=owner_id,
@@ -75,7 +78,7 @@ async def execute_pending(
     sessions: sessionmaker,
     cipher: SecretCipher,
     channel_id: str,
-    adapter: ChannelAdapter,
+    adapter: Adapter,
     worker_id: str,
 ) -> None:
     while True:
@@ -111,6 +114,13 @@ async def execute_pending(
                         now(),
                     )
                     continue
+                if row.operation not in adapter.capabilities.operations:
+                    row.status, row.error_code, row.finished_at = (
+                        "failed",
+                        "unknown_channel_operation",
+                        now(),
+                    )
+                    continue
                 row.status, row.attempts = "running", row.attempts + 1
                 operation_id, operation, parameters = (
                     row.id,
@@ -123,10 +133,18 @@ async def execute_pending(
         result, error = None, None
         try:
             async with asyncio.timeout(60):
-                result = await adapter.execute(operation, parameters)
+                result = (await adapter.call(operation, parameters)).model_dump(mode="json")
             bounded_json(result)
             state = "succeeded"
         except asyncio.CancelledError:
+            with sessions.begin() as db:
+                row = db.get(ChannelOperation, operation_id, with_for_update=True)
+                if row is not None and row.status == "running":
+                    row.status, row.error_code, row.finished_at = (
+                        "uncertain",
+                        "operation_cancelled",
+                        now(),
+                    )
             raise
         except OperationRejected as exc:
             state, error = "failed", exc.code

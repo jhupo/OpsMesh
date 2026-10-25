@@ -14,7 +14,7 @@ def setup(ctx: PluginContext) -> None:
 
 `setup` 可以注册多个入口及资源，没有 `workflow` 资源类型。并行、顺序、转交、原生 Agent.as_tool 等组合方式都由插件选择。
 
-独立包见 [SDK 文档](../sdk/python/README.md)。普通用户通过目录发现和使用管理员安装包的公开贡献，也可以用已授权的贡献发布自己的配置版本。Python 代码依赖由管理员安装到宿主环境；不在 HTTP 安装请求内修改运行环境。
+独立包见 [SDK 分支文档](https://github.com/jhupo/OpsMesh/blob/sdk/README.md)。公开合同由框架 `opsmesh.contracts` 定义，框架不导入生成 SDK。独立 SDK 工程从当前合同生成运行绑定与类型声明；绑定使用同一个框架类型，SDK 源码、示例和开发检查在独立分支维护。离线打包和类型检查支持 Python 3.11.8+，插件运行需要匹配的 Python 3.12+ 宿主。普通用户通过目录发现和使用管理员安装包的公开贡献，也可以用已授权的贡献发布自己的配置版本。Python 代码依赖由管理员安装到宿主环境；不在 HTTP 安装请求内修改运行环境。
 
 ## 上下文
 
@@ -66,3 +66,7 @@ Run 完成、取消或 Worker 退出均不会让宿主自动删除用户目录�
 `InvocationContext.events` 提供 `async emit(event: str, data: Any) -> int`，返回任务事件 ID。名称使用小写字母、数字、点、下划线或短横线，以小写字母开头，最多 80 字符；数据必须能序列化为有限值 JSON。宿主添加 `plugin.` 前缀，持久加密后供任务调用者通过 SSE 接收。
 
 使用 `await context.events.emit("progress", {"step": 1})`。模型流由原生 Runner.run_streamed 生成，插件按需要聚合和发送文本增量，参见 examples/native_agent。不要逐 Token 提交独立数据库事务；应合并短时间窗口或一定字数。客户端断开 SSE 不会取消执行，取消仍通过任务取消接口。
+
+## 通道贡献
+
+`ctx.channel(name, factory)` 只注册工厂。Gateway Worker 调用工厂，校验返回值为 `opsmesh.gateway.adapters.base.Adapter`，并管理 run 生命周期。通道实现直接依赖匹配的宿主框架，实现 capabilities/run/send/call；传输模型与错误位于 gateway/adapters，SDK 不生成传输协议。任务使用 `context.channel.reply/request` 提交持久操作，不取得 SDK 客户端、连接或凭据。平台操作只允许已声明的目录，执行时再次复核管理员身份。

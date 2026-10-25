@@ -18,6 +18,14 @@ from ..models import Task
 from .leases import TaskLeases
 
 
+class ChildTaskPending(ConflictError):
+    code = "child_task_pending"
+
+    def __init__(self, child_id: str):
+        super().__init__(f"Child task is awaiting completion: {child_id}")
+        self.child_id = child_id
+
+
 class ChildTasks:
     def __init__(
         self,
@@ -52,7 +60,7 @@ class ChildTasks:
         key: str,
     ) -> Any:
         with self.leases.sessions.begin() as db:
-            self.leases.active(db, parent.id, parent_attempt_id)
+            current_parent = self.leases.active(db, parent.id, parent_attempt_id)
             if self._depth(db, parent) >= 12:
                 raise ConflictError("Nested agent depth exceeded")
             deduplication_key = f"child:{parent.id}:{key}"
@@ -67,11 +75,15 @@ class ChildTasks:
                     raise ConflictError("Child invocation key was reused for different input")
                 if child.status == "succeeded":
                     return self.cipher.decrypt(child.encrypted_result or "")
-                if (
-                    child.status not in {"interrupted", "failed", "timed_out"}
-                    or not child.checkpoint_id
-                ):
-                    raise ConflictError("Child task requires explicit recovery")
+                if child.status in {"waiting_input", "waiting_child", "queued", "running"}:
+                    self._pending(current_parent, child.id)
+                if child.status in {"failed", "interrupted", "timed_out"}:
+                    if child.checkpoint_id is None:
+                        raise ConflictError(
+                            f"Child task requires a checkpoint to recover: {child.id}"
+                        )
+                elif child.status != "succeeded":
+                    raise ConflictError(f"Child task requires explicit recovery: {child.id}")
             else:
                 child = Task(
                     owner_id=parent.owner_id,
@@ -120,8 +132,19 @@ class ChildTasks:
             child = db.get(Task, child_id)
             assert child is not None
             if child.status != "succeeded":
+                if child.status in {"waiting_input", "waiting_child", "queued", "running"}:
+                    current_parent = self.leases.active(db, parent.id, parent_attempt_id)
+                    self._pending(current_parent, child.id)
                 raise ConflictError(f"Child task ended with status {child.status}: {child.id}")
             return self.cipher.decrypt(child.encrypted_result or "")
+
+    @staticmethod
+    def _pending(parent: Task, child_id: str) -> None:
+        if parent.checkpoint_id is None:
+            raise ConflictError(
+                f"Save a parent checkpoint before calling an interactive child: {child_id}"
+            )
+        raise ChildTaskPending(child_id)
 
     def _depth(self, db: Session, task: Task) -> int:
         depth = 0

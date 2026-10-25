@@ -12,6 +12,7 @@ from opsmesh.infra.database import now
 from opsmesh.shared.errors import ConflictError, QuotaExceededError
 from opsmesh.users.service import identity
 
+from .counting import InputTokenCounter
 from .models import TokenBudget, TokenReservation, UserQuota
 
 
@@ -62,17 +63,19 @@ class MeteredModel(Model):
         task_id: str,
         reservation: int,
         authorize: Callable[[Session], None],
+        counter: InputTokenCounter,
         reasoning: Reasoning | None = None,
     ):
         self.inner, self.sessions = inner, sessions
         self.user_id, self.task_id, self.reservation = user_id, task_id, reservation
         self.authorize = authorize
+        self.counter = counter
         self.reasoning = reasoning
 
-    def _reserve(self) -> str:
+    def _reserve(self, amount: int) -> str:
         with self.sessions.begin() as db:
             self.authorize(db)
-            return reserve(db, self.user_id, self.task_id, self.reservation)
+            return reserve(db, self.user_id, self.task_id, amount)
 
     def _settle(self, reservation_id: str, actual: int) -> None:
         with self.sessions.begin() as db:
@@ -80,7 +83,7 @@ class MeteredModel(Model):
 
     async def get_response(self, *args: Any, **kwargs: Any) -> Any:
         args, kwargs = self._bound_output(args, kwargs)
-        reservation_id = self._reserve()
+        reservation_id = await self._prepare(args, kwargs)
         response = await self.inner.get_response(*args, **kwargs)
         if self._reported_total(response.raw_usage):
             self._settle(reservation_id, response.usage.total_tokens)
@@ -88,15 +91,36 @@ class MeteredModel(Model):
 
     async def stream_response(self, *args: Any, **kwargs: Any) -> Any:
         args, kwargs = self._bound_output(args, kwargs)
-        reservation_id = self._reserve()
+        reservation_id = await self._prepare(args, kwargs)
         async for event in self.inner.stream_response(*args, **kwargs):
             if (
                 event.type == "response.completed"
                 and event.response.usage is not None
                 and "total_tokens" in event.response.usage.model_fields_set
+                and type(event.response.usage.total_tokens) is int
+                and event.response.usage.total_tokens >= 0
             ):
                 self._settle(reservation_id, event.response.usage.total_tokens)
             yield event
+
+    async def _prepare(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+        with self.sessions.begin() as db:
+            self.authorize(db)
+        input_tokens = await self.counter.count(self.inner, args, kwargs)
+        settings = args[2] if len(args) > 2 else kwargs["model_settings"]
+        if settings.max_tokens is not None and (
+            type(settings.max_tokens) is not int or settings.max_tokens < 1
+        ):
+            raise ValueError("ModelSettings.max_tokens must be a positive integer")
+        max_tokens = settings.max_tokens
+        assert max_tokens is not None
+        return self._reserve(input_tokens + max_tokens)
+
+    async def close(self) -> None:
+        await self.inner.close()
+
+    async def _cleanup_on_run_end(self, owner: object) -> None:
+        await self.inner._cleanup_on_run_end(owner)
 
     @staticmethod
     def _reported_total(usage: Any) -> bool:
@@ -113,9 +137,16 @@ class MeteredModel(Model):
         self, args: tuple[Any, ...], kwargs: dict[str, Any]
     ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         settings = args[2] if len(args) > 2 else kwargs["model_settings"]
+        if {"max_tokens", "max_output_tokens", "max_completion_tokens"}.intersection(
+            (settings.extra_args or {}) | (settings.extra_body or {})
+        ):
+            raise ValueError("Set the output limit through ModelSettings.max_tokens")
         settings = replace(
             settings,
-            max_tokens=min(settings.max_tokens or self.reservation, self.reservation),
+            max_tokens=min(
+                self.reservation if settings.max_tokens is None else settings.max_tokens,
+                self.reservation,
+            ),
             reasoning=settings.reasoning or self.reasoning,
             preserve_raw_usage=True,
             include_usage=True,
@@ -136,12 +167,14 @@ class MeteredProvider(ModelProvider):
         task_id: str,
         reservation: int,
         authorize: Callable[[Session], None],
+        counter: InputTokenCounter,
         default_model: str | None = None,
         reasoning: Reasoning | None = None,
     ):
         self.inner, self.sessions = inner, sessions
         self.user_id, self.task_id, self.reservation = user_id, task_id, reservation
         self.authorize = authorize
+        self.counter = counter
         self.default_model, self.reasoning = default_model, reasoning
 
     def get_model(self, model_name: str | None) -> Model:
@@ -155,6 +188,7 @@ class MeteredProvider(ModelProvider):
             self.task_id,
             self.reservation,
             self.authorize,
+            self.counter,
             self.reasoning,
         )
 

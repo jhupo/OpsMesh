@@ -7,9 +7,9 @@ from typing import Any
 
 from agents import FunctionTool, RunContextWrapper
 from agents.tool_context import ToolContext
-from opsmesh_sdk import InvocationContext
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.contracts import InvocationContext
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.registry import PluginRegistry
