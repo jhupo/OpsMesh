@@ -135,8 +135,8 @@ jobs:
       - name: Prepare architecture-specific executable bundles
         run: |
           mkdir -p dist/linux-amd64 dist/linux-arm64
-          tar -xzf release/opsmesh-v*-linux-x86_64.tar.gz -C dist/linux-amd64
-          tar -xzf release/opsmesh-v*-linux-aarch64.tar.gz -C dist/linux-arm64
+          tar -xzf release/dist/opsmesh-v*-linux-x86_64.tar.gz -C dist/linux-amd64
+          tar -xzf release/dist/opsmesh-v*-linux-aarch64.tar.gz -C dist/linux-arm64
       - id: image
         env:
           REPOSITORY: ${{ github.repository }}
