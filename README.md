@@ -194,15 +194,13 @@ SSE 按任务调用者/管理员权限访问，并在每次读取时重新验证
 
 ## 独立 SDK
 
-公开扩展合同由框架的 `src/opsmesh/contracts` 唯一定义。框架不导入、不依赖自己生成的 `opsmesh-sdk`。SDK 只提供插件绑定、类型声明与 ZIP 打包 CLI，不包含业务 API 客户端；运行时绑定导出框架中的同一个类型，避免通道适配器、异常与暂停结果出现两套身份。
-
-SDK 工程仍在独立的 `sdk` 分支。`tool.opsmesh.sdk` 固定的是发布工具输入，不是运行依赖。发布流程取出该工程，再从当前框架生成绑定和类型声明；框架源码包不混入 SDK 工程。Python 3.11.8+ 可离线打包和做类型检查，插件运行在匹配的 Python 3.12+ 框架内。可执行部署包已包含生成的绑定；Python 包部署需要为插件安装同版本的生成 SDK wheel：
+插件开发和打包使用独立 SDK，文档见 [SDK 分支](https://github.com/jhupo/OpsMesh/tree/sdk)。Python 3.11.8+ 可用于 SDK 打包和类型检查；运行插件的 OpsMesh 宿主需要 Python 3.12+。生产部署请安装与宿主版本一致的 SDK wheel：
 
 ```sh
 pip install ./opsmesh_sdk-0.2.0-py3-none-any.whl
 ```
 
-开发中使用当前框架生成 SDK，不能直接把尚未同步生成物的旧分支当成匹配运行合同：
+需要从当前源码生成 SDK 时：
 
 ```sh
 uv run --extra build python scripts/release_assets.py sdk-source --output ../opsmesh-sdk
@@ -211,7 +209,7 @@ uv build ../opsmesh-sdk --out-dir ../opsmesh-sdk-dist
 uv run --extra build python scripts/generate_sdk.py ../opsmesh-sdk
 ```
 
-生成器同时输出 `.pyi` 与 `_contracts.json` 来源摘要；清单校验模型按同一源定义生成，以支持不安装服务器的 ZIP 打包。生产使用匹配 Release 的 wheel 并验证 SHA-256。目前未配置 PyPI 发布，不能假定 `pip install opsmesh-sdk` 已可从 PyPI 获取。独立工程见 [SDK 分支](https://github.com/jhupo/OpsMesh/tree/sdk)。
+Release 会同时提供 SDK wheel、源码包和校验清单。目前未配置 PyPI 发布，请使用对应 Release 中的文件并按发布说明校验 SHA-256。
 
 ## 参与与许可
 

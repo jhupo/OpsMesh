@@ -73,7 +73,7 @@ sudo -u opsmesh /opt/opsmesh/current/bin/opsmesh plugins import /var/lib/opsmesh
 sudo -u opsmesh /opt/opsmesh/current/bin/opsmesh plugins import /var/lib/opsmesh/another.zip --owner-id USER_ID
 ```
 
-也可使用鉴权 HTTP 上传接口。插件 SDK 及打包 CLI 用于开发端，不是业务 API 客户端。框架不依赖生成 SDK；可执行发布包另行收集与框架合同匹配的插件绑定。Python 包部署需要为插件安装匹配的生成 SDK wheel。发布包包含锁定的宿主依赖，插件 ZIP 不自动安装任意 Python 依赖；需要额外库的插件应先在构建环境加入依赖并重新构建运行包。
+也可使用鉴权 HTTP 上传接口。插件开发和打包使用独立 SDK；Python 包部署时请为插件安装与宿主版本匹配的 SDK wheel。发布包包含锁定的宿主依赖，插件 ZIP 不自动安装任意 Python 依赖；需要额外库的插件应先在构建环境加入依赖并重新构建运行包。
 
 ## 构建与自动发布
 
@@ -86,7 +86,7 @@ uv run --no-sync python scripts/build_release.py --tag v0.2.0
 
 `dist/opsmesh` 是展开后的运行包；同目录生成压缩包和校验文件。构建脚本拒绝覆盖已有产物，不运行服务或测试。PyInstaller 不跨平台编译；需要分别在 x86_64、aarch64 上构建。
 
-`.github/workflows/ci.yml` 执行格式、lint、类型、框架不依赖 SDK 的导入边界检查；独立的 SDK 合同作业在 Python 3.11/3.13 下生成、静态检查和打包。`security.yml` 执行 CodeQL、锁定运行依赖审计、源码密钥与配置扫描。标签发布由 `release.yml` 在上述门禁通过后构建双架构可执行包、宿主与 SDK wheel/sdist、源码 tar.gz/ZIP、安装脚本、SBOM、安全报告和校验清单；生成 GHCR 多架构镜像，逐架构扫描通过后提升版本/minor/latest 标签并发布 Release。构建来源使用 GitHub artifact attestations 签发。手动触发仅构建 Actions 产物。
+`.github/workflows/ci.yml` 执行格式、lint、类型和回归检查；SDK 作业在 Python 3.11/3.13 下完成静态检查和打包。`security.yml` 执行 CodeQL、依赖审计、源码密钥与配置扫描。标签发布由 `release.yml` 在门禁通过后构建双架构可执行包、Python 包、源码包、SBOM、安全报告、校验清单和 GHCR 多架构镜像，随后发布 GitHub Release。手动触发仅构建 Actions 产物。
 
 CI 的独立数据库回归作业会执行测试；本地测试、模型调用及真实服务验收仍需明确授权，本轮没有执行。工作流不调用模型或真实通道。静态扫描或打包成功不能替代真实部署验证。新标签必须与两个 `pyproject.toml` 版本及 `CHANGELOG.md` 匹配，CI 不会自动提交、打标签或推送 SDK 分支。
 

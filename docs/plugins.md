@@ -14,7 +14,7 @@ def setup(ctx: PluginContext) -> None:
 
 `setup` 可以注册多个入口及资源，没有 `workflow` 资源类型。并行、顺序、转交、原生 Agent.as_tool 等组合方式都由插件选择。
 
-独立包见 [SDK 分支文档](https://github.com/jhupo/OpsMesh/blob/sdk/README.md)。公开合同由框架 `opsmesh.contracts` 定义，框架不导入生成 SDK。独立 SDK 工程从当前合同生成运行绑定与类型声明；绑定使用同一个框架类型，SDK 源码、示例和开发检查在独立分支维护。离线打包和类型检查支持 Python 3.11.8+，插件运行需要匹配的 Python 3.12+ 宿主。普通用户通过目录发现和使用管理员安装包的公开贡献，也可以用已授权的贡献发布自己的配置版本。Python 代码依赖由管理员安装到宿主环境；不在 HTTP 安装请求内修改运行环境。
+独立 SDK 的安装和开发说明见 [SDK 分支文档](https://github.com/jhupo/OpsMesh/blob/sdk/README.md)。SDK 打包和类型检查支持 Python 3.11.8+，运行插件需要匹配的 Python 3.12+ 宿主。普通用户通过目录发现和使用管理员安装包的公开贡献，也可以用已授权的贡献发布自己的配置版本。Python 代码依赖由管理员安装到宿主环境；不在 HTTP 安装请求内修改运行环境。
 
 ## 上下文
 
