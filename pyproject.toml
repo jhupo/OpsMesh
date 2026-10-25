@@ -21,8 +21,8 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "openai-agents==0.22.3", "openai==3.28.0",
-  "fastapi>=0.136,<0.137", "uvicorn>=0.34,<1", "sqlalchemy==2.0.49",
+  "openai-agents==0.22.3", "openai==3.37.0",
+  "fastapi>=0.136,<0.162", "uvicorn>=0.34,<1", "sqlalchemy==2.1.6",
   "psycopg[binary]>=3.3,<4", "alembic>=1.18,<2", "pydantic-settings>=2.12,<3",
   "cryptography>=50.0.2,<51", "httpx>=0.28,<0.29", "PyYAML>=6,<7",
   "croniter>=6,<7", "python-multipart>=0.0.20", "qq-botpy==1.2.1",
@@ -31,9 +31,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff==0.15.13", "mypy==1.20.2", "types-PyYAML", "types-croniter", "import-linter>=2,<3"]
+dev = ["ruff==0.17.2", "mypy==2.4.0", "types-PyYAML", "types-croniter", "import-linter>=2,<3"]
 sandbox = ["openai-agents[docker]==0.22.3"]
-build = ["pyinstaller>=6.16,<7", "ruff==0.15.13"]
+build = ["pyinstaller>=6.16,<7", "ruff==0.17.2"]
 
 [project.scripts]
 opsmesh = "opsmesh.bootstrap.cli:entrypoint"
