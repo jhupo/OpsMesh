@@ -52,7 +52,7 @@ QQ 官方 WebSocket 回调和钉钉回调都在宿主 sink 成功后完成事件
 
 传输值、错误和 Adapter 位于 gateway 内部，不再生成 contracts.channels 或 SDK 传输协议。通道插件工厂直接返回匹配宿主的 Adapter；setup(ctx) 只声明工厂，连接由 Worker 管理。任务仍通过 opsmesh.contracts.gateway.Channel 的 reply/request 提交持久操作，不获得连接或凭据。
 
-其他公开扩展合同由 opsmesh.contracts 拥有，框架不导入生成 SDK。SDK 工程在独立 sdk 分支维护，发布阶段从固定输入生成运行绑定与类型声明。生成器在普通开发目录遇到已移除合同的残留文件时拒绝覆盖，发行工具只在刚创建并验证的 staging checkout 中清理这些文件。
+插件开发请使用独立的 [SDK](https://github.com/jhupo/OpsMesh/tree/sdk)。SDK 版本必须与宿主 Release 匹配；发布流程会生成对应的运行绑定和类型声明。
 
 ## 第三方来源与验证
 
