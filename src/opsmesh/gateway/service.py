@@ -1,11 +1,11 @@
 from dataclasses import asdict
 from typing import Any
 
-from opsmesh_sdk import InvocationSource
-from opsmesh_sdk.channels import ChannelEvent
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import InvocationSource
+from opsmesh.gateway.adapters.schemas import Event
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.shared.errors import DomainError
 from opsmesh.tasks.service import submit
@@ -15,9 +15,7 @@ from .models import ChannelConfiguration, ChannelEventRecord, ChannelIdentity, I
 from .operations import bounded_json
 
 
-def receive(
-    db: Session, cipher: SecretCipher, channel_id: str, message: ChannelEvent
-) -> str | None:
+def receive(db: Session, cipher: SecretCipher, channel_id: str, message: Event) -> str | None:
     channel = db.get(ChannelConfiguration, channel_id, with_for_update=True)
     if channel is None or not channel.enabled:
         return None

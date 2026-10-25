@@ -4,17 +4,18 @@ from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
-from opsmesh_sdk.channels import ChannelAdapter, ChannelEvent
 from sqlalchemy import select, update
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.gateway.adapters.base import Adapter
+from opsmesh.gateway.adapters.schemas import Event
 from opsmesh.infra.database import new_id, now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.registry import PluginRegistry
 
-from .adapters.dingtalk.adapter import DingTalkChannelAdapter
-from .adapters.qq.adapter import QQChannelAdapter
+from .adapters.dingtalk.adapter import DingTalkAdapter
+from .adapters.qq.adapter import QQAdapter
 from .delivery import deliver
 from .models import ChannelConfiguration, ChannelOperation, OutboundDelivery
 from .operations import execute_pending
@@ -34,7 +35,7 @@ class GatewayWorker:
     ):
         self.sessions, self.cipher, self.registry, self.root = sessions, cipher, registry, root
         self.lease_seconds, self.worker_id = lease_seconds, new_id()
-        self.connections: dict[str, tuple[ChannelAdapter, asyncio.Task[None], int]] = {}
+        self.connections: dict[str, tuple[Adapter, asyncio.Task[None], int]] = {}
 
     async def serve(self) -> None:
         try:
@@ -111,29 +112,29 @@ class GatewayWorker:
                     with self.sessions.begin() as db:
                         live = db.get(ChannelConfiguration, row.id, with_for_update=True)
                         if live is not None and live.worker_id == self.worker_id:
-                            live.capabilities = adapter.capabilities
+                            live.capabilities = adapter.capabilities.model_dump(mode="json")
                     task = asyncio.create_task(self.run_channel(row.id, adapter))
                     self.connections[row.id] = adapter, task, row.revision
                 except Exception:
                     logger.exception("gateway_adapter_load_failed")
 
-    def adapter(self, row: ChannelConfiguration) -> ChannelAdapter:
+    def adapter(self, row: ChannelConfiguration) -> Adapter:
         config = self.cipher.decrypt(row.encrypted_config)
         if row.plugin_id:
             with self.sessions.begin() as db:
                 plugin = load(db, self.root, self.registry, row.plugin_id)
                 adapter = plugin.channels[row.adapter](config)
-                if not isinstance(adapter, ChannelAdapter):
-                    raise TypeError("Channel factory must return ChannelAdapter")
+                if not isinstance(adapter, Adapter):
+                    raise TypeError("Channel factory must return Adapter")
                 return adapter
-        factories: dict[str, Callable[..., ChannelAdapter]] = {
-            "qq": QQChannelAdapter,
-            "dingtalk": DingTalkChannelAdapter,
+        factories: dict[str, Callable[..., Adapter]] = {
+            "qq": QQAdapter,
+            "dingtalk": DingTalkAdapter,
         }
         return factories[row.adapter](config)
 
-    async def run_channel(self, channel_id: str, adapter: ChannelAdapter) -> None:
-        async def sink(message: ChannelEvent) -> None:
+    async def run_channel(self, channel_id: str, adapter: Adapter) -> None:
+        async def sink(message: Event) -> None:
             with self.sessions.begin() as db:
                 row = db.get(ChannelConfiguration, channel_id, with_for_update=True)
                 if (
@@ -145,7 +146,7 @@ class GatewayWorker:
                     raise RuntimeError("Channel lease lost")
                 receive(db, self.cipher, channel_id, message)
 
-        connection = asyncio.create_task(adapter.connect(sink))
+        connection = asyncio.create_task(adapter.run(sink))
         sender = asyncio.create_task(
             deliver(self.sessions, self.cipher, channel_id, adapter, self.worker_id)
         )
@@ -163,11 +164,11 @@ class GatewayWorker:
         except Exception:
             logger.exception("gateway_channel_failed")
         finally:
-            connection.cancel()
             sender.cancel()
             operations.cancel()
-            await asyncio.gather(connection, sender, operations, return_exceptions=True)
-            await adapter.close()
+            await asyncio.gather(sender, operations, return_exceptions=True)
+            connection.cancel()
+            await asyncio.gather(connection, return_exceptions=True)
 
     async def stop(self, channel_id: str) -> None:
         connection = self.connections.pop(channel_id, None)

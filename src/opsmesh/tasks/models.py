@@ -15,6 +15,7 @@ class Task(Record, Base):
     session_revision: Mapped[int | None] = mapped_column()
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agent_instances.id"))
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
+    waiting_child_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
     schedule_id: Mapped[str | None] = mapped_column(String(36), index=True)
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSON)

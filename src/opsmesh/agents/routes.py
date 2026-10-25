@@ -1,12 +1,12 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from opsmesh_sdk import UserIdentity
-from opsmesh_sdk.manifest import PluginManifest
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from opsmesh.catalog.service import resolve
+from opsmesh.contracts import UserIdentity
+from opsmesh.contracts.manifest import PluginManifest
 from opsmesh.gateway.models import ChannelConfiguration
 from opsmesh.infra.database import now
 from opsmesh.plugins.models import Plugin

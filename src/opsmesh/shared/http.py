@@ -2,10 +2,10 @@ from collections.abc import Iterator
 from typing import Any
 
 from fastapi import Depends, Header, Request
-from opsmesh_sdk.identity import UserIdentity
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts.identity import UserIdentity
 from opsmesh.shared.errors import ForbiddenError
 from opsmesh.shared.models import AuditEvent
 from opsmesh.users.service import authenticate

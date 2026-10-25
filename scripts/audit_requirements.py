@@ -1,13 +1,24 @@
-"""Audit the metadata-only QQ fork under its unchanged upstream name/version."""
+"""Audit exported dependencies for the official QQ botpy SDK."""
 
 import argparse
-import tomllib
 from pathlib import Path
-from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-QQ_COMMIT = "e79e4a0830b55107752e706b2807d6651d29d463"
-QQ_REFERENCE = f"git+https://github.com/jhupo/OpsMesh.git@{QQ_COMMIT}"
+SDK = ROOT / "src/opsmesh/gateway/adapters/qq/SDK.json"
+
+
+def qq_sdk() -> dict[str, str]:
+    import json
+
+    source = json.loads(SDK.read_text(encoding="utf-8"))
+    if (
+        source.get("format") != 1
+        or source.get("name") != "qq-botpy"
+        or source.get("version") != "1.2.1"
+        or source.get("repository") != "https://github.com/tencent-connect/botpy"
+    ):
+        raise ValueError("Review the official QQ SDK identity before updating the audit source")
+    return source
 
 
 def main() -> None:
@@ -15,18 +26,19 @@ def main() -> None:
     parser.add_argument("exported", type=Path, help="uv export --no-hashes output")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    packages = tomllib.loads((ROOT / "uv.lock").read_text())["package"]
-    qq = next(package for package in packages if package["name"] == "nonebot-adapter-qq")
-    if qq["version"] != "1.7.3" or urlsplit(qq["source"]["git"]).fragment != QQ_COMMIT:
-        raise ValueError("Review the QQ source diff before updating its audit identity")
-    exported = args.exported.read_text()
-    requirement = f"nonebot-adapter-qq @ {QQ_REFERENCE}"
-    if exported.splitlines().count(requirement) != 1 or "--hash=" in exported:
-        raise ValueError("Expected the reviewed source pin in a hash-free uv export")
-    # Vulnerability databases identify this unmodified Python code by PyPI name/version.
-    # uv sync verifies the actual Git source pin; no dependency or advisory is skipped.
-    exported = exported.replace(requirement, "nonebot-adapter-qq==1.7.3")
-    args.output.write_text(f"# QQ source provenance: {QQ_REFERENCE}\n" + exported, encoding="utf-8")
+    source = qq_sdk()
+    exported = args.exported.read_text(encoding="utf-8")
+    lines = exported.splitlines()
+    if "nonebot2" in exported or "nonebot-adapter-qq" in exported:
+        raise ValueError("NoneBot dependencies must not be present in the QQ gateway")
+    if "qq-botpy==1.2.1" not in lines:
+        raise ValueError("The exported dependency set must pin qq-botpy==1.2.1")
+    if "--hash=" in exported or "git+" in exported:
+        raise ValueError("Expected hash-free registry dependencies")
+    args.output.write_text(
+        exported.rstrip() + f"\n# QQ SDK: {source['repository']}=={source['version']}\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

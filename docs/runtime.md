@@ -62,7 +62,7 @@ Session 的路径和 Manifest 默认布局放在 `sessions/layout.py`，创建�
 
 出站记录的 `pending → sending → delivered` 与第三方发送不是一个分布式事务。发送异常或 Worker 在中间退出后保留 `uncertain`。管理员显式重试可能导致重复发送，应先核对远端结果。框架不会把异常当成已送达。
 
-QQ 配置使用 `app_id`、`secret`，支持 WebSocket 或签名 Webhook、C2C、群、频道和频道私信。管理员可通过 SDK 原生 API 操作群成员、禁言及平台开放的其他能力；SDK 暴露方法不代表应用获得权限。钉钉使用 `client_id`、`client_secret`，由原生 Stream SDK 接收，回复和主动操作通过官方接口执行。完整配置及异步回调边界见 [网关说明](gateway.md)。
+QQ 配置使用 `app_id`、`secret` 和官方 `qq-botpy` 的 `intents`，通过官方 WebSocket 客户端接收 C2C、群、频道和频道私信事件。管理员可通过固定目录调用官方 `BotAPI` 方法；SDK 暴露方法不代表应用获得权限。钉钉使用 `client_id`、`client_secret`，由原生 Stream SDK 接收，回复和主动操作通过官方接口执行。完整配置及异步回调边界见 [网关说明](gateway.md)。
 
 通道编辑增加配置代次，Gateway Worker 释放旧连接后加载新配置。多个 Worker 用通道租约分配连接。用户绑定按外部用户 ID 管理，不按聊天正文、昵称或群角色推断平台身份。
 

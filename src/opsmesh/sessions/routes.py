@@ -2,11 +2,11 @@ import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from opsmesh_sdk import UserIdentity
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.service import snapshot, usable
+from opsmesh.contracts import UserIdentity
 from opsmesh.infra.database import now
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from opsmesh.shared.http import get_current_user, get_db_session, serialize_record

@@ -21,12 +21,11 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "opsmesh-sdk==0.2.0", "openai-agents==0.22.3", "openai==3.28.0",
+  "openai-agents==0.22.3", "openai==3.28.0",
   "fastapi>=0.136,<0.137", "uvicorn>=0.34,<1", "sqlalchemy==2.0.49",
   "psycopg[binary]>=3.3,<4", "alembic>=1.18,<2", "pydantic-settings>=2.12,<3",
   "cryptography>=50.0.2,<51", "httpx>=0.28,<0.29", "PyYAML>=6,<7",
-  "croniter>=6,<7", "python-multipart>=0.0.20", "websockets>=15,<17",
-  "nonebot-adapter-qq @ git+https://github.com/jhupo/OpsMesh.git@e79e4a0830b55107752e706b2807d6651d29d463", "nonebot2[fastapi,httpx,websockets]==2.5.0",
+  "croniter>=6,<7", "python-multipart>=0.0.20", "qq-botpy==1.2.1",
   "dingtalk-stream==0.24.4b1",
   "psutil>=7.2,<8",
 ]
@@ -34,7 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["ruff==0.15.13", "mypy==1.20.2", "types-PyYAML", "types-croniter", "import-linter>=2,<3"]
 sandbox = ["openai-agents[docker]==0.22.3"]
-build = ["pyinstaller>=6.16,<7"]
+build = ["pyinstaller>=6.16,<7", "ruff==0.15.13"]
 
 [project.scripts]
 opsmesh = "opsmesh.bootstrap.cli:entrypoint"
@@ -50,15 +49,13 @@ Changelog = "https://github.com/jhupo/OpsMesh/blob/master/CHANGELOG.md"
 [tool.hatch.build.targets.wheel]
 packages = ["src/opsmesh"]
 
-[tool.hatch.metadata]
-# The fixed QQ source changes only its cryptography upper bound; see docs/gateway.md.
-allow-direct-references = true
-
 [tool.hatch.build.targets.sdist]
-include = ["src/opsmesh", "sdk/python/src", "sdk/python/pyproject.toml", "sdk/python/README.md", "sdk/python/LICENSE", "sdk/python/AGENTS.md", "sdk/python/CONTRIBUTING.md", "sdk/python/SECURITY.md", "sdk/python/CHANGELOG.md", "sdk/python/.gitattributes", "sdk/python/examples", "sdk/python/.github", "sdk/python/.gitignore", "examples", "deploy", "scripts/build_release.py", "scripts/audit_requirements.py", "scripts/release_assets.py", "scripts/server_entry.py", ".github", ".agents", ".env.example", ".dockerignore", ".gitattributes", "README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "LICENSE", "docs", "pyproject.toml", "uv.lock"]
+include = ["src/opsmesh", "examples", "deploy", "scripts/build_release.py", "scripts/audit_requirements.py", "scripts/generate_sdk.py", "scripts/release_assets.py", "scripts/server_entry.py", ".github", ".agents", ".env.example", ".dockerignore", ".gitattributes", "README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "LICENSE", "docs", "pyproject.toml", "uv.lock"]
 
-[tool.uv.sources]
-opsmesh-sdk = { path = "sdk/python", editable = true }
+[tool.opsmesh.sdk]
+repository = "https://github.com/jhupo/OpsMesh.git"
+revision = "be3c2bc1f512cb688fe5e360ccedef306f809108"
+version = "0.2.0"
 
 [tool.ruff]
 target-version = "py312"
@@ -72,21 +69,43 @@ ignore = ["E501", "B008"]
 plugins = ["pydantic.mypy"]
 python_version = "3.12"
 platform = "linux"
-files = ["src", "sdk/python/src"]
+files = ["src"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["opsmesh.*"]
+ignore_missing_imports = false
+
 [tool.importlinter]
-root_packages = ["opsmesh", "opsmesh_sdk"]
+root_packages = ["opsmesh"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Plugin SDK is independent of the host"
+name = "The framework never imports its generated plugin SDK"
 type = "forbidden"
-source_modules = ["opsmesh_sdk"]
-forbidden_modules = ["opsmesh"]
+source_modules = ["opsmesh"]
+forbidden_modules = ["opsmesh_sdk"]
+
+[[tool.importlinter.contracts]]
+name = "Public extension contracts do not import host implementation"
+type = "forbidden"
+source_modules = ["opsmesh.contracts"]
+forbidden_modules = ["opsmesh.agents", "opsmesh.bootstrap", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.infra", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.shared", "opsmesh.tasks", "opsmesh.users"]
+
+[[tool.importlinter.contracts]]
+name = "The common adapter has no platform dependencies"
+type = "forbidden"
+source_modules = ["opsmesh.gateway.adapters.base"]
+forbidden_modules = ["opsmesh.gateway.adapters.qq", "opsmesh.gateway.adapters.dingtalk", "botpy", "dingtalk_stream"]
+
+[[tool.importlinter.contracts]]
+name = "DingTalk does not depend on QQ botpy"
+type = "forbidden"
+source_modules = ["opsmesh.gateway.adapters.dingtalk"]
+forbidden_modules = ["botpy"]
 
 [[tool.importlinter.contracts]]
 name = "Business modules do not import process bootstrap"

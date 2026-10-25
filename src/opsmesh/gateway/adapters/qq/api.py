@@ -1,71 +1,45 @@
-import inspect
-from typing import IO, Any, get_args, get_origin, get_type_hints
-from urllib.parse import urlsplit
+"""Fixed native operation boundary over the official botpy ``BotAPI``."""
 
-from nonebot.adapters.qq import Bot
-from nonebot.adapters.qq.exception import ActionFailed, AuditException
-from nonebot.adapters.qq.utils import API
-from opsmesh_sdk.channels import OperationRejected
-from pydantic import TypeAdapter
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any
+
 from pydantic_core import to_jsonable_python
 
-from .messages import binary_values
+from opsmesh.gateway.adapters.errors import OperationRejected
+from opsmesh.gateway.adapters.schemas import Operation
+
+_API_METHODS = {
+    "qq.message.post": "post_message",
+    "qq.c2c.post": "post_c2c_message",
+    "qq.group.post": "post_group_message",
+    "qq.c2c.file": "post_c2c_file",
+    "qq.group.file": "post_group_file",
+}
 
 
-def native_apis() -> dict[str, API]:
-    return {name: method for name, method in vars(Bot).items() if isinstance(method, API)}
+@lru_cache(maxsize=1)
+def catalogue() -> dict[str, Operation]:
+    operations: dict[str, Operation] = {}
+    for operation, method_name in _API_METHODS.items():
+        operations[operation] = Operation(
+            parameters={"type": "object", "additionalProperties": True},
+            result={"type": "object", "additionalProperties": True},
+            platform_permissions=f"QQ application permission for botpy.api.BotAPI.{method_name}",
+        )
+    return operations
 
 
-def catalogue() -> dict[str, Any]:
-    return {
-        name: {"signature": str(inspect.signature(method.func))}
-        for name, method in native_apis().items()
-    }
-
-
-def parameter(annotation: Any, value: Any) -> Any:
-    value = binary_values(value)
-    if any(get_origin(part) is IO for part in get_args(annotation)):
-        if value is not None and not isinstance(value, bytes):
-            raise ValueError("Binary content is required; file handles and paths are not accepted")
-        return value
-    return TypeAdapter(annotation).validate_python(value)
-
-
-async def call(bot: Bot, name: str, parameters: dict[str, Any]) -> Any:
-    method = native_apis().get(name)
-    if method is None:
+async def call(api: Any, operation: str, parameters: dict[str, Any]) -> Any:
+    method_name = _API_METHODS.get(operation)
+    if method_name is None:
         raise OperationRejected("unknown_qq_operation")
+    method = getattr(api, method_name, None)
+    if method is None:
+        raise OperationRejected("qq_sdk_operation_unavailable")
     try:
-        signature = inspect.signature(method.func)
-        signature.bind(bot, **parameters)
-        hints = get_type_hints(method.func)
-        converted = {
-            key: parameter(hints.get(key, Any), value) for key, value in parameters.items()
-        }
-        if "presigned_url" in converted:
-            url = urlsplit(converted["presigned_url"])
-            host = url.hostname or ""
-            if (
-                url.scheme != "https"
-                or url.username
-                or url.password
-                or url.port not in {None, 443}
-                or not any(
-                    host == domain or host.endswith("." + domain)
-                    for domain in ("qq.com", "qq.com.cn", "qpic.cn", "myqcloud.com")
-                )
-            ):
-                raise ValueError("Untrusted QQ upload endpoint")
-    except (ValueError, TypeError) as exc:
-        raise OperationRejected("invalid_qq_parameters") from exc
-    try:
-        result = await bot.call_api(name, **converted)
-    except ActionFailed as exc:
-        if 400 <= exc.status_code < 500:
-            raise OperationRejected(f"qq_rejected_{exc.status_code}_{exc.code or 0}") from exc
-        raise
-    except AuditException as exc:
-        # Submission is accepted but not yet publishable. Keep the native audit receipt.
-        return {"status": "pending_audit", "audit_id": exc.audit_id}
-    return to_jsonable_python(result, bytes_mode="base64")
+        value = await method(**parameters)
+    except TypeError as exc:
+        raise OperationRejected("invalid_qq_operation_parameters") from exc
+    return to_jsonable_python(value)

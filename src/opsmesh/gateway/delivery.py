@@ -2,10 +2,12 @@ import asyncio
 import logging
 from dataclasses import asdict
 
-from opsmesh_sdk.channels import ChannelAdapter, OperationRejected, OutgoingMessage
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from opsmesh.gateway.adapters.base import Adapter
+from opsmesh.gateway.adapters.errors import OperationRejected
+from opsmesh.gateway.adapters.schemas import Message
 from opsmesh.infra.database import new_id, now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.shared.errors import ConflictError
@@ -55,7 +57,7 @@ def enqueue(
     )
     if sequence is None:
         raise ValueError("Channel task has no durable incoming message")
-    message = OutgoingMessage(
+    message = Message(
         id=new_id(),
         conversation_id=source["conversation_id"],
         text=text,
@@ -81,7 +83,7 @@ async def deliver(
     sessions: sessionmaker,
     cipher: SecretCipher,
     channel_id: str,
-    adapter: ChannelAdapter,
+    adapter: Adapter,
     worker_id: str,
 ) -> None:
     while True:
@@ -119,10 +121,14 @@ async def deliver(
             continue
         try:
             async with asyncio.timeout(30):
-                receipt = await adapter.send(OutgoingMessage(**payload))
+                receipt = (await adapter.send(Message(**payload))).model_dump(mode="json")
             bounded_json(receipt)
             status, code = "delivered", None
         except asyncio.CancelledError:
+            with sessions.begin() as db:
+                delivery = db.get(OutboundDelivery, delivery_id, with_for_update=True)
+                if delivery is not None and delivery.status == "sending":
+                    delivery.status, delivery.error_code = "uncertain", "delivery_cancelled"
             raise
         except OperationRejected as exc:
             status, code = "failed", exc.code

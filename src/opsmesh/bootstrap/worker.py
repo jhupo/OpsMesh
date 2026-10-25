@@ -49,6 +49,7 @@ async def task_worker(application: Application) -> None:
                             logger.exception("task_worker_execution_failed")
             try:
                 recover_expired(application.sessions, application.cipher)
+                runner.leases.wake_parents()
                 while len(running) < concurrency:
                     claimed = runner.leases.claim()
                     if claimed is None:

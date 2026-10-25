@@ -2,9 +2,9 @@ from datetime import timedelta
 from importlib.metadata import version
 from typing import Any
 
-from opsmesh_sdk import Suspended, UserIdentity
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import Suspended, UserIdentity
 from opsmesh.gateway.delivery import enqueue
 from opsmesh.infra.database import now
 from opsmesh.infra.encryption import SecretCipher

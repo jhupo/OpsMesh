@@ -82,6 +82,7 @@ class TaskView(RecordView):
     session_revision: int | None
     agent_id: str | None
     parent_id: str | None
+    waiting_child_id: str | None
     schedule_id: str | None
     status: str
     idempotency_key: str | None

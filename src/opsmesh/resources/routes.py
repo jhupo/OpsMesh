@@ -6,10 +6,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from opsmesh_sdk import UserIdentity
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts import UserIdentity
 from opsmesh.sessions.sandboxes import SandboxStorage
 from opsmesh.shared.errors import NotFoundError
 from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record

@@ -2,13 +2,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from opsmesh_sdk import UserIdentity
-from opsmesh_sdk.manifest import DependencyReference, PluginManifest
 from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.models import AgentInstance
+from opsmesh.contracts import UserIdentity
+from opsmesh.contracts.manifest import DependencyReference, PluginManifest
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.plugins.loader import load
 from opsmesh.plugins.models import Plugin

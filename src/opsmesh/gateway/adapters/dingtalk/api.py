@@ -5,20 +5,11 @@ import base64
 import binascii
 import re
 from typing import Any, Literal
-from urllib.parse import unquote, urlsplit
 
 import httpx
-from opsmesh_sdk.channels import OperationRejected
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-
-class APIRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
-    path: str
-    api: Literal["modern", "legacy"] = "modern"
-    query: dict[str, str | int | float | bool] = Field(default_factory=dict)
-    body: dict[str, Any] | list[Any] | None = None
+from opsmesh.gateway.adapters.errors import OperationRejected
 
 
 class MediaUpload(BaseModel):
@@ -62,39 +53,14 @@ class DingTalkAPI:
             raise OperationRejected("dingtalk_rejected")
         return data
 
-    async def request(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        try:
-            request = APIRequest.model_validate(parameters)
-            parsed = urlsplit(request.path)
-            decoded = unquote(request.path)
-            if (
-                not request.path.startswith("/")
-                or request.path.startswith("//")
-                or parsed.scheme
-                or parsed.netloc
-                or parsed.query
-                or parsed.fragment
-                or any(part in {".", ".."} for part in decoded.split("/"))
-                or "\\" in decoded
-                or any(ord(char) < 33 for char in decoded)
-                or any(
-                    key.lower().replace("-", "_")
-                    in {"access_token", "accesstoken", "authorization", "appsecret", "app_secret"}
-                    for key in request.query
-                )
-            ):
-                raise ValueError("Invalid API path or auth override")
-        except (ValidationError, ValueError) as exc:
-            raise OperationRejected("invalid_dingtalk_request") from exc
+    async def request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Internal transport; method and path come only from fixed adapter operations."""
         token = await self.token()
-        query: dict[str, Any] = dict(request.query)
-        if request.api == "modern":
-            base, headers = "https://api.dingtalk.com", {"x-acs-dingtalk-access-token": token}
-        else:
-            base, headers = "https://oapi.dingtalk.com", {}
-            query["access_token"] = token
         response = await self.http.request(
-            request.method, base + request.path, params=query, json=request.body, headers=headers
+            method,
+            "https://api.dingtalk.com" + path,
+            json=body,
+            headers={"x-acs-dingtalk-access-token": token},
         )
         return self.response(response)
 
@@ -116,6 +82,6 @@ class DingTalkAPI:
             files={"media": (request.filename, content)},
         )
         data = self.response(response)
-        if not data.get("media_id"):
+        if not isinstance(data.get("media_id"), str) or not data["media_id"]:
             raise ValueError("DingTalk upload returned no media ID")
         return data

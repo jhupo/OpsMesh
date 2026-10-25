@@ -2,10 +2,10 @@ import hashlib
 import secrets
 from datetime import datetime
 
-from opsmesh_sdk.identity import UserIdentity
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts.identity import UserIdentity
 from opsmesh.infra.database import now
 from opsmesh.shared.errors import ForbiddenError, NotFoundError
 

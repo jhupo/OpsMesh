@@ -111,15 +111,15 @@ HTTP 任务不传 `session_id` 时创建会话，后续提交同一 ID 继续对
 
 `POST /v1/tasks/{id}/resume` 只恢复有检查点的失败、中断或超时任务。恢复使用固定插件和原 SDK 版本，并重建当前身份与资源连接。原生 RunState 表示 SDK 支持的恢复边界，不能恢复任意 Python 调用栈或保证外部副作用自动幂等。业务工具应使用自己的幂等键或效果回执。
 
-子 Agent 调用保留原调用者并生成独立任务，稳定调用键可复用已成功的结果。子任务等待人工输入时，父插件必须设计自己的检查点和恢复逻辑；宿主不替插件编排恢复顺序。
+子 Agent 调用保留原调用者并生成独立任务，稳定调用键可复用已成功的结果。子任务进入人工输入或嵌套等待时，父任务必须已经保存检查点；宿主持久化父子关系，子任务完成后自动排队恢复父任务，插件从检查点继续并按原调用键读取结果。
 
 `POST /v1/schedules` 支持一次性、固定秒间隔和五字段 cron，包含时区及首次时间。cron 的首次时间是开始边界，按表达式取第一个匹配时刻。默认跳过重叠任务，不补发停机期间每一个错过的时刻；每次触发使用计划 ID 与计划时间去重。
 
 ## 额度与可观测性
 
-原调用者承担模型 Token，目录所有者承担自己的存储。`resources.model` 与 `resources.model_provider` 在每次模型请求前预留额度，限制输出上限，按供应商返回的实际 usage 结算。原生 MultiProvider 使用登记的 `prefix/model`；连接可选择 Responses 或 Chat Completions。
+原调用者承担模型 Token，目录所有者承担自己的存储。`resources.model` 与 `resources.model_provider` 在每次模型请求前通过供应商原生输入计数接口预留“输入计数 + 输出上限”，并按供应商返回的实际 usage 结算。无法提供原生输入计数的模型会明确拒绝托管计量，不使用本地估算或静默降级。原生 MultiProvider 使用登记的 `prefix/model`；连接使用 Responses 计数能力。
 
-预留并不等于供应商侧的硬 Token 上限：输入长度、工具信息等会影响真实使用量。实际量超过预留时仍完整记账，后续请求受额度限制。网络异常、取消或缺失 usage 时保留预留，管理员根据供应商账单通过结算接口核对，不能直接记成零。插件直接使用自己的模型客户端时不在托管计量范围内。
+预留包含本次请求的输入和输出预算，实际 usage 仍以供应商返回值为准。网络异常、取消或缺失 usage 时保留预留，管理员根据供应商账单通过结算接口核对，不能直接记成零。插件直接使用自己的模型客户端时不在托管计量范围内。
 
 文件接口和附件导出在用户额度锁下检查目录大小，执行结束也会扫描目录。插件直接写盘和沙箱文件系统的硬限制需要部署侧文件系统配额或沙箱配额；进程内路径检查不能限制可信 Python 代码的全部文件操作。数据库记录及服务日志不计入个人目录额度。
 
@@ -127,13 +127,13 @@ HTTP 任务不传 `session_id` 时创建会话，后续提交同一 ID 继续对
 
 ## 网关
 
-内置 QQ 官方机器人（nonebot-adapter-qq 1.7.3）和钉钉 Stream（dingtalk-stream 0.24.4b1）适配器，按平台分目录组织，插件通过 `ChannelAdapter` 添加其他通道。QQ 支持 C2C、群、频道和频道私信、原生富消息及 SDK 提供的 80 个 API；钉钉支持消息、事件、卡片/Graph 回调、主动消息、媒体与官方 OpenAPI。具体可用性取决于应用权限。配置、回执与调用示例见 [网关说明](docs/gateway.md)。
+内置 QQ 官方机器人和钉钉 Stream 适配器，两者直接继承 OpsMesh 自有 `Adapter` 基类。QQ 直接调用腾讯官方 `qq-botpy==1.2.1`；钉钉内部调用官方 `dingtalk-stream 0.24.4b1`。QQ 支持 C2C、群、频道和频道私信、官方 SDK 的消息与固定原生 API 操作；钉钉支持消息、事件、卡片/Graph 回调、主动消息、媒体上传与固定的卡片操作目录。两者实现 capabilities/run/send/call 四项接口；Worker 管理运行与取消，传输类型不进入插件 SDK。设计边界见 [适配层设计](docs/gateway-architecture.md)。具体可用性取决于应用权限。配置、回执与调用示例见 [网关说明](docs/gateway.md)。
 
 管理员创建 Channel 后，为每个外部用户绑定平台用户；未绑定消息与非消息事件只记录，不执行任务。外部群主或管理员角色不会转换成平台角色。管理员操作通过持久队列执行，插件可通过 `context.channel.reply(...)` 回复当前对话，管理员身份还可调用 `context.channel.request(...)`。
 
-优先复用 NoneBot 生态的成熟平台适配器，保留少量事件/回复映射。NoneBot 核心与平台包分开发布；钉钉适配器在当前上游目录标为暂不可用，因此仍使用官方 Stream SDK。分层与扩展方法见 [网关架构](docs/gateway-architecture.md)。
+QQ 与钉钉都直接使用各自官方 SDK；OpsMesh 只负责宿主 Adapter 边界、事件持久化和出站回执。分层与扩展方法见 [网关架构](docs/gateway-architecture.md)。
 
-入站消息落库去重，出站使用持久 Outbox。送达结果不确定时标记 `uncertain`，只允许显式重试，不能承诺外部消息恰好发送一次。QQ SDK 的事件分发也不能提供应用落库之前崩溃时的零丢失保证。
+入站消息落库去重，出站使用持久 Outbox。送达结果不确定时标记 `uncertain`，只允许显式重试，不能承诺外部消息恰好发送一次。QQ 协议的后台事件分发也不能提供应用落库之前崩溃时的零丢失保证。
 
 群聊人工交互只发送提醒，内容在指定用户的交互收件箱。钉钉使用有有效期的 session webhook，过期后保留待核对记录，不静默改用其他身份或通道发送。
 
@@ -146,8 +146,9 @@ src/opsmesh/
   catalog/           # 发布、检索、版本依赖与运行时访问
   gateway/           # 通道配置、身份绑定、收发记录、连接 Worker
     adapters/
-      qq/            # 原生 NoneBot 驱动、事件、消息和 API
-      dingtalk/      # 原生 Stream、事件、消息和 OpenAPI
+      base.py        # 唯一 Adapter ABC：capabilities/run/send/call
+      qq/            # 单个 QQAdapter、宿主消息与 API 边界
+      dingtalk/      # 单个 DingTalkAdapter、官方 Stream、消息和 OpenAPI
   infra/             # PostgreSQL、加密、版本化迁移
   plugins/           # ZIP 安装、注册表、版本加载
   quotas/            # 用户额度、模型连接、预留与结算
@@ -157,7 +158,6 @@ src/opsmesh/
   tasks/             # 持久任务、调度、检查点、人工交互、执行器
     runtime/         # 执行生命周期、租约、调用上下文和子任务
   users/             # 平台身份、组、认证与令牌
-sdk/python/          # 独立插件开发 SDK 与打包 CLI
 examples/            # 原生 Agent、可发布贡献、插件内组合
 deploy/              # Linux systemd、安装、更新与可执行包容器
 scripts/             # 可执行包构建入口
@@ -194,15 +194,24 @@ SSE 按任务调用者/管理员权限访问，并在每次读取时重新验证
 
 ## 独立 SDK
 
-SDK 只提供插件开发合同与 ZIP 打包 CLI，不包含宿主业务 API 客户端，也不依赖服务端源码。可从 Release 下载 `opsmesh_sdk-0.2.0-py3-none-any.whl` 安装，或安装独立分支：
+公开扩展合同由框架的 `src/opsmesh/contracts` 唯一定义。框架不导入、不依赖自己生成的 `opsmesh-sdk`。SDK 只提供插件绑定、类型声明与 ZIP 打包 CLI，不包含业务 API 客户端；运行时绑定导出框架中的同一个类型，避免通道适配器、异常与暂停结果出现两套身份。
+
+SDK 工程仍在独立的 `sdk` 分支。`tool.opsmesh.sdk` 固定的是发布工具输入，不是运行依赖。发布流程取出该工程，再从当前框架生成绑定和类型声明；框架源码包不混入 SDK 工程。Python 3.11.8+ 可离线打包和做类型检查，插件运行在匹配的 Python 3.12+ 框架内。可执行部署包已包含生成的绑定；Python 包部署需要为插件安装同版本的生成 SDK wheel：
 
 ```sh
-pip install 'git+https://github.com/jhupo/OpsMesh.git@sdk'
-# wheel 下载完成后：
 pip install ./opsmesh_sdk-0.2.0-py3-none-any.whl
 ```
 
-生产项目应固定 Release wheel 的版本和 SHA-256，或固定 Git 提交；`sdk` 分支随开发前进。目前未配置 PyPI 发布，不能假定 `pip install opsmesh-sdk` 已可从 PyPI 获取。独立开发与示例见 [SDK README](sdk/python/README.md)。
+开发中使用当前框架生成 SDK，不能直接把尚未同步生成物的旧分支当成匹配运行合同：
+
+```sh
+uv run --extra build python scripts/release_assets.py sdk-source --output ../opsmesh-sdk
+uv build ../opsmesh-sdk --out-dir ../opsmesh-sdk-dist
+# 对已经检出的独立 SDK 工程重新生成：
+uv run --extra build python scripts/generate_sdk.py ../opsmesh-sdk
+```
+
+生成器同时输出 `.pyi` 与 `_contracts.json` 来源摘要；清单校验模型按同一源定义生成，以支持不安装服务器的 ZIP 打包。生产使用匹配 Release 的 wheel 并验证 SHA-256。目前未配置 PyPI 发布，不能假定 `pip install opsmesh-sdk` 已可从 PyPI 获取。独立工程见 [SDK 分支](https://github.com/jhupo/OpsMesh/tree/sdk)。
 
 ## 参与与许可
 

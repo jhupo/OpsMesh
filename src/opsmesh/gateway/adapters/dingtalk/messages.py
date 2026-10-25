@@ -2,7 +2,7 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from opsmesh_sdk.channels import OperationRejected
+from opsmesh.gateway.adapters.errors import OperationRejected
 
 
 def session_url(target: dict[str, Any]) -> str:

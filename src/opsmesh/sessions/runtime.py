@@ -9,11 +9,11 @@ from agents import SQLiteSession
 from agents.extensions.memory.encrypt_session import EncryptedSession
 from agents.sandbox import LocalSnapshot, Manifest, SandboxArchiveLimits, SandboxRunConfig
 from agents.sandbox.session.sandbox_client import BaseSandboxClient
-from opsmesh_sdk.sessions import SessionContext
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.contracts.sessions import SessionContext
 from opsmesh.infra.encryption import SecretCipher
-from opsmesh.quotas.storage import check
+from opsmesh.quotas.storage import check_async
 from opsmesh.shared.errors import ConflictError
 
 from .layout import default_manifest, session_directory
@@ -97,7 +97,7 @@ class SessionRuntime:
                     ),
                 )
             await live.start()
-            self.save_state(client.serialize_session_state(live.state), clean=False)
+            await self.save_state(client.serialize_session_state(live.state), clean=False)
             yield SandboxRunConfig(
                 session=live, cwd=self.sandbox_root, archive_limits=SandboxArchiveLimits()
             )
@@ -108,7 +108,7 @@ class SessionRuntime:
                     async def persist() -> None:
                         await live.aclose()
                         state = client.serialize_session_state(live.state)
-                        self.save_state(state, clean=True, cleanup=True)
+                        await self.save_state(state, clean=True, cleanup=True)
 
                     cleanup = asyncio.create_task(persist())
                     try:
@@ -119,7 +119,9 @@ class SessionRuntime:
             finally:
                 self.sandbox_open = False
 
-    def save_state(self, state: dict[str, Any], *, clean: bool, cleanup: bool = False) -> None:
+    async def save_state(
+        self, state: dict[str, Any], *, clean: bool, cleanup: bool = False
+    ) -> None:
         with self.sessions.begin() as db:
             self.validate(db, cleanup=cleanup)
             row = db.get(AgentSession, self.row.id, with_for_update=True)
@@ -127,8 +129,7 @@ class SessionRuntime:
             row.encrypted_sandbox_state = self.cipher.encrypt(state)
             row.sandbox_dirty = not clean
         if clean:
-            with self.sessions.begin() as db:
-                check(db, self.root, self.row.owner_id, 0)
+            await check_async(self.sessions, self.root, self.row.owner_id, 0)
 
 
 def invocation_session(

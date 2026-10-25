@@ -5,11 +5,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
-from opsmesh_sdk import UserIdentity
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.agents.service import usable
+from opsmesh.contracts import UserIdentity
 from opsmesh.infra.database import now
 from opsmesh.shared.errors import ConflictError, DomainError, NotFoundError
 from opsmesh.shared.http import get_application, get_current_user, get_db_session, serialize_record

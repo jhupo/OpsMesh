@@ -59,5 +59,5 @@ class EventSubscription:
                 events,
                 snapshot,
                 task.event_sequence,
-                task.status in TERMINAL or task.status == "waiting_input",
+                task.status in TERMINAL or task.status in {"waiting_input", "waiting_child"},
             )

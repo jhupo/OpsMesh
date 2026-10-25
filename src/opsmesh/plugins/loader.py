@@ -3,9 +3,10 @@ import inspect
 import sys
 from pathlib import Path
 
-from opsmesh_sdk.registration import PluginContext
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from opsmesh.contracts.registration import PluginContext
 
 from .models import Plugin
 from .packages import package_path

@@ -1,1 +1,1 @@
-"""DingTalk Stream transport, callbacks, messages and OpenAPI operations."""
+from .adapter import DingTalkAdapter as DingTalkAdapter

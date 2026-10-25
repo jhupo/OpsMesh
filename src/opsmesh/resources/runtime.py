@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from opsmesh.infra.database import new_id, now
 from opsmesh.infra.encryption import SecretCipher
 from opsmesh.quotas.config import ModelDefaults
+from opsmesh.quotas.counting import InputTokenCounter
 from opsmesh.quotas.models import ModelConnection
 from opsmesh.quotas.storage import check
 from opsmesh.quotas.tokens import MeteredMultiProvider, MeteredProvider
@@ -114,6 +116,7 @@ class InvocationResources:
                 self.task_id,
                 reserve_tokens,
                 authorize,
+                InputTokenCounter(client),
                 default_model=model_name,
                 reasoning=Reasoning.model_validate({"effort": effort}) if effort else None,
             )
@@ -136,6 +139,14 @@ class InvocationResources:
         return MeteredMultiProvider(mapping, frozenset(connections))
 
     async def artifact(self, path: str, *, name: str | None = None) -> str:
+        operation = asyncio.create_task(asyncio.to_thread(self._export_artifact, path, name))
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            await operation
+            raise
+
+    def _export_artifact(self, path: str, name: str | None) -> str:
         if self.workspace is None:
             raise ForbiddenError("This agent has no workspace")
         source = safe_path(self.workspace, path)

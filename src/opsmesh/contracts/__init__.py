@@ -1,4 +1,4 @@
-"""Public plugin contracts. Business logic and Agent construction belong to plugins."""
+"""Framework-owned extension contracts. The plugin SDK is generated from this package."""
 
 from .context import InvocationContext, InvocationSource
 from .identity import UserIdentity

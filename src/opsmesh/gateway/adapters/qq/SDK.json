@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "name": "qq-botpy",
+  "version": "1.2.1",
+  "repository": "https://github.com/tencent-connect/botpy",
+  "license": "MIT",
+  "source": "installed dependency; no vendored platform source"
+}

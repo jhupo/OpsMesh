@@ -6,10 +6,10 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 import yaml
-from opsmesh_sdk.manifest import PluginManifest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.contracts.manifest import PluginManifest
 from opsmesh.infra.database import new_id
 from opsmesh.shared.errors import ConflictError, InvalidArgumentError
 

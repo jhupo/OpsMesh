@@ -26,7 +26,7 @@ OpsMesh is a plugin application host built on the OpenAI Agents Python SDK. Plug
 | `src/opsmesh/users`, `quotas` | Identity, connections and accounting |
 | `src/opsmesh/shared`, `infra` | Cross-cutting errors/logging/auth and database/encryption/migrations |
 | `src/opsmesh/bootstrap` | API/CLI/workers, initialization and deployment assembly |
-| `sdk/python` | Independent typed plugin SDK (published separately on `sdk`) |
+| `src/opsmesh/contracts` | Framework-owned public extension values and protocols; input to SDK generation |
 | `deploy`, `scripts`, `.github` | Linux distribution, installation and release/security automation |
 | `examples`, `tests`, `docs` | Developer examples, regression code and contracts |
 
@@ -37,22 +37,22 @@ Read the relevant skill before changing its integration:
 | Skill | When to use |
 | --- | --- |
 | [.agents/skills/openai-knowledge](.agents/skills/openai-knowledge/SKILL.md) | Agents SDK interfaces, context, tools/MCP, sessions, RunState, sandbox or model integration |
-| [.agents/skills/adapter-qq](.agents/skills/adapter-qq/SKILL.md) | QQ configuration, NoneBot drivers, events, messages, native APIs or connection lifecycle |
-| [.agents/skills/nonebot](.agents/skills/nonebot/SKILL.md) | Driver composition, adapter reuse, event bridges and per-channel runtime isolation |
+| [.agents/skills/adapter-qq](.agents/skills/adapter-qq/SKILL.md) | QQ configuration, official botpy events, messages, native APIs or connection lifecycle |
 | [.agents/skills/dingtalk-sdk](.agents/skills/dingtalk-sdk/SKILL.md) | DingTalk Stream, robot/media/card/OpenAPI operations and callbacks |
 
-Locked versions and installed source determine supported calls. Compare official documentation when needed; explain version differences. Skills do not authorize tests, publishing or external side effects.
+Locked dependency versions and installed source determine supported calls. QQAdapter and DingTalkAdapter directly inherit the common OpsMesh Adapter in `gateway/adapters/base.py`; do not add nested Adapter wrappers or a copied framework. QQ uses the pinned Tencent `qq-botpy` SDK directly; its provenance is recorded in `gateway/adapters/qq/SDK.md` and `SDK.json`. Do not add a local protocol model tree or a compatibility layer around another platform framework. Skills do not authorize tests, publishing or external side effects.
+
+The framework owns public extension contracts in `opsmesh.contracts`. It must not import or depend on its generated `opsmesh-sdk`. Runtime SDK bindings export these canonical types; do not duplicate runtime contexts, exceptions or results with different class identities. SDK source is maintained on the separate `sdk` branch. Release tooling stages that pinned project, then generates its bindings and typing stubs from this framework; SDK code never lives in the framework source package. SDK packaging/static typing supports Python 3.11.8+; running a plugin requires its Python 3.12+ OpsMesh host. `tool.opsmesh.sdk` pins release tooling inputs only, not a runtime dependency or a uv source.
 
 ## Static checks
 
 Server Python >=3.12; SDK >=3.11.8. Use `uv sync --frozen --extra dev --extra sandbox --extra build`. Do not refresh dependencies for documentation-only changes.
 
 ```sh
-uv run --no-sync ruff format --check src sdk/python/src sdk/python/examples examples tests scripts
-uv run --no-sync ruff check src sdk/python/src sdk/python/examples examples tests scripts
+uv run --no-sync ruff format --check src examples tests scripts
+uv run --no-sync ruff check src examples tests scripts
 uv run --no-sync mypy
 uv run --no-sync lint-imports --no-cache
-uv run --no-sync mypy --python-version 3.11 sdk/python/src
 ```
 
 Use the SDK's own configuration when changing its independent project. HTTP documentation is generated from actual routes at `/openapi.json`. Keep README, deployment guidance and [verification boundaries](docs/verification.md) aligned. Delivery notes state actual static results, builds, tests executed and integration gaps separately. Releases are Linux-only; do not add Windows service installers. License is MIT; retain bundled third-party license notices.

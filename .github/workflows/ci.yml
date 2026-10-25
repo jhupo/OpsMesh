@@ -27,14 +27,37 @@ jobs:
           version: '0.13.5'
           enable-cache: true
       - run: uv sync --frozen --extra dev --extra sandbox --extra build
-      - run: uv run --no-sync ruff format --check src sdk/python/src sdk/python/examples examples tests scripts
-      - run: uv run --no-sync ruff check src sdk/python/src sdk/python/examples examples tests scripts
+      - run: uv run --no-sync ruff format --check src examples tests scripts
+      - run: uv run --no-sync ruff check src examples tests scripts
       - run: uv run --no-sync mypy
       - run: uv run --no-sync lint-imports --no-cache
-      - run: uv run --no-sync mypy --python-version 3.11 sdk/python/src
       - run: uv run --no-sync python scripts/release_assets.py check-version
       - run: bash -n deploy/install.sh
       - run: bash -n deploy/setup.sh
+  sdk-contracts:
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          python-version: ${{ matrix.python }}
+      - name: Generate SDK from framework contracts
+        run: uv run --no-project --with ruff==0.15.13 python scripts/release_assets.py sdk-source --output "$RUNNER_TEMP/opsmesh-sdk-source"
+      - name: Check standalone SDK typing and packaging
+        working-directory: ${{ runner.temp }}/opsmesh-sdk-source
+        run: |
+          uv sync --extra dev --extra agents
+          uv run --no-sync ruff format --check src examples
+          uv run --no-sync ruff check src examples
+          uv run --no-sync mypy src examples
+          uv build
   regression:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
