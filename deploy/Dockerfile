@@ -1,22 +1,18 @@
-FROM ubuntu:22.04
-ARG TARGETARCH
-ARG VERSION
-ARG REVISION
-ARG SOURCE_URL=https://github.com/jhupo/OpsMesh
-LABEL org.opencontainers.image.title="OpsMesh" \
-      org.opencontainers.image.description="Agent plugin application host" \
-      org.opencontainers.image.source=$SOURCE_URL \
-      org.opencontainers.image.version=$VERSION \
-      org.opencontainers.image.revision=$REVISION \
-      org.opencontainers.image.licenses="MIT"
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates libstdc++6 zlib1g \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 10001 --create-home opsmesh
-WORKDIR /app
-COPY dist/linux-${TARGETARCH}/opsmesh/ /opt/opsmesh/
-RUN mkdir -p /app/data && chown opsmesh:opsmesh /app/data
-ENV OPSMESH_DATA_DIR=/app/data
+FROM python:3.13-slim
+COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OPSMESH_DATA_DIRECTORY=/var/lib/opsmesh
+ENV PATH="/opt/opsmesh/.venv/bin:$PATH"
+WORKDIR /opt/opsmesh
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN uv sync --frozen --no-dev --extra openai --extra s3 --no-editable \
+    && groupadd --gid 10001 opsmesh \
+    && useradd --uid 10001 --gid 10001 --no-create-home opsmesh \
+    && mkdir -p /var/lib/opsmesh \
+    && chown 10001:10001 /var/lib/opsmesh
+USER 10001:10001
 EXPOSE 8000
-USER opsmesh
-ENTRYPOINT ["/opt/opsmesh/bin/opsmesh"]
-CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["opsmesh"]
+CMD ["serve", "--host", "0.0.0.0"]

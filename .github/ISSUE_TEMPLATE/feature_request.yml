@@ -1,16 +1,14 @@
 name: Feature request
-description: Propose a focused improvement
-title: "[Feature]: "
+description: Propose a capability or improvement.
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem and use case
+      label: Use case and desired outcome
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: design
     attributes:
-      label: Proposed behavior and alternatives
-    validations:
-      required: true
+      label: Proposed design and module ownership
+      description: Mention relevant contracts, SDK features and compatibility requirements.

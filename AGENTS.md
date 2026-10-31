@@ -1,58 +1,15 @@
-# OpsMesh development guide
+# Working on opsmesh
 
-OpsMesh is a plugin application host built on the OpenAI Agents Python SDK. Plugins own Agent construction and orchestration; the host manages identity, immutable publications, private resources, tasks, sessions and gateways. Start with [README.md](README.md) and the contracts in [docs/](docs/).
+Read `docs/README.md`, `docs/design/architecture.md` and `docs/roadmap.md` before implementing a feature. The repository contains a working development implementation. Check the coverage matrix and tests; do not treat every target design item as validated.
 
-## Execution rules
-
-- Run tests, test collection, acceptance scripts, real services and model calls only when explicitly requested by the user. Static inspection/checks and distribution builds are allowed. Report skipped and unverified work honestly.
-- Preserve unrelated working changes and user data. Do not commit, push, tag, publish or delete user data without authorization. Do not introduce compatibility shims or silent fallbacks.
-- SDK contracts are for plugin development/registration/packaging, not a business API client. Prefer the locked native SDK's Agent, Runner, RunState, Session, MCP, model and sandbox interfaces.
-- Use `routes.py` for HTTP, `schemas.py` for request/response values, `models.py` for ORM, `service.py` for domain rules. Keep pure value/configuration models free of I/O.
-- `setup(ctx)` only declares contributions. Network connections, subprocesses and Agent execution belong to invocation lifetimes. Installed Python plugins are trusted code.
-- Pin installed plugin/configuration/dependency versions per task. Do not silently replace versions or replay failed work from the beginning. Resume only explicit checkpoints.
-- Group membership permits invoking an Agent, never browsing/editing another user's workspace. Stored identity grants platform permissions; request metadata and gateway group roles cannot.
-- Preserve authorization, encryption, idempotency, cancellation, human-input checks, audit and caller token/storage/concurrency accounting. Run completion does not delete persistent instances, sessions, sandboxes or directories.
-- APIs do not hold gateway connections; workers do not import HTTP routes. Infrastructure does not assemble business models. Add database migrations without rewriting released history.
-
-## Repository map
-
-| Path | Responsibility |
-| --- | --- |
-| `src/opsmesh/agents`, `catalog`, `plugins` | Instances, immutable publications and plugin registration/loading |
-| `src/opsmesh/tasks` | Task management, schedules, human input and persistent events |
-| `src/opsmesh/tasks/runtime` | Leases, invocation contexts, execution and child calls |
-| `src/opsmesh/sessions`, `resources` | Native history, sandboxes, private namespaces and files |
-| `src/opsmesh/gateway` | QQ/DingTalk and custom channel delivery |
-| `src/opsmesh/users`, `quotas` | Identity, connections and accounting |
-| `src/opsmesh/shared`, `infra` | Cross-cutting errors/logging/auth and database/encryption/migrations |
-| `src/opsmesh/bootstrap` | API/CLI/workers, initialization and deployment assembly |
-| `src/opsmesh/contracts` | Framework-owned public extension values and protocols; input to SDK generation |
-| `deploy`, `scripts`, `.github` | Linux distribution, installation and release/security automation |
-| `examples`, `tests`, `docs` | Developer examples, regression code and contracts |
-
-## Repository skills
-
-Read the relevant skill before changing its integration:
-
-| Skill | When to use |
-| --- | --- |
-| [.agents/skills/openai-knowledge](.agents/skills/openai-knowledge/SKILL.md) | Agents SDK interfaces, context, tools/MCP, sessions, RunState, sandbox or model integration |
-| [.agents/skills/adapter-qq](.agents/skills/adapter-qq/SKILL.md) | QQ configuration, official botpy events, messages, native APIs or connection lifecycle |
-| [.agents/skills/dingtalk-sdk](.agents/skills/dingtalk-sdk/SKILL.md) | DingTalk Stream, robot/media/card/OpenAPI operations and callbacks |
-
-Locked dependency versions and installed source determine supported calls. QQAdapter and DingTalkAdapter directly inherit the common OpsMesh Adapter in `gateway/adapters/base.py`; do not add nested Adapter wrappers or a copied framework. QQ uses the pinned Tencent `qq-botpy` SDK directly; its provenance is recorded in `gateway/adapters/qq/SDK.md` and `SDK.json`. Do not add a local protocol model tree or a compatibility layer around another platform framework. Skills do not authorize tests, publishing or external side effects.
-
-The framework owns public extension contracts in `opsmesh.contracts`. It must not import or depend on its generated `opsmesh-sdk`. Runtime SDK bindings export these canonical types; do not duplicate runtime contexts, exceptions or results with different class identities. SDK source is maintained on the separate `sdk` branch. Release tooling stages that pinned project, then generates its bindings and typing stubs from this framework; SDK code never lives in the framework source package. SDK packaging/static typing supports Python 3.11.8+; running a plugin requires its Python 3.12+ OpsMesh host. `tool.opsmesh.sdk` pins release tooling inputs only, not a runtime dependency or a uv source.
-
-## Static checks
-
-Server Python >=3.12; SDK >=3.11.8. Use `uv sync --frozen --extra dev --extra sandbox --extra build`. Do not refresh dependencies for documentation-only changes.
-
-```sh
-uv run --no-sync ruff format --check src examples tests scripts
-uv run --no-sync ruff check src examples tests scripts
-uv run --no-sync mypy
-uv run --no-sync lint-imports --no-cache
-```
-
-Use the SDK's own configuration when changing its independent project. HTTP documentation is generated from actual routes at `/openapi.json`. Keep README, deployment guidance and [verification boundaries](docs/verification.md) aligned. Delivery notes state actual static results, builds, tests executed and integration gaps separately. Releases are Linux-only; do not add Windows service installers. License is MIT; retain bundled third-party license notices.
+- Use Python src layout and the existing uv lockfile. Bootstrap is the composition root.
+- Read `docs/design/source-layout.md` for file ownership. Concrete bot protocols and Run worker transports belong in `infrastructure/bots` and `infrastructure/run_workers`; bootstrap supplies their deployment configuration. Application use cases and background coordination belong in `application` and receive public service ports from bootstrap. Framework abstractions must not import platform infrastructure or application assembly. CLI implementations belong in `entrypoints/cli`.
+- Modules own their data and expose `api.py`/`events.py`; do not import another module's internal code. Framework code must not depend on platform business modules.
+- Platform-owned state, authorization and core use cases must work without business plugins. Core modules and entrypoints must not import `opsmesh.plugins`; optional plugins consume public module services through dependency providers. Bot-to-Agent bindings belong to bots; durable schedules belong to scheduling.
+- SDK-specific types and imports belong to their backend package. Plugin target APIs follow the NoneBot-style design; do not add a competing plugin registrar without an ADR.
+- Keep Session history, Run checkpoints, sandbox session state, workspace snapshots and learned memory distinct.
+- Preserve local user/department/role authentication scope. External OIDC/SSO and Web UI implementation are outside the current scope.
+- Add meaningful tests for actual behavior, update implementation status, and do not create successful no-op service stubs.
+- Run `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run pytest`, `uv run python scripts/check_repository.py` and `uv build` for relevant implementation work.
+- Model/network integration tests must be explicit and must not run by default in CI. SDK surface checks must not call paid APIs.
+- Never commit credentials, runtime state, generated workspaces or model conversation data.

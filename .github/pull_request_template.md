@@ -1,11 +1,12 @@
-## Change
+## Problem and behavior
 
-Describe the problem, final behavior and any public API, SDK or deployment changes.
+Explain the concrete problem and resulting behavior.
 
-## Verification
+## Validation
 
-List exact static checks and distribution builds performed. State tests actually executed and runtime/service/model validation not performed. Automated contributors must obtain explicit user authorization before running tests or services.
+List relevant checks and their results, including limits of validation.
 
-## Compatibility and operations
+## Compatibility
 
-Document migrations, checkpoint/plugin SDK changes, permissions, cancellation/idempotency, quota implications and deployment steps when applicable. Link related issues. Confirm documentation and changelog updates where needed.
+Describe changes to public APIs, events, storage, configuration, or SDK requirements.
+Update design and implementation status when behavior changes.
