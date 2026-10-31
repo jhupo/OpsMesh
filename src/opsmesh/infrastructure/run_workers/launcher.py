@@ -192,7 +192,7 @@ class RunWorkerLauncher:
         log = logs / f"{hashlib.sha256(run_id.encode()).hexdigest()}.log"
         options: dict[str, Any] = {}
         if os.name == "nt":
-            options["creationflags"] = subprocess.CREATE_NO_WINDOW
+            options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         environment = dict(self._environment(), OPSMESH_RUN_LAUNCH_TOKEN=token)
         with log.open("ab") as output:
             return await asyncio.create_subprocess_exec(
