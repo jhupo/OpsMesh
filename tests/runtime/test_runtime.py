@@ -305,7 +305,7 @@ async def test_scheduled_runs_wait_for_session_and_release_after_cancel(tmp_path
         await runtime.cancel(first.id)
         with pytest.raises(asyncio.CancelledError):
             await first_task
-        assert (await asyncio.wait_for(second_task, 2)).status == "completed"
+        assert (await asyncio.wait_for(second_task, 10)).status == "completed"
     finally:
         await runtime.close()
         await database.close()

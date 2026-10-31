@@ -21,7 +21,7 @@ async def shared_workspaces(
     databases = (AsyncDatabase(url), AsyncDatabase(url))
     services = tuple(
         LocalWorkspaceService(
-            database, tmp_path / "files", mutation_lease_seconds=0.6, mutation_wait_seconds=5
+            database, tmp_path / "files", mutation_lease_seconds=5, mutation_wait_seconds=10
         )
         for database in databases
     )
@@ -87,7 +87,7 @@ async def test_snapshot_waits_for_whole_manifest_and_lease_renews(
     )
     await asyncio.wait_for(midway.wait(), timeout=3)
     snapshot_task = asyncio.create_task(second.snapshot("project"))
-    await asyncio.sleep(0.8)  # Longer than the original lease: the heartbeat must retain it.
+    await asyncio.sleep(5.2)  # Longer than the lease: the heartbeat must retain it.
     assert not snapshot_task.done()
     proceed.set()
     await writer

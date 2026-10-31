@@ -439,7 +439,10 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
     user = await app.services.accounts.get_principal(principals["alice"])
     response = await events(run["id"], request, user)
     iterator = response.body_iterator
-    assert "id: 1" in await anext(iterator)
+    first_chunk = await anext(iterator)
+    while ": heartbeat" in first_chunk:
+        first_chunk = await asyncio.wait_for(anext(iterator), 1)
+    assert "id: 1" in first_chunk
     next_chunk = asyncio.create_task(anext(iterator))
     await asyncio.wait_for(started.wait(), 1)
     if finish == "cancel":
