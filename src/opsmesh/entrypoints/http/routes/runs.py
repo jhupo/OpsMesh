@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -218,7 +219,8 @@ async def events(
         except OpsMeshError as exc:
             yield "event: error\ndata: " + json.dumps({"code": exc.code}) + "\n\n"
         except Exception:
-            logger.exception("Run stream failed for %s", run_id)
+            run_id_fingerprint = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:16]
+            logger.exception("Run stream failed for %s", run_id_fingerprint)
             yield 'event: error\ndata: {"code":"INTERNAL_ERROR"}\n\n'
         finally:
             pending.cancel()

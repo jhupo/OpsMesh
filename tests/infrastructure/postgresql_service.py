@@ -77,6 +77,9 @@ class TemporaryPostgreSQL:
             )
         self.data = self.directory / "data"
         password_file = self.directory / "init.password"
+        # codeql[py/clear-text-storage-of-sensitive-data]: PostgreSQL's initdb
+        # requires a temporary local password file; the whole cluster directory
+        # is removed when this disposable test service exits.
         password_file.write_text(self.password, encoding="utf-8")
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
