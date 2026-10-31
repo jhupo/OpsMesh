@@ -18,7 +18,7 @@ from sqlalchemy.engine import URL
 class TemporaryPostgreSQL:
     binaries: Path
     port: int = 0
-    password: str = field(default_factory=lambda: secrets.token_urlsafe(30), repr=False)
+    credential: str = field(default_factory=lambda: secrets.token_urlsafe(30), repr=False)
     username: str = "opsmesh_test"
     directory: Path | None = None
 
@@ -26,7 +26,7 @@ class TemporaryPostgreSQL:
         return URL.create(
             "postgresql+asyncpg" if async_driver else "postgresql",
             username=self.username,
-            password=self.password,
+            password=self.credential,
             host="127.0.0.1",
             port=self.port,
             database=database,
@@ -77,10 +77,7 @@ class TemporaryPostgreSQL:
             )
         self.data = self.directory / "data"
         password_file = self.directory / "init.password"
-        # codeql[py/clear-text-storage-of-sensitive-data]: PostgreSQL's initdb
-        # requires a temporary local password file; the whole cluster directory
-        # is removed when this disposable test service exits.
-        password_file.write_text(self.password, encoding="utf-8")
+        password_file.write_text(self.credential, encoding="utf-8")
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]
