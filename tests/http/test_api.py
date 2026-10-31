@@ -421,6 +421,10 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
             closed.set()
 
     monkeypatch.setattr(app.services.runtime, "subscribe", subscriber)
+    if finish == "cancel":
+        monkeypatch.setattr(
+            app, "settings", app.settings.model_copy(update={"sse_heartbeat_seconds": 10})
+        )
 
     async def receive():
         await asyncio.Event().wait()

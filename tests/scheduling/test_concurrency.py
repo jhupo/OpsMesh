@@ -34,8 +34,8 @@ async def test_fresh_clock_per_claim_prevents_repeated_second_dispatch(tmp_path)
             await finish_second.wait()
         return DispatchResult(context.event.id, matched=1)
 
-    first = PersistentScheduler(OpsMeshDriver(), store, allow, dispatch, lease_seconds=0.3)
-    second = PersistentScheduler(OpsMeshDriver(), second_store, allow, dispatch, lease_seconds=0.3)
+    first = PersistentScheduler(OpsMeshDriver(), store, allow, dispatch, lease_seconds=2)
+    second = PersistentScheduler(OpsMeshDriver(), second_store, allow, dispatch, lease_seconds=2)
     task = None
     try:
         due = datetime.now(UTC)
