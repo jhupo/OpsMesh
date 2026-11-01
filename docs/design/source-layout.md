@@ -24,7 +24,7 @@
 
 | 调整前 | 当前归属 | 原因 |
 | --- | --- | --- |
-| `adapters/{dingtalk,qq,onebot}` | `infrastructure/bots/{dingtalk,qq,onebot}` | 这里是外部协议的具体实现，不是框架抽象或平台账号管理 |
+| `adapters/{dingtalk,qq,onebot}` | `infrastructure/bots/{dingtalk,qq}` | 这里是外部协议的具体实现，不是框架抽象或平台账号管理 |
 | `framework/internal/driver/{abstract,model,server}.py` | `framework/drivers/{base,models,server}.py` | Driver 的合同、生命周期和网络机制聚合在同一功能目录；公开导入仍是 `opsmesh.framework.drivers` |
 | `bootstrap/run_launcher.py` | `infrastructure/run_workers/launcher.py` + `bootstrap/workers.py` | 前者执行进程/容器并管理生命周期；后者只绑定部署配置、构造实例 |
 | `bootstrap/kubernetes_workers/*` | `infrastructure/run_workers/kubernetes/*` | Kubernetes API、Job 规格、观测和生命周期属于具体执行实现 |
@@ -48,7 +48,6 @@ framework/adapters/                 协议抽象、连接注册、中立消息�
 infrastructure/bots/
     dingtalk/                      Stream、OpenAPI、平台消息转换
     qq/                            官方签名 Webhook、鉴权、OpenAPI、消息转换
-    onebot/                        已有兼容协议实现
         ↑ 仅由组装层选择和注入
 bootstrap/bot_adapters.py
         ↓ 注入框架注册表
@@ -76,7 +75,6 @@ dependencies.py                   插件 Depends 入口
 | `bootstrap/*_bridge.py`、`run_resources.py`、`run_usage.py`、`coordinator.py` | 连接多个域的应用调用链/生命周期绑定，当前模块化单体明确允许在组装层；不创建独立业务表或再造领域状态机 |
 | `maintenance/*` | 离线恢复会组装受限应用，涉及数据库、workspace 和 blob，是独立维护操作；不塞进仅提供单存储机制的 infrastructure/storage |
 | `infrastructure/secrets.py` | 目前只有一种环境密钥解析机制，独立文件职责单一，不为未来 KMS 创建空包 |
-| `plugins/scheduler/*` | 旧公开导入路径的兼容门面；实际持久调度只在 `modules/scheduling`，不重复实现 |
 
 目录按代码的所有者、调用边界和实际职责划分，不机械规定“所有具体实现都在 infrastructure”或“所有管理类都在 internal”。业务模块可以有私有技术实现；框架的 HTTPX/WebSocket Driver 也仍是框架网络能力的实现。
 
@@ -119,3 +117,8 @@ dependencies.py                   插件 Depends 入口
 稳定入口继续使用 `opsmesh.framework.adapters`、`opsmesh.framework.agents`、`opsmesh.framework.drivers`、`opsmesh.dependencies` 和 `opsmesh.infrastructure.database`。CLI 命令 `opsmesh` 与 `python -m opsmesh` 保留。
 
 直接使用旧具体实现路径的部署代码需要更新，例如 `opsmesh.adapters.qq` 改为 `opsmesh.infrastructure.bots.qq`。直接构造旧 Launcher 的代码改用 `bootstrap.workers.create_run_worker_launcher(runtime, settings, ...)`，或自行提供 `WorkerLaunchConfiguration` 构造基础设施 Launcher。本项目仍为 Alpha；本轮没有保留已经职责错位的整套旧实现导入别名。
+
+
+## 群聊收件箱归属
+
+`modules/bots/conversations/api.py` 只发布合同。数据库表、SQLAlchemy 查询与批次事务位于 `modules/bots/internal/conversations`，复用平台数据库，不在 framework 创建业务队列。通用进程锁归 `infrastructure/coordination`；应用协调通过注入接口工作。审核通知、人物设定和群聊行为提示词来自示例或用户配置。旧 OneBot 和调度兼容包已删除。详见[清理记录](../reviews/2026-11-01-inbox-cleanup.md)。

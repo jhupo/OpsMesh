@@ -23,6 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import update as sql_update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.types import TypeEngine
 
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.typing import JsonData, OpsMeshContract
@@ -71,14 +72,29 @@ def validate_record_id(record_id: str) -> None:
 
 
 class VersionedRecordStore:
-    def __init__(self, database: AsyncDatabase, table_name: str) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase,
+        table_name: str,
+        *,
+        projections: dict[str, tuple[tuple[str, ...], TypeEngine[Any]]] | None = None,
+    ) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", table_name) or table_name.startswith(
             "opsmesh_"
         ):
             raise ValueError("Module tables must use a non-reserved lowercase identifier")
         self.database = database
+        self.projections = projections or {}
         existing = database.metadata.tables.get(table_name)
         if existing is not None:
+            declared = existing.info.get("record_projections", {})
+            if projections is not None and {
+                name: (path, repr(kind)) for name, (path, kind) in projections.items()
+            } != {name: (path, repr(kind)) for name, (path, kind) in declared.items()}:
+                raise OpsMeshError(
+                    "CONFIG_INVALID", "Record projections disagree with the table owner"
+                )
+            self.projections = declared
             self.table = existing
             return
         self.table = Table(
@@ -89,17 +105,30 @@ class VersionedRecordStore:
             Column("data", JSON, nullable=False),
             Column("created_at", DateTime(timezone=True), nullable=False),
             Column("updated_at", DateTime(timezone=True), nullable=False),
+            *(Column(name, kind, nullable=True) for name, (_, kind) in self.projections.items()),
             CheckConstraint("revision >= 1", name=f"ck_{table_name}_revision"),
+            info={"record_projections": self.projections, "schema_version": 2}
+            if self.projections
+            else {},
         )
         Index(f"ix_{table_name}_created", self.table.c.created_at, self.table.c.id)
 
     @staticmethod
     def _record(row: Any) -> StoredRecord:
-        values = dict(row)
+        values = {name: row[name] for name in StoredRecord.model_fields}
         for name in ("created_at", "updated_at"):
             if values[name].tzinfo is None:
                 values[name] = values[name].replace(tzinfo=UTC)
         return StoredRecord.model_validate(values)
+
+    def _project(self, data: JsonData) -> dict[str, Any]:
+        values = {}
+        for name, (path, _) in self.projections.items():
+            value: Any = data
+            for part in path:
+                value = value.get(part) if isinstance(value, dict) else None
+            values[name] = value
+        return values
 
     def _ready(self, record_id: str | None = None) -> None:
         self.database.require_table(self.table.name)
@@ -126,6 +155,21 @@ class VersionedRecordStore:
         async with database_connection(self.database.engine) as connection:
             return [self._record(row) for row in (await connection.execute(query)).mappings()]
 
+    async def scan(
+        self, prefix: str, *, after: str | None = None, limit: int = 128
+    ) -> Sequence[StoredRecord]:
+        """Page a literal ID prefix in stable key order, without interpreting SQL wildcards."""
+        self._ready(prefix)
+        if not 1 <= limit <= 1024:
+            raise OpsMeshError("CONFIG_INVALID", "Invalid record pagination")
+        query = select(self.table).where(self.table.c.id.startswith(prefix, autoescape=True))
+        if after is not None:
+            self._ready(after)
+            query = query.where(self.table.c.id > after)
+        async with database_connection(self.database.engine) as connection:
+            rows = await connection.execute(query.order_by(self.table.c.id).limit(limit))
+            return [self._record(row) for row in rows.mappings()]
+
     async def create(
         self, record_id: str, data: JsonData, *, events: Sequence[JsonData] = ()
     ) -> StoredRecord:
@@ -136,7 +180,9 @@ class VersionedRecordStore:
         )
         try:
             async with serialized_write(self.database.engine) as connection:
-                await connection.execute(insert(self.table).values(**record.model_dump()))
+                await connection.execute(
+                    insert(self.table).values(**record.model_dump(), **self._project(record.data))
+                )
                 await self.database.enqueue_events(connection, events)
         except IntegrityError as error:
             raise OpsMeshError(
@@ -164,6 +210,7 @@ class VersionedRecordStore:
                         data=validated_json(data),
                         revision=expected_revision + 1,
                         updated_at=datetime.now(UTC),
+                        **self._project(data),
                     )
                 )
                 if result.rowcount != 1:

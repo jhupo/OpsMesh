@@ -1,7 +1,6 @@
 """Resolve platform model profiles without exposing credentials to the control plane."""
 
 import dataclasses
-import inspect
 from typing import Any
 
 from agents import ModelSettings, OpenAIChatCompletionsModel, OpenAIResponsesModel
@@ -18,6 +17,7 @@ from opsmesh.framework.agents import (
 )
 from opsmesh.framework.errors import OpsMeshError
 
+from .execution_state import execution_state
 from .model_validation import validate_model_configuration
 
 
@@ -37,14 +37,14 @@ def resolve_settings(spec: AgentSpecification, profile: dict[str, Any] | None) -
 async def resolve_profile_model(
     spec: AgentSpecification, context: AgentExecutionContext, clients: list[AsyncOpenAI]
 ) -> tuple[Any, dict[str, Any] | None]:
-    profiles = context.services.get("model_profiles", {})
+    profiles = execution_state(context).model_profiles
     profile = profiles.get(spec.ref)
     if profile is None and spec.model_profile_ref:
-        prepare = context.services.get("prepare_model_profile")
+        prepare = context.services.prepare_model_profile
         if prepare is not None:
             profile = await prepare(spec)
         else:
-            profile = context.services.get("model_profile")
+            profile = execution_state(context).model_profile
         if profile is None:
             raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Published model profile is unavailable")
     if profile is None:
@@ -62,12 +62,10 @@ async def resolve_profile_model(
     secret_ref = profile.get("secret_ref")
     secret = None
     if secret_ref:
-        resolver = context.services.get("resolve_secret")
+        resolver = context.services.resolve_secret
         if resolver is None:
             raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Model credential resolver missing")
-        secret = resolver(secret_ref)
-        if inspect.isawaitable(secret):
-            secret = await secret
+        secret = await resolver(secret_ref)
     client = AsyncOpenAI(api_key=secret, base_url=profile.get("base_url"), max_retries=0)
     clients.append(client)
     if profile.get("api", "responses") == "responses":

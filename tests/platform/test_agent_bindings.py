@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,6 +19,7 @@ from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.accounts.api import AccessRole, PermissionGrant
 from opsmesh.modules.memory.api import MemoryNamespace
 from opsmesh.modules.models.api import ModelProfile
+from opsmesh.modules.runtime.api import SubmitRunRequest
 from opsmesh.modules.usage.api import BudgetLimit, PriceVersion
 
 from .test_application import configured_application
@@ -31,6 +33,63 @@ async def queued_run(app, user, session):
         input="hello",
         idempotency_key="bindings",
     )
+
+
+async def test_reviewed_memory_policy_covers_submission_and_persisted_execution(
+    tmp_path, monkeypatch
+):
+    app, user, _ = await configured_application(tmp_path)
+    try:
+        await app.services.memory.create_namespace(MemoryNamespace(id="reviewed", owner=user.id))
+        original = await app.services.agents.get_revision("helper@1")
+        definition = await app.services.agents.create(
+            original.model_copy(
+                update={
+                    "id": "unsafe-capture",
+                    "memory_namespace_id": "reviewed",
+                    "memory_generate": True,
+                }
+            ),
+            user.id,
+        )
+        await app.services.agents.publish(definition.id, definition.revision)
+        spec = await app.services.agents.get_revision("unsafe-capture@1")
+        session = await app.services.sessions.open(user.id, spec.ref)
+        reserve, capture = AsyncMock(), AsyncMock()
+        monkeypatch.setattr(app.services.run_usage, "reserve", reserve)
+        monkeypatch.setattr(app.services.memory, "append_source", capture)
+        metadata = {"conversation_operation": "chat"}
+        with pytest.raises(OpsMeshError) as error:
+            await app.submit_run(
+                principal_id=user.id,
+                session_id=session.id,
+                agent_ref=spec.ref,
+                input="reviewed input",
+                idempotency_key="blocked-submission",
+                metadata=metadata,
+            )
+        assert error.value.code == "CONFIG_INVALID"
+        assert await app.services.runtime.list_runs() == []
+
+        # A durable Run submitted before an upgrade must meet the same policy on execution.
+        queued = await app.services.runtime.submit(
+            SubmitRunRequest(
+                principal_id=user.id,
+                session_id=session.id,
+                agent=spec,
+                input="reviewed input",
+                idempotency_key="persisted-submission",
+                metadata=metadata,
+            )
+        )
+        blocked = await app.services.runtime.execute(queued.id)
+        assert blocked.status == "failed"
+        assert blocked.error.code == "CONFIG_INVALID"
+        reserve.assert_not_awaited()
+        capture.assert_not_awaited()
+        assert await app.services.memory.list_jobs("reviewed", principal_id=user.id) == ()
+    finally:
+        await app.close()
 
 
 async def test_hosted_tools_require_resource_grants_and_recheck_revocation(tmp_path):
@@ -54,7 +113,7 @@ async def test_hosted_tools_require_resource_grants_and_recheck_revocation(tmp_p
         )
         session = await app.services.sessions.open(user.id, "helper@1")
         context = await app.services.agent_bridge.context(await queued_run(app, user, session))
-        authorize = context.services["authorize_hosted_tool"]
+        authorize = context.services.authorize_hosted_tool
         await authorize(FileSearchBinding(vector_store_ids=("vs_allowed",)))
         await authorize(
             CodeInterpreterBinding(file_ids=("file_allowed",), container_id="container_allowed")
@@ -73,7 +132,7 @@ async def test_hosted_tools_require_resource_grants_and_recheck_revocation(tmp_p
         assert error.value.code == "FORBIDDEN"
     finally:
         if context is not None:
-            await context.services["cleanup_resources"]()
+            await context.resources.cleanup_resources()
         await app.close()
 
 
@@ -143,22 +202,22 @@ async def test_usage_observation_blocks_next_model_request_after_budget_exhausti
         )
         run = await queued_run(app, user, session)
         context = await app.services.agent_bridge.context(run)
-        request = context.services["authorize_model_request"]
+        request = context.services.authorize_model_request
         await request("metered@1")
         observation = {
             "call_id": "provider-response-1",
             "model_profile_ref": "metered@1",
             "input_tokens": 1,
         }
-        await context.services["observe_usage"](observation)
-        await context.services["observe_usage"](observation)
+        await context.services.observe_usage(observation)
+        await context.services.observe_usage(observation)
         assert (await app.services.usage.budget(user.id, "USD")).spent == Decimal("0.10")
         with pytest.raises(OpsMeshError) as error:
             await request("metered@1")
         assert error.value.code == "BUDGET_EXCEEDED"
     finally:
         if context is not None:
-            await context.services["cleanup_resources"]()
+            await context.resources.cleanup_resources()
         await app.close()
 
 
@@ -166,7 +225,7 @@ async def test_usage_unavailable_never_becomes_known_aggregate_cost(tmp_path):
     app, user, session = await configured_application(tmp_path)
     try:
         run = await queued_run(app, user, session)
-        await app.services.agent_bridge.finalize(
+        await app.services.run_finalizer.finalize(
             run,
             AgentRunCompleted(
                 output="known result, unknown usage",
@@ -187,7 +246,7 @@ async def test_withdrawing_model_blocks_next_request_in_existing_context(tmp_pat
         await app.services.models.create(ModelProfile(id="withdrawn", model="offline"))
         run = await queued_run(app, user, session)
         context = await app.services.agent_bridge.context(run)
-        request = context.services["authorize_model_request"]
+        request = context.services.authorize_model_request
         await request("withdrawn@1")
         await app.services.models.availability.set_enabled(
             "withdrawn@1", False, actor_id=user.id, expected_revision=0
@@ -197,7 +256,7 @@ async def test_withdrawing_model_blocks_next_request_in_existing_context(tmp_pat
         assert failure.value.code == "RESOURCE_DISABLED"
     finally:
         if context is not None:
-            await context.services["cleanup_resources"]()
+            await context.resources.cleanup_resources()
         await app.close()
 
 

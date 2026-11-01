@@ -8,21 +8,19 @@ from opsmesh.modules.audit.operations import audited_operation
 from opsmesh.modules.resource_contracts import ResourceAuthorization, VersionAvailability
 
 from .api import ScriptToolDefinition, ScriptToolSource
+from .internal.availability_management import set_capability_enabled
 from .internal.scripts import PersistentScriptTools
-from .management import CapabilityManagement
 
 
 class ScriptManagement:
     def __init__(
         self,
         scripts: PersistentScriptTools,
-        capabilities: CapabilityManagement,
         authorize: ResourceAuthorization,
         audit: AuditJournal,
     ) -> None:
-        self._scripts, self._capabilities, self._authorize, self._audit = (
+        self._scripts, self._authorize, self._audit = (
             scripts,
-            capabilities,
             authorize,
             audit,
         )
@@ -30,7 +28,10 @@ class ScriptManagement:
     async def publish(
         self, source: Path, declaration: ScriptToolSource, *, actor_id: str
     ) -> ScriptToolDefinition:
-        return await self._capabilities.publish_script(source, declaration, actor_id=actor_id)
+        reference = f"{declaration.name}@{declaration.version}"
+        await self._authorize(actor_id, "capability:manage", reference)
+        async with audited_operation(self._audit, "script.publish", reference, actor_id):
+            return await self._scripts.publish(source, declaration)
 
     async def get(self, reference: str, *, actor_id: str) -> ScriptToolDefinition:
         await self._authorize(actor_id, "capability:read", reference)
@@ -54,11 +55,19 @@ class ScriptManagement:
         expected_revision: int,
         reason: str = "",
     ) -> VersionAvailability:
-        return await self._capabilities.set_enabled(
+        return await set_capability_enabled(
             "script",
             reference,
             enabled,
             actor_id=actor_id,
             expected_revision=expected_revision,
             reason=reason,
+            authorize=self._authorize,
+            audit=self._audit,
+            availability=self._scripts.availability,
+            read=lambda: self.get(reference, actor_id=actor_id),
         )
+
+    async def availability(self, reference: str, *, actor_id: str) -> VersionAvailability:
+        await self.get(reference, actor_id=actor_id)
+        return await self._scripts.availability.get(reference)

@@ -75,18 +75,6 @@ class KnowledgeMaintenance(ABC):
         return collection
 
     async def list_collections(self, *, principal_id: str) -> tuple[KnowledgeCollection, ...]:
-        # Existing installations stored documents before collection metadata existed.
-        legacy = {row.data["collection"] for row in await self._documents.list()}
-        for identifier in legacy:
-            if await self._collections.get(identifier) is not None:
-                continue
-            try:
-                await self._authorize(principal_id, f"knowledge:read:{identifier}")
-            except OpsMeshError as error:
-                if error.code not in {"FORBIDDEN", "AUTHORIZATION_DENIED"}:
-                    raise
-                continue
-            await self._ensure_collection(identifier)
         result = []
         for row in await self._collections.list():
             if row.data.get("deleted"):
@@ -105,11 +93,6 @@ class KnowledgeMaintenance(ABC):
     async def get_collection(self, collection: str, *, principal_id: str) -> KnowledgeCollection:
         await self._authorize(principal_id, f"knowledge:read:{collection}")
         row = await self._collections.get(collection)
-        if row is None and any(
-            item.data["collection"] == collection for item in await self._documents.list()
-        ):
-            await self._ensure_collection(collection)
-            row = await self._collections.get(collection)
         if row is None or row.data.get("deleted"):
             raise OpsMeshError("NOT_FOUND", "Knowledge collection not found")
         return KnowledgeCollection.model_validate({**row.data, "revision": row.revision})

@@ -87,10 +87,24 @@ class QQAPIClient:
             self._expires_at = self._clock() + lifetime - min(60, lifetime / 2)
             return token
 
+    async def access_token(self) -> str:
+        """Provide an in-memory credential for the authenticated QQ Gateway handshake."""
+        return await self._token()
+
+    async def get(self, path: str) -> JsonData:
+        return await self._request("GET", path)
+
+    async def delete(self, path: str) -> JsonData:
+        return await self._request("DELETE", path)
+
     async def post(self, path: str, data: JsonData) -> JsonData:
+        return await self._request("POST", path, data)
+
+    async def _request(self, method: str, path: str, data: JsonData | None = None) -> JsonData:
         token = await self._token()
         try:
-            response = await self.client.post(
+            response = await self.client.request(
+                method,
                 self.settings.api_base_url + path,
                 json=data,
                 headers={"Authorization": f"QQBot {token}"},
@@ -102,18 +116,71 @@ class QQAPIClient:
                 "BOT_UNAVAILABLE", "Unable to connect to QQ", retryable=True
             ) from error
         except httpx.RequestError as error:
-            raise OpsMeshError("DELIVERY_UNKNOWN", "QQ request outcome is uncertain") from error
-        if response.status_code in {401, 403}:
+            raise OpsMeshError(
+                "BOT_UNAVAILABLE" if method == "GET" else "DELIVERY_UNKNOWN",
+                "QQ request outcome is uncertain",
+                retryable=method == "GET",
+            ) from error
+        try:
+            raw_payload = response.json()
+        except ValueError:
+            raw_payload = None
+        code = _provider_code(raw_payload) if isinstance(raw_payload, dict) else None
+        if code in {"40062003", "11253"}:
+            raise OpsMeshError(
+                "BOT_PERMISSION_DENIED",
+                "QQ denied the operation permission",
+                provider="qq",
+                provider_code=code,
+            )
+        if code == "40064004":
+            raise OpsMeshError(
+                "BOT_MESSAGE_EXPIRED",
+                "QQ message recall window has expired",
+                provider="qq",
+                provider_code=code,
+            )
+        if response.status_code == 401:
             self.clear_token()
-            raise OpsMeshError("BOT_AUTHENTICATION_FAILED", "QQ rejected the request credential")
-        if response.status_code == 429:
-            raise OpsMeshError("BOT_RATE_LIMITED", "QQ rate limit reached", retryable=True)
+            raise OpsMeshError(
+                "BOT_AUTHENTICATION_FAILED",
+                "QQ rejected the request credential",
+                provider="qq",
+                provider_code=code,
+            )
+        if response.status_code == 403:
+            raise OpsMeshError(
+                "BOT_PERMISSION_DENIED",
+                "QQ denied the operation permission",
+                provider="qq",
+                provider_code=code,
+            )
+        if response.status_code == 429 or code == "22009":
+            raise OpsMeshError(
+                "BOT_RATE_LIMITED",
+                "QQ rate limit reached",
+                retryable=True,
+                provider="qq",
+                provider_code=code,
+            )
         if response.status_code >= 500 or 300 <= response.status_code < 400:
-            raise OpsMeshError("DELIVERY_UNKNOWN", "QQ returned an uncertain delivery outcome")
-        payload = _json_object(response, delivery=True)
-        code = _provider_code(payload)
+            raise OpsMeshError(
+                "BOT_UNAVAILABLE" if method == "GET" else "DELIVERY_UNKNOWN",
+                "QQ returned an uncertain operation outcome",
+                retryable=method == "GET",
+                provider="qq",
+                provider_code=code,
+            )
+        if method == "DELETE" and response.status_code in {200, 204} and not response.content:
+            return {}
+        payload = _json_object(response, delivery=method != "GET")
         if response.status_code >= 400 or code not in {None, "0"}:
             raise OpsMeshError(
-                "BOT_REQUEST_REJECTED", "QQ rejected the message", provider="qq", provider_code=code
+                "BOT_REQUEST_REJECTED",
+                "QQ rejected the operation",
+                provider="qq",
+                provider_code=code,
             )
+        if method == "DELETE" and response.status_code not in {200, 204}:
+            raise OpsMeshError("DELIVERY_UNKNOWN", "QQ did not confirm message recall")
         return payload

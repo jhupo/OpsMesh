@@ -11,11 +11,13 @@ from . import (
     models,
     notifications,
     operations,
+    personal_models,
     resource_sources,
     runs,
     scheduler,
     sessions,
     triggers,
+    updates,
     usage,
     workspaces,
 )
@@ -25,6 +27,7 @@ routers = (
     agents.router,
     approvals.router,
     models.router,
+    personal_models.router,
     sessions.router,
     runs.router,
     capabilities.router,
@@ -38,6 +41,7 @@ routers = (
     notifications.router,
     operations.router,
     triggers.router,
+    updates.router,
 )
 
 __all__ = ["routers"]

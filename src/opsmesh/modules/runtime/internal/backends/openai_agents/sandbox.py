@@ -18,6 +18,8 @@ from agents.sandbox.capabilities import Compaction, Filesystem, Memory, Shell, S
 from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification, SandboxConfiguration
 from opsmesh.framework.errors import OpsMeshError
 
+from .execution_state import execution_state
+
 
 def capabilities(spec: SandboxConfiguration) -> list[Any]:
     # Revalidate a snapshot: frozen contracts may still contain mutable option dictionaries.
@@ -75,12 +77,12 @@ def build_sandbox(spec: SandboxConfiguration, context: AgentExecutionContext) ->
         ),
         "archive_limits": SandboxArchiveLimits(**spec.archive_limits),
     }
-    if context.services.get("openai_sandbox_session") is not None:
-        values["session"] = context.services["openai_sandbox_session"]
+    if context.resources.sandbox_session is not None:
+        values["session"] = context.resources.sandbox_session
         return SandboxRunConfig(**values)
-    if context.services.get("openai_sandbox_client") is not None:
-        values["client"] = context.services["openai_sandbox_client"]
-        values["options"] = context.services.get("openai_sandbox_options")
+    if execution_state(context).sandbox_client is not None:
+        values["client"] = execution_state(context).sandbox_client
+        values["options"] = execution_state(context).sandbox_options
         if spec.session_state is not None:
             values["session_state"] = values["client"].deserialize_session_state(spec.session_state)
         return SandboxRunConfig(**values)
@@ -88,8 +90,8 @@ def build_sandbox(spec: SandboxConfiguration, context: AgentExecutionContext) ->
         values["snapshot"] = LocalSnapshotSpec(base_path=Path(spec.snapshot_path))
     if spec.provider == "injected":
         # Only trusted backend extension code may install native SDK objects here.
-        session = context.services.get("openai_sandbox_session")
-        client = context.services.get("openai_sandbox_client")
+        session = context.resources.sandbox_session
+        client = execution_state(context).sandbox_client
         if session is None and client is None:
             raise OpsMeshError("dependency_unavailable", "No SDK sandbox session/client injected")
         if session is not None:

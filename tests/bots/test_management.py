@@ -7,10 +7,8 @@ import pytest
 
 from opsmesh.framework.errors import OpsMeshError
 
-from . import test_onebot as helpers
-from .helpers import create_bot_service as BotService
-from .helpers import onebot_adapter, receive_onebot
-from .test_onebot import (
+from . import fixtures as helpers
+from .fixtures import (
     account,
     authorize,
     ignore,
@@ -19,6 +17,8 @@ from .test_onebot import (
     secret,
     webhook,
 )
+from .helpers import create_bot_service as BotService
+from .helpers import qq_adapter, receive_qq_event
 
 store = helpers.store
 
@@ -36,33 +36,30 @@ async def test_configuration_cas_and_connection_cleanup_preserve_bindings(store,
         )
         original = await service.create_account(account(), actor_id="admin")
         await service.bind_identity(original.id, "200", "user", actor_id="admin")
-        route = await service.bind_route(
-            original.id, "private:200", "assistant@2", actor_id="admin"
-        )
-        connection = Mock(closed=False, pending={}, socket=Mock(close=AsyncMock()))
-        onebot_adapter(service).connections.sessions[original.id] = connection
-        connect = Mock()
-        monkeypatch.setattr(onebot_adapter(service).connections, "connect", connect)
+        route = await service.bind_route(original.id, "c2c:200", "assistant@2", actor_id="admin")
+        adapter = qq_adapter(service)
+        disconnect = AsyncMock(wraps=adapter.disconnect_account)
+        monkeypatch.setattr(adapter, "disconnect_account", disconnect)
+        connect = Mock(wraps=adapter.configure)
+        monkeypatch.setattr(adapter, "configure", connect)
         updated = await service.update_account(
             original.model_copy(
-                update={"settings": {**original.settings, "api_base_url": "http://new.test"}}
+                update={"settings": {**original.settings, "api_base_url": "http://127.0.0.2:5700"}}
             ),
             expected_revision=1,
             actor_id="admin",
         )
         assert updated.revision == 2
-        connection.socket.close.assert_awaited_once_with(1001)
-        assert connection.closed
-        assert original.id not in onebot_adapter(service).connections.sessions
+        disconnect.assert_awaited_once_with(original.id)
         connect.assert_called_once_with(updated)
-        assert await service.get_route(original.id, "private:200", actor_id="admin") == route
+        assert await service.get_route(original.id, "c2c:200", actor_id="admin") == route
         assert len(await service.list_identities(original.id, actor_id="admin")) == 1
         with pytest.raises(OpsMeshError) as conflict:
             await service.update_account(original, expected_revision=1, actor_id="admin")
         assert conflict.value.code == "CONFLICT"
         assert (await service.get_account(original.id, actor_id="admin")).settings[
             "api_base_url"
-        ] == "http://new.test"
+        ] == "http://127.0.0.2:5700"
         assert (
             await service.connection_status(original.id, actor_id="admin")
         ).state == "configured"
@@ -95,7 +92,7 @@ async def test_identity_validation_unbind_and_direct_service_permissions(store):
         assert await service.list_identities("support", actor_id="admin") == []
         body, signature = webhook()
         with pytest.raises(OpsMeshError) as unbound:
-            await receive_onebot(service, "support", body, signature=signature)
+            await receive_qq_event(service, "support", body, signature=signature)
         assert unbound.value.code == "FORBIDDEN"
         events = await store.database.pending_events()
         assert any(

@@ -1,24 +1,31 @@
 """Submit externally triggered work through the same authorized Run use case."""
 
-from typing import TYPE_CHECKING
-
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.management import RunSubmission
 from opsmesh.modules.scheduling.api import PersistentSchedule
+from opsmesh.modules.sessions.api import Conversations
 from opsmesh.modules.triggers.api import TriggerDefinition, TriggerInvocation
 
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from .ports import NotificationObserver
+from .schedule_bridge import SchedulePlatformBridge
 
 
 class TriggerPlatformBridge:
     submit_run: RunSubmission | None = None
 
-    def __init__(self, services: "ApplicationServices") -> None:
-        self.services = services
+    def __init__(
+        self,
+        *,
+        notifications: NotificationObserver,
+        schedule_bridge: SchedulePlatformBridge,
+        sessions: Conversations,
+    ) -> None:
+        self.notifications = notifications
+        self.schedule_bridge = schedule_bridge
+        self.sessions = sessions
 
     async def validate(self, trigger: TriggerDefinition, actor_id: str) -> None:
-        await self.services.schedule_bridge.validate(
+        await self.schedule_bridge.validate(
             PersistentSchedule(
                 id=trigger.id,
                 principal_id=trigger.principal_id,
@@ -38,9 +45,9 @@ class TriggerPlatformBridge:
         if invocation.session_policy == "per_event":
             key += f":{invocation.delivery_id}"
         session = (
-            await self.services.sessions.get(invocation.session_id)
+            await self.sessions.get(invocation.session_id)
             if invocation.session_id
-            else await self.services.sessions.get_or_open(
+            else await self.sessions.get_or_open(
                 key, invocation.principal_id, invocation.agent_revision
             )
         )
@@ -65,7 +72,7 @@ class TriggerPlatformBridge:
             )
         except Exception:
             if invocation.notify_on_failure:
-                await self.services.notifications.observe(
+                await self.notifications.observe(
                     event_id=f"trigger:{invocation.delivery_id}:failed",
                     event_type="triggers.delivery.failed",
                     owner_id=invocation.principal_id,

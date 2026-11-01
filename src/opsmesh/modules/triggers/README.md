@@ -36,7 +36,7 @@ X-OpsMesh-Signature: sha256=<hex HMAC-SHA256>
 
 签名原文为 `timestamp + "." + delivery_id + "." + raw_body`；密钥至少 32 字符，仅通过 env 引用解析。
 时间容许正负 300 秒。签名绑定时间、投递ID和原始正文；重试可刷新时间和签名并保留投递ID。
-创建密钥引用需要 `secret:use`；本地账户授权保留旧 `secrets:use` / `secrets:*` 角色配置的兼容匹配。持久配置和响应均不保存或返回密钥内容。
+创建密钥引用需要 `secret:use`；本地账户授权只使用当前 `secret:` 命名空间。持久配置和响应均不保存或返回密钥内容。
 
 ## 可靠性与审计
 

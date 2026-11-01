@@ -25,6 +25,14 @@ class OpsMeshMessageSegment(BaseModel):
     def image(cls, resource_ref: str) -> Self:
         return cls(type="image", data={"resource_ref": resource_ref})
 
+    @classmethod
+    def audio(cls, resource_ref: str) -> Self:
+        return cls(type="audio", data={"resource_ref": resource_ref})
+
+    @classmethod
+    def video(cls, resource_ref: str) -> Self:
+        return cls(type="video", data={"resource_ref": resource_ref})
+
     def __str__(self) -> str:
         return str(self.data.get("text", "")) if self.type == "text" else f"[{self.type}]"
 

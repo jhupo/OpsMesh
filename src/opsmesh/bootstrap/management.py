@@ -16,7 +16,6 @@ from opsmesh.modules.capabilities.skill_management import SkillManagement
 from opsmesh.modules.configuration.management import ConfigurationManagement
 from opsmesh.modules.memory.management import MemoryManagement
 from opsmesh.modules.models.management import ModelManagement
-from opsmesh.modules.notifications.internal.service import NotificationService
 from opsmesh.modules.notifications.management import NotificationManagement
 from opsmesh.modules.operations.outbox import OutboxManagement
 from opsmesh.modules.operations.plugins import PluginDeploymentManagement
@@ -30,7 +29,12 @@ if TYPE_CHECKING:
 
 
 def compose_management(services: "OpsMeshServices") -> None:
-    services.resource_references = PlatformResourceReferences(services)
+    services.resource_references = PlatformResourceReferences(
+        accounts=services.accounts,
+        agents=services.agents,
+        runtime=services.runtime,
+        database=services.database,
+    )
     services.account_management = AuthorizedAccountManagement(services.accounts)
     services.run_management = RunManagement(services.runtime, services.accounts, services.audit)
     services.conversation_management = ConversationManagement(
@@ -53,15 +57,9 @@ def compose_management(services: "OpsMeshServices") -> None:
         services.authorization.check,
         services.audit,
         references=services.resource_references.lookup,
-    )
-    services.capability_management = CapabilityManagement(
-        services.capabilities,
-        services.skills,
-        services.mcp_catalog,
-        services.scripts,
-        services.authorization.check,
-        services.audit,
-        references=services.resource_references.lookup,
+        accounts=services.accounts,
+        credentials=services.model_credentials,
+        personal_model_allowed_hosts=services.settings.personal_model_allowed_hosts,
     )
     services.workspace_management = WorkspaceManagement(
         services.workspaces,
@@ -75,13 +73,6 @@ def compose_management(services: "OpsMeshServices") -> None:
         services.memory, services.audit, validate_actor=services.authorization.active_actor
     )
     services.knowledge_management = KnowledgeManagement(services.knowledge, services.audit)
-    services.notifications = NotificationService(
-        services.database,
-        services.accounts,
-        services.audit,
-        services.bots,
-        services.authorization.check,
-    )
     services.notification_management = NotificationManagement(services.notifications)
     services.outbox_management = OutboxManagement(
         services.database, services.accounts, services.audit
@@ -92,22 +83,28 @@ def compose_management(services: "OpsMeshServices") -> None:
 
     services.skill_management = SkillManagement(
         services.skills,
-        services.capability_management,
         services.authorization.check,
         services.authorization.workspace,
         services.audit,
     )
     services.script_management = ScriptManagement(
         services.scripts,
-        services.capability_management,
         services.authorization.check,
         services.audit,
     )
     services.mcp_management = MCPManagement(
         services.mcp_catalog,
         services.mcp,
-        services.capability_management,
         services.authorization.check,
         services.audit,
+    )
+    services.capability_management = CapabilityManagement(
+        services.capabilities,
+        services.skill_management,
+        services.mcp_management,
+        services.script_management,
+        services.authorization.check,
+        services.audit,
+        references=services.resource_references.lookup,
     )
     services.embedding_registry = EmbeddingProviderRegistry(services.knowledge)

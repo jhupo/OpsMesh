@@ -88,9 +88,16 @@ async def runs(
     principal_id: str | None = None,
     session_id: str | None = None,
     status: RunStatus | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 1000,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AgentRunView]:
     return await get_application(request).services.run_management.list_runs(
-        actor_id=user.id, principal_id=principal_id, session_id=session_id, status=status
+        actor_id=user.id,
+        principal_id=principal_id,
+        session_id=session_id,
+        status=status,
+        limit=limit,
+        offset=offset,
     )
 
 

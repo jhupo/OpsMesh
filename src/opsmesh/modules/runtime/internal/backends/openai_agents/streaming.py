@@ -33,7 +33,7 @@ async def execute_stream(
             if event is not None:
                 if event.kind == "text_delta" and not observed_token:
                     observed_token = True
-                    if metric := context.services.get("observe_metric"):
+                    if metric := context.services.observe_metric:
                         metric("first_token_seconds", perf_counter() - started)
                 await emit(event)
         return stream

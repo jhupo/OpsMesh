@@ -50,6 +50,31 @@ class ConversationManagement:
     async def get(self, session_id: str, *, actor_id: str) -> ConversationSession:
         return await self._authorize(session_id, actor_id, "session:read")
 
+    async def get_or_open(
+        self,
+        key: str,
+        agent_ref: str,
+        workspace_id: str | None = None,
+        *,
+        actor_id: str,
+    ) -> ConversationSession:
+        """Resolve a principal-scoped durable session without an external ID mapping."""
+        if not isinstance(key, str) or not 1 <= len(key) <= 1024:
+            raise OpsMeshError("INVALID_REQUEST", "Conversation key is invalid")
+        actor = await self.accounts.get_principal(actor_id)
+        agent = await self.agents.get_revision(agent_ref)
+        await self.accounts.authorize(actor, "agent:run", agent.ref)
+        if workspace_id:
+            await self.authorize_workspace(actor_id, workspace_id, write=True)
+        async with audited_operation(self.audit, "session.open", agent.ref, actor_id):
+            session = await self.sessions.get_or_open(key, actor_id, agent.ref, workspace_id)
+        await self._authorize(session.id, actor_id, "session:read")
+        if session.agent_ref != agent.ref or session.workspace_id != workspace_id:
+            raise OpsMeshError("CONFLICT", "Conversation key belongs to another configuration")
+        if session.status != "open":
+            raise OpsMeshError("SESSION_CLOSED", "Conversation is closed")
+        return session
+
     async def list(
         self, *, actor_id: str, owner_id: str | None = None
     ) -> list[ConversationSession]:

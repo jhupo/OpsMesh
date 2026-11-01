@@ -162,3 +162,34 @@ async def test_expiry_blocks_execution_and_releases_session_without_backend_repl
     assert backend.calls == 1
     assert (await runtime.execute(run.id)).status == "blocked"
     assert backend.calls == 1
+
+
+async def test_submission_lookup_is_scoped_to_current_principal(platform):
+    accounts, _runtime, manager, _conversations, users, _backend = platform
+    run = await paused_run(platform, key="stable")
+    assert (await manager.find_submission("stable", actor_id=users["owner"].id)).id == run.id
+    assert await manager.find_submission("stable", actor_id=users["stranger"].id) is None
+    await accounts.update_user(users["owner"].id, active=False)
+    with pytest.raises(OpsMeshError):
+        await manager.find_submission("stable", actor_id=users["owner"].id)
+
+
+async def test_public_get_or_open_reuses_session_and_rejects_configuration_change(platform):
+    accounts, _runtime, _manager, conversations, users, _backend = platform
+    actor = users["admin"].id
+    for identifier in ("one", "two"):
+        draft = await conversations.agents.create(
+            AgentSpecification(id=identifier, name=identifier, backend="controlled"), actor
+        )
+        await conversations.agents.publish(identifier, draft.revision)
+    first = await conversations.get_or_open("channel", "one@1", actor_id=actor)
+    second = await conversations.get_or_open("channel", "one@1", actor_id=actor)
+    assert first.id == second.id
+    with pytest.raises(OpsMeshError, match="another configuration"):
+        await conversations.get_or_open("channel", "two@1", actor_id=actor)
+    await conversations.close(first.id, actor_id=actor)
+    with pytest.raises(OpsMeshError, match="closed"):
+        await conversations.get_or_open("channel", "one@1", actor_id=actor)
+    await accounts.update_user(actor, active=False)
+    with pytest.raises(OpsMeshError):
+        await conversations.get_or_open("another-channel", "one@1", actor_id=actor)

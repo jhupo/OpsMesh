@@ -34,9 +34,9 @@ async def test_postgres_bot_configuration_and_identity_snapshot_race(postgres_ur
             account = BotAccount(
                 id=f"support-{index}",
                 self_id=str(100 + index),
-                adapter="onebot_v11",
-                settings={"api_base_url": "https://trusted.invalid"},
-                credentials={"webhook_secret": "env:BOT_SECRET"},
+                adapter="qq",
+                settings={"app_id": "12345", "api_base_url": "https://trusted.invalid"},
+                credentials={"client_secret": "env:BOT_SECRET"},
             )
             identifier = bot_record_key("account", account.id)
             await records[0].create(
@@ -62,7 +62,7 @@ async def test_postgres_bot_configuration_and_identity_snapshot_race(postgres_ur
                 if operation == "configuration"
                 else configurations[0].save_route(
                     BotRoute(
-                        bot_id=account.id, channel_id="private:200", agent_revision="controlled@1"
+                        bot_id=account.id, channel_id="c2c:200", agent_revision="controlled@1"
                     ),
                     1,
                     None,
@@ -78,7 +78,7 @@ async def test_postgres_bot_configuration_and_identity_snapshot_race(postgres_ur
             saved = await records[0].get(identifier)
             mapping = await records[0].get(bot_record_key("identity", account.id, "200"))
             if operation == "route":
-                route = await records[0].get(bot_record_key("route", account.id, "private:200"))
+                route = await records[0].get(bot_record_key("route", account.id, "c2c:200"))
                 assert (route is None) != (mapping is None)
                 assert saved.revision == 1
             elif mapping is None:

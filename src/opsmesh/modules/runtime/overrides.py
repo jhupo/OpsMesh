@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -30,6 +30,7 @@ class RunOverrides(OpsMeshContract):
     workspace_id: str | None = Field(default=None, min_length=1, max_length=200)
     sandbox: SandboxRunOverrides | None = None
     model_settings: ModelSettingsOverrides | None = None
+    tool_choice: Literal["none"] | None = None
 
     @model_validator(mode="after")
     def select_workspace(self) -> Self:
@@ -43,6 +44,8 @@ def resolve_run_agent(published: AgentSpecification, overrides: RunOverrides) ->
 
     overrides = RunOverrides.model_validate(overrides.model_dump(mode="json"))
     data = published.model_dump(mode="json")
+    if overrides.tool_choice == "none":
+        data.update(tool_choice="none", reset_tool_choice=False)
     if overrides.workspace_id is not None:
         data["workspace_id"] = overrides.workspace_id
         if data["sandbox"]:

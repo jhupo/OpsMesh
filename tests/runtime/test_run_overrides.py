@@ -32,6 +32,16 @@ def published():
     )
 
 
+def test_run_can_disable_tools_without_changing_the_published_agent():
+    source = published().model_copy(update={"tool_choice": "auto"})
+    effective = resolve_run_agent(source, RunOverrides(tool_choice="none"))
+    assert effective.tool_choice == "none" and effective.reset_tool_choice is False
+    assert source.tool_choice == "auto" and source.reset_tool_choice is True
+    for unsafe in ("auto", "required", "some_tool"):
+        with pytest.raises(ValidationError):
+            RunOverrides.model_validate({"tool_choice": unsafe})
+
+
 async def test_runs_share_revision_but_not_overrides_or_mutable_configuration(tmp_path):
     runtime, db = await create_runtime(tmp_path, ControlledBackend())
     specification = published()

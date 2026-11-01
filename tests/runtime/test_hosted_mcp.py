@@ -1,6 +1,7 @@
 """Hosted MCP authentication is local-only and SDK approval resumes by server identity."""
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from openai.types.responses.response_output_item import McpApprovalRequest
@@ -36,8 +37,8 @@ def mcp_spec(policy=None):
 
 def mcp_context():
     ctx = context()
-    ctx.services["authorize_hosted_tool"] = lambda binding: None
-    ctx.services["resolve_secret"] = lambda ref: "sensitive-runtime-token"
+    ctx.services.authorize_hosted_tool = AsyncMock(wraps=lambda binding: None)
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "sensitive-runtime-token")
     return ctx
 
 

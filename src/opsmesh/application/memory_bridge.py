@@ -5,21 +5,34 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
 
 from opsmesh.framework.agents import AgentSpecification
 from opsmesh.framework.errors import OpsMeshError
+from opsmesh.modules.agents.api import AgentDefinitionCatalog
 from opsmesh.modules.memory.api import MemoryCandidate, MemoryExtraction, MemorySource
-from opsmesh.modules.runtime.api import AgentRunView, SubmitRunRequest
+from opsmesh.modules.runtime.api import AgentRuntime, AgentRunView, SubmitRunRequest
+from opsmesh.modules.sessions.api import Conversations
 
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from .authorization import PlatformAuthorization
+from .ports import ApplicationSettings
 
 
 class MemoryGenerationBridge:
-    def __init__(self, services: ApplicationServices) -> None:
-        self.services = services
-        self.execute_run: Callable[[str], Awaitable[AgentRunView]] = services.runtime.execute
+    def __init__(
+        self,
+        *,
+        agents: AgentDefinitionCatalog,
+        runtime: AgentRuntime,
+        sessions: Conversations,
+        authorization: PlatformAuthorization,
+        settings: ApplicationSettings,
+    ) -> None:
+        self.agents = agents
+        self.runtime = runtime
+        self.sessions = sessions
+        self.authorization = authorization
+        self.settings = settings
+        self.execute_run: Callable[[str], Awaitable[AgentRunView]] = self.runtime.execute
 
     async def _generate(
         self,
@@ -34,7 +47,7 @@ class MemoryGenerationBridge:
             raise OpsMeshError(
                 "MEMORY_MODEL_REQUIRED", "Configure a versioned memory model profile"
             )
-        await self.services.authorization.check(principal, "model:use", profile)
+        await self.authorization.check(principal, "model:use", profile)
         key = hashlib.sha256(
             json.dumps(
                 [principal, profile, key, instructions, text, fields], ensure_ascii=False
@@ -56,23 +69,21 @@ class MemoryGenerationBridge:
             },
         )
         try:
-            await self.services.agents.get(identifier)
+            await self.agents.get(identifier)
         except OpsMeshError as error:
             if error.code != "NOT_FOUND":
                 raise
             try:
-                draft = await self.services.agents.create(specification, principal)
-                await self.services.agents.publish(identifier, draft.revision)
+                draft = await self.agents.create(specification, principal)
+                await self.agents.publish(identifier, draft.revision)
             except OpsMeshError as conflict:
                 if conflict.code != "CONFLICT":
                     raise
-        published = await self.services.agents.get_revision(f"{identifier}@1")
+        published = await self.agents.get_revision(f"{identifier}@1")
         if published != specification:
             raise OpsMeshError("CONFLICT", "The internal memory definition has unexpected contents")
-        session = await self.services.sessions.get_or_open(
-            f"memory:{key}", principal, published.ref
-        )
-        run = await self.services.runtime.submit(
+        session = await self.sessions.get_or_open(f"memory:{key}", principal, published.ref)
+        run = await self.runtime.submit(
             SubmitRunRequest(
                 principal_id=principal,
                 session_id=session.id,
@@ -90,9 +101,7 @@ class MemoryGenerationBridge:
         return {field: str(run.output[field]) for field in fields}
 
     async def extract(self, source: MemorySource) -> MemoryExtraction:
-        profile = (
-            source.extract_model_profile or self.services.settings.memory_extract_model_profile
-        )
+        profile = source.extract_model_profile or self.settings.memory_extract_model_profile
         output = await self._generate(
             source.principal_id,
             profile,
@@ -112,8 +121,7 @@ class MemoryGenerationBridge:
         if not items:
             return previous
         profile = (
-            items[0].consolidate_model_profile
-            or self.services.settings.memory_consolidate_model_profile
+            items[0].consolidate_model_profile or self.settings.memory_consolidate_model_profile
         )
         raw = json.dumps(
             {

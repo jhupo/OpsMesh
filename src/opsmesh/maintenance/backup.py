@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import math
+import shutil
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -14,7 +16,7 @@ from opsmesh.bootstrap.settings import OpsMeshSettings
 from opsmesh.bootstrap.storage import create_blob_store
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.typing import OpsMeshContract
-from opsmesh.infrastructure.secrets import EnvironmentSecretResolver
+from opsmesh.infrastructure.secrets import DeploymentSecretResolver
 from opsmesh.infrastructure.storage import BlobStore, LocalBlobStore
 from opsmesh.infrastructure.storage.api import validate_digest
 from opsmesh.infrastructure.storage.backup import export_blobs, restore_blobs, verify_blob_backup
@@ -30,10 +32,11 @@ from .files import (
     verify_workspace_tree,
     write_manifest,
 )
+from .project_state import export_project_state, lock_project_queues
 
 
 class PlatformBackupManifest(OpsMeshContract):
-    format: Literal["opsmesh.platform.v1"] = "opsmesh.platform.v1"
+    format: Literal["opsmesh.platform.v2"] = "opsmesh.platform.v2"
     created_at: datetime
     opsmesh_version: str
     plugins: tuple[str, ...]
@@ -42,10 +45,16 @@ class PlatformBackupManifest(OpsMeshContract):
     blob_manifest_digest: str
     files: tuple[BackupFile, ...]
     directories: tuple[BackupDirectory, ...]
+    credential_key: BackupFile | None = None
+    project_state_files: tuple[BackupFile, ...]
+    project_state_directories: tuple[BackupDirectory, ...]
 
     def to_bytes(self) -> bytes:
         return json.dumps(
-            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            self.model_dump(mode="json", exclude_none=True),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
         ).encode("utf-8")
 
     @property
@@ -91,10 +100,20 @@ async def create_backup(
             "CONFIG_INVALID", "Backup destination must be outside the data directory"
         )
     application = OpsMeshApplication(_offline_settings(settings))
+    locks = ExitStack()
     try:
         await application.services.database.verify_schema()
+        locks.enter_context(lock_project_queues(settings.data_directory))
         await _check_active_directories(application)
-        await asyncio.to_thread(destination.mkdir, parents=True)
+        key = settings.data_directory / "secrets" / "model-credentials.key"
+        if await application.services.model_credentials.store.list() and (
+            not key.is_file() or key.is_symlink()
+        ):
+            raise OpsMeshError(
+                "CREDENTIAL_KEY_UNAVAILABLE",
+                "Cannot back up credentials without the deployment key",
+            )
+        await asyncio.to_thread(destination.mkdir, parents=True, mode=0o700)
         kind = database_kind(settings.resolved_database_url)
         database_name = "database.sqlite3" if kind == "sqlite" else "database.dump"
         await dump_database(
@@ -110,6 +129,17 @@ async def create_backup(
         blobs = await export_blobs(
             application.services.workspaces.blob_store, destination / "blobs", maintenance=True
         )
+        project_files, project_directories = await asyncio.to_thread(
+            export_project_state, settings.data_directory, destination / "project-state"
+        )
+        key_backup = None
+        if key.exists():
+            if key.is_symlink():
+                raise OpsMeshError("BACKUP_INVALID", "Credential key cannot be a symlink")
+            target = destination / "model-credentials.key"
+            await asyncio.to_thread(shutil.copyfile, key, target)
+            target.chmod(0o600)
+            key_backup = await asyncio.to_thread(fingerprint, target, target.name)
         manifest = PlatformBackupManifest(
             created_at=datetime.now(UTC),
             opsmesh_version=__version__,
@@ -121,10 +151,14 @@ async def create_backup(
             blob_manifest_digest=blobs.manifest_digest,
             files=files,
             directories=directories,
+            credential_key=key_backup,
+            project_state_files=project_files,
+            project_state_directories=project_directories,
         )
         await asyncio.to_thread(write_manifest, destination / "manifest.json", manifest.to_bytes())
         return manifest
     finally:
+        locks.close()
         await application.close()
 
 
@@ -147,6 +181,14 @@ def _read_manifest(source: Path, expected_digest: str) -> PlatformBackupManifest
     filename = "database.sqlite3" if manifest.database_kind == "sqlite" else "database.dump"
     if manifest.database.path != filename:
         raise OpsMeshError("BACKUP_INVALID", "Unexpected database backup filename")
+    if manifest.credential_key and manifest.credential_key.path != "model-credentials.key":
+        raise OpsMeshError("BACKUP_INVALID", "Unexpected credential key filename")
+    state_paths = {entry.path for entry in manifest.project_state_files} | {
+        entry.path for entry in manifest.project_state_directories
+    }
+    for relative_path in state_paths:
+        if relative_path.split("/")[0] not in {"projects"}:
+            raise OpsMeshError("BACKUP_INVALID", "Unexpected project state path")
     return manifest
 
 
@@ -157,11 +199,28 @@ async def verify_backup(source: Path, *, expected_manifest_digest: str) -> Platf
     )
     if (actual.digest, actual.size) != (manifest.database.digest, manifest.database.size):
         raise OpsMeshError("CONTENT_CORRUPT", "Database backup digest mismatch")
+    if manifest.credential_key:
+        actual_key = await asyncio.to_thread(
+            fingerprint,
+            checked_file(source, manifest.credential_key.path),
+            manifest.credential_key.path,
+        )
+        if (actual_key.digest, actual_key.size) != (
+            manifest.credential_key.digest,
+            manifest.credential_key.size,
+        ):
+            raise OpsMeshError("CONTENT_CORRUPT", "Credential key backup digest mismatch")
     await asyncio.to_thread(
         verify_workspace_tree, source / "workspaces", manifest.files, manifest.directories
     )
     await verify_blob_backup(
         source / "blobs", expected_manifest_digest=manifest.blob_manifest_digest
+    )
+    await asyncio.to_thread(
+        verify_workspace_tree,
+        source / "project-state",
+        manifest.project_state_files,
+        manifest.project_state_directories,
     )
     return manifest
 
@@ -172,7 +231,7 @@ def _require_empty_directory(path: Path) -> None:
 
 
 def _restore_store(settings: OpsMeshSettings) -> BlobStore:
-    return create_blob_store(settings, EnvironmentSecretResolver()) or LocalBlobStore(
+    return create_blob_store(settings, DeploymentSecretResolver()) or LocalBlobStore(
         settings.data_directory / "storage" / "objects"
     )
 
@@ -214,6 +273,28 @@ async def restore_backup(
             settings.data_directory / "storage" / "workspaces",
             manifest.files,
             manifest.directories,
+        )
+        if manifest.credential_key:
+            key = settings.data_directory / "secrets" / "model-credentials.key"
+            key.parent.mkdir(mode=0o700)
+            await asyncio.to_thread(shutil.copyfile, source / manifest.credential_key.path, key)
+            key.chmod(0o600)
+        files = tuple(
+            item.model_copy(update={"path": item.path[len("projects/") :]})
+            for item in manifest.project_state_files
+            if item.path.startswith("projects/")
+        )
+        directories = tuple(
+            item.model_copy(update={"path": item.path[len("projects/") :]})
+            for item in manifest.project_state_directories
+            if item.path.startswith("projects/")
+        )
+        await asyncio.to_thread(
+            restore_workspace_tree,
+            source / "project-state" / "projects",
+            settings.data_directory / "projects",
+            files,
+            directories,
         )
         await restore_database(
             settings.resolved_database_url,

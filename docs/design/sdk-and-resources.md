@@ -103,7 +103,7 @@ SDK 自身的状态优先级和平台对外 API 不完全相同：SDK 可以按 
 
 ### Provider 与挂载扩展
 
-[SDK-free 公开扩展合同](../../src/opsmesh/modules/runtime/openai_extensions.py)定义 SandboxProviderRegistry、OpenAISandboxProviderFactory 和 OpenAISandboxProviderBinding。部署插件以版本引用注册异步工厂，返回真实 native client/options；不安装 OpenAI extra 时核心公开合同仍可导入。
+[SDK-free 公开扩展合同](../../src/opsmesh/framework/agents/resources.py)定义 SandboxProviderRegistry、SandboxProviderFactory 和 SandboxProviderBinding。部署插件以版本引用注册异步工厂，返回后端理解的 opaque client/options；组合根按后端注入沙箱生命周期工厂。OpenAI 的远程 Docker 实现通过 `modules/runtime/openai_extensions.py` 提供，不安装 OpenAI extra 时框架合同仍可导入。
 
 可选 validate_manifest 在创建前验证远端/宿主挂载、主体和凭据策略。没有这个可信验证器时仅允许受控 inline file / directory / Git manifest。工厂负责验证并落实其 provider 选项；client 负责创建、恢复、序列化和删除真实资源。挂载恢复须从当前可信配置重新绑定授权，不能依赖已剥离的持久凭据。
 
@@ -160,7 +160,7 @@ managed live_update 采用 ACL、幂等键、CAS 与原子发布事件；原生 
 
 ## 9. 上下文、护栏、错误与恢复
 
-AgentExecutionContext 持有主体、run/session ID、授权工具入口和运行 services。SDK local context 不会自动进入模型；只有明确指令、输入、历史和工具结果会进入。ContextVar 只处理当前任务内绑定，后台任务、跨进程恢复必须重建上下文，不能持久化连接池或客户端对象。[Context](https://openai.github.io/openai-agents-python/zh/context/)
+AgentExecutionContext 持有主体、run/session ID、授权工具入口以及类型化的 services、resources、state。模型历史采用中立协议，SDK 专用状态归对应后端，插件自定义状态使用 extensions。子环境单独持有可变状态；取消信号按委派关系共享。SDK local context 不会自动进入模型；只有明确指令、输入、历史和工具结果会进入。ContextVar 只处理当前任务内绑定，后台任务、跨进程恢复必须重建上下文，不能持久化连接池或客户端对象。[Context](https://openai.github.io/openai-agents-python/zh/context/)
 
 输入护栏作用于当前链的起始 Agent，输出护栏检查最终输出。要求模型开始前阻断时使用阻塞输入护栏。工具护栏有适用范围，不能宣称自动覆盖 Hosted 内部动作、handoff 和所有 native Shell 操作。[Guardrails](https://openai.github.io/openai-agents-python/zh/guardrails/)
 

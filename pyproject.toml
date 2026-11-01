@@ -39,6 +39,8 @@ dependencies = [
   "jsonschema>=4,<5",
   "tzdata>=2025.2,<2028",
   "cryptography>=46,<51",
+  "pyyaml>=6,<7",
+  "packaging>=24,<27",
 ]
 
 [project.optional-dependencies]
@@ -69,6 +71,7 @@ dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=1,<2",
   "types-jsonschema>=4,<5",
+  "types-pyyaml>=6,<7",
   "ruff>=0.15,<0.16",
 ]
 

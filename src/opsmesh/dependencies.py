@@ -3,6 +3,7 @@
 from typing import Any, cast
 
 from opsmesh.framework.agents import AgentExecutionContext, get_current_execution_context
+from opsmesh.framework.agents.resources import SandboxProviderRegistry
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.accounts.api import AccountManagement
 from opsmesh.modules.agents.api import AgentFactoryRegistry
@@ -27,7 +28,6 @@ from opsmesh.modules.operations.api import PluginOperations
 from opsmesh.modules.operations.outbox import OutboxManagement
 from opsmesh.modules.runtime.api import RuntimeExtensions
 from opsmesh.modules.runtime.management import RunManagement
-from opsmesh.modules.runtime.openai_extensions import SandboxProviderRegistry
 from opsmesh.modules.scheduling.api import SchedulingService
 from opsmesh.modules.sessions.management import ConversationManagement
 from opsmesh.modules.triggers.api import TriggerService

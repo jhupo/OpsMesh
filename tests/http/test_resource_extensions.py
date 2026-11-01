@@ -1,8 +1,5 @@
 """HTTP composition over real accounts/storage/scripts, with deterministic model/remote peers."""
 
-import base64
-import json
-
 import httpx
 import pytest
 
@@ -284,69 +281,46 @@ async def test_http_vector_hybrid_selection_and_collection_permissions(resource_
     ).status_code == 422
 
 
-async def test_http_bot_file_ownership_and_websocket_optional_secrets(
-    resource_platform, monkeypatch
-):
+async def test_http_bot_file_ownership_and_required_qq_credentials(resource_platform, monkeypatch):
     application, client, headers, principals = resource_platform
-    monkeypatch.setenv("HTTP_TEST_BOT_TOKEN", "token")
     monkeypatch.setenv("HTTP_TEST_BOT_SECRET", "secret")
-    reverse = {
-        "id": "reverse",
-        "self_id": "100",
-        "adapter": "onebot_v11",
-        "settings": {"transport": "reverse_websocket"},
-        "credentials": {"access_token": "env:HTTP_TEST_BOT_TOKEN"},
-    }
-    assert (await client.post("bots", json=reverse, headers=headers["alice"])).status_code == 403
-    created = await client.post("bots", json=reverse, headers=headers["admin"])
-    assert created.status_code == 201 and "webhook_secret" not in created.json()["credentials"]
-    assert (
-        await client.post(
-            "bots",
-            json={**reverse, "id": "invalid", "credentials": {"access_token": None}},
-            headers=headers["admin"],
-        )
-    ).status_code == 422
-    active = {
-        "id": "active",
-        "self_id": "101",
-        "adapter": "onebot_v11",
-        "settings": {"transport": "websocket", "websocket_url": "ws://127.0.0.1:9"},
-    }
-    assert (await client.post("bots", json=active, headers=headers["admin"])).status_code == 201
-    adapter = application.services.bots.adapters.get("onebot_v11")
-    assert not adapter.connections.tasks  # This fixture disables active workers.
     bot = {
         "id": "files",
         "self_id": "102",
-        "adapter": "onebot_v11",
-        "settings": {"api_base_url": "http://onebot.test", "file_upload": "napcat"},
-        "credentials": {"webhook_secret": "env:HTTP_TEST_BOT_SECRET"},
+        "adapter": "qq",
+        "settings": {"app_id": "12345"},
+        "credentials": {"client_secret": "env:HTTP_TEST_BOT_SECRET"},
     }
+    assert (await client.post("bots", json=bot, headers=headers["alice"])).status_code == 403
     assert (await client.post("bots", json=bot, headers=headers["admin"])).status_code == 201
+    invalid = {**bot, "id": "invalid", "credentials": {"client_secret": None}}
+    assert (await client.post("bots", json=invalid, headers=headers["admin"])).status_code == 422
+    active = {**bot, "id": "active", "settings": {"app_id": "12345", "transport": "websocket"}}
+    assert (await client.post("bots", json=active, headers=headers["admin"])).status_code == 201
+    assert not application.services.bots.adapters.get("qq").tasks
     await workspace_file(client, headers["alice"], path="report.txt", content=b"private-report")
     await grant(application, principals, ("alice", "bob"), ("bots.send", "files"))
     body = {
         "workspace_id": "source",
         "path": "report.txt",
         "name": "report.txt",
-        "channel_id": "private:200",
+        "channel_id": "c2c:200",
         "idempotency_key": "file-one",
     }
     assert (
         await client.post("bots/files/files", json=body, headers=headers["bob"])
     ).status_code == 403
     calls = []
+    # Inject a file-capable test implementation; official QQ does not claim upload_file support.
+    from opsmesh.infrastructure.bots.qq.bot import QQBot
 
-    async def upload(request):
-        payload = json.loads(request.content)
-        assert base64.b64decode(payload["file"].removeprefix("base64://")) == b"private-report"
-        calls.append(payload)
-        return httpx.Response(200, json={"status": "ok", "retcode": 0, "data": {"file_id": "one"}})
+    async def upload(self, target, name, content):
+        assert content == b"private-report" and name == "report.txt"
+        calls.append(target)
+        return "one"
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(upload)) as bot_client:
-        adapter.client = bot_client
-        first = await client.post("bots/files/files", json=body, headers=headers["alice"])
-        assert first.status_code == 200 and first.json()["file_id"] == "one", first.text
-        duplicate = await client.post("bots/files/files", json=body, headers=headers["alice"])
-        assert duplicate.json()["duplicate"] and len(calls) == 1
+    monkeypatch.setattr(QQBot, "upload_file", upload)
+    first = await client.post("bots/files/files", json=body, headers=headers["alice"])
+    assert first.status_code == 200 and first.json()["file_id"] == "one", first.text
+    duplicate = await client.post("bots/files/files", json=body, headers=headers["alice"])
+    assert duplicate.json()["duplicate"] and len(calls) == 1

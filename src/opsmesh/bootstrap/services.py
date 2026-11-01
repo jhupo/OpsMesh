@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import httpx
+from pydantic import SecretStr
 
 if TYPE_CHECKING:
     from opsmesh.application.resource_references import PlatformResourceReferences
@@ -30,17 +31,28 @@ if TYPE_CHECKING:
     from opsmesh.modules.workspaces.management import WorkspaceManagement
 
 from opsmesh.application.agent_bridge import AgentExecutionBridge
+from opsmesh.application.agent_context import (
+    AgentContextBindings,
+    ResourcePreparation,
+    ResourceSynchronization,
+)
+from opsmesh.application.agent_validation import AgentPublicationValidator
 from opsmesh.application.authorization import PlatformAuthorization
 from opsmesh.application.memory_bridge import MemoryGenerationBridge
 from opsmesh.application.memory_tools import MemoryResourceBindings
-from opsmesh.application.sandbox_bridge import SandboxSessionFactory, SandboxWorkspaceBridge
+from opsmesh.application.run_finalization import RunResultFinalizer
+from opsmesh.application.run_resources import RunResourceScope
+from opsmesh.application.run_usage import RunUsageAccounting
+from opsmesh.application.sandbox_bridge import SandboxWorkspaceBridge
 from opsmesh.application.schedule_bridge import SchedulePlatformBridge
 from opsmesh.application.trigger_bridge import TriggerPlatformBridge
+from opsmesh.framework.agents import AgentExecutionContext
+from opsmesh.framework.agents.resources import SandboxSessionFactory
 from opsmesh.framework.drivers import OpsMeshDriver
 from opsmesh.infrastructure.coordination.admission import AtomicRunAdmission
 from opsmesh.infrastructure.coordination.redis import RequestRateLimiter
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
-from opsmesh.infrastructure.secrets import EnvironmentSecretResolver
+from opsmesh.infrastructure.secrets import DeploymentSecretResolver, FileCredentialCipher
 from opsmesh.infrastructure.telemetry.metric_store import PersistentMetricStore
 from opsmesh.infrastructure.telemetry.metrics import PlatformMetrics
 from opsmesh.modules.accounts.internal.service import LocalAccountService
@@ -48,6 +60,7 @@ from opsmesh.modules.agents.internal.catalog import PersistentAgentDefinitionCat
 from opsmesh.modules.agents.internal.factories import InProcessAgentFactoryRegistry
 from opsmesh.modules.audit.internal.journal import PersistentAuditJournal
 from opsmesh.modules.bots.api import BotEventDispatcher
+from opsmesh.modules.bots.internal.conversations.inbox import PersistentConversationInboxProvider
 from opsmesh.modules.bots.internal.service import BotService
 from opsmesh.modules.capabilities.internal.catalog import PersistentCapabilityCatalog
 from opsmesh.modules.capabilities.internal.code_tools import InProcessCodeToolRegistry
@@ -65,7 +78,10 @@ from opsmesh.modules.execution.internal.service import (
     LocalExecutionProvider,
 )
 from opsmesh.modules.memory.internal.service import PersistentMemoryService
+from opsmesh.modules.models.credentials import ModelCredentialManagement
 from opsmesh.modules.models.internal.service import ModelProfileCatalog
+from opsmesh.modules.notifications.internal.service import NotificationService
+from opsmesh.modules.runtime.api import AgentRunView
 from opsmesh.modules.runtime.internal.extensions import RuntimeExtensionRegistry
 from opsmesh.modules.runtime.internal.service import PersistentAgentRuntime
 from opsmesh.modules.scheduling.internal.service import PersistentScheduler
@@ -84,7 +100,8 @@ class OpsMeshServices:
     settings: OpsMeshSettings
     database: AsyncDatabase
     admission: AtomicRunAdmission
-    secrets: EnvironmentSecretResolver
+    secrets: DeploymentSecretResolver
+    model_credentials: ModelCredentialManagement
     http_client: httpx.AsyncClient
     metrics: PlatformMetrics
     metric_store: PersistentMetricStore
@@ -111,6 +128,9 @@ class OpsMeshServices:
     agent_factories: InProcessAgentFactoryRegistry
     sandbox_bridge: SandboxWorkspaceBridge
     agent_bridge: AgentExecutionBridge
+    agent_publication: AgentPublicationValidator
+    run_finalizer: RunResultFinalizer
+    run_usage: RunUsageAccounting
     agents: PersistentAgentDefinitionCatalog
     runtime: PersistentAgentRuntime
     memory_bridge: MemoryGenerationBridge
@@ -148,22 +168,29 @@ class OpsMeshServices:
         settings: OpsMeshSettings,
         driver: OpsMeshDriver,
         dispatch: BotEventDispatcher,
+        secret_values: dict[str, SecretStr] | None = None,
     ) -> None:
         self.settings = settings
         self.database = AsyncDatabase(settings.resolved_database_url)
         self.admission = AtomicRunAdmission(self.database)
-        self.secrets = EnvironmentSecretResolver()
+        self.secrets = DeploymentSecretResolver(secret_values)
         self.http_client = httpx.AsyncClient(timeout=30)
         self.metrics = PlatformMetrics()
         self.metric_store = PersistentMetricStore(self.database, self.metrics)
         driver.on_startup(self.metric_store.start)
         self.rate_limiter = RequestRateLimiter(settings.redis_url)
         self.accounts = LocalAccountService(self.database, token_ttl=settings.token_ttl_seconds)
-        self.authorization = PlatformAuthorization(self)
         self.sessions = ConversationService(self.database)
+        self.conversation_inboxes = PersistentConversationInboxProvider(self.database)
         self.models = ModelProfileCatalog(self.database)
         self.configuration = PlatformConfigurationService(self.database)
         self.audit = PersistentAuditJournal(self.database)
+        self.model_credentials = ModelCredentialManagement(
+            self.database,
+            self.accounts,
+            self.audit,
+            FileCredentialCipher(settings.data_directory / "secrets" / "model-credentials.key"),
+        )
         self.workspaces = LocalWorkspaceService(
             self.database,
             settings.data_directory / "storage",
@@ -173,11 +200,24 @@ class OpsMeshServices:
         self.usage = PersistentUsageService(
             self.database, billing_currency=settings.budget_currency
         )
+        self.code_tools = InProcessCodeToolRegistry()
+        self.capabilities = PersistentCapabilityCatalog(self.database)
+        self.authorization = PlatformAuthorization(
+            accounts=self.accounts,
+            models=self.models,
+            capabilities=self.capabilities,
+            workspace_owners=self.workspace_owners,
+            settings=settings,
+        )
         self._compose_capabilities()
         self._compose_runtime()
         self._compose_transports(driver, dispatch)
         compose_management(self)
-        self.trigger_bridge = TriggerPlatformBridge(self)
+        self.trigger_bridge = TriggerPlatformBridge(
+            notifications=self.notifications,
+            schedule_bridge=self.schedule_bridge,
+            sessions=self.sessions,
+        )
         self.triggers = PersistentTriggerService(
             VersionedRecordStore(self.database, "trigger_records"),
             self.authorization.check,
@@ -191,8 +231,6 @@ class OpsMeshServices:
 
     def _compose_capabilities(self) -> None:
         settings = self.settings
-        self.code_tools = InProcessCodeToolRegistry()
-        self.capabilities = PersistentCapabilityCatalog(self.database)
         self.skills = PersistentSkillCatalog(
             self.database,
             self.workspaces,
@@ -264,28 +302,109 @@ class OpsMeshServices:
             self.workspaces,
             self.database,
             allow_trusted_local=settings.allow_trusted_local,
-            session_factory=session_factory,
+            session_factories={"openai_agents": session_factory}
+            if session_factory is not None
+            else {},
         )
-        self.agent_bridge = AgentExecutionBridge(self)
-        self.agents = PersistentAgentDefinitionCatalog(self.database, self.agent_bridge.validate)
+        self.agents = PersistentAgentDefinitionCatalog(
+            self.database,
+            lambda spec: self.agent_publication.validate(spec),
+            lambda spec, owner: self.agent_publication.prepare(spec, owner),
+        )
         self.runtime = PersistentAgentRuntime(
             self.database,
             self.extensions,
-            self.agent_bridge.context,
+            lambda run: self.agent_bridge.context(run),
             agent_resolver=self.agents.get_revision,
-            finalizer=self.agent_bridge.finalize,
+            finalizer=lambda run, outcome: self.run_finalizer.finalize(run, outcome),
             observe_metric=self.metrics.observe,
             session_claims=self.sessions,
-            session_claim_reader=self.sessions.active_claims,
         )
-        self.memory_bridge = MemoryGenerationBridge(self)
+        self.memory_bridge = MemoryGenerationBridge(
+            agents=self.agents,
+            runtime=self.runtime,
+            sessions=self.sessions,
+            authorization=self.authorization,
+            settings=settings,
+        )
         self.memory = PersistentMemoryService(
             self.database,
             self.workspaces,
             self.memory_bridge.extract,
             self.memory_bridge.consolidate,
         )
-        self.memory_tools = MemoryResourceBindings(self)
+        self.memory_tools = MemoryResourceBindings(
+            memory=self.memory, capabilities=self.capabilities, code_tools=self.code_tools
+        )
+        self.run_usage = RunUsageAccounting(usage=self.usage, settings=settings)
+        self.agent_publication = AgentPublicationValidator(
+            agents=self.agents,
+            capabilities=self.capabilities,
+            code_tools=self.code_tools,
+            extensions=self.extensions,
+            mcp_catalog=self.mcp_catalog,
+            models=self.models,
+            authorization=self.authorization,
+            model_credentials=self.model_credentials,
+            scripts=self.scripts,
+            settings=settings,
+            skills=self.skills,
+        )
+        self.run_finalizer = RunResultFinalizer(
+            sandbox=self.sandbox_bridge,
+            sessions=self.sessions,
+            workspaces=self.workspaces,
+            workspace_owners=self.workspace_owners,
+            memory=self.memory,
+            usage=self.run_usage,
+        )
+        self.agent_bridge = AgentExecutionBridge(
+            accounts=self.accounts,
+            agents=self.agents,
+            authorization=self.authorization,
+            resources=self.resources,
+            capabilities=self.capabilities,
+            skills=self.skills,
+            sessions=self.sessions,
+            workspaces=self.workspaces,
+            memory_tools=self.memory_tools,
+            usage=self.run_usage,
+            contexts=self._execution_context,
+            scopes=self._resource_scope,
+        )
+
+    def _execution_context(
+        self, run: AgentRunView, prepare: ResourcePreparation, sync: ResourceSynchronization
+    ) -> AgentExecutionContext:
+        return AgentContextBindings(
+            run=run,
+            usage=self.run_usage,
+            prepare_resources=prepare,
+            sync_resources=sync,
+            agents=self.agents,
+            authorization=self.authorization,
+            metrics=self.metrics,
+            model_credentials=self.model_credentials,
+            models=self.models,
+            secrets=self.secrets,
+            settings=self.settings,
+            tool_invoker=self.tool_invoker,
+            ledger=self.usage,
+        ).build()
+
+    def _resource_scope(
+        self, run: AgentRunView, context: AgentExecutionContext
+    ) -> RunResourceScope:
+        return RunResourceScope(
+            run=run,
+            context=context,
+            admission=self.admission,
+            configuration=self.configuration,
+            memory_tools=self.memory_tools,
+            resources=self.resources,
+            sandbox_bridge=self.sandbox_bridge,
+            workspace_owners=self.workspace_owners,
+        )
 
     def _compose_transports(self, driver: OpsMeshDriver, dispatch: BotEventDispatcher) -> None:
         settings = self.settings
@@ -300,7 +419,19 @@ class OpsMeshServices:
             agent_resolver=self.agents.get_revision,
             principal_resolver=self.accounts.get_principal,
         )
-        self.schedule_bridge = SchedulePlatformBridge(self)
+        self.notifications = NotificationService(
+            self.database, self.accounts, self.audit, self.bots, self.authorization.check
+        )
+        self.schedule_bridge = SchedulePlatformBridge(
+            accounts=self.accounts,
+            agents=self.agents,
+            authorization=self.authorization,
+            bots=self.bots,
+            notifications=self.notifications,
+            sandbox_bridge=self.sandbox_bridge,
+            sessions=self.sessions,
+            workspaces=self.workspaces,
+        )
         self.scheduler = PersistentScheduler(
             driver,
             VersionedRecordStore(self.database, "scheduler_records"),

@@ -2,11 +2,11 @@
 
 Linux 安装提供 `local` 和 `docker` 两种模式，默认是 **本地 Python 安装 + systemd 服务**。本地模式不需要 Docker 或 Kubernetes；HTTP API 和后台协调器在同一个服务中运行，默认使用 SQLite。Docker 模式需要显式指定，使用 Compose 管理 API、Worker、PostgreSQL 和 Redis。
 
-本版部署使用独立的 `opsmesh-0.3.1-linux.tar.gz` 安装包，见 [v0.3.1 发布说明](../docs/releases/v0.3.1.md)。它包含构建后的 wheel、带哈希的运行依赖清单 `requirements.lock`、安装脚本、systemd/Compose/Dockerfile、`VERSION`、`SHA256SUMS`、说明和许可证。安装包不包含 Python 解释器、`.venv`、源码仓库的 `src/`、测试、Git 元数据或开发配置。
+本版部署使用独立的 `opsmesh-0.3.2-linux.tar.gz` 安装包，见 [v0.3.2 发布说明](../docs/releases/v0.3.2.md)。它包含构建后的 wheel、带哈希的运行依赖清单 `requirements.lock`、安装脚本、systemd/Compose/Dockerfile、`VERSION`、`SHA256SUMS`、说明和许可证。安装包不包含 Python 解释器、`.venv`、源码仓库的 `src/`、测试、Git 元数据或开发配置。
 
 Python 是应用运行依赖，安装时选择或获取，不随安装包分发。wheel 是标准 Python 安装制品，其中可以包含 Python 模块；它不是独立机器码程序，也不承诺隐藏 Python 源码。
 
-原 `v0.3.0` 历史发布没有该 Linux 安装包，不修改其标签或已有附件。从 [v0.3.1 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1)获取本版安装包，或按本文末尾的构建命令生成当前版本的安装包。
+原 `v0.3.0` 历史发布没有该 Linux 安装包，不修改其标签或已有附件。从 [v0.3.2 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.2)获取本版安装包，或按本文末尾的构建命令生成当前版本的安装包。
 
 ## 安装要求
 
@@ -24,9 +24,9 @@ Python 是应用运行依赖，安装时选择或获取，不随安装包分发�
 下载本版 Linux 安装包和对应 `.sha256` 文件到同一目录，先校验压缩包，再解压并核对包内文件：
 
 ```sh
-sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
-tar -xzf opsmesh-0.3.1-linux.tar.gz
-cd opsmesh-0.3.1-linux
+sha256sum --check opsmesh-0.3.2-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.2-linux.tar.gz
+cd opsmesh-0.3.2-linux
 sha256sum --check SHA256SUMS
 sudo bash install.sh
 ```

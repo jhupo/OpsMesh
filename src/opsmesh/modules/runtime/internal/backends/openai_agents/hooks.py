@@ -13,6 +13,7 @@ from pydantic_core import to_jsonable_python
 from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification
 from opsmesh.modules.runtime.api import Hook, RuntimeExtensions
 
+from .execution_state import execution_state
 from .usage import begin_request, publish_request_usage
 
 
@@ -67,9 +68,9 @@ class RegisteredRunHooks(RunHooks[AgentExecutionContext]):
     async def on_llm_start(
         self, context: Any, agent: Any, system_prompt: Any, input_items: Any
     ) -> None:
-        authorize = context.context.services.get("authorize_model_request")
+        authorize = context.context.services.authorize_model_request
         if authorize is not None:
-            profile = context.context.services.get("agent_model_profiles", {}).get(agent.name)
+            profile = execution_state(context.context).agent_model_profiles.get(agent.name)
             result = authorize(profile)
             if inspect.isawaitable(result):
                 await result

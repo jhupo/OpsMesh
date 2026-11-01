@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+## 0.3.2 - 2026-11-01
+
+- Add explicit v2 migrations and transactional SQL indexes for Run and stream queries.
+- Replace execution service dictionaries with typed ports and backend-owned state;
+  inject sandbox lifecycle factories without SDK dependencies in the framework.
+- Separate publication, execution resources, finalization, worker coordination and
+  Outbox delivery; consolidate capability writes and durable Run waiting.
+- Reject automatic memory capture on reviewed conversation routes, keeping capture
+  behind confirmed, reviewed delivery.
+- Consolidate durable conversation inboxes into the platform SQLite/PostgreSQL database,
+  with scoped contracts, shared transactions and versioned coordination records.
+- Remove OneBot, deprecated scheduler exports, legacy account/permission conversions,
+  and text-output fallback; retain official QQ and DingTalk adapters.
+- Back up conversation state with the main database and require v2 backup inventories.
+
+- Send every approved conversation batch to the Agent, keeping moderation limited
+  to policy review. Share one group Session between chat and participation.
+- Add platform/personal default models fixed at Agent publication, owner-scoped
+  provider profiles, and encrypted versioned credentials with explicit revocation.
+- Add online release check/download/install commands and authorized HTTP staging,
+  with checksum verification and target-version rechecking under the installer lock.
+- Back up credential keys, project bindings and conversation state in the platform database.
+- Move project assembly from CLI parsing into bootstrap and application coordination.
+- Add optional official QQ WebSocket ingress, group-specific bot mentions,
+  proactive messages and administrator recall with conservative delivery errors.
+- Add exact-group admission for unlinked members using a delegated non-admin
+  platform principal, preserving explicit identity mappings and permissions.
+- Add a single-entrypoint QQ example with one sandbox Agent, the upstream
+  gentle-sister skill, a registered Jev tool and native knowledge bindings.
+- Add provider-neutral conversation batching, review policies and delivery
+  coordination; persist reviewed, delivered conversations through platform
+  knowledge services without a second example Agent or file mirror.
+- Add declarative resource publication, controlled workspace template updates
+  and a local bot project launcher. Managed routes fail closed when their
+  message handler is unavailable.
+- Unify model profile validation across HTTP and code entrypoints.
+
 ## 0.3.1 — 2026-11-01
 
 - Add a dedicated `opsmesh-<VERSION>-linux.tar.gz` installation bundle containing

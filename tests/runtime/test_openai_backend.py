@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -257,7 +258,7 @@ async def test_agent_tool_returns_control_to_parent():
     )
     observations = []
     ctx = context(agents={child.ref: child})
-    ctx.services["observe_usage"] = observations.append
+    ctx.services.observe_usage = AsyncMock(wraps=observations.append)
     result = await backend.run(root, "help", ctx)
     assert result.output == "parent answer"
     assert result.usage.requests == 3
@@ -318,7 +319,7 @@ async def test_successful_request_usage_survives_later_turn_limit_error():
         RuntimeExtensionRegistry(), model_resolver=lambda spec, ctx: model
     )
     ctx = context()
-    ctx.services["observe_usage"] = observations.append
+    ctx.services.observe_usage = AsyncMock(wraps=observations.append)
     spec = AgentSpecification(id="a", name="A", max_turns=1, tools=(ToolBinding(name="lookup"),))
     with pytest.raises(OpsMeshError) as error:
         await backend.run(spec, "hi", ctx)
@@ -337,7 +338,7 @@ async def test_resource_compiler_tools_use_authorized_invoker():
             tools=(ToolBinding(name="search_knowledge", tool_ref="knowledge.search@3"),),
         )
 
-    ctx.services["prepare_agent_resources"] = prepare
+    ctx.services.prepare_agent_resources = prepare
     model = ScriptedModel([[call("search_knowledge")], [message("answer")]])
     backend = OpenAIAgentsBackend(
         RuntimeExtensionRegistry(), model_resolver=lambda spec, ctx: model
@@ -438,9 +439,9 @@ async def test_model_admission_is_rechecked_before_each_request():
         if len(attempts) > 1:
             raise OpsMeshError("BUDGET_EXHAUSTED", "Budget exhausted after the first request")
 
-    context_data.services["authorize_model_request"] = authorize
+    context_data.services.authorize_model_request = authorize
     observations = []
-    context_data.services["observe_usage"] = observations.append
+    context_data.services.observe_usage = AsyncMock(wraps=observations.append)
     backend = OpenAIAgentsBackend(
         RuntimeExtensionRegistry(), model_resolver=lambda spec, ctx: model
     )
@@ -464,7 +465,7 @@ async def test_unknown_provider_outcome_is_observed_without_replaying():
     model = LostResponseModel([])
     context_data = context()
     observations = []
-    context_data.services["observe_usage"] = observations.append
+    context_data.services.observe_usage = AsyncMock(wraps=observations.append)
     backend = OpenAIAgentsBackend(
         RuntimeExtensionRegistry(), model_resolver=lambda spec, ctx: model
     )
@@ -472,4 +473,4 @@ async def test_unknown_provider_outcome_is_observed_without_replaying():
         await backend.run(AgentSpecification(id="a", name="A"), "hi", context_data)
     assert len(model.inputs) == 1
     assert len(observations) == 1 and observations[0]["usage_available"] is False
-    assert context_data.services["usage_snapshot"]["usage_available"] is False
+    assert context_data.state.usage_snapshot["usage_available"] is False

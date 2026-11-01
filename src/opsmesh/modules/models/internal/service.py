@@ -3,18 +3,26 @@
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
 from opsmesh.infrastructure.database.availability import PersistentVersionAvailability
-from opsmesh.modules.models.api import ModelProfile
-
-from .validation import validate_profile
+from opsmesh.modules.models.api import ModelProfile, validate_model_profile
 
 
 class ModelProfileCatalog:
     def __init__(self, database: AsyncDatabase) -> None:
         self.store = VersionedRecordStore(database, "models_profiles")
         self.availability = PersistentVersionAvailability(database, "models_profiles")
+        self.preferences = VersionedRecordStore(database, "models_preferences")
+
+    async def default_reference(self, owner_id: str) -> str | None:
+        personal = await self.preferences.get(f"user:{owner_id}")
+        if personal and personal.data.get("reference"):
+            return str(personal.data["reference"])
+        platform = await self.preferences.get("platform")
+        return (
+            str(platform.data["reference"]) if platform and platform.data.get("reference") else None
+        )
 
     async def create(self, profile: ModelProfile) -> ModelProfile:
-        validate_profile(profile)
+        validate_model_profile(profile)
         if "@" in profile.id or profile.revision != 1:
             raise OpsMeshError("CONFIG_INVALID", "New model profiles start at revision 1")
         data = profile.model_dump(mode="json")
@@ -49,10 +57,12 @@ class ModelProfileCatalog:
         return tuple(ModelProfile.model_validate(value) for value in row.data["versions"].values())
 
     async def update(self, profile: ModelProfile, expected_revision: int) -> ModelProfile:
-        validate_profile(profile)
+        validate_model_profile(profile)
         prior = await self.store.get(profile.id)
         if prior is None:
             raise OpsMeshError("NOT_FOUND", "Model profile does not exist")
+        if profile.owner_id != prior.data["current"].get("owner_id"):
+            raise OpsMeshError("FORBIDDEN", "Model ownership cannot change")
         profile = profile.model_copy(update={"revision": expected_revision + 1})
         data = profile.model_dump(mode="json")
         await self.store.update(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from time import perf_counter
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opsmesh.framework.agents import (
     AgentExecutionContext,
@@ -16,13 +16,19 @@ from opsmesh.framework.agents import (
     NativeToolBinding,
 )
 from opsmesh.framework.errors import OpsMeshError
-from opsmesh.modules.capabilities.api import PreparedAgentResources
+from opsmesh.infrastructure.secrets import DeploymentSecretResolver
+from opsmesh.infrastructure.telemetry.metrics import PlatformMetrics
+from opsmesh.modules.agents.api import AgentDefinitionCatalog
+from opsmesh.modules.capabilities.api import PreparedAgentResources, ToolInvoker
+from opsmesh.modules.models.api import ModelProfiles
+from opsmesh.modules.models.credentials import ModelCredentialManagement
 from opsmesh.modules.runtime.api import AgentRunView
+from opsmesh.modules.usage.api import UsageService
 
+from .authorization import PlatformAuthorization
+from .conversations.validation import validate_conversation_agent
+from .ports import ApplicationSettings
 from .run_usage import RunUsageAccounting
-
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
 
 ResourcePreparation = Callable[[AgentSpecification], Awaitable[PreparedAgentResources]]
 ResourceSynchronization = Callable[[AgentExecutionContext, str, dict[str, Any]], Awaitable[None]]
@@ -31,66 +37,87 @@ ResourceSynchronization = Callable[[AgentExecutionContext, str, dict[str, Any]],
 class AgentContextBindings:
     def __init__(
         self,
-        services: ApplicationServices,
+        *,
         run: AgentRunView,
         usage: RunUsageAccounting,
         prepare_resources: ResourcePreparation,
         sync_resources: ResourceSynchronization,
+        agents: AgentDefinitionCatalog,
+        authorization: PlatformAuthorization,
+        metrics: PlatformMetrics,
+        model_credentials: ModelCredentialManagement,
+        models: ModelProfiles,
+        secrets: DeploymentSecretResolver,
+        settings: ApplicationSettings,
+        tool_invoker: ToolInvoker,
+        ledger: UsageService,
     ) -> None:
-        self.services, self.run, self.usage = services, run, usage
+        self.agents = agents
+        self.authorization = authorization
+        self.metrics = metrics
+        self.model_credentials = model_credentials
+        self.models = models
+        self.secrets = secrets
+        self.settings = settings
+        self.tool_invoker = tool_invoker
+        self.ledger = ledger
+        self.run, self.usage = run, usage
         self.prepare_resources, self.sync_resources = prepare_resources, sync_resources
         self.context = AgentExecutionContext(
             run.id, run.session_id, run.principal_id, self.invoke, self.resolve
         )
 
     def build(self) -> AgentExecutionContext:
-        self.context.services.update(
-            {
-                "resolve_secret": self.services.secrets.resolve,
-                "prepare_model_profile": self.profile,
-                "prepare_agent_resources": self.prepare_resources,
-                "observe_usage": self.observe,
-                "observe_resource_usage": self.observe_resource,
-                "authorize_hosted_tool": self.authorize_hosted_tool,
-                "authorize_native_tool": self.authorize_native_tool,
-                "authorize_model_request": self.authorize_model_request,
-                "trace_context": self.run.metadata.get("trace_context", {}),
-                "attempt_id": self.run.attempt_id,
-                "observe_metric": self.services.metrics.observe,
-                "authorize_workspace": self.authorize_workspace,
-                "sync_agent_resources": self.sync_resources,
-            }
-        )
+        if self.run.metadata.get("conversation_operation"):
+            validate_conversation_agent(self.run.agent)
+        self.context.services.resolve_secret = self.resolve_secret
+        self.context.services.prepare_model_profile = self.profile
+        self.context.services.prepare_agent_resources = self.prepare_resources
+        self.context.services.observe_usage = self.observe
+        self.context.services.observe_resource_usage = self.observe_resource
+        self.context.services.authorize_hosted_tool = self.authorize_hosted_tool
+        self.context.services.authorize_native_tool = self.authorize_native_tool
+        self.context.services.authorize_model_request = self.authorize_model_request
+        self.context.services.trace_context = self.run.metadata.get("trace_context", {})
+        self.context.state.attempt_id = self.run.attempt_id
+        self.context.services.observe_metric = self.metrics.observe
+        self.context.services.authorize_workspace = self.authorize_workspace
+        self.context.services.sync_agent_resources = self.sync_resources
         return self.context
 
     async def invoke(self, tool_ref: str, arguments: dict[str, Any], call_id: str) -> Any:
         started = perf_counter()
         try:
-            result = await self.services.tool_invoker.invoke(
+            result = await self.tool_invoker.invoke(
                 tool_ref,
                 arguments,
                 principal_id=self.run.principal_id,
                 call_id=f"{self.run.id}:{call_id}",
             )
             await self.sync_resources(self.context, tool_ref, arguments)
-            self.services.metrics.increment("tool_calls")
+            self.metrics.increment("tool_calls")
             return result
         except Exception:
-            self.services.metrics.increment("tool_calls", "failure")
+            self.metrics.increment("tool_calls", "failure")
             raise
         finally:
-            self.services.metrics.observe("tool_duration_seconds", perf_counter() - started)
+            self.metrics.observe("tool_duration_seconds", perf_counter() - started)
+
+    async def resolve_secret(self, reference: str) -> str:
+        if reference.startswith("credential:"):
+            return await self.model_credentials.resolve(reference, actor_id=self.run.principal_id)
+        return self.secrets.resolve(reference)
 
     async def resolve(self, reference: str) -> AgentSpecification:
-        await self.services.authorization.check(self.run.principal_id, "agent:run", reference)
-        return await self.services.agents.get_revision(reference)
+        await self.authorization.check(self.run.principal_id, "agent:run", reference)
+        return await self.agents.get_revision(reference)
 
     async def profile(self, specification: AgentSpecification) -> dict[str, Any] | None:
         reference = specification.model_profile_ref
         if reference is None:
             return None
-        await self.services.authorization.check(self.run.principal_id, "model:use", reference)
-        return (await self.services.models.get(reference)).model_dump(mode="json")
+        await self.authorization.check(self.run.principal_id, "model:use", reference)
+        return (await self.models.get(reference)).model_dump(mode="json")
 
     async def observe(self, data: dict[str, Any]) -> None:
         await self.usage.observe(self.run, data)
@@ -99,7 +126,7 @@ class AgentContextBindings:
         await self.usage.observe_resource(self.run, data)
 
     async def authorize_workspace(self, workspace_id: str) -> None:
-        await self.services.authorization.workspace(self.run.principal_id, workspace_id, write=True)
+        await self.authorization.workspace(self.run.principal_id, workspace_id, write=True)
 
     async def authorize_native_tool(self, binding: NativeToolBinding) -> None:
         reference = (
@@ -109,10 +136,10 @@ class AgentContextBindings:
         )
         if not isinstance(reference, str) or not reference:
             raise OpsMeshError("CONFIG_INVALID", "Native tool requires a registered implementation")
-        await self.services.authorization.check(self.run.principal_id, "native_tool:use", reference)
+        await self.authorization.check(self.run.principal_id, "native_tool:use", reference)
 
     async def authorize_hosted_tool(self, binding: HostedToolBinding) -> None:
-        check = self.services.authorization.check
+        check = self.authorization.check
         principal_id = self.run.principal_id
         await check(principal_id, "hosted_tool:use", binding.type)
         if isinstance(binding, FileSearchBinding):
@@ -138,11 +165,13 @@ class AgentContextBindings:
 
     async def authorize_model_request(self, profile_ref: str | None) -> None:
         if profile_ref:
-            await self.services.authorization.check(self.run.principal_id, "model:use", profile_ref)
+            await self.authorization.check(self.run.principal_id, "model:use", profile_ref)
             # A cached SDK model must not bypass a version withdrawn during the Run.
-            await self.services.models.get(profile_ref)
-        status = await self.services.usage.budget(
-            self.run.principal_id, self.services.settings.budget_currency
-        )
+            profile = await self.models.get(profile_ref)
+            if profile.owner_id:
+                await self.model_credentials.validate_reference(
+                    profile.secret_ref, actor_id=self.run.principal_id
+                )
+        status = await self.ledger.budget(self.run.principal_id, self.settings.budget_currency)
         if status.limit is not None and status.spent >= status.limit:
             raise OpsMeshError("BUDGET_EXCEEDED", "The configured token budget is exhausted")

@@ -47,7 +47,7 @@ opsmesh/
 │   ├── application/                    # 跨模块调用链与后台协调
 │   ├── entrypoints/                    # CLI、HTTP/SSE、Run Worker入口
 │   ├── infrastructure/                 # 具体技术实现
-│   │   ├── bots/                       # dingtalk、qq、onebot协议实现
+│   │   ├── bots/                       # dingtalk、qq 协议实现
 │   │   ├── run_workers/                # 子进程、Docker、Kubernetes Run Worker
 │   │   ├── database/                   # 连接、迁移、事务、CAS记录与资源可用性存储
 │   │   ├── messaging/                  # 事务Outbox、领取租约、重试与死信
@@ -56,7 +56,6 @@ opsmesh/
 │   │   ├── telemetry/                  # 日志、指标与OpenTelemetry
 │   │   └── secrets.py                  # 环境密钥解析
 │   ├── maintenance/                   # 离线整站备份、验证与恢复
-│   └── plugins/                        # 可选扩展命名空间、旧调度路径兼容导出
 ├── tests/                              # 模块、跨域、SDK和显式环境测试
 ├── examples/                           # 插件公开API示例
 ├── docs/                               # 设计、API、命名、运维与验证记录
@@ -70,9 +69,9 @@ opsmesh/
 
 `framework/adapters/`直接保存`adapter.py`、`bot.py`、`event.py`和`message.py`。`framework/agents/`直接保存`specification.py`、`backend.py`、`context.py`、`state.py`、`event.py`、模型设置与工具绑定合同。二者的`__init__.py`只整理公开导出，不再把全部实现藏在平行的`internal/adapter`或`internal/agent`目录。
 
-当前 `infrastructure/messaging/outbox.py` 是真实的可靠消息实现，由 `application/coordinator.py` 组装消费链；它替代了早期没有实现的消息占位目录。持久调度归 `modules/scheduling/`，进程内定时器归 `framework/scheduling.py`；`plugins/scheduler/` 仅兼容旧导入路径。Web 按需求预留，其他 Python 叶子包不允许只有占位说明。
+当前 `infrastructure/messaging/outbox.py` 是可靠消息存储。`application/outbox_delivery.py` 负责领取、续租、重试和确认，`runtime_events.py` 负责 Run 事实消费，组合根注入审计和框架事件处理器。`coordinator.py` 只监督已注入的后台任务；工作器、记忆任务和审批提醒分别由 `run_workers.py`、`memory_jobs.py` 和 `approval_notifications.py` 管理。持久调度归 `modules/scheduling/`，进程内定时器归 `framework/scheduling.py`。Web 按需求预留，其他 Python 叶子包不允许只有占位说明。
 
-本轮对全部 355 个原有 Python 源文件核对路径、符号和依赖，并调整协议、Worker、数据库、通知内部实现等职责。逐项理由见[目录职责审查](source-layout.md)，当前文件级清单见[文件职责表](../reference/source-responsibilities.md)。公开 `management.py` 是带授权的业务用例入口；它与 `internal/service.py` 的可信工作器/持久化实现具有不同调用权限，不能只为目录对称而一起隐藏。
+早期目录审查对 355 个原有 Python 源文件核对路径、符号和依赖，逐项理由见[目录职责审查](source-layout.md)。最新架构整改后为 404 个 Python 源文件，边界、迁移和验证见[架构重构记录](../reviews/2026-11-01-architecture-refactor.md)，当前清单见[文件职责表](../reference/source-responsibilities.md)。公开 `management.py` 是带授权的业务用例入口；它与 `internal/service.py` 的可信工作器/持久化实现具有不同调用权限，不能只为目录对称而一起隐藏。
 
 ## 所有权与公共接口
 
@@ -98,7 +97,7 @@ opsmesh/
 
 每个业务模块以 `api.py` 暴露服务 Protocol、请求与返回合同，`events.py` 暴露业务事实。大合同可再按职责拆为 `resource_contracts.py`、`overrides.py`、`extension_contracts.py` 等，并从公开入口重导出。`api.py` 是Python调用边界，不是Web路由文件。HTTP薄路由统一放在 `entrypoints/http/routes`，按业务域分文件，只做输入转换、入口鉴权和服务调用。
 
-业务数据表由模块实例化并登记到数据库；当前通用存储使用版本化JSON聚合、CAS和事务Outbox，未假装每个实体都有专用ORM表。基础设施提供连接与原子操作，不决定业务状态机。生产大量查询应按实际负载增加索引/分页，而不是在目录中预先制造空仓储层。
+业务数据表由模块实例化并登记到数据库；通用存储使用版本化 JSON 聚合、CAS 和事务 Outbox。Run 与事件流额外维护事务内索引投影，按状态、主体、会话、租约或序列在 SQL 中过滤和分页；旧库通过显式 v1→v2 迁移回填。其他模块仍使用各自已有的存储合同，没有把本次性能修正扩展成全库 ORM 重写。基础设施提供连接与原子操作，不决定业务状态机。
 
 `bootstrap` 是组装根例外：允许导入各模块具体实现，构造服务并绑定授权、模型、资源、记忆、用量与观测回调。业务模块之间只使用对方公开API；框架不能反向依赖模块；第三方SDK导入只允许对应backend。`scripts/check_repository.py` 检查这些静态边界。
 

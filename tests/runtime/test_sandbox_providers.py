@@ -6,11 +6,11 @@ import pytest
 from agents.sandbox import Manifest
 
 from opsmesh.framework.agents import AgentExecutionContext, SandboxConfiguration
+from opsmesh.framework.agents.resources import SandboxProviderBinding
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.internal.backends.openai_agents.sandbox_lifecycle import (
     ManagedSandboxSession,
 )
-from opsmesh.modules.runtime.openai_extensions import OpenAISandboxProviderBinding
 
 
 class Session:
@@ -86,7 +86,7 @@ async def test_registered_provider_receives_options_and_validated_mount_manifest
         (),
         (),
         context=context,
-        provider=OpenAISandboxProviderBinding(client, options, authorize),
+        provider=SandboxProviderBinding(client, options, authorize),
     )
     assert client.created[0]["options"] is options
     assert client.created[0]["manifest"].entries["resource"].src.as_posix() == "/trusted/data"
@@ -108,7 +108,7 @@ async def test_provider_manifest_denial_happens_before_client_create():
             (),
             (),
             context=AgentExecutionContext("run", "session", "alice", unused),
-            provider=OpenAISandboxProviderBinding(client, validate_manifest=deny),
+            provider=SandboxProviderBinding(client, validate_manifest=deny),
         )
     assert error.value.code == "AUTHORIZATION_DENIED" and actions == []
 
@@ -124,6 +124,6 @@ async def test_provider_without_manifest_policy_cannot_authorize_host_mount():
             ),
             (),
             (),
-            provider=OpenAISandboxProviderBinding(client),
+            provider=SandboxProviderBinding(client),
         )
     assert error.value.code == "FORBIDDEN" and client.created == []

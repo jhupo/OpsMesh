@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -9,6 +10,7 @@ from opsmesh.framework.adapters import BotAdapterDescriptor, BotAdapterRegistry,
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.typing import JsonData
 from opsmesh.infrastructure.database import StoredRecord, VersionedRecordStore
+from opsmesh.modules.accounts.api import UserPrincipal
 from opsmesh.modules.bots.api import (
     AuthorizeBotAction,
     BotAccount,
@@ -19,7 +21,6 @@ from opsmesh.modules.bots.api import (
     BotRoute,
 )
 
-from .account_migration import migrate_account_configuration
 from .configuration_store import BotConfigurationStore, BotRelatedSnapshot
 from .record_keys import bot_record_key as _key
 
@@ -64,7 +65,7 @@ class BotAccountManagement:
 
     async def _authorize_identity_target(
         self, principal_id: str, actor_id: str, *, require_active: bool = False
-    ) -> None:
+    ) -> UserPrincipal:
         if self.principal_resolver is None:
             raise OpsMeshError("CONFIG_INVALID", "Bot principal resolver is not configured")
         await self.authorize(actor_id, "accounts:bot_identity:manage", principal_id)
@@ -75,12 +76,34 @@ class BotAccountManagement:
             raise OpsMeshError(
                 "FORBIDDEN", "Only an administrator can manage administrator identities"
             )
+        return principal
 
-    async def _authorized_identity_snapshot(self, bot_id: str, actor_id: str) -> BotRelatedSnapshot:
+    async def _authorize_unlinked_policy(
+        self, account: BotAccount, actor_id: str, *, validate: bool = False
+    ) -> None:
+        principal_id = account.unlinked_principal_id
+        if principal_id is None:
+            return
+        principal = await self._authorize_identity_target(
+            principal_id, actor_id, require_active=validate and account.enabled
+        )
+        if validate:
+            if principal.id != principal_id or principal.is_admin:
+                raise OpsMeshError("FORBIDDEN", "Shared group identity cannot be an administrator")
+            # Disabling a bot remains possible after its shared user's access is revoked.
+            # Enabling it rechecks both availability and receive permission.
+            if account.enabled:
+                await self.authorize(principal_id, "bots.receive", account.id)
+
+    async def _authorized_identity_snapshot(
+        self, account: BotAccount, actor_id: str
+    ) -> BotRelatedSnapshot:
+        await self._authorize_unlinked_policy(account, actor_id)
         records = [
             record
             for record in await self.store.list()
-            if record.data.get("kind") == "identity" and record.data["identity"]["bot_id"] == bot_id
+            if record.data.get("kind") == "identity"
+            and record.data["identity"]["bot_id"] == account.id
         ]
         for record in records:
             await self._authorize_identity_target(record.data["identity"]["principal_id"], actor_id)
@@ -91,7 +114,7 @@ class BotAccountManagement:
 
     @staticmethod
     def _account_view(record: StoredRecord) -> BotAccount:
-        data = migrate_account_configuration(record.data["account"])
+        data = record.data["account"]
         return BotAccount.model_validate({**data, "revision": record.revision})
 
     @staticmethod
@@ -118,6 +141,7 @@ class BotAccountManagement:
         await self.authorize(actor_id, "bots.manage", account.id)
         account = BotAccount.model_validate(account.model_dump())
         self.adapters.get(account.adapter).validate_configuration(account)
+        await self._authorize_unlinked_policy(account, actor_id, validate=True)
         await self._authorize_credentials(account, actor_id)
         record = await self.store.create(
             _key("account", account.id),
@@ -151,7 +175,8 @@ class BotAccountManagement:
                 "INVALID_REQUEST", "Create a new account to change adapter or bot identity"
             )
         self.adapters.get(account.adapter).validate_configuration(account)
-        identities = await self._authorized_identity_snapshot(account.id, actor_id)
+        identities = await self._authorized_identity_snapshot(previous, actor_id)
+        await self._authorize_unlinked_policy(account, actor_id, validate=True)
         await self._authorize_credentials(account, actor_id)
         record = await BotConfigurationStore(self.store).replace_account(
             account,
@@ -202,6 +227,7 @@ class BotAccountManagement:
         account = await self._account(bot_id, require_enabled=False)
         configuration = BotConfigurationStore(self.store)
         routes = await configuration.route_snapshot(bot_id)
+        await self._authorize_unlinked_policy(account, actor_id)
         await self._authorize_identity_target(principal_id, actor_id, require_active=True)
         previous = await self.store.get(_key("identity", bot_id, external_user_id))
         if previous is not None:
@@ -249,6 +275,7 @@ class BotAccountManagement:
         account = await self._account(bot_id, require_enabled=False)
         record = await self.store.get(_key("identity", bot_id, external_user_id))
         if record is not None:
+            await self._authorize_unlinked_policy(account, actor_id)
             await self._authorize_identity_target(record.data["identity"]["principal_id"], actor_id)
             await BotConfigurationStore(self.store).delete_identity(
                 bot_id,
@@ -264,20 +291,31 @@ class BotAccountManagement:
         agent_revision: str,
         *,
         actor_id: str,
+        dispatch_mode: Literal["direct", "managed"] = "direct",
     ) -> BotRoute:
         await self.authorize(actor_id, "bots.manage", bot_id)
         account = await self._account(bot_id, require_enabled=False)
         try:
-            BotRoute(bot_id=bot_id, channel_id=channel_id, agent_revision=agent_revision)
+            BotRoute(
+                bot_id=bot_id,
+                channel_id=channel_id,
+                agent_revision=agent_revision,
+                dispatch_mode=dispatch_mode,
+            )
         except ValidationError as error:
             raise OpsMeshError("INVALID_REQUEST", "Invalid Bot Agent binding") from error
         if self.agent_resolver is None:
             raise OpsMeshError("CONFIG_INVALID", "Bot Agent resolver is not configured")
-        identities = await self._authorized_identity_snapshot(bot_id, actor_id)
+        identities = await self._authorized_identity_snapshot(account, actor_id)
         previous = await self.store.get(_key("route", bot_id, channel_id))
         specification = await self.agent_resolver(agent_revision)
         await self.authorize(actor_id, "agent:run", specification.ref)
-        route = BotRoute(bot_id=bot_id, channel_id=channel_id, agent_revision=specification.ref)
+        route = BotRoute(
+            bot_id=bot_id,
+            channel_id=channel_id,
+            agent_revision=specification.ref,
+            dispatch_mode=dispatch_mode,
+        )
         await BotConfigurationStore(self.store).save_route(
             route,
             account.revision,
@@ -311,7 +349,7 @@ class BotAccountManagement:
         account = await self._account(bot_id, require_enabled=False)
         record = await self.store.get(_key("route", bot_id, channel_id))
         if record is not None:
-            identities = await self._authorized_identity_snapshot(bot_id, actor_id)
+            identities = await self._authorized_identity_snapshot(account, actor_id)
             await BotConfigurationStore(self.store).delete_route(
                 bot_id,
                 account.revision,

@@ -18,8 +18,8 @@ class ModelHistory:
         items: list[dict[str, Any]] = record.data["items"] if record else []
         return items if limit is None else (items[-limit:] if limit else [])
 
-    async def _atomic_replace_items(self, items: list[dict[str, Any]]) -> bool:
-        """Pinned SDK compaction extension; the last history read is its CAS boundary."""
+    async def replace_items(self, items: list[dict[str, Any]]) -> bool:
+        """Replace the last read snapshot only if no other writer has changed it."""
         if self._read_revision is None:
             raise OpsMeshError("CONFLICT", "Compaction requires an existing history snapshot")
         record = await self.store.update(self.session_id, {"items": items}, self._read_revision)

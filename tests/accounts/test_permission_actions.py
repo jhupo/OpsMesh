@@ -9,8 +9,8 @@ from opsmesh.modules.accounts.internal.management import AuthorizedAccountManage
 from opsmesh.modules.accounts.internal.service import LocalAccountService
 
 
-@pytest.mark.parametrize("grant", ["secret:use", "secrets:use", "secrets:*"])
-async def test_secret_alias_preserves_resource_scope(tmp_path, grant):
+@pytest.mark.parametrize("grant", ["secret:use", "secret:*"])
+async def test_permission_names_preserve_resource_scope(tmp_path, grant):
     database = AsyncDatabase(f"sqlite+aiosqlite:///{(tmp_path / 'aliases.db').as_posix()}")
     accounts = LocalAccountService(database)
     await database.initialize()
@@ -22,13 +22,15 @@ async def test_secret_alias_preserves_resource_scope(tmp_path, grant):
             )
         )
         user = await accounts.create_user("operator", "test-password-123", roles=("key-user",))
-        for action in ("secret:use", "secrets:use"):
+        for action in ("secret:use",):
             await accounts.authorize(user, action, "env:APP_KEY")
             with pytest.raises(OpsMeshError) as denied:
                 await accounts.authorize(user, action, "env:PRIVATE_KEY")
             assert denied.value.code == "FORBIDDEN"
         with pytest.raises(OpsMeshError):
             await accounts.authorize(user, "accounts:manage", "env:APP_KEY")
+        with pytest.raises(OpsMeshError):
+            await accounts.authorize(user, "secrets:use", "env:APP_KEY")
         if grant.endswith(":use"):
             with pytest.raises(OpsMeshError):
                 await accounts.authorize(user, "secret:delete", "env:APP_KEY")
@@ -36,7 +38,7 @@ async def test_secret_alias_preserves_resource_scope(tmp_path, grant):
         await database.close()
 
 
-async def test_delegation_checks_the_same_canonical_actions_without_broadening(tmp_path):
+async def test_delegation_checks_the_same_exact_actions_without_broadening(tmp_path):
     database = AsyncDatabase(f"sqlite+aiosqlite:///{(tmp_path / 'delegation.db').as_posix()}")
     accounts = LocalAccountService(database)
     management = AuthorizedAccountManagement(accounts)
@@ -47,7 +49,7 @@ async def test_delegation_checks_the_same_canonical_actions_without_broadening(t
                 name="delegator",
                 grants=(
                     PermissionGrant(action="accounts:roles:manage"),
-                    PermissionGrant(action="secrets:use", resource="env:APP_KEY"),
+                    PermissionGrant(action="secret:use", resource="env:APP_KEY"),
                 ),
             )
         )

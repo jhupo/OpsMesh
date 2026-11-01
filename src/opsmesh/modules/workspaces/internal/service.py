@@ -23,7 +23,7 @@ from opsmesh.modules.workspaces.api import (
 from .files import file_info, list_tree, remove_file, rename_entry
 from .garbage_collection import collect_content
 from .locking import WorkspaceLockManager
-from .paths import atomic_write, checked_id, checked_path
+from .paths import atomic_write, checked_id, checked_path, replace_managed_file
 from .restoration import WorkspaceRestoration
 from .snapshots import WorkspaceSnapshots
 
@@ -179,6 +179,29 @@ class LocalWorkspaceService:
                 return destination.read_bytes()
 
             return await lease.run(read_file)
+
+    async def replace_managed_file(
+        self,
+        workspace_id: str,
+        path: str,
+        data: bytes,
+        *,
+        expected_digest: str | None,
+        read_only: bool = True,
+    ) -> WorkspaceArtifact:
+        async with self._locks.hold(workspace_id) as lease:
+            root = await self.root_path(workspace_id)
+            digest = await self.put_blob(data)
+            await lease.run(
+                partial(
+                    replace_managed_file,
+                    checked_path(root, path),
+                    data,
+                    expected_digest=expected_digest,
+                    read_only=read_only,
+                )
+            )
+            return WorkspaceArtifact(path=path, digest=digest, size=len(data), read_only=read_only)
 
     async def tree(self, workspace_id: str) -> tuple[WorkspaceFileInfo, ...]:
         async with self._locks.hold(workspace_id) as lease:

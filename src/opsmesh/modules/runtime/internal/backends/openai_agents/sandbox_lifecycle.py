@@ -12,6 +12,7 @@ from agents.sandbox.types import Permissions
 from opsmesh.framework.agents import AgentExecutionContext, SandboxConfiguration
 from opsmesh.framework.errors import OpsMeshError
 
+from .execution_state import execution_state
 from .sandbox import build_sandbox
 
 
@@ -98,12 +99,8 @@ class ManagedSandboxSession:
 
         construction_context = AgentExecutionContext("", "", "", unused)
         if provider is not None:
-            construction_context.services.update(
-                {
-                    "openai_sandbox_client": provider.client,
-                    "openai_sandbox_options": provider.options,
-                }
-            )
+            execution_state(construction_context).sandbox_client = provider.client
+            execution_state(construction_context).sandbox_options = provider.options
         config = build_sandbox(configuration, construction_context)
         client = config.client
         if client is None:
@@ -190,12 +187,8 @@ class ManagedSandboxSession:
 
         construction_context = AgentExecutionContext("", "", "", unused)
         if provider is not None:
-            construction_context.services.update(
-                {
-                    "openai_sandbox_client": provider.client,
-                    "openai_sandbox_options": provider.options,
-                }
-            )
+            execution_state(construction_context).sandbox_client = provider.client
+            execution_state(construction_context).sandbox_options = provider.options
         config = build_sandbox(configuration, construction_context)
         client = config.client
         if client is None:

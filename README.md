@@ -2,17 +2,17 @@
 
 异步事件驱动、插件可扩展的 Agent 与机器人平台。以 OpenAI Agents SDK 为首个执行后端，通过独立的 AgentBackend 接口保留接入其他 SDK 的边界。
 
-[English](README.en.md) · [v0.3.1 发布说明](docs/releases/v0.3.1.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
+[English](README.en.md) · [v0.3.2 发布说明](docs/releases/v0.3.2.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
 
 ## 当前功能
 
-`0.3.1` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
+`0.3.2` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
 
 - NoneBot2 风格的 Driver、Adapter、Bot、Event、Message、Matcher、插件元数据、Depends 和上下文。
 - 本地用户、部门、角色权限、Agent 草稿/不可变版本、模型配置与代码工厂。
 - OpenAI Agents SDK 执行、Responses HTTP/WebSocket、类型化输出、handoff/Agent-as-tool、四阶段护栏、钩子、审批恢复和会话压缩；Hosted MCP 与原生 Shell/ApplyPatch/Computer 扩展。
 - 固定 Git commit 的 Skill、隔离脚本工具、MCP stdio/HTTP/SSE、向量/词法混合检索、授权工具网关、工作区与快照；独立子沙箱、原生和平台两阶段记忆、实时记忆更新与保留清理。
-- HTTP 管理/运行入口、SSE、Run 单次工作区/模型设置覆盖；统一机器人适配器、钉钉 Stream、QQ 官方 Webhook、持久定时任务；独立保留 OneBot/NapCat 兼容实现。见[机器人接入](docs/design/bot-adapters.md)。
+- HTTP 管理/运行入口、SSE、Run 单次工作区/模型设置覆盖；统一机器人适配器、钉钉 Stream、QQ 官方 Webhook、持久定时任务。见[机器人接入](docs/design/bot-adapters.md)。
 - PostgreSQL/SQLite、版本迁移、事务 Outbox、Redis 限流/租约；本地/S3内容存储和完整备份/验证/恢复CLI；审计、日志、指标、W3C/OTLP 追踪，Token/资源计量、版本价格、汇率、补价、预算和供应商账单对账。
 - inline、独立 Python 子进程、Docker、逐 Run Kubernetes Job 四种 Run Worker 方式。原生 SDK 沙箱与整个 Run Worker 的隔离分别配置。
 
@@ -24,12 +24,12 @@ Web 门户和控制台仅预留目录；Claude 后端为后续适配。已在独
 
 ### Linux 服务安装
 
-从 [v0.3.1 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1)下载 `opsmesh-0.3.1-linux.tar.gz` 及对应 `.sha256` 文件，校验、解压后默认安装本地 systemd 服务：
+从 [v0.3.2 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.2)下载 `opsmesh-0.3.2-linux.tar.gz` 及对应 `.sha256` 文件，校验、解压后默认安装本地 systemd 服务：
 
 ```sh
-sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
-tar -xzf opsmesh-0.3.1-linux.tar.gz
-cd opsmesh-0.3.1-linux
+sha256sum --check opsmesh-0.3.2-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.2-linux.tar.gz
+cd opsmesh-0.3.2-linux
 sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
@@ -50,7 +50,7 @@ python -m venv .venv
 Linux/macOS 执行 `. .venv/bin/activate`，Windows PowerShell 执行 `.venv\Scripts\Activate.ps1`，然后安装并启动：
 
 ```sh
-python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.1/opsmesh-0.3.1-py3-none-any.whl"
+python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.2/opsmesh-0.3.2-py3-none-any.whl"
 opsmesh --version
 opsmesh init
 opsmesh check
@@ -93,7 +93,6 @@ src/opsmesh/
 ├── infrastructure/  # bots、run_workers、数据库/消息/存储/协调/观测
 ├── maintenance/     # 离线整站备份、验证和恢复
 ├── dependencies.py  # 插件通过 Depends 获取平台公开服务
-└── plugins/         # 可选扩展命名空间、旧调度路径兼容导出
 ```
 
 详细职责、目标文件树和不兼容边界见[架构设计](docs/design/architecture.md)。OpenAI SDK 的构建、工具、模型、流、状态、沙箱、追踪、错误映射分文件维护，原生 SDK 类型不进入业务合同。

@@ -3,14 +3,23 @@
 import asyncio
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from agents.items import ModelResponse
 from agents.usage import Usage
 
-from opsmesh.framework.agents import AgentSpecification, AgentToolBinding, HookBinding, ToolBinding
+from opsmesh.framework.agents import (
+    AgentExecutionContext,
+    AgentSpecification,
+    AgentToolBinding,
+    HookBinding,
+    ToolBinding,
+)
+from opsmesh.framework.agents.resources import AgentExecutionServices
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.internal.backends.openai_agents.backend import OpenAIAgentsBackend
+from opsmesh.modules.runtime.internal.backends.openai_agents.execution_state import execution_state
 from opsmesh.modules.runtime.internal.backends.openai_agents.usage import (
     begin_request,
     publish_request_usage,
@@ -23,13 +32,19 @@ from tests.runtime.test_openai_backend import ScriptedModel, call, context, mess
 async def test_missing_response_id_and_hosted_call_metering() -> None:
     observations: list[dict[str, Any]] = []
     resources: list[dict[str, Any]] = []
-    context = SimpleNamespace(
-        run_id="run",
-        services={"observe_usage": observations.append, "observe_resource_usage": resources.append},
+    context = AgentExecutionContext(
+        "run",
+        "session",
+        "alice",
+        AsyncMock(),
+        services=AgentExecutionServices(
+            observe_usage=AsyncMock(wraps=observations.append),
+            observe_resource_usage=AsyncMock(wraps=resources.append),
+        ),
     )
     agent = SimpleNamespace(name="agent", model="test-model")
     begin_request(context, agent)
-    identity = context.services["pending_model_requests"][0]["call_id"]
+    identity = execution_state(context).pending_model_requests[0]["call_id"]
     response = SimpleNamespace(
         response_id=None,
         usage=Usage(requests=1, input_tokens=3, output_tokens=4, total_tokens=7),
@@ -40,7 +55,7 @@ async def test_missing_response_id_and_hosted_call_metering() -> None:
     assert observations[0]["provider_usage"]["input_tokens"] == 3
     assert resources[0]["call_id"] == "hosted:search-1"
     assert resources[0]["quantity"] == "1"
-    assert context.services["pending_model_requests"] == []
+    assert execution_state(context).pending_model_requests == []
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -53,8 +68,8 @@ async def test_runner_success_then_failure_only_marks_the_unfinished_request_unk
 
     execution = context()
     observations, durations, hook_tasks = [], [], []
-    execution.services["observe_usage"] = observations.append
-    execution.services["observe_metric"] = lambda name, value: durations.append((name, value))
+    execution.services.observe_usage = AsyncMock(wraps=observations.append)
+    execution.services.observe_metric = lambda name, value: durations.append((name, value))
     registry = RuntimeExtensionRegistry()
 
     def trace_request(context, stage, payload):
@@ -84,10 +99,10 @@ async def test_runner_success_then_failure_only_marks_the_unfinished_request_unk
     assert [item["usage_available"] for item in observations] == [True, False]
     assert observations[0]["call_id"] == "resp1"
     assert observations[1]["call_id"] != "resp1"
-    assert execution.services["usage_snapshot"]["requests"] == 2
-    assert execution.services["usage_snapshot"]["input_tokens"] == 3
+    assert execution.state.usage_snapshot["requests"] == 2
+    assert execution.state.usage_snapshot["input_tokens"] == 3
     assert len(durations) == 2
-    assert not execution.services.get("pending_model_requests")
+    assert not execution_state(execution).pending_model_requests
 
 
 async def test_concurrent_same_agent_tools_pair_each_runner_scope_independently():
@@ -137,7 +152,7 @@ async def test_concurrent_same_agent_tools_pair_each_runner_scope_independently(
     )
     execution = context(agents={child.ref: child})
     observations = []
-    execution.services["observe_usage"] = observations.append
+    execution.services.observe_usage = AsyncMock(wraps=observations.append)
     with pytest.raises(OpsMeshError):
         await asyncio.wait_for(backend.run(root, "run both", execution), timeout=5)
     assert started == 2 and len(hook_tasks) == 2
@@ -147,13 +162,19 @@ async def test_concurrent_same_agent_tools_pair_each_runner_scope_independently(
         "resp1",
         "child-response",
     }
-    assert execution.services["usage_snapshot"]["requests"] == 3
-    assert not execution.services.get("pending_model_requests")
+    assert execution.state.usage_snapshot["requests"] == 3
+    assert not execution_state(execution).pending_model_requests
 
 
 async def test_response_id_replay_is_not_rebilled_but_missing_ids_remain_distinct():
     observations = []
-    execution = SimpleNamespace(run_id="run", services={"observe_usage": observations.append})
+    execution = AgentExecutionContext(
+        "run",
+        "session",
+        "alice",
+        AsyncMock(),
+        services=AgentExecutionServices(observe_usage=AsyncMock(wraps=observations.append)),
+    )
     agent = SimpleNamespace(name="agent", model="model")
     scope = object()
     response = SimpleNamespace(
@@ -164,14 +185,14 @@ async def test_response_id_replay_is_not_rebilled_but_missing_ids_remain_distinc
     for _ in range(2):
         begin_request(execution, agent, request_scope=scope)
         await publish_request_usage(execution, agent, response, request_scope=scope)
-    assert len(observations) == 1 and execution.services["usage_snapshot"]["requests"] == 1
+    assert len(observations) == 1 and execution.state.usage_snapshot["requests"] == 1
     response.response_id = None
     for _ in range(2):
         begin_request(execution, agent, request_scope=scope)
         await publish_request_usage(execution, agent, response, request_scope=scope)
     assert len(observations) == 3
     assert len({item["call_id"] for item in observations}) == 3
-    assert execution.services["usage_snapshot"]["requests"] == 3
+    assert execution.state.usage_snapshot["requests"] == 3
     await publish_unknown_usage(execution)
     assert len(observations) == 3
     response.response_id = "provider-response"

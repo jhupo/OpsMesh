@@ -20,6 +20,7 @@ from opsmesh.modules.bots.api import (
     BotAccount,
     BotEventDispatcher,
     BotIdentity,
+    BotPrincipalResolver,
     BotRoute,
     InboundReceipt,
 )
@@ -35,10 +36,30 @@ class BotEventIngress:
         authorize: AuthorizeBotAction,
         dispatcher: BotEventDispatcher,
         bot_factory: Callable[[BotAccount], OpsMeshBot],
+        *,
+        principal_resolver: BotPrincipalResolver | None = None,
     ) -> None:
         self.store, self.authorize, self.dispatcher = store, authorize, dispatcher
         self.bot_factory = bot_factory
+        self.principal_resolver = principal_resolver
         self.records = BotDeliveryRecords(store)
+
+    async def _message_principal(self, account: BotAccount, event: BotMessageEvent) -> str:
+        record = await self.store.get(bot_record_key("identity", account.id, event.user_id))
+        if record is not None:
+            # Explicit mappings always win, including mappings whose permission was revoked.
+            return BotIdentity.model_validate(record.data["identity"]).principal_id
+        principal_id = account.unlinked_principal_id
+        if principal_id is None or event.channel_id not in account.unlinked_channels:
+            raise OpsMeshError("FORBIDDEN", "External bot user is not linked to a local account")
+        if self.principal_resolver is None:
+            raise OpsMeshError("CONFIG_INVALID", "Bot principal resolver is not configured")
+        principal = await self.principal_resolver(principal_id)
+        if principal.id != principal_id or not principal.active or principal.is_admin:
+            raise OpsMeshError(
+                "FORBIDDEN", "Shared group identity must be an active non-administrator"
+            )
+        return principal_id
 
     async def context(
         self, account: BotAccount, incoming: BotInboundEvent
@@ -48,13 +69,7 @@ class BotEventIngress:
         route: BotRoute | None = None
         target: ReplyTarget | None = None
         if isinstance(event, BotMessageEvent) and event.type == "message" and not incoming.ignored:
-            record = await self.store.get(bot_record_key("identity", account.id, event.user_id))
-            if record is None:
-                raise OpsMeshError(
-                    "FORBIDDEN", "External bot user is not linked to a local account"
-                )
-            identity = BotIdentity.model_validate(record.data["identity"])
-            actor_id = identity.principal_id
+            actor_id = await self._message_principal(account, event)
             await self.authorize(actor_id, "bots.receive", account.id)
             route_record = await self.store.get(
                 bot_record_key("route", account.id, event.channel_id)
@@ -75,6 +90,7 @@ class BotEventIngress:
                 "principal_id": actor_id,
                 "bot_id": account.id,
                 "agent_revision": route.agent_revision if route else None,
+                "bot_dispatch_mode": route.dispatch_mode if route else "direct",
             },
         )
 

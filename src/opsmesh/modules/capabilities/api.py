@@ -28,6 +28,17 @@ class ToolDefinition(OpsMeshContract):
     def ref(self) -> str:
         return f"{self.name}@{self.version}"
 
+    def bind(self, *, strict_schema: bool = False) -> ToolBinding:
+        """Bind the published tool using its authoritative schema and execution limits."""
+        return ToolBinding(
+            name=self.name,
+            description=self.description,
+            input_schema=self.input_schema,
+            tool_ref=self.ref,
+            strict_schema=strict_schema,
+            timeout_seconds=self.timeout_seconds,
+        )
+
 
 class CodeToolRegistry(Protocol):
     def register(self, code_ref: str, callback: ToolCallback) -> None: ...

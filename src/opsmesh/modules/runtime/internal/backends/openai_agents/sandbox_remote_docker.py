@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-import inspect
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,9 +11,9 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 
 from opsmesh.framework.agents import AgentExecutionContext, SandboxConfiguration
+from opsmesh.framework.agents.resources import SandboxProviderBinding
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.typing import OpsMeshContract
-from opsmesh.modules.runtime.openai_extensions import OpenAISandboxProviderBinding
 
 from .sandbox_docker import docker_client
 
@@ -48,7 +47,7 @@ async def create_remote_docker_provider(
     context: AgentExecutionContext,
     *,
     allowed_endpoints: tuple[str, ...],
-) -> OpenAISandboxProviderBinding:
+) -> SandboxProviderBinding:
     try:
         options = RemoteDockerOptions.model_validate(configuration.options)
     except ValueError as error:
@@ -57,7 +56,7 @@ async def create_remote_docker_provider(
         raise OpsMeshError(
             "AUTHORIZATION_DENIED", "Docker endpoint is not in the deployment allowlist"
         )
-    resolver = context.services.get("resolve_secret")
+    resolver = context.services.resolve_secret
     if resolver is None:
         raise OpsMeshError(
             "DEPENDENCY_UNAVAILABLE", "Remote Docker credential resolver is unavailable"
@@ -89,8 +88,7 @@ async def create_remote_docker_provider(
             ("cert", options.client_cert_secret_ref),
             ("key", options.client_key_secret_ref),
         ):
-            value = resolver(reference)
-            value = await value if inspect.isawaitable(value) else value
+            value = await resolver(reference)
             if not isinstance(value, str) or not value.strip():
                 raise OpsMeshError("CONFIG_INVALID", "Docker TLS credential is empty")
             path = Path(temporary.name) / f"{name}.pem"
@@ -115,7 +113,7 @@ async def create_remote_docker_provider(
                 native_client = connection.result()
             raise
         client, native_options = docker_client(options.docker_options, client=native_client)
-        return OpenAISandboxProviderBinding(client=client, options=native_options, aclose=close)
+        return SandboxProviderBinding(client=client, options=native_options, aclose=close)
     except BaseException as error:
         await close()
         if isinstance(error, OpsMeshError | asyncio.CancelledError):

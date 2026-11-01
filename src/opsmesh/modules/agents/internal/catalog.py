@@ -3,13 +3,19 @@
 from opsmesh.framework.agents import AgentSpecification
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, StoredRecord, VersionedRecordStore
-from opsmesh.modules.agents.api import AgentDefinition, AgentValidator
+from opsmesh.modules.agents.api import AgentDefinition, AgentPreparation, AgentValidator
 
 
 class PersistentAgentDefinitionCatalog:
-    def __init__(self, database: AsyncDatabase, validate: AgentValidator) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase,
+        validate: AgentValidator,
+        prepare: AgentPreparation | None = None,
+    ) -> None:
         self._store = VersionedRecordStore(database, "agents_definitions")
         self._validate = validate
+        self._prepare = prepare
 
     @staticmethod
     def _view(record: StoredRecord) -> AgentDefinition:
@@ -49,6 +55,12 @@ class PersistentAgentDefinitionCatalog:
     async def list(self) -> list[AgentDefinition]:
         return [self._view(record) for record in await self._store.list()]
 
+    async def revisions(self, agent_id: str) -> tuple[AgentSpecification, ...]:
+        record = await self._record(agent_id)
+        return tuple(
+            AgentSpecification.model_validate(value) for value in record.data["versions"].values()
+        )
+
     async def update(
         self, agent_id: str, specification: AgentSpecification, expected_revision: int
     ) -> AgentDefinition:
@@ -85,6 +97,8 @@ class PersistentAgentDefinitionCatalog:
     async def publish(self, agent_id: str, expected_revision: int) -> AgentSpecification:
         record = await self._record(agent_id)
         specification = AgentSpecification.model_validate(record.data["draft"])
+        if self._prepare:
+            specification = await self._prepare(specification, record.data["owner_id"])
         revision = int(record.data["published_revision"] or 0) + 1
         specification = specification.model_copy(update={"revision": revision})
         await self._validate(specification)

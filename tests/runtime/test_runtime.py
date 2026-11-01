@@ -156,7 +156,7 @@ async def test_repeated_cancellation_drains_session_and_resource_cleanup(tmp_pat
     releasing, release = asyncio.Event(), asyncio.Event()
     cleaning, finish_cleanup = asyncio.Event(), asyncio.Event()
     resource_closed = asyncio.Event()
-    original_release = runtime._release_session
+    original_release = runtime.session_recovery.release
     original_factory = runtime.context_factory
 
     async def blocked_release(record):
@@ -171,10 +171,10 @@ async def test_repeated_cancellation_drains_session_and_resource_cleanup(tmp_pat
 
     async def factory(view):
         context = await original_factory(view)
-        context.services["cleanup_resources"] = cleanup
+        context.resources.cleanup_resources = cleanup
         return context
 
-    monkeypatch.setattr(runtime, "_release_session", blocked_release)
+    monkeypatch.setattr(runtime.session_recovery, "release", blocked_release)
     monkeypatch.setattr(runtime, "context_factory", factory)
     try:
         run = await runtime.submit(request())

@@ -21,6 +21,8 @@ from opsmesh.modules.capabilities.api import (
 )
 from opsmesh.modules.workspaces.api import WorkspaceService
 
+_RESOURCE_SCHEMA_VERSION = "2"
+
 
 class AgentResourceCompiler:
     def __init__(
@@ -56,7 +58,7 @@ class AgentResourceCompiler:
         lifecycle_id: str | None = None,
     ) -> PreparedAgentResources:
         scope = hashlib.sha256(
-            f"{principal_id}:{run_id}:{request.model_dump_json()}".encode()
+            f"{_RESOURCE_SCHEMA_VERSION}:{principal_id}:{run_id}:{request.model_dump_json()}".encode()
         ).hexdigest()[:24]
         self._principals[scope] = principal_id
         owner = (principal_id, run_id, lifecycle_id)
@@ -144,6 +146,10 @@ class AgentResourceCompiler:
             request.skill_refs, workspace, mode=request.skill_loading
         )
         known = {definition.ref: definition for definition in definitions}
+        declared_paths = {
+            ref: sorted({item.path for item in definition.files})
+            for ref, definition in known.items()
+        }
 
         async def load(arguments: dict[str, Any]) -> Any:
             ref = str(arguments["skill_ref"])
@@ -151,11 +157,23 @@ class AgentResourceCompiler:
                 raise OpsMeshError("AUTHORIZATION_DENIED", "Skill is not bound to this run")
             await self._authorize(principal, f"skill:{ref}")
             await self._skills.load(ref, workspace)
-            return {"skill_ref": ref, "path": f".agents/{known[ref].name}/SKILL.md"}
+            return {
+                "skill_ref": ref,
+                "path": f".agents/{known[ref].name}/SKILL.md",
+                "skill_relative_entry": "SKILL.md",
+                "declared_assets": declared_paths[ref],
+                "read_skill_arguments": {"skill_ref": ref, "path": "SKILL.md"},
+                "path_format": (
+                    "The path field above is workspace-relative and is informational only. "
+                    "For read_skill, use skill_relative_entry or a declared_assets value exactly "
+                    "as returned: paths are relative to the selected skill root, without any "
+                    "workspace, .agents/<name>/, or skills/<name>/ prefix."
+                ),
+            }
 
         async def read(arguments: dict[str, Any]) -> Any:
             ref, path = str(arguments["skill_ref"]), str(arguments["path"])
-            if ref not in known or path not in {item.path for item in known[ref].files}:
+            if ref not in known or path not in declared_paths[ref]:
                 raise OpsMeshError(
                     "AUTHORIZATION_DENIED", "Skill asset is not in the selected manifest"
                 )
@@ -169,7 +187,7 @@ class AgentResourceCompiler:
             await self._register(
                 "load_skill",
                 scope,
-                "Load a selected skill into the workspace",
+                "Load a selected skill and return its skill-relative entry and declared assets",
                 {
                     "type": "object",
                     "properties": properties,
@@ -181,10 +199,25 @@ class AgentResourceCompiler:
             await self._register(
                 "read_skill",
                 scope,
-                "Read SKILL.md or a declared skill asset",
+                "Read a declared asset using its exact path relative to the selected skill root",
                 {
                     "type": "object",
-                    "properties": {**properties, "path": {"type": "string"}},
+                    "properties": {
+                        **properties,
+                        "path": {
+                            "type": "string",
+                            "enum": sorted(
+                                {path for paths in declared_paths.values() for path in paths}
+                            ),
+                            "description": (
+                                "Exact path relative to the selected skill root, for example "
+                                "SKILL.md. Use load_skill.skill_relative_entry or one of that "
+                                "skill's declared_assets. Do not use a workspace path, absolute "
+                                "path, .agents/<name>/ prefix, skills/<name>/ prefix, or ../. "
+                                "The asset must belong to the selected skill_ref."
+                            ),
+                        },
+                    },
                     "required": ["skill_ref", "path"],
                     "additionalProperties": False,
                 },
@@ -192,7 +225,9 @@ class AgentResourceCompiler:
             ),
         ]
         lines = [
-            "Available skills: use load_skill and read_skill to inspect the selected instructions."
+            "Available skills: use load_skill and read_skill to inspect the selected instructions. "
+            "Pass load_skill.read_skill_arguments directly to read_skill for the entry document; "
+            "other asset paths must be from that skill's declared_assets, relative to its root."
         ]
         lines.extend(f"- {item.ref}: {item.description}" for item in definitions)
         return tools, "\n".join(lines)

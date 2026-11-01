@@ -110,6 +110,25 @@ def find_import_violations(relative: Path, content: str) -> list[str]:
         else:
             continue
         for target in targets:
+            if layer in {"framework", "modules", "infrastructure"} and target in {
+                "opsmesh.OpsMeshApplication",
+                "opsmesh.OpsMeshSettings",
+                "opsmesh.create_application",
+                "opsmesh.run",
+            }:
+                errors.add(f"{relative}:{node.lineno}: implementation imports public platform host")
+            if layer == "framework" and (target == "examples" or target.startswith("examples.")):
+                errors.add(f"{relative}:{node.lineno}: framework imports an example application")
+            if relative.parts[:3] == ("modules", "bots", "conversations") and any(
+                target == prefix or target.startswith(prefix + ".")
+                for prefix in (
+                    "sqlalchemy",
+                    "aiosqlite",
+                    "sqlite3",
+                    "opsmesh.infrastructure.database",
+                )
+            ):
+                errors.add(f"{relative}:{node.lineno}: public inbox contract imports persistence")
             if layer in {
                 "framework",
                 "modules",

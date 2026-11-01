@@ -17,7 +17,7 @@ def build_run_config(
     model_provider: Any = None,
     tracing_enabled: bool = False,
 ) -> RunConfig:
-    carrier = context.services.get("trace_context", {})
+    carrier = context.services.trace_context
     trace_metadata = {"run_id": context.run_id}
     trace_metadata.update(
         {

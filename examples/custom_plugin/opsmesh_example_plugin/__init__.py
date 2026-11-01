@@ -68,7 +68,7 @@ async def observe_run(context: AgentExecutionContext, event: str, payload: dict[
     # Do not serialize context, service handles or native SDK objects into events.
     if get_run_context() is not context:
         raise RuntimeError("Runtime context binding differs from the hook argument")
-    context.services.setdefault("example_hook_events", []).append(event)
+    context.extensions.setdefault("example_hook_events", []).append(event)
 
 
 def limit_input(context: AgentExecutionContext, data: Any) -> GuardrailDecision:

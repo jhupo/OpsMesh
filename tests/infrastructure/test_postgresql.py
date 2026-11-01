@@ -94,6 +94,12 @@ async def test_postgres_migration_is_serialized_and_verify_is_read_only(postgres
         await asyncio.gather(*(db.close() for db in databases))
 
 
+async def test_postgres_run_projection_upgrade_preserves_existing_rows(postgres_url):
+    from tests.runtime.test_indexed_records import assert_record_upgrade
+
+    await assert_record_upgrade(postgres_url)
+
+
 async def test_postgres_terminal_session_recovery_across_instances(postgres_url):
     databases = [AsyncDatabase(postgres_url), AsyncDatabase(postgres_url)]
     sessions = [ConversationService(database) for database in databases]
@@ -114,7 +120,6 @@ async def test_postgres_terminal_session_recovery_across_instances(postgres_url)
             extensions,
             unused,
             session_claims=claims,
-            session_claim_reader=claims.active_claims,
         )
         for database, claims in zip(databases, sessions, strict=True)
     ]

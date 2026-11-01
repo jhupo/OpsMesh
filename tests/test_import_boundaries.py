@@ -18,6 +18,11 @@ CHECK_IMPORTS = runpy.run_path(
         ("modules/agents/internal/service.py", "from opsmesh.modules.bots import internal"),
         ("modules/agents/api.py", "from .internal import service"),
         ("framework/params.py", "from .. import modules"),
+        ("framework/params.py", "from opsmesh import create_application"),
+        ("modules/bots/api.py", "from opsmesh import OpsMeshApplication"),
+        ("framework/message.py", "from examples.qq_community import main"),
+        ("modules/bots/conversations/api.py", "from sqlalchemy import select"),
+        ("modules/bots/conversations/queue.py", "import aiosqlite"),
         ("modules/agents/internal/service.py", "from agents import Agent"),
         ("bootstrap/services.py", "from opsmesh.plugins.scheduler import PersistentScheduler"),
         (
@@ -61,8 +66,8 @@ def test_rejects_cross_boundary_imports(source: str, code: str) -> None:
         ("modules/runtime/internal/backends/openai_agents/agent.py", "from agents import Agent"),
         ("plugins/commands.py", "from opsmesh.modules.bots.api import BotAccounts"),
         (
-            "plugins/scheduler/__init__.py",
-            "from opsmesh.modules.scheduling import PersistentScheduler",
+            "plugins/timers/__init__.py",
+            "from opsmesh.modules.scheduling.api import SchedulingService",
         ),
         ("bootstrap/application.py", "from opsmesh.framework import load_plugin"),
         (

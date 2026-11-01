@@ -35,13 +35,12 @@ async def build_hosted_mcp(
         config["server_description"] = binding.description
     references = dict(binding.header_secret_refs)
     if references or binding.authorization_secret_ref:
-        resolver = context.services.get("resolve_secret")
+        resolver = context.services.resolve_secret
         if resolver is None:
             raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Hosted MCP credential resolver missing")
 
         async def secret(ref: str) -> str:
-            value = resolver(ref)
-            value = await value if inspect.isawaitable(value) else value
+            value = await resolver(ref)
             if not isinstance(value, str) or not value:
                 raise OpsMeshError("CREDENTIAL_UNAVAILABLE", "Hosted MCP credential unavailable")
             return value

@@ -1,9 +1,5 @@
 """Manage Bot-to-Agent bindings through authenticated platform endpoints."""
 
-import hashlib
-import hmac
-import json
-
 from opsmesh.modules.accounts.api import AccessRole, PermissionGrant
 
 from .conftest import published_agent
@@ -17,9 +13,9 @@ async def test_bot_binding_management_and_core_validation(http_platform, monkeyp
         json={
             "id": "support",
             "self_id": "100",
-            "adapter": "onebot_v11",
-            "settings": {"api_base_url": "http://onebot.test"},
-            "credentials": {"webhook_secret": "env:BINDING_BOT_SECRET"},
+            "adapter": "qq",
+            "settings": {"app_id": "12345", "api_base_url": "http://127.0.0.1:5700"},
+            "credentials": {"client_secret": "env:BINDING_BOT_SECRET"},
         },
         headers=headers["admin"],
     )
@@ -27,13 +23,26 @@ async def test_bot_binding_management_and_core_validation(http_platform, monkeyp
     first = await published_agent(client, headers["admin"], identifier="first")
     second = await published_agent(client, headers["admin"], identifier="second")
     collection = "/api/v1/bots/support/routes"
-    item = collection + "/private:200"
-    body = {"channel_id": "private:200", "agent_revision": "first"}
+    item = collection + "/c2c:200"
+    body = {"channel_id": "c2c:200", "agent_revision": "first"}
     response = await client.put(collection, json=body, headers=headers["admin"])
     assert response.status_code == 200, response.text
     assert response.json()["agent_revision"] == first
+    assert response.json()["dispatch_mode"] == "direct"
     assert (await client.get(item, headers=headers["admin"])).json() == response.json()
     assert (await client.get(collection, headers=headers["admin"])).json() == [response.json()]
+
+    response = await client.put(
+        collection, json={**body, "dispatch_mode": "managed"}, headers=headers["admin"]
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["dispatch_mode"] == "managed"
+    assert (await client.get(item, headers=headers["admin"])).json()["dispatch_mode"] == "managed"
+    response = await client.put(
+        collection, json={**body, "dispatch_mode": "unsupported"}, headers=headers["admin"]
+    )
+    assert response.status_code == 422, response.text
+    assert (await client.put(collection, json=body, headers=headers["admin"])).status_code == 200
 
     for method, path, options in (
         (client.get, collection, {}),
@@ -66,20 +75,11 @@ async def test_bot_binding_management_and_core_validation(http_platform, monkeyp
         headers=headers["admin"],
     )
     assert response.status_code == 200, response.text
-    payload = json.dumps(
-        {
-            "time": 1,
-            "post_type": "message",
-            "self_id": 100,
-            "message_type": "private",
-            "message_id": 1,
-            "user_id": 200,
-            "message": [{"type": "text", "data": {"text": "hello"}}],
-        }
-    ).encode()
-    signature = "sha1=" + hmac.new(b"test-binding-secret", payload, hashlib.sha1).hexdigest()
+    from tests.bots.fixtures import webhook
+
+    payload, signature = webhook(secret_value="test-binding-secret")
     response = await client.post(
-        "/api/v1/callbacks/onebot/support", content=payload, headers={"X-Signature": signature}
+        "/api/v1/callbacks/bots/support", content=payload, headers=signature
     )
     assert response.status_code == 403, response.text
     assert await app.services.runtime.list_runs(manager.id) == []
@@ -90,7 +90,7 @@ async def test_bot_binding_management_and_core_validation(http_platform, monkeyp
     assert response.status_code == 404, response.text
     assert (await client.get(item, headers=headers["admin"])).json()["agent_revision"] == first
     response = await client.put(
-        collection, json={**body, "channel_id": "private:\n200"}, headers=headers["admin"]
+        collection, json={**body, "channel_id": "c2c:\n200"}, headers=headers["admin"]
     )
     assert response.status_code == 400, response.text
     response = await client.put(

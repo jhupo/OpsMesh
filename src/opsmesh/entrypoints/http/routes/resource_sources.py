@@ -39,7 +39,7 @@ async def import_git_skill(
     body: GitSkillPublishRequest, request: Request, user: CurrentUser
 ) -> SkillDefinition:
     await authorize(request, user, "capability:manage", f"{body.name}@{body.version}")
-    return await get_application(request).services.capability_management.publish_git(
+    return await get_application(request).services.skill_management.publish_git(
         body.name,
         body.version,
         body.source,
@@ -56,7 +56,7 @@ async def publish_script(
         request, user, "capability:manage", f"{body.declaration.name}@{body.declaration.version}"
     )
     source = await workspace_source(request, user, body.workspace_id, body.directory)
-    return await get_application(request).services.capability_management.publish_script(
+    return await get_application(request).services.script_management.publish(
         source, body.declaration, actor_id=user.id
     )
 

@@ -138,9 +138,7 @@ class RunContext(Protocol):
 class SessionClaims(Protocol):
     async def claim(self, session_id: str, run_id: str) -> None: ...
     async def release(self, session_id: str, run_id: str) -> None: ...
-
-
-SessionClaimReader = Callable[[], Awaitable[dict[str, str]]]
+    async def active_claims(self) -> dict[str, str]: ...
 
 
 class GuardrailDecision(OpsMeshContract):
@@ -228,7 +226,17 @@ class AgentRuntime(Protocol):
         self, principal_id: str, idempotency_key: str
     ) -> AgentRunView | None: ...
     async def get_run_input(self, run_id: str) -> str | list[dict[str, Any]]: ...
-    async def list_runs(self, principal_id: str | None = None) -> list[AgentRunView]: ...
+    async def list_runs(
+        self,
+        principal_id: str | None = None,
+        *,
+        statuses: tuple[str, ...] = (),
+        session_id: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+        after_id: str | None = None,
+    ) -> list[AgentRunView]: ...
+    async def count_runs(self, statuses: tuple[str, ...]) -> int: ...
     def start(
         self, run_id: str, *, launch_token: str | None = None
     ) -> asyncio.Task[AgentRunView]: ...

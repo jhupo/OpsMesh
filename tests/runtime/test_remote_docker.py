@@ -4,6 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -44,7 +45,7 @@ async def test_remote_client_uses_mutual_tls_and_removes_secret_files(monkeypatc
 
     monkeypatch.setattr("docker.DockerClient", connect)
     ctx = context()
-    ctx.services["resolve_secret"] = lambda ref: "test credential material"
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "test credential material")
     factory = RemoteDockerSandboxProvider(allowed_endpoints=("https://docker.example:2376",))
     binding = await factory(configuration(), ctx)
     tls = created[0]["tls"]
@@ -72,7 +73,7 @@ async def test_remote_endpoint_rejected_before_secret_or_network_access(endpoint
 
     monkeypatch.setattr("docker.DockerClient", forbidden)
     ctx = context()
-    ctx.services["resolve_secret"] = forbidden
+    ctx.services.resolve_secret = AsyncMock(wraps=forbidden)
     with pytest.raises(OpsMeshError):
         await RemoteDockerSandboxProvider(allowed_endpoints=("https://docker.example:2376",))(
             configuration(endpoint), ctx
@@ -95,7 +96,7 @@ async def test_cancelled_connection_is_drained_and_then_closed(monkeypatch):
 
     monkeypatch.setattr("docker.DockerClient", connect)
     ctx = context()
-    ctx.services["resolve_secret"] = lambda ref: "test credential material"
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "test credential material")
     task = asyncio.create_task(
         RemoteDockerSandboxProvider(allowed_endpoints=("https://docker.example:2376",))(
             configuration(), ctx
@@ -125,7 +126,7 @@ async def test_provider_closes_when_session_construction_fails(monkeypatch, clea
 
     monkeypatch.setattr("docker.DockerClient", connect)
     ctx = context()
-    ctx.services["resolve_secret"] = lambda ref: "test credential material"
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "test credential material")
     binding = await RemoteDockerSandboxProvider(allowed_endpoints=("https://docker.example:2376",))(
         configuration(), ctx
     )
@@ -161,7 +162,7 @@ async def test_real_mutual_tls_docker_workspace_and_resource_limits():
         "test:key": os.environ["OPSMESH_TEST_DOCKER_KEY_PATH"],
     }
     ctx = context()
-    ctx.services["resolve_secret"] = lambda ref: Path(paths[ref]).read_text()
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: Path(paths[ref]).read_text())
     spec = configuration(endpoint)
     binding = await RemoteDockerSandboxProvider(allowed_endpoints=(endpoint,))(spec, ctx)
     manager = await ManagedSandboxSession.open(

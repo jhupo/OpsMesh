@@ -2,11 +2,19 @@
 
 核对日期：2026-11-01。本目录覆盖平台模块、NoneBot风格插件机制、Agent后端、能力装配、工作区/执行、文件记忆、持久化、观测与开源工程。
 
+Python 公开入口、QQ 示例目录收敛、工具注册与 Bot 网关绑定见[应用入口重构](reviews/2026-11-01-python-application-api.md)。
+
+QQ 助手参考项目对照、普通文本回复、稳定成员标识、群 Memory 接入及媒体能力边界见 [QQ 助手设计](design/qq-assistant.md)。
+
+收件箱复用平台数据库、移除 OneBot/调度兼容层与框架边界清理见[源码清理记录](reviews/2026-11-01-inbox-cleanup.md)。
+
+此前群聊执行链、默认与个人模型/加密凭据、在线更新与源码职责见[补齐与架构复核](reviews/2026-11-01-platform-follow-up.md)。早期缺项表保留作历史证据。
+
 v0.3.1 新增独立 Linux 安装包，默认采用本地 systemd 服务，Docker 为显式可选方式；制品内容和升级边界见 [v0.3.1 发布说明](releases/v0.3.1.md)。
 
 全源码目录责任审查、迁移说明和边界规则见[目录职责审查](design/source-layout.md)与[文件职责表](reference/source-responsibilities.md)。
 
-机器人协议现已独立为 `infrastructure/bots/dingtalk`、`infrastructure/bots/qq` 和 OneBot 兼容包，框架提供中立合同，平台保留账号/权限/绑定/投递所有权，详见[机器人适配器](design/bot-adapters.md)。
+机器人协议现已独立为 `infrastructure/bots/dingtalk`、`infrastructure/bots/qq`，框架提供中立合同，平台保留账号/权限/绑定/投递所有权，详见[机器人适配器](design/bot-adapters.md)。
 
 最新代码审查 R01—R08 的修复、权限升级及恢复语义见[审查修复记录](review-fixes.md)。此前平台验收记录保留各自验证时点。
 
@@ -24,12 +32,13 @@ v0.3.1 新增独立 Linux 安装包，默认采用本地 systemd 服务，Docker
 
 下列设计文档中有些仍描述目标架构，**实现状态以SDK覆盖表、路线和当前代码/测试为准**；目标目录树中的文件名不能作为某项功能存在的证据。
 
-平台能力独立于业务插件：Agent管理、Bot/频道绑定、会话运行、知识检索、持久任务由模块服务提供。插件扩展命令、领域规则和提供商；`modules/scheduling`已接管原调度实现，旧plugins路径只保留兼容导出。通知中心已归平台模块；通用工作流明确排除，详细分类见[平台与插件职责](design/plugins.md#内置插件的实际状态)。
+平台能力独立于业务插件：Agent管理、Bot/频道绑定、会话运行、知识检索、持久任务由模块服务提供。插件扩展命令、领域规则和提供商；`modules/scheduling`已接管原调度实现，旧 plugins 调度兼容导出已删除。通知中心已归平台模块；通用工作流明确排除，详细分类见[平台与插件职责](design/plugins.md#内置插件的实际状态)。
 
 文件记忆包含平台显式提取/整合任务及 SDK 原生 Memory 生成；二者均经过模型授权与计量。原生生成在产物捕获前显式 flush，实时更新有 namespace CAS 与幂等控制。namespace 版本、会话历史、Run 检查点、沙箱 session 与工作区 snapshot 分别管理。
 
 | 文档 | 内容与阅读定位 |
 | --- | --- |
+| [架构重构记录](reviews/2026-11-01-architecture-refactor.md) | 索引查询、类型化上下文、显式依赖、后台分工、能力入口与审核记忆边界 |
 | [本轮平台补齐](platform-completion.md) | 审查逐项闭环、模块边界、执行语义及验证 |
 | [资源治理](design/resource-governance.md) | 模型/能力撤回、知识任务、快照保留和记忆ACL |
 | [平台能力与缺口审查](platform-capability-audit.md) | 已复现缺陷、定时触发完整性、平台管理缺项和补齐顺序 |

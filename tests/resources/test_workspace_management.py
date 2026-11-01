@@ -1,13 +1,35 @@
 """Workspace management keeps actor filtering, path safety and snapshot references."""
 
+import hashlib
+import stat
+
 import pytest
 
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
+from opsmesh.modules.workspaces.internal import paths
 from opsmesh.modules.workspaces.internal.service import LocalWorkspaceService
 from opsmesh.modules.workspaces.management import WorkspaceManagement
 
 from .test_resource_management import Journal
+
+
+def test_managed_file_replace_failure_restores_original_read_only_file(tmp_path, monkeypatch):
+    target = tmp_path / "AGENTS.md"
+    target.write_bytes(b"trusted")
+    target.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+
+    def fail_replace(source, destination):
+        raise OSError("injected replacement failure")
+
+    monkeypatch.setattr(paths.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="injected"):
+        paths.replace_managed_file(
+            target, b"new", expected_digest=hashlib.sha256(b"trusted").hexdigest(), read_only=True
+        )
+    assert target.read_bytes() == b"trusted"
+    assert not target.stat().st_mode & stat.S_IWUSR
+    assert list(tmp_path.iterdir()) == [target]
 
 
 async def test_workspace_file_operations_preserve_readonly_and_boundaries(tmp_path):

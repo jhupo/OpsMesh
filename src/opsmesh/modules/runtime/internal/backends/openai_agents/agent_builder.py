@@ -17,6 +17,7 @@ from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification, 
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.api import RuntimeExtensions
 
+from .execution_state import execution_state
 from .extension_mapping import output_type, tool_completion
 from .guardrails import build_guardrail
 from .hooks import RegisteredAgentHooks, resolve_hooks
@@ -65,7 +66,7 @@ class AgentGraphBuilder:
     async def _instructions(self, spec: AgentSpecification) -> tuple[Any, tuple[Any, ...]]:
         extra = ""
         tools: tuple[ToolBinding, ...] = ()
-        prepare = self.context.services.get("prepare_agent_resources")
+        prepare = self.context.services.prepare_agent_resources
         if prepare is not None:
             resources = await prepare(spec)
             extra, tools = resources.instructions, configure_mcp_tools(spec, resources.tools)
@@ -161,9 +162,9 @@ class AgentGraphBuilder:
         if (
             child.sandbox is not None
             and not template
-            and self.context.services.get("openai_sandbox_session") is not None
+            and self.context.resources.sandbox_session is not None
         ):
-            root = self.context.services.get("sandbox_root_specification")
+            root = self.context.resources.sandbox_root_specification
             if (
                 root is None
                 or child.sandbox != root.sandbox
@@ -186,7 +187,7 @@ class AgentGraphBuilder:
             if self.context.resolve_agent is None:
                 raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "No agent resolver configured")
             proposed = await self.context.resolve_agent(tool_binding.agent_ref)
-            root = self.context.services.get("sandbox_root_specification")
+            root = self.context.resources.sandbox_root_specification
             different = (
                 root is None
                 or proposed.sandbox != root.sandbox
@@ -252,9 +253,7 @@ class AgentGraphBuilder:
         cache[spec.ref] = agent  # Register before recursion to support handoff cycles.
         if template and spec.sandbox:
             agent.tools.extend(restoration_tools(spec))
-        self.context.services.setdefault("agent_model_profiles", {})[agent.name] = (
-            spec.model_profile_ref
-        )
+        execution_state(self.context).agent_model_profiles[agent.name] = spec.model_profile_ref
         bindings = (*spec.tools, *resource_tools)
         if len({t.name for t in bindings}) != len(bindings):
             raise OpsMeshError("CONFIG_INVALID", "Prepared resource tool names collide")

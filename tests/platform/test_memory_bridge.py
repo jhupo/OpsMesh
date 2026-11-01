@@ -26,7 +26,7 @@ class MemoryTestBackend:
 
     async def run(self, spec, input, context, **options):
         self.calls.append(context.run_id)
-        await context.services["observe_usage"](
+        await context.services.observe_usage(
             {
                 "call_id": "response",
                 "model_profile_ref": "memory@1",

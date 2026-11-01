@@ -45,6 +45,7 @@ class OpsMeshSettings(OpsMeshContract):
     memory_extract_model_profile: str | None = None
     memory_consolidate_model_profile: str | None = None
     skill_git_allowed_hosts: tuple[str, ...] = ()
+    personal_model_allowed_hosts: tuple[str, ...] = ("api.openai.com",)
     script_execution_provider: Literal["local", "docker"] = "docker"
     script_execution_image: str = "python:3.13-slim"
     storage_backend: Literal["local", "s3"] = "local"
@@ -74,7 +75,12 @@ class OpsMeshSettings(OpsMeshContract):
                 values[field] = (
                     tuple(filter(None, value.split(",")))
                     if field
-                    in {"plugins", "run_worker_environment_allowlist", "skill_git_allowed_hosts"}
+                    in {
+                        "plugins",
+                        "run_worker_environment_allowlist",
+                        "skill_git_allowed_hosts",
+                        "personal_model_allowed_hosts",
+                    }
                     else value
                 )
         return cls.model_validate(values)
