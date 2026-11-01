@@ -125,46 +125,136 @@ def test_default_mode_is_local_without_container_or_cluster_selection(bash):
     assert result.stdout.strip() == "local opsmesh 8000"
 
 
-def test_source_payload_excludes_checkout_credentials_and_runtime_files(bash, tmp_path):
-    source = tmp_path / "source"
+def test_release_payload_excludes_checkout_credentials_and_runtime_files(
+    bash, tmp_path, release_bundle
+):
     files = {
         "src/opsmesh/__init__.py": '"""Package."""',
         "src/opsmesh/__pycache__/ignored.pyc": "bytecode",
         "src/private.env": "private source-adjacent configuration",
-        "deploy/install.sh": "#!/usr/bin/env bash\n",
         "deploy/.env": "private deployment configuration",
         "deploy/.env.local": "private deployment override",
         "pyproject.toml": "[project]\n",
         "uv.lock": "version = 1\n",
-        "README.md": "README",
-        "LICENSE": "License",
-        ".dockerignore": ".env\n",
         ".env": "private configuration",
         ".git/config": "private remote",
         ".venv/runtime": "unrelated environment",
         ".opsmesh/opsmesh.db": "runtime database",
+        "python/bin/python3": "interpreter must be installed online",
     }
     for name, content in files.items():
-        destination = source / name
+        destination = release_bundle / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
-    archive = tmp_path / "source.tar"
+    archive = tmp_path / "payload.tar"
     result = invoke(
         bash,
-        'source "$OPSMESH_TEST_REPO/deploy/install.sh"\nSOURCE_DIRECTORY=$1\nsource_payload > "$2"',
-        source.as_posix(),
+        'source "$OPSMESH_TEST_REPO/deploy/install.sh"\n'
+        'BUNDLE_DIRECTORY=$1\nvalidate_release_bundle\nrelease_payload > "$2"',
+        release_bundle.as_posix(),
         archive.as_posix(),
     )
     assert result.returncode == 0, result.stderr
     with tarfile.open(archive) as package:
         names = set(package.getnames())
-    assert "src/opsmesh/__init__.py" in names
+    assert "packages/opsmesh-0.3.0-py3-none-any.whl" in names
+    assert "requirements.lock" in names
     assert "deploy/install.sh" in names
-    assert not {"src/private.env", "deploy/.env", "deploy/.env.local"} & names
+    assert not set(files) & names
     assert not any(
-        name.startswith((".env", ".git", ".venv", ".opsmesh")) or "__pycache__" in name
+        name.startswith(("src/", "python/", ".env", ".git", ".venv", ".opsmesh"))
+        or "__pycache__" in name
         for name in names
     )
+
+
+@pytest.mark.parametrize(
+    "changed_file",
+    ["requirements.lock", "packages/opsmesh-0.3.0-py3-none-any.whl", "deploy/install/local.sh"],
+)
+def test_installer_rejects_tampered_bundle_before_installation(bash, release_bundle, changed_file):
+    with (release_bundle / changed_file).open("ab") as changed:
+        changed.write(b"\nmodified after publication\n")
+    result = invoke(
+        bash,
+        'source "$OPSMESH_TEST_REPO/deploy/install.sh"\n'
+        "BUNDLE_DIRECTORY=$1\nvalidate_release_bundle",
+        release_bundle.as_posix(),
+    )
+    assert result.returncode != 0
+    assert "checksum validation failed" in result.stderr
+
+
+def test_installer_requires_checksum_coverage_of_every_release_file(bash, release_bundle):
+    checksums = release_bundle / "SHA256SUMS"
+    lines = checksums.read_text(encoding="utf-8").splitlines()
+    checksums.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8", newline="\n")
+    result = invoke(
+        bash,
+        'source "$OPSMESH_TEST_REPO/deploy/install.sh"\n'
+        "BUNDLE_DIRECTORY=$1\nvalidate_release_bundle",
+        release_bundle.as_posix(),
+    )
+    assert result.returncode != 0
+    assert "does not cover all release files" in result.stderr
+
+
+def test_source_checkout_is_not_accepted_as_an_installation_bundle(bash):
+    result = invoke(
+        bash,
+        'source "$OPSMESH_TEST_REPO/deploy/install.sh"\n'
+        "BUNDLE_DIRECTORY=$OPSMESH_TEST_REPO\nvalidate_release_bundle",
+    )
+    assert result.returncode != 0
+    assert "release bundle is required" in result.stderr
+    assert "build_linux_release.py" in result.stderr
+
+
+def test_usable_system_python_is_reused_without_downloading_a_runtime(bash, tmp_path, installation):
+    setup, environment = installation
+    result = invoke(
+        bash,
+        setup
+        + """
+is_service_python() { [[ $1 == /usr/bin/python3 ]]; }
+readlink() { printf '%s\\n' "${@: -1}"; }
+run_uv() { printf unexpected > "$OPSMESH_TEST_DIRECTORY/download-attempted"; return 97; }
+choose_local_python
+[[ $PYTHON_EXECUTABLE == /usr/bin/python3 ]]
+""",
+        environment=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "download-attempted").exists()
+
+
+def test_missing_usable_python_downloads_managed_runtime_after_local_search(
+    bash, tmp_path, installation
+):
+    setup, environment = installation
+    result = invoke(
+        bash,
+        setup
+        + """
+is_service_python() { [[ $1 == /opt/opsmesh/python/managed/bin/python3 ]]; }
+run_uv() {
+    printf '%s\\n' "$*" >> "$OPSMESH_TEST_DIRECTORY/python-actions"
+    if [[ " $* " == *" --system "* ]]; then return 1; fi
+    if [[ " $* " == *" --managed-python "* ]]; then
+        printf /opt/opsmesh/python/managed/bin/python3
+    fi
+}
+choose_local_python
+[[ $PYTHON_EXECUTABLE == /opt/opsmesh/python/managed/bin/python3 ]]
+""",
+        environment=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    actions = (tmp_path / "python-actions").read_text(encoding="utf-8").splitlines()
+    assert actions[0].startswith("python find --system ")
+    assert "--no-python-downloads" in actions[0]
+    assert actions[1] == "python install --no-bin 3.13"
+    assert actions[2].startswith("python find --managed-python ")
 
 
 def test_docker_configuration_is_preserved_without_executing_its_contents(
@@ -326,7 +416,7 @@ def test_mode_conflict_is_rechecked_under_the_installation_lock(bash, tmp_path, 
         + """
 MODE=local
 printf docker > "$MODE_FILE"
-source_payload() { printf unexpected > "$OPSMESH_TEST_DIRECTORY/payload-attempted"; }
+release_payload() { printf unexpected > "$OPSMESH_TEST_DIRECTORY/payload-attempted"; }
 inspect_installation_state
 """,
         environment=environment,
@@ -391,7 +481,7 @@ validate_new_instance_identity
     assert "Could not inspect Docker" in result.stderr
 
 
-def test_changed_source_requires_explicit_upgrade_before_replacement(bash, tmp_path, installation):
+def test_changed_bundle_requires_explicit_upgrade_before_replacement(bash, tmp_path, installation):
     setup, environment = installation
     result = invoke(
         bash,
@@ -399,7 +489,7 @@ def test_changed_source_requires_explicit_upgrade_before_replacement(bash, tmp_p
         + """
 printf local > "$MODE_FILE"
 printf old-source-digest > "$DIGEST_FILE"
-source_payload() { printf 'new source'; }
+release_payload() { printf 'new release'; }
 inspect_installation_state
 """,
         environment=environment,

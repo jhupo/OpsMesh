@@ -4,15 +4,15 @@
 
 ## 安装、初始化与启动
 
-Linux 正式常驻运行默认使用本地安装脚本，在独立 Python 环境中运行 `opsmesh.service`。Docker 为显式可选模式，操作系统服务安装不覆盖 Windows：
+Linux 正式部署使用 `opsmesh-VERSION-linux.tar.gz` 安装包，在解压后的包目录执行下列命令。默认在目标机器创建 Python 虚拟环境并运行 `opsmesh.service`；Docker 为显式可选模式，操作系统服务安装不覆盖 Windows：
 
 ```sh
-sudo bash deploy/install.sh
+sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
 ```
 
-本地安装配置为 `/etc/opsmesh/opsmesh.env`，数据为 `/var/lib/opsmesh`。升级执行 `sudo bash deploy/install.sh --upgrade`，首次初始化与迁移分别处理，已有配置和数据保留。完整参数、`systemctl` 启停、已安装环境的 CLI、Compose 命令与备份步骤见 [Linux 安装指南](../deploy/linux.md)。历史 `v0.3.0` 源码包不包含新增脚本；需使用包含脚本的源码版本。
+本地安装配置为 `/etc/opsmesh/opsmesh.env`，数据为 `/var/lib/opsmesh`。升级从新包目录执行 `sudo bash install.sh --upgrade`，首次初始化与迁移分别处理，已有配置和数据保留。包内是 wheel、带哈希的依赖清单及部署文件，不打包解释器、`.venv` 或开发源码树；安装时复用本机可用 Python，否则在线下载，再在线安装运行依赖。完整参数、`systemctl` 启停、已安装环境的 CLI、Compose 命令与备份步骤见 [Linux 安装指南](../deploy/linux.md)。历史 `v0.3.0` 没有该 Linux 安装包；源码开发者可以用构建脚本生成制品。
 
 ### 手动开发运行
 

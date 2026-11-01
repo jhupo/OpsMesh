@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install from a reviewed source checkout or extracted OpsMesh source archive.
+# Install a verified OpsMesh Linux product bundle containing a built wheel.
 # Bootstrap credentials must never be expanded into an xtrace log.
 set +x
 set -Eeuo pipefail

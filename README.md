@@ -24,15 +24,19 @@ Web 门户和控制台仅预留目录；Claude 后端为后续适配。已在独
 
 ### Linux 服务安装
 
-在包含安装脚本的源码根目录执行，默认在本机创建独立 Python 环境和 systemd 服务：
+使用独立的 `opsmesh-VERSION-linux.tar.gz` 安装包。将 `VERSION` 替换为实际发行版本，解压后默认安装本地 systemd 服务：
 
 ```sh
-sudo bash deploy/install.sh
+tar -xzf opsmesh-VERSION-linux.tar.gz
+cd opsmesh-VERSION-linux
+sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
 ```
 
-默认使用本地 SQLite，配置保存在 `/etc/opsmesh/opsmesh.env`，数据保存在 `/var/lib/opsmesh`。首次输入管理员密码后即可访问 `http://127.0.0.1:8000/docs`，无需 Docker 或 Kubernetes。需要 Docker 部署时显式执行 `sudo bash deploy/install.sh --mode docker`。两种模式的启停、升级、多实例及备份操作见 [Linux 安装指南](deploy/linux.md)。安装脚本为后续新增功能，原 `v0.3.0` 发行包不包含它。
+安装包包含 wheel、带哈希的运行依赖清单和部署文件，不携带 Python、`.venv` 或整套源码仓库。安装时优先复用服务用户可访问的本机 Python 3.11–3.14；没有适用解释器时在线获取 Python 3.13，再创建虚拟环境并安装锁定依赖。依赖安装需要联网。
+
+默认使用本地 SQLite，配置保存在 `/etc/opsmesh/opsmesh.env`，数据保存在 `/var/lib/opsmesh`。首次输入管理员密码后即可访问 `http://127.0.0.1:8000/docs`，无需 Docker 或 Kubernetes。需要 Docker 部署时显式执行 `sudo bash install.sh --mode docker`。两种模式的启停、升级、多实例及备份操作见 [Linux 安装指南](deploy/linux.md)。原 `v0.3.0` 历史发布没有该 Linux 安装包；开发者可用 `uv run python scripts/build_linux_release.py --output-dir dist/linux` 从当前源码构建。
 
 ### 手动安装发行包
 

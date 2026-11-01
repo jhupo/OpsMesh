@@ -10,17 +10,21 @@ This release replaces the architecture previously published as `0.2.x` and earli
 
 ## Install a Linux service
 
-From a source checkout containing the installer, run:
+Use the dedicated `opsmesh-VERSION-linux.tar.gz` installation bundle. Replace `VERSION` with the actual release version, extract it and run:
 
 ```sh
-sudo bash deploy/install.sh
+tar -xzf opsmesh-VERSION-linux.tar.gz
+cd opsmesh-VERSION-linux
+sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
 ```
 
-The default is a native Python installation managed by systemd, with SQLite and the API/background coordinator in one service. Configuration lives in `/etc/opsmesh/opsmesh.env`; persistent data lives in `/var/lib/opsmesh`. Docker and Kubernetes are not required. Select Compose explicitly with `sudo bash deploy/install.sh --mode docker`; that mode requires Docker Engine and Docker Compose and runs API, Worker, PostgreSQL and Redis services.
+The bundle contains a wheel, hash-locked runtime requirements and deployment files. It does not ship Python, a virtual environment or the development source tree. Native installation reuses an accessible Python 3.11–3.14 when available; otherwise it downloads managed Python 3.13. It then creates an instance-specific virtual environment and installs locked dependencies online. The wheel is a standard Python package, not a standalone native executable; this is not an offline dependency bundle.
 
-The installer preserves existing configuration and data, and requires `--upgrade` when replacing installed source. See the [Linux installation and operations guide](deploy/linux.md) for upgrades, multiple instances and service management. It installs no Windows service. This installer was added after the original `v0.3.0` release and is not present in that release's source archive.
+The default is a native installation managed by systemd, with SQLite and the API/background coordinator in one service. Configuration lives in `/etc/opsmesh/opsmesh.env`; persistent data lives in `/var/lib/opsmesh`. Docker and Kubernetes are not required. Select Compose explicitly with `sudo bash install.sh --mode docker`; that mode requires Docker Engine and Docker Compose and installs the wheel and dependencies into an image for API/Worker, alongside PostgreSQL and Redis.
+
+The installer preserves configuration and data, and requires `--upgrade` when replacing an installation bundle. See the [Linux installation and operations guide](deploy/linux.md) for upgrades, multiple instances and service management. It installs no Windows service. The original `v0.3.0` release has no Linux bundle; developers can build one from current source with `uv run python scripts/build_linux_release.py --output-dir dist/linux`.
 
 ## Install a release manually
 

@@ -77,8 +77,9 @@ def command(
 
 
 class InstallationCheck:
-    def __init__(self, mode: str) -> None:
+    def __init__(self, mode: str, bundle: Path) -> None:
         self.mode = mode
+        self.bundle = bundle.resolve(strict=True)
         self.instance = f"opsmesh-ci-{mode}"
         self.port = PORTS[mode]
         self.service = f"{self.instance}.service"
@@ -92,7 +93,7 @@ class InstallationCheck:
         CONFIGURATION_FILES.add(self.environment)
 
     def compose(self, *arguments: str, timeout: float = 120) -> str:
-        source = self.current if self.current.exists() else ROOT
+        source = self.current if self.current.exists() else self.bundle
         return command(
             [
                 "docker",
@@ -109,6 +110,12 @@ class InstallationCheck:
         )
 
     def assert_fresh_instance(self) -> None:
+        require((self.bundle / "install.sh").is_file(), "Missing distribution install.sh")
+        require((self.bundle / "SHA256SUMS").is_file(), "Missing distribution checksums")
+        for forbidden in ("src", "tests", ".git", ".venv", "python", "pyproject.toml", "uv.lock"):
+            require(
+                not (self.bundle / forbidden).exists(), "Bundle contains development/runtime files"
+            )
         for path in (
             self.installation,
             self.configuration,
@@ -142,7 +149,7 @@ class InstallationCheck:
         command(
             [
                 "bash",
-                str(ROOT / "deploy" / "install.sh"),
+                str(self.bundle / "install.sh"),
                 "--mode",
                 self.mode,
                 "--instance",
@@ -334,13 +341,14 @@ class InstallationCheck:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=tuple(PORTS), required=True)
+    parser.add_argument("--bundle", type=Path, required=True, help="Extracted Linux distribution")
     arguments = parser.parse_args()
     if sys.platform != "linux" or os.geteuid() != 0:
         parser.error(
             "This destructive integration check requires Linux and root on a fresh CI runner"
         )
     try:
-        InstallationCheck(arguments.mode).run()
+        InstallationCheck(arguments.mode, arguments.bundle).run()
     except RuntimeError as error:
         print(safe_diagnostic(f"Linux installation check failed: {error}."), file=sys.stderr)
         return 1

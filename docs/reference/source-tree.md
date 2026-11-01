@@ -93,6 +93,7 @@ opsmesh/
 │   ├── 0001-initial.md
 │   └── README.md
 ├── scripts/
+│   ├── build_linux_release.py
 │   ├── check_linux_installation.py
 │   ├── check_repository.py
 │   ├── check_sdist.py
@@ -568,7 +569,9 @@ opsmesh/
 │   │   ├── test_onebot.py
 │   │   └── test_onebot_network.py
 │   ├── deployment/
-│   │   └── test_installation.py
+│   │   ├── conftest.py
+│   │   ├── test_installation.py
+│   │   └── test_linux_release.py
 │   ├── framework/
 │   │   ├── conftest.py
 │   │   ├── test_dependencies.py

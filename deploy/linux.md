@@ -2,29 +2,38 @@
 
 Linux 安装提供 `local` 和 `docker` 两种模式，默认是 **本地 Python 安装 + systemd 服务**。本地模式不需要 Docker 或 Kubernetes；HTTP API 和后台协调器在同一个服务中运行，默认使用 SQLite。Docker 模式需要显式指定，使用 Compose 管理 API、Worker、PostgreSQL 和 Redis。
 
-以下命令在包含 `deploy/install.sh` 的源码根目录运行。已经发布的原 `v0.3.0` 发行包不包含此安装脚本，不能用旧发行包中的路径执行这些命令。
+部署使用独立的 `opsmesh-VERSION-linux.tar.gz` 安装包。它包含构建后的 wheel、带哈希的运行依赖清单 `requirements.lock`、安装脚本、systemd/Compose/Dockerfile、`VERSION`、`SHA256SUMS`、说明和许可证。安装包不包含 Python 解释器、`.venv`、源码仓库的 `src/`、测试、Git 元数据或开发配置。
+
+Python 是应用运行依赖，安装时选择或获取，不随安装包分发。wheel 是标准 Python 安装制品，其中可以包含 Python 模块；它不是独立机器码程序，也不承诺隐藏 Python 源码。
+
+原 `v0.3.0` 历史发布没有该 Linux 安装包，不修改其标签或已有附件。使用实际提供该制品的发行版本，或按本文末尾的构建命令生成当前版本的安装包。
 
 ## 安装要求
 
 - Linux、Bash、GNU 常用命令和 root 权限；本地模式还需要正在运行的 systemd、`curl` 与 Git。
-- 本地模式使用固定版本 uv 和独立的 Python 环境，不修改系统 Python。首次安装需要下载 Python 与锁定依赖的网络访问。
+- 本地模式使用固定版本 uv 和独立的 Python 虚拟环境，不修改系统 Python。安装依赖需要联网；只有缺少适用解释器时才下载 Python。
 - Docker 模式要求已经安装并启动 Docker Engine，且 `docker compose version` 可用。
 - 默认 HTTP 地址为 `127.0.0.1:8000`。同一台机器安装多个实例时，分别指定实例名和端口。
 
 此脚本不提供 Windows 服务安装，也不会安装 Kubernetes。通过 Python 虚拟环境手动开发运行的说明仍见[项目 README](../README.md)。
 
-安装器不执行 `apt`、`dnf` 等系统包安装。缺少前置命令时会报告并停止。uv 固定为 `0.13.5`，默认自动下载适用于 glibc Linux 的 x86_64/aarch64 构建并核验 SHA-256；其他架构可预先安装匹配版本的 uv。应用使用独立的托管 Python 3.13，首次需要时由 uv 下载。
+安装器不执行 `apt`、`dnf` 等系统包安装。缺少前置命令时会报告并停止。uv 固定为 `0.13.5`，默认自动下载适用于 glibc Linux 的 x86_64/aarch64 构建并核验 SHA-256；其他架构可预先安装匹配版本的 uv。安装器先检查本机 Python 3.11–3.14，存在且服务用户可以访问时复用；没有可用解释器时，再由 uv 在线下载托管 Python 3.13。随后创建本实例的虚拟环境，按 `requirements.lock` 中的版本和哈希在线安装运行依赖，再安装包内 wheel。该安装包不包含全部第三方依赖，不能直接用于离线安装。
 
 ## 默认本地安装
 
+下载目标版本的 Linux 安装包，解压后进入包内目录。将命令中的 `VERSION` 替换为实际版本号：
+
 ```sh
-sudo bash deploy/install.sh
+tar -xzf opsmesh-VERSION-linux.tar.gz
+cd opsmesh-VERSION-linux
+sha256sum --check SHA256SUMS
+sudo bash install.sh
 ```
 
 等价的显式命令：
 
 ```sh
-sudo bash deploy/install.sh --mode local
+sudo bash install.sh --mode local
 ```
 
 首次安装会要求输入本地管理员密码，密码至少 12 个字符。管理员密码只用于初始化，不写入常驻服务配置。脚本安装 OpenAI Agents SDK 和 S3 可选依赖，但不会替用户创建模型凭据、模型档案或 Agent。
@@ -44,9 +53,9 @@ curl --fail http://127.0.0.1:8000/ready
 
 | 位置 | 用途 |
 | --- | --- |
-| `/opt/opsmesh/releases/` | 各次安装的代码和独立 Python 环境；旧目录保留 |
+| `/opt/opsmesh/releases/` | 各次安装的发布制品和安装时创建的 Python 虚拟环境；旧目录保留 |
 | `/opt/opsmesh/current` | 当前应用版本的符号链接 |
-| `/opt/opsmesh/python`、`tools`、`cache` | root 管理的 Python、固定版本 uv 与安装缓存 |
+| `/opt/opsmesh/python`、`tools`、`cache` | 需要下载时使用的托管 Python、固定版本 uv 与安装缓存 |
 | `/etc/opsmesh/opsmesh.env` | 本实例的环境配置，重复安装时保留 |
 | `/var/lib/opsmesh` | SQLite、工作区、blob 和运行数据 |
 | `/etc/systemd/system/opsmesh.service` | systemd 单元 |
@@ -54,7 +63,7 @@ curl --fail http://127.0.0.1:8000/ready
 
 服务以独立的 `opsmesh` 系统用户运行，应用安装目录由 root 管理。更换实例名时，上述路径、服务名和系统用户随实例名变化；不会复用默认实例的数据。
 
-安装时只复制应用所需源码、部署文件和锁文件，不复制 `.git`、开发环境 `.env` 或运行数据。管理员可以在首次运行前预建 root 所有的 `/etc/opsmesh/opsmesh.env`，安装器保留其内容；本地配置文件权限为 `0640`，Docker 配置为 `0600`。
+安装时从发布包复制 wheel、依赖清单及部署文件，不复制开发源码仓库或既有运行数据。虚拟环境在目标机器上创建，不是从构建机打包复制。管理员可以在首次运行前预建 root 所有的 `/etc/opsmesh/opsmesh.env`，安装器保留其内容；本地配置文件权限为 `0640`，Docker 配置为 `0600`。
 
 ### 启停与开机启动
 
@@ -101,10 +110,10 @@ sudo systemd-run --wait --pipe --collect \
 ## 可选 Docker 安装
 
 ```sh
-sudo bash deploy/install.sh --mode docker
+sudo bash install.sh --mode docker
 ```
 
-Docker 模式从当前源码构建镜像，先启动 PostgreSQL 和 Redis，再初始化应用并启动 API/Worker。管理员密码只传入一次性初始化容器。数据库与缓存端口只在 Compose 网络中使用，HTTP 默认绑定宿主机 `127.0.0.1:8000`。
+Docker 模式使用包内 Dockerfile，从 wheel 和 `requirements.lock` 构建应用镜像，不把整个源码仓库复制进镜像。构建时仍需要联网获取基础镜像和锁定依赖。它先启动 PostgreSQL 和 Redis，再初始化应用并启动 API/Worker。管理员密码只传入一次性初始化容器。数据库与缓存端口只在 Compose 网络中使用，HTTP 默认绑定宿主机 `127.0.0.1:8000`。
 
 容器启停由 Compose 管理，不创建与本地模式重复的 `opsmesh.service`。持久数据保存在本实例的 Docker volumes 中；镜像和容器可重新构建，数据卷必须单独备份。普通停止操作不删除数据卷。
 
@@ -135,7 +144,7 @@ sudo env OPSMESH_ENV_FILE=/etc/opsmesh/opsmesh.env docker compose \
 ## 安装参数
 
 ```sh
-sudo bash deploy/install.sh --help
+sudo bash install.sh --help
 ```
 
 | 参数 | 用途 |
@@ -153,7 +162,7 @@ sudo bash deploy/install.sh --help
 多个实例示例：
 
 ```sh
-sudo bash deploy/install.sh --instance opsmesh-test --port 18000
+sudo bash install.sh --instance opsmesh-test --port 18000
 sudo systemctl status opsmesh-test.service --no-pager
 ```
 
@@ -162,27 +171,40 @@ sudo systemctl status opsmesh-test.service --no-pager
 部署系统已经提供受限 secret 文件时，也可以使用 `--admin-password-file` 指向该文件，并确保仅 root 可读。两个密码输入选项不能同时使用。安装完成后按部署系统的密钥生命周期管理已有文件。重复安装不会通过这些输入选项或 `--admin` 重置已有管理员。
 
 ```sh
-sudo bash deploy/install.sh --admin-password-file /root/opsmesh-admin-password
+sudo bash install.sh --admin-password-file /root/opsmesh-admin-password
 ```
 
 `--no-start` 在首次 Docker 安装时仍会启动 PostgreSQL/Redis 以完成初始化，只是不启动 API/Worker；对已经运行的同版本实例，不会主动停止应用。升级模式会先停止应用，指定 `--no-start` 后将其保持在停止状态。
 
 ## 重复安装与升级
 
-相同实例重复运行安装命令会保留已有配置与数据。修改端口、模型环境变量等配置时编辑现有环境文件，不用重新初始化数据库。更换应用源码时使用显式升级：
+相同实例重复运行安装命令会保留已有配置与数据。修改端口、模型环境变量等配置时编辑现有环境文件，不用重新初始化数据库。更换应用发布包时，解压新包并进入其目录，使用显式升级：
 
 ```sh
 sudo systemctl stop opsmesh.service
-# 先备份数据库、数据目录和 /etc/opsmesh/opsmesh.env，再进入新源码目录。
-sudo bash deploy/install.sh --upgrade
+# 先备份数据库、数据目录和 /etc/opsmesh/opsmesh.env，再进入新安装包目录。
+sudo bash install.sh --upgrade
 ```
 
 Docker 实例使用同样的模式和实例名：
 
 ```sh
-sudo bash deploy/install.sh --mode docker --upgrade
+sudo bash install.sh --mode docker --upgrade
 ```
 
 升级流程会先停止写入服务，再执行迁移和检查，最后按启动选项恢复服务。升级脚本不是备份工具；迁移失败时应保留数据并排查，不能直接清空数据库或删除 Docker volumes 重试。应用代码回退也不等于数据库自动降级，回退必须使用匹配的代码、配置和备份。
 
 旧 `0.2.x` 及更早架构的数据仍不支持原地升级。`--upgrade` 只用于当前架构的已登记迁移，详见[迁移说明](../migrations/README.md)、[备份/恢复](../docs/operations.md)与[版本兼容边界](../docs/releases/v0.3.0.md)。
+
+
+## 从开发源码构建安装包
+
+源码仓库供开发、测试和构建使用，不直接作为正式部署包。开发者在源码根目录执行：
+
+```sh
+uv run python scripts/build_linux_release.py --output-dir dist/linux
+```
+
+产物为 `dist/linux/opsmesh-VERSION-linux.tar.gz`。将该包复制到目标 Linux 主机，解压后按前述 `install.sh` 流程安装。构建过程从项目锁文件导出带哈希的运行依赖清单，并将 wheel 与部署文件汇入制品；开发环境中的解释器、`.venv`、测试和本地配置不进入包。
+
+原生与 Docker 安装验收均应从此制品执行，覆盖安装、登录、配置保留、重复安装和升级；只验证源码能运行不能代替安装包验收。具体测试通过情况以对应提交的 CI 记录为准。

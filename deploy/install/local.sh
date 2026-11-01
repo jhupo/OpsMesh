@@ -59,15 +59,64 @@ install_uv() {
     install -m 0644 "$download_directory/$artifact.sha256" "$INSTALL_DIRECTORY/tools/uv.sha256"
 }
 
-prepare_local_environment() {
-    [[ $REUSE_RELEASE == false ]] || return 0
-    install_uv
+run_uv() {
     env -u VIRTUAL_ENV -u PYTHONPATH \
         UV_PYTHON_INSTALL_DIR="$INSTALL_DIRECTORY/python" \
         UV_PYTHON_BIN_DIR="$INSTALL_DIRECTORY/tools" UV_CACHE_DIR="$INSTALL_DIRECTORY/cache" \
-        UV_PROJECT_ENVIRONMENT="$RELEASE_DIRECTORY/.venv" \
-        "$UV_EXECUTABLE" sync --directory "$RELEASE_DIRECTORY" --frozen --no-dev \
-        --extra openai --extra s3 --no-editable --managed-python --python 3.13
+        "$UV_EXECUTABLE" --no-config "$@"
+}
+
+is_service_python() {
+    local interpreter
+    [[ -x $1 ]] || return 1
+    interpreter=$(readlink -f -- "$1") || return 1
+    # ProtectHome in the service unit hides these trees, even if root can use them.
+    case $interpreter in /root/*|/home/*|/run/user/*) return 1 ;; esac
+    runuser --user "$INSTANCE" -- "$interpreter" -I -c \
+        'import os
+import sys
+hidden = ("/root/", "/home/", "/run/user/")
+prefixes = (sys.base_prefix, sys.base_exec_prefix)
+supported = (3, 11) <= sys.version_info[:2] < (3, 15)
+hidden_library = any((os.path.realpath(p) + "/").startswith(hidden) for p in prefixes)
+raise SystemExit(not supported or hidden_library)' \
+        >/dev/null 2>&1
+}
+
+choose_local_python() {
+    local interpreter candidate
+    # Prefer normal system locations over root's virtualenv or home-managed tools.
+    for candidate in /usr/local/bin/python3 /usr/bin/python3 \
+        /usr/local/bin/python3.{14,13,12,11} /usr/bin/python3.{14,13,12,11}; do
+        if is_service_python "$candidate"; then
+            PYTHON_EXECUTABLE=$(readlink -f -- "$candidate")
+            inform "Using existing Python: $PYTHON_EXECUTABLE"
+            return 0
+        fi
+    done
+    interpreter=$(PATH=/usr/local/bin:/usr/bin:/bin run_uv python find --system \
+        --no-managed-python --no-python-downloads --no-project --resolve-links '>=3.11,<3.15' 2>/dev/null) || interpreter=
+    if [[ -n $interpreter ]] && is_service_python "$interpreter"; then
+        PYTHON_EXECUTABLE=$interpreter
+        inform "Using existing Python: $PYTHON_EXECUTABLE"
+        return 0
+    fi
+    inform 'No service-accessible Python 3.11-3.14 found; installing managed Python 3.13 online'
+    run_uv python install --no-bin 3.13
+    PYTHON_EXECUTABLE=$(run_uv python find --managed-python --no-python-downloads \
+        --no-project --resolve-links 3.13)
+    is_service_python "$PYTHON_EXECUTABLE" || fail 'Downloaded Python cannot run as the service account'
+}
+
+prepare_local_environment() {
+    [[ $REUSE_RELEASE == false ]] || return 0
+    install_uv
+    choose_local_python
+    run_uv venv --python "$PYTHON_EXECUTABLE" --no-python-downloads "$RELEASE_DIRECTORY/.venv"
+    run_uv pip sync --require-hashes --python "$RELEASE_DIRECTORY/.venv/bin/python" \
+        "$RELEASE_DIRECTORY/requirements.lock"
+    run_uv pip install --no-deps --python "$RELEASE_DIRECTORY/.venv/bin/python" \
+        "$RELEASE_DIRECTORY/packages/$WHEEL_FILENAME"
     chmod -R go-w "$RELEASE_DIRECTORY" "$INSTALL_DIRECTORY/python"
 }
 

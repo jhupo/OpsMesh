@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Shared installer policy and source preparation; sourcing this file makes no changes.
+# Shared installer policy and release verification; sourcing this file makes no changes.
 
 fail() { printf 'opsmesh install: %s\n' "$*" >&2; exit 1; }
 inform() { printf 'opsmesh install: %s\n' "$*"; }
 
 usage() {
     cat <<'USAGE'
-Usage: sudo bash deploy/install.sh [options]
+Usage: sudo bash install.sh [options]
 
   --mode local|docker           Deployment mode (default: local systemd service)
   --instance NAME               Isolated installation name (default: opsmesh)
@@ -18,7 +18,9 @@ Usage: sudo bash deploy/install.sh [options]
   --no-start                    Prepare and initialize, without starting app services
   --help                        Show this help
 
+Run from an extracted OpsMesh Linux release bundle, not a source checkout.
 Linux only. Local mode requires systemd, curl, Git and standard GNU utilities.
+An accessible local Python 3.11-3.14 is reused; otherwise Python is downloaded.
 Docker mode requires an installed Docker Engine and Docker Compose v2.
 Configuration and data survive repeated installs and upgrades. Existing configuration
 is never overwritten; --port applies only when creating a new configuration file.
@@ -60,7 +62,7 @@ parse_arguments() {
 }
 
 configure_installation_paths() {
-    SOURCE_DIRECTORY=$(cd -- "$INSTALL_SCRIPT_DIRECTORY/.." && pwd -P)
+    BUNDLE_DIRECTORY=$(cd -- "$INSTALL_SCRIPT_DIRECTORY/.." && pwd -P)
     INSTALL_DIRECTORY=/opt/$INSTANCE
     CONFIG_DIRECTORY=/etc/$INSTANCE
     CONFIG_FILE=$CONFIG_DIRECTORY/opsmesh.env
@@ -86,10 +88,7 @@ validate_installation() {
     (( EUID == 0 )) || fail 'Run this installer with sudo or as root'
     require_commands tar sha256sum install stat readlink flock find cut date grep chmod chown \
         ln mv mktemp sed
-    [[ -f $SOURCE_DIRECTORY/pyproject.toml && -f $SOURCE_DIRECTORY/uv.lock ]] ||
-        fail 'Run the installer from a complete OpsMesh checkout or source archive'
-    [[ -z $(find "$SOURCE_DIRECTORY/src" "$SOURCE_DIRECTORY/deploy" -type l -print -quit) ]] ||
-        fail 'Installation source must not contain symbolic links'
+    validate_release_bundle
     local target
     for target in "$INSTALL_DIRECTORY" "$CONFIG_DIRECTORY" "$DATA_DIRECTORY" \
         "$CONFIG_FILE" "$MODE_FILE" "$INITIALIZED_FILE" "$DIGEST_FILE"; do
@@ -120,7 +119,7 @@ validate_installation() {
         (( (8#$password_mode & 077) == 0 )) || fail 'Password file must not be readable by group or others (use chmod 600)'
     fi
     if [[ $MODE == local ]]; then
-        require_commands systemctl systemd-run systemd-analyze useradd groupadd getent id curl git
+        require_commands systemctl systemd-run systemd-analyze useradd groupadd getent id curl git runuser
         [[ -d /run/systemd/system ]] || fail 'Local installation requires systemd running as PID 1'
     else
         require_commands docker od tr
@@ -128,6 +127,44 @@ validate_installation() {
         docker compose version >/dev/null || fail 'Docker Compose v2 is required'
     fi
     validate_new_instance_identity
+}
+
+validate_release_bundle() {
+    [[ -f $BUNDLE_DIRECTORY/VERSION && -f $BUNDLE_DIRECTORY/SHA256SUMS && \
+        -f $BUNDLE_DIRECTORY/requirements.lock ]] ||
+        fail 'A Linux release bundle is required. Build it with scripts/build_linux_release.py, then extract it and run install.sh'
+    [[ -z $(find "$BUNDLE_DIRECTORY" -type l -print -quit) ]] ||
+        fail 'The release bundle must not contain symbolic links'
+    BUNDLE_VERSION=$(<"$BUNDLE_DIRECTORY/VERSION")
+    [[ $BUNDLE_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$ ]] ||
+        fail 'Invalid release VERSION'
+    WHEEL_FILENAME=opsmesh-$BUNDLE_VERSION-py3-none-any.whl
+    local -a wheels=("$BUNDLE_DIRECTORY"/packages/*.whl)
+    [[ ${#wheels[@]} == 1 && ${wheels[0]} == "$BUNDLE_DIRECTORY/packages/$WHEEL_FILENAME" && \
+        -f ${wheels[0]} ]] || fail 'The release bundle must contain exactly its versioned OpsMesh wheel'
+    BUNDLE_FILES=(
+        install.sh VERSION requirements.lock README.md LICENSE "packages/$WHEEL_FILENAME"
+        deploy/install.sh deploy/install/common.sh deploy/install/local.sh deploy/install/docker.sh
+        deploy/install/check_ready.py deploy/systemd/opsmesh.service deploy/compose.yaml deploy/Dockerfile
+    )
+    local -A expected_files=() verified_files=()
+    local file line hash manifest_path
+    for file in "${BUNDLE_FILES[@]}"; do
+        [[ -f $BUNDLE_DIRECTORY/$file ]] || fail "Release file is missing: $file"
+        expected_files[$file]=1
+    done
+    while IFS= read -r line || [[ -n $line ]]; do
+        [[ $line =~ ^([a-f0-9]{64})[[:space:]][[:space:]]([^[:space:]]+)$ ]] ||
+            fail 'Invalid SHA256SUMS entry'
+        hash=${BASH_REMATCH[1]}
+        manifest_path=${BASH_REMATCH[2]}
+        [[ -n ${expected_files[$manifest_path]:-} && -z ${verified_files[$manifest_path]:-} ]] ||
+            fail "Unexpected or repeated release checksum path: $manifest_path"
+        verified_files[$manifest_path]=$hash
+    done < "$BUNDLE_DIRECTORY/SHA256SUMS"
+    [[ ${#verified_files[@]} == ${#expected_files[@]} ]] || fail 'SHA256SUMS does not cover all release files'
+    (cd "$BUNDLE_DIRECTORY" && sha256sum --check --status --strict SHA256SUMS) ||
+        fail 'Release checksum validation failed'
 }
 
 validate_new_instance_identity() {
@@ -159,11 +196,9 @@ acquire_installation_lock() {
     flock -n "$INSTALL_LOCK_DESCRIPTOR" || fail 'Another installer is operating on this instance'
 }
 
-source_payload() {
+release_payload() {
     tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-        --exclude=__pycache__ --exclude='*.pyc' --exclude='*.pyo' \
-        --exclude=.env --exclude='.env.*' --exclude='*.env' \
-        -C "$SOURCE_DIRECTORY" -cf - src pyproject.toml uv.lock README.md LICENSE deploy .dockerignore
+        -C "$BUNDLE_DIRECTORY" -cf - "${BUNDLE_FILES[@]}" SHA256SUMS
 }
 
 inspect_installation_state() {
@@ -176,11 +211,11 @@ inspect_installation_state() {
         printf '%s\n' "$MODE" > "$MODE_FILE"
         chmod 0600 "$MODE_FILE"
     fi
-    SOURCE_DIGEST=$(source_payload | sha256sum | cut -d ' ' -f 1)
+    ARTIFACT_DIGEST=$(release_payload | sha256sum | cut -d ' ' -f 1)
     REUSE_RELEASE=false
     if [[ -f $DIGEST_FILE && $UPGRADE == false ]]; then
-        [[ $(<"$DIGEST_FILE") == "$SOURCE_DIGEST" ]] ||
-            fail 'Installed source differs; back up data and rerun with --upgrade'
+        [[ $(<"$DIGEST_FILE") == "$ARTIFACT_DIGEST" ]] ||
+            fail 'Installed release artifacts differ; back up data and rerun with --upgrade'
         [[ -L $CURRENT_RELEASE && -d $CURRENT_RELEASE ]] || fail 'Installed current release link is missing'
         RELEASE_DIRECTORY=$(readlink -f -- "$CURRENT_RELEASE")
         [[ $RELEASE_DIRECTORY == "$INSTALL_DIRECTORY/releases/"* ]] || fail 'Current release points outside this installation'
@@ -192,7 +227,7 @@ prepare_release() {
     [[ $REUSE_RELEASE == false ]] || return 0
     RELEASE_DIRECTORY=$INSTALL_DIRECTORY/releases/$(date -u +%Y%m%dT%H%M%SZ)-$$
     install -d -m 0755 "$RELEASE_DIRECTORY"
-    source_payload | tar -C "$RELEASE_DIRECTORY" -xf -
+    release_payload | tar -C "$RELEASE_DIRECTORY" -xf -
     chmod -R go-w "$RELEASE_DIRECTORY"
 }
 
@@ -201,7 +236,7 @@ activate_release() {
         ln -s -- "$RELEASE_DIRECTORY" "$INSTALL_DIRECTORY/current.next.$$"
         mv -Tf -- "$INSTALL_DIRECTORY/current.next.$$" "$CURRENT_RELEASE"
     fi
-    printf '%s\n' "$SOURCE_DIGEST" > "$DIGEST_FILE"
+    printf '%s\n' "$ARTIFACT_DIGEST" > "$DIGEST_FILE"
     chmod 0600 "$DIGEST_FILE"
 }
 

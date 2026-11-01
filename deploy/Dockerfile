@@ -7,8 +7,12 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
     && apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 update \
     && apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY . .
-RUN uv sync --frozen --no-dev --extra openai --extra s3 --no-editable \
+COPY requirements.lock /opt/opsmesh/requirements.lock
+COPY packages/ /opt/opsmesh/packages/
+COPY deploy/install/check_ready.py /opt/opsmesh/deploy/install/check_ready.py
+RUN uv venv --python /usr/local/bin/python /opt/opsmesh/.venv \
+    && uv pip sync --python /opt/opsmesh/.venv/bin/python --require-hashes requirements.lock \
+    && uv pip install --python /opt/opsmesh/.venv/bin/python --no-deps packages/*.whl \
     && groupadd --gid 10001 opsmesh \
     && useradd --uid 10001 --gid 10001 --no-create-home opsmesh \
     && mkdir -p /var/lib/opsmesh \
