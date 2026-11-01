@@ -1,82 +1,65 @@
-name: opsmesh
+# Local deployment example. Explicitly initialize schema before starting api/worker.
+name: opsmesh-dev
 services:
-  database:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment: &application-environment
+      OPSMESH_DATA_DIRECTORY: /var/lib/opsmesh
+      OPSMESH_DATABASE_URL: ${OPSMESH_DATABASE_URL:?Set an async PostgreSQL URL using host postgres}
+      OPSMESH_REDIS_URL: redis://redis:6379/0
+      OPSMESH_WORKER_ENABLED: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPSMESH_ADMIN_PASSWORD: ${OPSMESH_ADMIN_PASSWORD:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - opsmesh-data:/var/lib/opsmesh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["worker"]
+    environment:
+      <<: *application-environment
+      OPSMESH_WORKER_ENABLED: "true"
+    volumes:
+      - opsmesh-data:/var/lib/opsmesh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: opsmesh
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-      POSTGRES_DB: opsmesh_host
+      POSTGRES_DB: opsmesh
+      POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD:?Set OPSMESH_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
-      - database:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U opsmesh -d opsmesh_host"]
+      test: ["CMD-SHELL", "pg_isready -U opsmesh -d opsmesh"]
       interval: 5s
       timeout: 3s
-      retries: 20
-    restart: unless-stopped
-  api:
-    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
-    environment: &environment
-      OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/opsmesh_host
-      OPSMESH_ENCRYPTION_KEY: ${OPSMESH_ENCRYPTION_KEY:?Set OPSMESH_ENCRYPTION_KEY}
-      OPSMESH_DATA_DIR: /app/data
-      OPSMESH_WORKER_CONCURRENCY: ${OPSMESH_WORKER_CONCURRENCY:-}
-      OPSMESH_ADMIN_USERNAME: ${OPSMESH_ADMIN_USERNAME:-}
-      OPSMESH_ADMIN_PASSWORD: ${OPSMESH_ADMIN_PASSWORD:-}
-      OPSMESH_MODEL_BASE_URL: ${OPSMESH_MODEL_BASE_URL:-https://api.openai.com/v1}
-      OPSMESH_MODEL_API_KEY: ${OPSMESH_MODEL_API_KEY:-}
-      OPSMESH_MODEL_NAME: ${OPSMESH_MODEL_NAME:-}
-      OPSMESH_MODEL_API_MODE: ${OPSMESH_MODEL_API_MODE:-responses}
-      OPSMESH_MODEL_REASONING_EFFORT: ${OPSMESH_MODEL_REASONING_EFFORT:-medium}
-      OPSMESH_ALLOWED_MODEL_HOSTS: ${OPSMESH_ALLOWED_MODEL_HOSTS:-["api.openai.com"]}
-      OPSMESH_SESSION_TTL_SECONDS: ${OPSMESH_SESSION_TTL_SECONDS:-31536000}
-      OPSMESH_SANDBOX_ROOT: ${OPSMESH_SANDBOX_ROOT:-/workspace}
-      OPSMESH_FILE_LIMIT_BYTES: ${OPSMESH_FILE_LIMIT_BYTES:-20000000}
-      OPSMESH_PACKAGE_LIMIT_BYTES: ${OPSMESH_PACKAGE_LIMIT_BYTES:-20000000}
-      OPSMESH_LOG_LEVEL: ${OPSMESH_LOG_LEVEL:-INFO}
-      OPSMESH_LOG_CONSOLE: ${OPSMESH_LOG_CONSOLE:-true}
-      OPSMESH_LOG_FILE: ${OPSMESH_LOG_FILE:-true}
-      OPSMESH_LOG_MAX_BYTES: ${OPSMESH_LOG_MAX_BYTES:-10000000}
-      OPSMESH_LOG_BACKUP_COUNT: ${OPSMESH_LOG_BACKUP_COUNT:-5}
-    volumes: &volumes
-      - resources:/app/data
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
+      retries: 10
+  redis:
+    image: redis:7.4-alpine
     ports:
-      - ${OPSMESH_HOST:-0.0.0.0}:${OPSMESH_PORT:-8000}:8000
-    restart: unless-stopped
-  migrate:
-    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
-    command: [migrate]
-    environment: *environment
-    volumes: *volumes
-    depends_on:
-      database:
-        condition: service_healthy
-  tasks:
-    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
-    command: [worker, tasks]
-    environment: *environment
-    volumes: *volumes
-    depends_on: &dependencies
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-  scheduler:
-    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
-    command: [worker, scheduler]
-    environment: *environment
-    volumes: *volumes
-    depends_on: *dependencies
-    restart: unless-stopped
-  gateway:
-    image: ${OPSMESH_IMAGE:-ghcr.io/jhupo/opsmesh:0.2.0}
-    command: [worker, gateway]
-    environment: *environment
-    volumes: *volumes
-    depends_on: *dependencies
-    restart: unless-stopped
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 volumes:
-  database:
-  resources:
+  postgres-data:
+  opsmesh-data:

@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmesh-worker
+spec:
+  template:
+    spec:
+      serviceAccountName: opsmesh-coordinator
+      automountServiceAccountToken: true
+      containers:
+        - name: worker
+          env:
+            - {name: OPSMESH_RUN_WORKER_MODE, value: kubernetes}
+            - {name: OPSMESH_RUN_WORKER_IMAGE, value: "opsmesh:0.3.0"}
+            - name: OPSMESH_KUBERNETES_WORKER
+              value: >-
+                {"namespace":"opsmesh","deployment_id":"opsmesh",
+                 "service_account":"opsmesh-run","settings_secret":"opsmesh-run-settings",
+                 "environment_secrets":["opsmesh-model-secrets"],"data_claim":"opsmesh-content"}

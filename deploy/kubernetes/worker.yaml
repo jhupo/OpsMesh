@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsmesh-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: opsmesh-worker}
+  template:
+    metadata:
+      labels: {app: opsmesh-worker}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: opsmesh:0.3.0
+          args: [worker]
+          envFrom:
+            - configMapRef: {name: opsmesh-settings}
+            - secretRef: {name: opsmesh-secrets}
+          env:
+            - {name: OPSMESH_WORKER_ENABLED, value: "true"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "4", memory: 4Gi}
+          volumeMounts:
+            - {name: content, mountPath: /var/lib/opsmesh}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - name: content
+          persistentVolumeClaim: {claimName: opsmesh-content}
+        - name: temporary
+          emptyDir: {sizeLimit: 1Gi}

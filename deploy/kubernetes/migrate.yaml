@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opsmesh-migrate
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: migrate
+          image: opsmesh:0.3.0
+          args: [migrate]
+          envFrom:
+            - configMapRef: {name: opsmesh-settings}
+            - secretRef: {name: opsmesh-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - {name: content, mountPath: /var/lib/opsmesh}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - name: content
+          persistentVolumeClaim: {claimName: opsmesh-content}
+        - name: temporary
+          emptyDir: {sizeLimit: 256Mi}

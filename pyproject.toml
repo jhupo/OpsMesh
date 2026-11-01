@@ -1,139 +1,109 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
 name = "opsmesh"
-version = "0.2.0"
-description = "A plugin application host for agents and messaging channels"
+dynamic = ["version"]
+description = "An event-driven, plugin-extensible agent platform."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["agents", "plugins", "openai", "automation", "messaging"]
+authors = [{ name = "opsmesh contributors" }]
+keywords = ["agents", "bots", "plugins", "automation", "asyncio"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "Framework :: FastAPI",
-  "Operating System :: POSIX :: Linux",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 dependencies = [
-  "openai-agents==0.22.3", "openai==3.28.0",
-  "fastapi>=0.136,<0.137", "uvicorn>=0.34,<1", "sqlalchemy==2.0.49",
-  "psycopg[binary]>=3.3,<4", "alembic>=1.18,<2", "pydantic-settings>=2.12,<3",
-  "cryptography>=50.0.2,<51", "httpx>=0.28,<0.29", "PyYAML>=6,<7",
-  "croniter>=6,<7", "python-multipart>=0.0.20", "qq-botpy==1.2.1",
-  "dingtalk-stream==0.24.4b1",
-  "psutil>=7.2,<8",
+  "pydantic>=2.12,<3",
+  "sqlalchemy[asyncio]>=2.0,<3",
+  "aiosqlite>=0.21,<1",
+  "asyncpg>=0.30,<1",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "httpx>=0.28,<1",
+  "websockets>=15,<17",
+  "redis>=6,<9",
+  "argon2-cffi>=23,<26",
+  "jsonschema>=4,<5",
+  "tzdata>=2025.2,<2028",
+  "cryptography>=46,<51",
 ]
 
 [project.optional-dependencies]
-dev = ["ruff==0.15.13", "mypy==1.20.2", "types-PyYAML", "types-croniter", "import-linter>=2,<3"]
-sandbox = ["openai-agents[docker]==0.22.3"]
-build = ["pyinstaller>=6.16,<7", "ruff==0.15.13"]
+openai = [
+    "openai-agents[docker]==0.24.0",
+    "opentelemetry-api>=1.37,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.37,<2",
+    "opentelemetry-sdk>=1.37,<2",
+]
+s3 = [
+    "boto3>=1.40,<2",
+]
 
 [project.scripts]
-opsmesh = "opsmesh.bootstrap.cli:entrypoint"
-opsmesh-worker = "opsmesh.bootstrap.worker:main"
+opsmesh = "opsmesh.entrypoints.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/jhupo/OpsMesh"
-Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
 Repository = "https://github.com/jhupo/OpsMesh"
+Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
 Issues = "https://github.com/jhupo/OpsMesh/issues"
 Changelog = "https://github.com/jhupo/OpsMesh/blob/master/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pre-commit>=4,<5",
+  "pytest>=8,<10",
+  "pytest-asyncio>=1,<2",
+  "types-jsonschema>=4,<5",
+  "ruff>=0.15,<0.16",
+]
+
+[tool.hatch.version]
+path = "src/opsmesh/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/opsmesh"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/opsmesh", "examples", "deploy", "scripts/build_release.py", "scripts/audit_requirements.py", "scripts/generate_sdk.py", "scripts/release_assets.py", "scripts/server_entry.py", ".github", ".agents", ".env.example", ".dockerignore", ".gitattributes", "README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "LICENSE", "docs", "pyproject.toml", "uv.lock"]
+include = [
+  "/src", "/tests", "/scripts", "/docs", "/deploy", "/examples",
+  "/migrations", "/web", "/.github", "/*.md", "/LICENSE", "/pyproject.toml", "/uv.lock",
+  "/.python-version", "/.editorconfig", "/.env.example", "/.gitattributes", "/.gitignore",
+  "/.pre-commit-config.yaml", "/.dockerignore",
+]
 
-[tool.opsmesh.sdk]
-repository = "https://github.com/jhupo/OpsMesh.git"
-revision = "be3c2bc1f512cb688fe5e360ccedef306f809108"
-version = "0.2.0"
+[tool.uv]
+required-version = ">=0.13.5,<0.14"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]
-ignore = ["E501", "B008"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
-plugins = ["pydantic.mypy"]
-python_version = "3.12"
-platform = "linux"
-files = ["src"]
-check_untyped_defs = true
-disallow_untyped_defs = true
-warn_unused_ignores = true
-ignore_missing_imports = true
+python_version = "3.11"
+strict = true
+files = ["src/opsmesh"]
 
-[[tool.mypy.overrides]]
-module = ["opsmesh.*"]
-ignore_missing_imports = false
-
-[tool.importlinter]
-root_packages = ["opsmesh"]
-include_external_packages = true
-
-[[tool.importlinter.contracts]]
-name = "The framework never imports its generated plugin SDK"
-type = "forbidden"
-source_modules = ["opsmesh"]
-forbidden_modules = ["opsmesh_sdk"]
-
-[[tool.importlinter.contracts]]
-name = "Public extension contracts do not import host implementation"
-type = "forbidden"
-source_modules = ["opsmesh.contracts"]
-forbidden_modules = ["opsmesh.agents", "opsmesh.bootstrap", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.infra", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.shared", "opsmesh.tasks", "opsmesh.users"]
-
-[[tool.importlinter.contracts]]
-name = "The common adapter has no platform dependencies"
-type = "forbidden"
-source_modules = ["opsmesh.gateway.adapters.base"]
-forbidden_modules = ["opsmesh.gateway.adapters.qq", "opsmesh.gateway.adapters.dingtalk", "botpy", "dingtalk_stream"]
-
-[[tool.importlinter.contracts]]
-name = "DingTalk does not depend on QQ botpy"
-type = "forbidden"
-source_modules = ["opsmesh.gateway.adapters.dingtalk"]
-forbidden_modules = ["botpy"]
-
-[[tool.importlinter.contracts]]
-name = "Business modules do not import process bootstrap"
-type = "forbidden"
-source_modules = ["opsmesh.agents", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.tasks", "opsmesh.users", "opsmesh.shared", "opsmesh.infra"]
-forbidden_modules = ["opsmesh.bootstrap"]
-
-[[tool.importlinter.contracts]]
-name = "The host has no Temporal runtime dependency"
-type = "forbidden"
-source_modules = ["opsmesh"]
-forbidden_modules = ["temporalio"]
-
-[[tool.importlinter.contracts]]
-name = "Database infrastructure does not assemble business models"
-type = "forbidden"
-source_modules = ["opsmesh.infra"]
-forbidden_modules = ["opsmesh.agents", "opsmesh.catalog", "opsmesh.gateway", "opsmesh.plugins", "opsmesh.quotas", "opsmesh.resources", "opsmesh.sessions", "opsmesh.tasks", "opsmesh.users"]
-
-[[tool.importlinter.contracts]]
-name = "Task management does not depend on execution runtime"
-type = "forbidden"
-source_modules = ["opsmesh.tasks.models", "opsmesh.tasks.schemas", "opsmesh.tasks.service", "opsmesh.tasks.interactions", "opsmesh.tasks.schedules", "opsmesh.tasks.scheduler"]
-forbidden_modules = ["opsmesh.tasks.runtime"]
-
-[[tool.importlinter.contracts]]
-name = "Runtime code does not import HTTP routes"
-type = "forbidden"
-source_modules = ["opsmesh.tasks.runtime", "opsmesh.gateway.worker", "opsmesh.gateway.delivery", "opsmesh.sessions.runtime", "opsmesh.sessions.sandboxes", "opsmesh.resources.runtime"]
-forbidden_modules = ["opsmesh.agents.routes", "opsmesh.catalog.routes", "opsmesh.gateway.routes", "opsmesh.plugins.routes", "opsmesh.quotas.routes", "opsmesh.resources.routes", "opsmesh.sessions.routes", "opsmesh.tasks.routes", "opsmesh.users.routes", "opsmesh.shared.http"]
-
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib -ra"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: explicit external service integration tests (disabled by default)"]

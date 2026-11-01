@@ -1,37 +1,25 @@
-# Contributing to OpsMesh
+# Contributing
 
-Thank you for contributing. Discuss substantial changes in an issue before implementation; small fixes can go directly to a pull request. Use the issue templates for reproducible bugs and feature proposals. Be respectful and focus on technical evidence.
+先阅读 [设计入口](docs/README.md)、[开发约定](docs/development.md)、[源码边界](docs/design/source-layout.md) 和 [实现路线](docs/roadmap.md)。当前 `0.3.x` 已包含可运行的框架与平台服务；实现范围以代码、覆盖表和实际验证记录为准。新增功能不要仅通过目录或接口声明标记为完成。
 
 ## Development
 
-The server requires Python 3.12+ and PostgreSQL. The independent plugin SDK supports Python 3.11.8+. Production executable bundles target Linux x86_64 and aarch64, glibc 2.35+. Windows can be used for source development but is not a production distribution target.
-
 ```sh
-uv sync --frozen --extra dev --extra sandbox --extra build
-uv run --no-sync ruff format --check src examples tests scripts
-uv run --no-sync ruff check src examples tests scripts
-uv run --no-sync mypy
-uv run --no-sync lint-imports --no-cache
+uv sync --locked --dev --extra openai
+uv run pre-commit install
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest
+uv run python scripts/check_repository.py
+uv build
+uv run python scripts/check_sdist.py
 ```
 
-Use `.env.example` for a separate development database and data directory. Never connect development tooling to production storage. Do not include credentials, logs, database dumps, generated environments or private plugin data in commits.
+SDK表面检查：`uv run --extra openai python scripts/check_sdk_surface.py`，无需API key且不调用模型。平台核心的部署安装仍可省略 `openai` extra；完整源码的类型检查和SDK测试需要安装它。实际模型、Docker、Kubernetes和其他外部服务测试必须显式启用。
 
-## Changes and verification
+## Changes
 
-Follow [AGENTS.md](AGENTS.md), [docs](docs/) and the native OpenAI Agents SDK interfaces. Group access permits invoking an agent; it never grants another user's workspace access.
+每次修改围绕一个完整行为。提交公开合同、实现、必要测试和文档；涉及跨模块边界或恢复格式时先补ADR。不要用返回成功的空函数模拟未实现能力。跨模块只使用api/events，原生SDK类型限制在后端适配包。更改依赖后执行`uv lock`并提交锁文件。
 
-For automated contributors, tests, test collection, service acceptance scripts and model calls require an explicit user request. Static checks and building distributions do not imply runtime verification. Existing regression code is under `tests/`; some paths need PostgreSQL, sandbox infrastructure or external credentials. Record the exact checks performed, checks skipped and integration gaps in each pull request. Do not claim unexecuted checks passed.
-
-Include documentation for changed configuration, CLI, deployment, SDK and externally visible behavior. HTTP documentation comes from the running application's `/openapi.json`; do not maintain a handwritten schema snapshot. New database changes require a new migration; do not rewrite an already released migration.
-
-## Releases
-
-Update the host version and `CHANGELOG.md`. The maintainer pushes a matching stable `vMAJOR.MINOR.PATCH` tag to run `.github/workflows/release.yml`. Static checks and security jobs gate native builds, Python packages, source archives, SBOMs and multi-platform GHCR images. The final job adds provenance, SHA-256 checksums and release notes, and promotes scanned images to version, minor and latest tags. Manual dispatch builds Actions artifacts without publishing a release or image.
-
-The independent plugin SDK is maintained on the [`sdk` branch](https://github.com/jhupo/OpsMesh/tree/sdk). Use `scripts/generate_sdk.py` when regenerating a checkout, and keep the SDK version aligned with the host release. SDK packaging and type checking support Python 3.11.8+; running plugins requires a Python 3.12+ host. Do not create tags, publish packages or push branches without maintainer authorization. PyPI publication is not configured; use matching release wheels.
-
-Source distributions use the explicit allowlist in `scripts/release_assets.py`. Keep private data, local environments, credentials and acceptance artifacts outside published assets.
-
-## License
-
-Contributions are provided under MIT, as detailed in [LICENSE](LICENSE). Do not remove third-party notices from redistributed dependencies. Report security issues privately using [SECURITY.md](SECURITY.md).
+PR说明问题、最终行为、验证及兼容性影响。发布版本更新 `_version.py`、锁文件中的项目版本、CHANGELOG及相关部署示例；GitHub Release附上对应提交构建的发行包，不复用其他提交的测试结果。暂未要求DCO或CLA；不得提交无权授权的代码。导入上游代码时遵守其许可证并更新第三方声明。

@@ -1,19 +1,9 @@
 # Security policy
 
-## Supported versions
+`0.3.x` 是当前架构的早期开发者版本，包含可运行的平台服务。安全修复针对当前维护代码提供；本次架构不支持直接升级 `0.2.x` 及更早版本的数据或插件。项目没有生产认证、长期支持承诺或响应 SLA。
 
-Security fixes target the current source on `master` and the most recent stable release. The `sdk` branch follows the matching SDK release. There is no commitment to patch older releases.
+请通过[仓库 Security 页面](https://github.com/jhupo/OpsMesh/security)提供的私密漏洞报告入口联系维护者。如果该入口不可用，先向[仓库维护者](https://github.com/jhupo)请求私密联系渠道。公开 issue 仅用于请求联系，不应包含利用细节、API key、客户数据或完整执行快照。
 
-## Reporting a vulnerability
+报告中请提供版本、受影响组件、最小复现、预期权限边界和实际行为。移除凭据与业务数据后再分享日志。维护者会按影响确认问题并在修复发布时说明受影响版本；目录名称、SDK类型和测试通过本身不构成生产安全验收。
 
-Use GitHub's **Report a vulnerability** action in this repository's Security tab when private vulnerability reporting is enabled. If it is unavailable, contact the maintainer at **hi.jhupo@gmail.com** and request a secure disclosure channel before sending sensitive data. Do not post exploit credentials, private plugin data or database contents in public issues.
-
-Include affected version/commit, affected component, impact, prerequisites and minimal reproduction details. Coordinate disclosure after a fix is available. No response-time guarantee or bug bounty is offered.
-
-## Trust boundaries
-
-Installed Python plugins are trusted executable code. Registration, identity objects and per-user paths do not sandbox arbitrary plugin Python. Restrict plugin installation to administrators and review dependencies. Use the native sandbox backend and deployment-level isolation for untrusted execution; Docker socket access is a privileged capability.
-
-Group membership grants agent use, not workspace access. Caller identity is resolved from stored platform bindings, never gateway role text or caller metadata. Keep HTTPS, database access, encryption keys, bearer tokens and model credentials protected. Preserve the encryption key with backups; losing it makes encrypted state unrecoverable.
-
-Release automation performs CodeQL, dependency auditing, secret/configuration scanning and native/container vulnerability scans, and publishes checksums, SBOMs and provenance. Passing these checks does not establish runtime correctness or prove the absence of vulnerabilities. Verify checksums and provenance before installation. Keep release archives, the data volume and the database under separate access policies.
+运行未信任工具前必须配置实际隔离。UnixLocalSandboxClient仅用于受信任开发。凭据通过引用按作用域注入，禁止提交.env、快照中的凭据或运行中的用户内容。

@@ -1,40 +1,66 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-31
 
-No unreleased changes.
+This release replaces the architecture used by the repository's previous `0.2.x`
+and earlier releases. It requires a separate installation and database; previous
+configuration, plugin APIs, checkpoints and storage cannot be upgraded by running
+the new `opsmesh migrate` command. Back up the old deployment before evaluating the
+new one. See [release notes](docs/releases/v0.3.0.md) for installation and limitations.
 
-All notable changes are recorded here. Versions follow Semantic Versioning. Dates use UTC. This file describes planned release contents; a section alone does not mean the release has been published.
+The changes below describe the implementation included in this release. References
+to legacy records or imports concern this implementation's development revisions,
+not compatibility with the previously published architecture.
 
-## [0.2.0] - 2026-10-25
+- Separate startup composition from cross-module application flows. Name isolated
+  execution infrastructure `run_workers` and flatten the single embedding provider.
 
-### Added
+- Align source ownership: concrete bot protocols now live in `infrastructure/bots`,
+  Run worker transports in `infrastructure/run_workers`, and command entrypoints in `entrypoints/cli`.
+  Group SQL, messaging and coordination infrastructure; separate public resource contracts
+  from persistence and notification internals from management. Direct implementation imports
+  must use the release's new paths; documented framework APIs and the database facade
+  are the extension entrypoints for this architecture.
+  Add a complete source responsibility inventory and stricter import-boundary checks.
 
-- Plugin application host with immutable publication dependencies and native Agents SDK integration.
-- Persistent tasks, checkpoints, human input, scheduling, session isolation, caller token accounting and private resource management.
-- QQ integration with Tencent's official `qq-botpy` SDK and an OpsMesh-owned Adapter contract shared directly by QQ and DingTalk.
-- DingTalk native Stream lifecycle, robot/event/card/Graph callbacks, proactive messages, media and fixed-host OpenAPI operations.
-- Encrypted gateway events, administrator operation queues, delivery receipts and explicit retry for uncertain effects.
-- Repository skills for OpenAI Agents, QQ and DingTalk maintenance.
-- Authenticated SSE task events, encrypted event storage and cursor-based replay after reconnects.
-- Standalone typed Python plugin SDK with a packaging CLI, independent development configuration and examples.
-- Linux x86_64/aarch64 executable bundles, systemd installation, optional updates and multi-platform GHCR images.
-- Tag release automation for server/SDK Python distributions, source tar/ZIP archives, installer, checksums, SBOMs, scan reports and build provenance.
-- Standard contribution/security policies, issue templates and dependency maintenance.
+- Separate managed bot adapter contracts from platform accounts, authorization and routing.
+  Add DingTalk Stream/OpenAPI and official QQ signed Webhook/OpenAPI implementations;
+  move OneBot compatibility into its own adapter package with legacy-record migration.
 
-### Changed
+- Fix Bot identity delegation and credential-reference authorization, including concurrent
+  configuration and route changes; preserve scoped legacy secret permission aliases.
+- Recover terminal Run session claims, deduplicate schedule recovery capacity accounting,
+  and merge notification delivery receipts without losing concurrent inbox read state.
+- Finalize obsolete memory jobs, resume workspace snapshot restoration from private staging,
+  and allow historical pricing for withdrawn model versions without reactivating execution.
 
-- Simplified the host around native SDK contracts; orchestration belongs to plugin code.
-- Isolated QQ shard sessions and audit waiters; acknowledge callbacks and advance resume cursors only after durable event persistence.
-- Defined public extension contracts in the framework and generated SDK runtime bindings and standalone typing stubs from those definitions in a separately staged SDK project.
-- Removed redundant adapter layering, local platform model trees, webhook transport and framework copies; aligned documentation and release/security tooling.
-- Pin QQ's metadata-only source fix and cryptography >=50.0.2 instead of retaining the upstream vulnerable dependency cap.
-- Unified project licensing under MIT. Redistributed third-party code retains its own notices.
-- The `sdk` branch presents the independent SDK at its branch root.
-- Generated administrator credentials are handed off in owner-only files; process logs print only their location. Remove the file after rotating the initial password.
-- Installed environment secrets are readable only by the service account and root, rather than the service group.
-- Preserve Python and GitHub Actions security-extended CodeQL configurations; release builds depend on both analyses.
+- Keep Bot-to-Agent bindings and durable scheduling in platform modules, independent of
+  business plugin loading. Add authorized binding lookup/list/removal and resolve published
+  Agent revisions inside the service for both HTTP and dependency-injected callers.
+- Separate process timers into framework scheduling and durable jobs into the scheduling
+  module; retain legacy scheduler imports and prevent core code from importing optional plugins.
+- Implement the asynchronous NoneBot-style framework: drivers, adapters, bots, events/messages,
+  matchers, dependency injection, contexts, plugin metadata, ownership and failed-load rollback.
+- Add local accounts, permissions, immutable agent/model revisions, sessions, durable runs,
+  approval/resume, cancellation, launch leases, capacity admission and artifact finalization.
+- Integrate OpenAI Agents SDK 0.24.0 with focused modules for construction, models, tools,
+  delegation, guardrails, hooks, streaming, state, sandboxes, tracing, errors and usage.
+- Add tool authorization, skills, MCP, local knowledge search, workspace manifests/snapshots,
+  execution providers and platform-managed two-stage file memory generation.
+- Add explicit SQL migrations, transactional outbox delivery, Redis rate limits/leases,
+  audit, structured logs, metrics, OpenTelemetry traces, usage accounting and budgets.
+- Add CLI initialization/migration/check/server/worker commands, HTTP/SSE, signed OneBot v11
+  ingress, delivery handling and persistent scheduled events.
+- Establish descriptive public names, selected OpsMesh framework prefixes, src package
+  boundaries, locked dependencies, CI, deployment examples and open-source contributor files.
+- Add typed output/tool completion/agent input extensions, native tool ports, hosted MCP approvals,
+  Responses WebSocket, metered session compaction and immutable per-run overrides.
+- Add isolated child sandbox restoration, metered native memory flush, live memory updates,
+  snapshot/session source authorization, retained memory pruning and reference-aware blob GC.
+- Add commit-pinned Git skills, isolated script packages, hybrid/vector search, MCP SSE,
+  authenticated active/reverse OneBot WebSocket and NapCat file delivery.
+- Add resource tariffs, explicit FX versions, repricing, invoice reconciliation and OTLP/W3C export;
+  verify PostgreSQL, local protocol services and native Linux sandboxes with actual instances.
 
-### Deployment
-
-Initialize a new installation with its own database, data directory and encryption key. Complete or cancel pending work before upgrading. Restoring checkpoints requires the pinned SDK and plugin versions. Production distributions support Linux only.
+- Document current support and test evidence separately from target architecture. Web and
+  Claude remain future implementations; external provider/deployment acceptance is pending.
