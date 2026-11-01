@@ -47,7 +47,9 @@ class BotService(BotAccountManagement):
         self.agent_resolver, self.principal_resolver = agent_resolver, principal_resolver
         self.driver = adapters.driver
         self.adapters = adapters
-        self.ingress = BotEventIngress(store, authorize, dispatcher, self._bot)
+        self.ingress = BotEventIngress(
+            store, authorize, dispatcher, self._bot, principal_resolver=principal_resolver
+        )
         self.delivery = BotMessageDelivery(store, authorize, self._account, self._bot)
         self.adapters.bind_receiver(self.receive_adapter_event)
         if self.driver.state == DriverState.NEW:

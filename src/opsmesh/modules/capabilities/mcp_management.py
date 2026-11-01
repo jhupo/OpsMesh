@@ -7,8 +7,8 @@ from opsmesh.modules.audit.operations import audited_operation
 from opsmesh.modules.resource_contracts import ResourceAuthorization, VersionAvailability
 
 from .api import MCPClient, MCPServerDefinition, ToolDefinition
+from .internal.availability_management import set_capability_enabled
 from .internal.mcp import MCPServerRegistry
-from .management import CapabilityManagement
 
 
 class MCPManagement:
@@ -16,17 +16,19 @@ class MCPManagement:
         self,
         catalog: MCPServerRegistry,
         client: MCPClient,
-        capabilities: CapabilityManagement,
         authorize: ResourceAuthorization,
         audit: AuditJournal,
     ) -> None:
-        self._catalog, self._client, self._capabilities = catalog, client, capabilities
+        self._catalog, self._client = catalog, client
         self._authorize, self._audit = authorize, audit
 
     async def register(
         self, definition: MCPServerDefinition, *, actor_id: str
     ) -> MCPServerDefinition:
-        return await self._capabilities.register_mcp(definition, actor_id=actor_id)
+        reference = f"{definition.name}@{definition.version}"
+        await self._authorize(actor_id, "capability:manage", reference)
+        async with audited_operation(self._audit, "mcp.publish", reference, actor_id):
+            return await self._catalog.register(definition)
 
     async def get(self, reference: str, *, actor_id: str) -> MCPServerDefinition:
         await self._authorize(actor_id, "capability:read", reference)
@@ -58,11 +60,19 @@ class MCPManagement:
         expected_revision: int,
         reason: str = "",
     ) -> VersionAvailability:
-        return await self._capabilities.set_enabled(
+        return await set_capability_enabled(
             "mcp",
             reference,
             enabled,
             actor_id=actor_id,
             expected_revision=expected_revision,
             reason=reason,
+            authorize=self._authorize,
+            audit=self._audit,
+            availability=self._catalog.availability,
+            read=lambda: self.get(reference, actor_id=actor_id),
         )
+
+    async def availability(self, reference: str, *, actor_id: str) -> VersionAvailability:
+        await self.get(reference, actor_id=actor_id)
+        return await self._catalog.availability.get(reference)

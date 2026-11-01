@@ -11,6 +11,7 @@ from typing import Any
 
 from opsmesh.framework.errors import OpsMeshError
 
+from .resources import AgentExecutionResources, AgentExecutionServices, AgentExecutionState
 from .specification import AgentSpecification
 
 ToolCall = Callable[[str, dict[str, Any], str], Awaitable[Any]]
@@ -43,7 +44,11 @@ class AgentExecutionContext:
     principal_id: str
     invoke_tool: ToolCall
     resolve_agent: AgentResolver | None = None
-    services: dict[str, Any] = field(default_factory=dict)
+    services: AgentExecutionServices = field(default_factory=AgentExecutionServices)
+    resources: AgentExecutionResources = field(default_factory=AgentExecutionResources)
+    state: AgentExecutionState = field(default_factory=AgentExecutionState)
+    backend_state: object | None = None
+    extensions: dict[str, Any] = field(default_factory=dict)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def snapshot(self) -> dict[str, str]:

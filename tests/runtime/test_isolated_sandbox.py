@@ -26,6 +26,7 @@ from opsmesh.framework.agents import (
     SandboxConfiguration,
     ToolBinding,
 )
+from opsmesh.framework.agents.resources import AgentExecutionServices
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase
 from opsmesh.modules.runtime.api import AgentRunView
@@ -124,7 +125,7 @@ async def test_isolated_child_approval_restart_preserves_workspace(tmp_path):
             workspaces,
             database,
             allow_trusted_local=True,
-            session_factory=ManagedSandboxSession,
+            session_factories={"openai_agents": ManagedSandboxSession},
         )
         await database.initialize()
 
@@ -147,11 +148,11 @@ async def test_isolated_child_approval_restart_preserves_workspace(tmp_path):
             "alice",
             invoke,
             resolve,
-            services={
-                "observe_usage": observe,
-                "authorize_model_request": authorize,
-                "authorize_workspace": authorize,
-            },
+            services=AgentExecutionServices(
+                observe_usage=observe,
+                authorize_model_request=authorize,
+                authorize_workspace=authorize,
+            ),
         )
         view = AgentRunView(
             id="parent-run",
@@ -164,7 +165,7 @@ async def test_isolated_child_approval_restart_preserves_workspace(tmp_path):
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
-        ctx.services.update(await bridge.prepare(view, ctx))
+        ctx.resources = await bridge.prepare(view, ctx)
         contexts.append(ctx)
         return database, workspaces, bridge, ctx
 
@@ -175,7 +176,7 @@ async def test_isolated_child_approval_restart_preserves_workspace(tmp_path):
     try:
         paused = await backend.run(parent, "start", ctx)
         assert isinstance(paused, AgentRunInterrupted)
-        receipts.extend(ctx.services["delegated_artifacts"])
+        receipts.extend(ctx.state.delegated_artifacts)
         assert (
             await workspaces.read(receipts[-1]["workspace_id"], "result.txt")
             == b"kept-across-approval"
@@ -199,7 +200,7 @@ async def test_isolated_child_approval_restart_preserves_workspace(tmp_path):
         )
         assert isinstance(completed, AgentRunCompleted)
         assert completed.output == "parent done" and len(calls) == 1
-        receipts.extend(ctx.services["delegated_artifacts"])
+        receipts.extend(ctx.state.delegated_artifacts)
         assert receipts[0]["workspace_id"] != receipts[1]["workspace_id"]
         assert (
             await workspaces.read(receipts[-1]["workspace_id"], "result.txt")
@@ -245,7 +246,7 @@ async def test_concurrent_child_calls_have_separate_sessions_and_outputs(tmp_pat
     def model_resolver(spec, context):
         if spec.id == "parent":
             return parent_model
-        session = context.services.get("openai_sandbox_session")
+        session = context.resources.sandbox_session
         if session is None:
             return Scripted([])  # Restore graph never executes its model.
         native_sessions.append(session.state.session_id)
@@ -284,7 +285,7 @@ async def test_concurrent_child_calls_have_separate_sessions_and_outputs(tmp_pat
         workspaces,
         database,
         allow_trusted_local=True,
-        session_factory=ManagedSandboxSession,
+        session_factories={"openai_agents": ManagedSandboxSession},
     )
     await database.initialize()
     ctx = AgentExecutionContext(
@@ -293,7 +294,7 @@ async def test_concurrent_child_calls_have_separate_sessions_and_outputs(tmp_pat
         "alice",
         invoke,
         resolve,
-        services={"observe_usage": observe, "authorize_model_request": accept},
+        services=AgentExecutionServices(observe_usage=observe, authorize_model_request=accept),
     )
     view = AgentRunView(
         id="parallel",
@@ -306,7 +307,7 @@ async def test_concurrent_child_calls_have_separate_sessions_and_outputs(tmp_pat
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
-    ctx.services.update(await bridge.prepare(view, ctx))
+    ctx.resources = await bridge.prepare(view, ctx)
     try:
         execution = OpenAIAgentsBackend(
             RuntimeExtensionRegistry(), model_resolver=model_resolver
@@ -323,7 +324,7 @@ async def test_concurrent_child_calls_have_separate_sessions_and_outputs(tmp_pat
         outcome = await execution
         assert isinstance(outcome, AgentRunCompleted)
         assert len(native_sessions) == len(set(native_sessions)) == 2
-        receipts = ctx.services["delegated_artifacts"]
+        receipts = ctx.state.delegated_artifacts
         assert {item["tool_call_id"] for item in receipts} == {"one", "two"}
         assert len({item["workspace_id"] for item in receipts}) == 2
         contents = {await workspaces.read(item["workspace_id"], "result.txt") for item in receipts}

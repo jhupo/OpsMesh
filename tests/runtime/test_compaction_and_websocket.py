@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
 from opsmesh.modules.runtime.internal.backends.openai_agents.backend import OpenAIAgentsBackend
 from opsmesh.modules.runtime.internal.backends.openai_agents.compaction import build_session
+from opsmesh.modules.runtime.internal.backends.openai_agents.execution_state import execution_state
 from opsmesh.modules.runtime.internal.backends.openai_agents.models import resolve_profile_model
 from opsmesh.modules.runtime.internal.extensions import RuntimeExtensionRegistry
 from opsmesh.modules.runtime.internal.history import ModelHistory
@@ -59,12 +61,10 @@ async def test_real_compaction_session_meters_and_atomically_replaces_history(tm
     ctx = context()
     observations = []
     admissions = []
-    ctx.services.update(
-        model_history=history,
-        compaction_client=client,
-        observe_usage=observations.append,
-        authorize_model_request=admissions.append,
-    )
+    ctx.state.model_history = history
+    execution_state(ctx).compaction_client = client
+    ctx.services.observe_usage = AsyncMock(wraps=observations.append)
+    ctx.services.authorize_model_request = AsyncMock(wraps=admissions.append)
     spec = AgentSpecification(
         id="a",
         name="A",
@@ -107,7 +107,7 @@ async def test_compaction_cas_rejects_concurrent_history_change(tmp_path):
         await first.get_items()
         await second.add_items([{"role": "user", "content": "newer"}])
         with pytest.raises(OpsMeshError) as error:
-            await first._atomic_replace_items([{"role": "user", "content": "summary"}])
+            await first.replace_items([{"role": "user", "content": "summary"}])
         assert error.value.code == "CONFLICT"
         assert len(await second.get_items()) == 2
     finally:
@@ -119,7 +119,7 @@ async def test_websocket_profile_builds_actual_sdk_transport_and_closes():
     from agents.models.openai_responses import OpenAIResponsesWSModel
 
     ctx = context()
-    ctx.services["model_profile"] = {
+    execution_state(ctx).model_profile = {
         "id": "profile",
         "revision": 1,
         "api": "responses",
@@ -127,7 +127,7 @@ async def test_websocket_profile_builds_actual_sdk_transport_and_closes():
         "base_url": "http://127.0.0.1:1/v1",
         "secret_ref": "env:offline",
     }
-    ctx.services["resolve_secret"] = lambda ref: "offline"
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "offline")
     clients = []
     model, _ = await resolve_profile_model(
         AgentSpecification(
@@ -198,7 +198,7 @@ async def test_real_websocket_round_trip_on_loopback():
     async with serve(handler, "127.0.0.1", 0) as server:
         port = server.sockets[0].getsockname()[1]
         ctx = context()
-        ctx.services["model_profile"] = {
+        execution_state(ctx).model_profile = {
             "id": "profile",
             "revision": 1,
             "api": "responses",
@@ -206,7 +206,7 @@ async def test_real_websocket_round_trip_on_loopback():
             "base_url": f"http://127.0.0.1:{port}/v1",
             "secret_ref": "env:offline",
         }
-        ctx.services["resolve_secret"] = lambda ref: "offline"
+        ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: "offline")
         result = await OpenAIAgentsBackend(RuntimeExtensionRegistry()).run(
             AgentSpecification(
                 id="a", name="A", model_profile_ref="profile@1", model_transport="websocket"

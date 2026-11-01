@@ -4,10 +4,36 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
+from functools import partial
 from typing import Any
 
+from pydantic import SecretStr
+
 from opsmesh import dependencies
+from opsmesh.application.approval_notifications import ApprovalNotificationCoordinator
+from opsmesh.application.conversations import (
+    ConversationApplication,
+    ConversationGateway,
+    ConversationOptions,
+    ConversationPolicy,
+)
+from opsmesh.application.conversations.operations import ConversationOperations
 from opsmesh.application.coordinator import BackgroundCoordinator
+from opsmesh.application.deployment import (
+    ApplicationDefinition,
+    DeploymentResult,
+    DeploymentServices,
+)
+from opsmesh.application.memory_jobs import MemoryJobCoordinator
+from opsmesh.application.outbox_delivery import OutboxDelivery
+from opsmesh.application.publication import ApplicationPublication
+from opsmesh.application.run_workers import RunWorkerCoordinator
+from opsmesh.application.runtime_events import (
+    RuntimeEventHandler,
+    publish_framework_event,
+    record_audit_fact,
+)
 from opsmesh.application.use_cases import ApplicationUseCases
 from opsmesh.bootstrap.workers import create_run_worker_launcher
 from opsmesh.framework import init, load_plugin
@@ -15,7 +41,10 @@ from opsmesh.framework.drivers import OpsMeshNetworkDriver
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.events import DispatchContext, OpsMeshEvent
 from opsmesh.framework.message import DispatchResult
+from opsmesh.infrastructure.run_workers import RunWorkerLauncher
 from opsmesh.infrastructure.telemetry.tracing import ApplicationTraceExporter
+from opsmesh.modules.bots.conversations import ConversationInbox
+from opsmesh.modules.capabilities.api import ToolCallback, ToolDefinition
 from opsmesh.modules.memory.api import MemoryJob
 from opsmesh.modules.runtime.api import (
     AgentRunView,
@@ -28,14 +57,48 @@ from .settings import OpsMeshSettings
 
 
 class OpsMeshApplication:
-    def __init__(self, settings: OpsMeshSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: OpsMeshSettings | None = None,
+        *,
+        secret_values: Mapping[str, SecretStr] | None = None,
+    ) -> None:
         self.settings = settings or OpsMeshSettings.from_environment()
         self.driver = init(OpsMeshNetworkDriver())
-        self.services = OpsMeshServices(self.settings, self.driver, self.dispatch)
-        self._use_cases = ApplicationUseCases(self)
+        self.services = OpsMeshServices(
+            self.settings, self.driver, self.dispatch, dict(secret_values or {})
+        )
+        self.publication = ApplicationPublication(
+            DeploymentServices(
+                accounts=self.services.account_management,
+                agents=self.services.agent_management,
+                models=self.services.model_management,
+                capabilities=self.services.capability_management,
+                skills=self.services.skill_management,
+                workspaces=self.services.workspace_management,
+                bots=self.services.bots,
+                knowledge=self.services.knowledge_management,
+                memory=self.services.memory_management,
+            ),
+            self.services.conversation_inboxes,
+            self.settings.data_directory,
+            self._conversation_application,
+        )
+        self._use_cases = ApplicationUseCases(
+            accounts=self.services.accounts,
+            agents=self.services.agents,
+            configuration=self.services.configuration,
+            runtime=self.services.runtime,
+            sessions=self.services.sessions,
+            workspaces=self.services.workspaces,
+            authorization=self.services.authorization,
+            sandbox=self.services.sandbox_bridge,
+            is_started=lambda: self.is_started,
+            poll_interval=self.settings.poll_interval_seconds,
+        )
         self.services.run_management.submit_run = self.submit_run
         self.services.trigger_bridge.submit_run = self.submit_run
-        self.launcher = create_run_worker_launcher(
+        self.launcher: RunWorkerLauncher = create_run_worker_launcher(
             self.services.runtime,
             self.settings,
             mode=self.settings.run_worker_mode,
@@ -46,7 +109,48 @@ class OpsMeshApplication:
             network=self.settings.run_worker_network,
             environment_allowlist=self.settings.run_worker_environment_allowlist,
         )
-        self.coordinator = BackgroundCoordinator(self)
+        self.run_workers = RunWorkerCoordinator(
+            self.services.runtime,
+            self.launcher,
+            self.services.configuration,
+            self.services.metrics,
+        )
+        self.memory_jobs = MemoryJobCoordinator(
+            self.services.memory, self.driver, self.services.metrics
+        )
+        self.approval_notifications = ApprovalNotificationCoordinator(
+            self.services.runtime,
+            self.services.triggers,
+            self.services.notifications,
+        )
+        runtime_events = RuntimeEventHandler(
+            runtime=self.services.runtime,
+            sessions=self.services.sessions,
+            settle=self.services.run_usage.settle,
+            notifications=self.services.notifications,
+            delivery=self.services.bots,
+            metrics=self.services.metrics,
+        )
+        self.outbox = OutboxDelivery(
+            self.services.database,
+            self.services.metrics,
+            (
+                partial(record_audit_fact, self.services.audit),
+                runtime_events.handle,
+                publish_framework_event,
+            ),
+            traces=lambda: self.traces,
+        )
+        self.coordinator = BackgroundCoordinator(
+            interval=self.settings.poll_interval_seconds,
+            iterations=(
+                self.run_workers.launch_runs,
+                self.memory_jobs.launch_memory_jobs,
+                self.outbox.deliver_events,
+                self.approval_notifications.tick,
+            ),
+            synchronize=self._synchronize_deployments,
+        )
         self.services.memory_bridge.execute_run = self.execute_memory_run
         self._started = False
         self._closed = False
@@ -88,6 +192,51 @@ class OpsMeshApplication:
     @property
     def is_started(self) -> bool:
         return self._started
+
+    def _conversation_application(
+        self,
+        options: ConversationOptions,
+        policy: ConversationPolicy,
+        inbox: ConversationInbox,
+    ) -> ConversationApplication:
+        return ConversationApplication(
+            options,
+            policy,
+            inbox,
+            driver=self.driver,
+            operations=ConversationOperations(
+                options,
+                inbox,
+                bots=self.services.bots,
+                delivery=self.services.bots,
+                runtime=self.services.run_management,
+                sessions=self.services.conversation_management,
+                knowledge=self.services.knowledge_management,
+                memory=self.services.memory_management,
+                driver=self.driver,
+            ),
+        )
+
+    async def __aenter__(self) -> OpsMeshApplication:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.close()
+
+    def define(self, definition: ApplicationDefinition) -> None:
+        """Declare resources for explicit publication; startup never publishes implicitly."""
+        self.publication.define(definition)
+
+    def register_tool(self, definition: ToolDefinition, callback: ToolCallback) -> None:
+        """Register executable code and its publishable contract through one public API."""
+        self.publication.register_tool(definition, callback, self.services.code_tools)
+
+    def add_conversation(self, gateway: ConversationGateway, *, policy: ConversationPolicy) -> None:
+        self.publication.add_gateway(gateway, policy)
+
+    async def publish(self, *, actor_id: str) -> DeploymentResult:
+        await self.services.database.verify_schema()
+        return await self.publication.publish(actor_id=actor_id)
 
     def _configure_backends(self) -> None:
         try:
@@ -146,6 +295,7 @@ class OpsMeshApplication:
         for plugin in self.settings.plugins:
             load_plugin(plugin)
         await self.services.plugin_management.synchronize(force=True)
+        await self.publication.prepare()
         await self.driver.start()
         self.driver.create_task(
             self.coordinator.synchronize_plugin_policy(), name="opsmesh-plugin-policy"
@@ -176,20 +326,24 @@ class OpsMeshApplication:
             raise ExceptionGroup("Application shutdown requires attention", errors)
 
     async def create_workspace(self, principal_id: str, workspace_id: str) -> WorkspaceDescriptor:
-        return await self._use_cases.create_workspace(principal_id, workspace_id)
+        return await self.services.workspace_management.create(workspace_id, actor_id=principal_id)
+
+    async def _synchronize_deployments(self) -> None:
+        await self.services.plugin_management.synchronize()
+        await self.services.bots.synchronize_adapters()
 
     async def authorize_workspace(
         self, principal_id: str, workspace_id: str, *, write: bool = False
     ) -> None:
-        return await self._use_cases.authorize_workspace(principal_id, workspace_id, write=write)
+        await self.services.authorization.workspace(principal_id, workspace_id, write=write)
 
     async def restore_workspace(
         self, *, principal_id: str, snapshot_id: str, target_workspace_id: str
     ) -> WorkspaceDescriptor:
-        return await self._use_cases.restore_workspace(
-            principal_id=principal_id,
-            snapshot_id=snapshot_id,
-            target_workspace_id=target_workspace_id,
+        return await self.services.workspace_management.restore(
+            snapshot_id,
+            target_workspace_id,
+            actor_id=principal_id,
         )
 
     async def submit_run(
@@ -216,15 +370,15 @@ class OpsMeshApplication:
     async def resume_run(
         self, *, principal_id: str, run_id: str, expected_revision: int
     ) -> AgentRunView:
-        return await self._use_cases.resume_run(
-            principal_id=principal_id, run_id=run_id, expected_revision=expected_revision
+        return await self.services.run_management.resume(
+            run_id, expected_revision, actor_id=principal_id
         )
 
     async def request_memory_generation(
         self, *, principal_id: str, namespace_id: str, idempotency_key: str
     ) -> MemoryJob:
-        return await self._use_cases.request_memory_generation(
-            principal_id=principal_id, namespace_id=namespace_id, idempotency_key=idempotency_key
+        return await self.services.memory.request_generation(
+            namespace_id, principal_id=principal_id, idempotency_key=idempotency_key
         )
 
     async def execute_memory_run(self, run_id: str) -> AgentRunView:

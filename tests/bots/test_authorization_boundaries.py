@@ -14,10 +14,10 @@ from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
 from opsmesh.modules.accounts.api import AccessRole, PermissionGrant
 from opsmesh.modules.accounts.internal.service import LocalAccountService
 
+from .fixtures import account, webhook
+from .fixtures import target as reply_target
 from .helpers import create_bot_service as BotService
-from .helpers import onebot_adapter, receive_onebot
-from .test_onebot import account, webhook
-from .test_onebot import target as reply_target
+from .helpers import qq_adapter, receive_qq_event
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ async def platform(tmp_path):
         try:
             yield service, accounts, users, resolved, dispatched
         finally:
-            await onebot_adapter(service).connections.close()
+            await service.close()
             await database.close()
 
 
@@ -104,7 +104,7 @@ async def test_bot_management_does_not_grant_identity_delegation(platform):
     assert await service.list_identities("support", actor_id=users["admin"].id) == []
     body, signature = webhook()
     with pytest.raises(OpsMeshError) as unbound:
-        await receive_onebot(service, "support", body, signature=signature)
+        await receive_qq_event(service, "support", body, signature=signature)
     assert unbound.value.code == "FORBIDDEN" and dispatched == []
 
 
@@ -114,12 +114,12 @@ async def test_scoped_binding_and_replacement_require_both_target_permissions(pl
         "support", "200", users["alice"].id, actor_id=users["binder"].id
     )
     route = await service.bind_route(
-        "support", "private:200", "controlled@1", actor_id=users["binder"].id
+        "support", "c2c:200", "controlled@1", actor_id=users["binder"].id
     )
     assert route.agent_revision == "controlled@1"
-    await service.unbind_route("support", "private:200", actor_id=users["binder"].id)
+    await service.unbind_route("support", "c2c:200", actor_id=users["binder"].id)
     body, signature = webhook()
-    await receive_onebot(service, "support", body, signature=signature)
+    await receive_qq_event(service, "support", body, signature=signature)
     assert [principal.id for principal in dispatched] == [users["alice"].id]
     assert not dispatched[0].is_admin
     with pytest.raises(OpsMeshError) as denied:
@@ -160,7 +160,7 @@ async def test_admin_binding_and_existing_admin_configuration_require_admin(plat
         service.unbind_identity("support", "200", actor_id=users["binder"].id),
         service.update_account(
             account().model_copy(
-                update={"settings": {**account().settings, "api_base_url": "http://other.test"}}
+                update={"settings": {**account().settings, "api_base_url": "http://127.0.0.3:5700"}}
             ),
             expected_revision=1,
             actor_id=users["binder"].id,
@@ -177,12 +177,12 @@ async def test_credentials_are_authorized_before_any_resolution_or_connection(
 ):
     service, _accounts, users, resolved, _dispatched = platform
     connect = Mock()
-    monkeypatch.setattr(onebot_adapter(service).connections, "connect", connect)
+    monkeypatch.setattr(qq_adapter(service), "configure", connect)
     for method in ("create", "update"):
         desired = account().model_copy(
             update={
-                "settings": {**account().settings, "api_base_url": "https://attacker.invalid"},
-                "credentials": {**account().credentials, "access_token": "env:UNRELATED_PRIVATE"},
+                "settings": {**account().settings, "api_base_url": "http://127.0.0.4:5700"},
+                "credentials": {**account().credentials, "client_secret": "env:UNRELATED_PRIVATE"},
             }
         )
         with pytest.raises(OpsMeshError) as denied:
@@ -198,9 +198,7 @@ async def test_credentials_are_authorized_before_any_resolution_or_connection(
     with pytest.raises(OpsMeshError) as denied:
         await service.update_account(
             account().model_copy(
-                update={
-                    "settings": {**account().settings, "api_base_url": "https://attacker.invalid"}
-                }
+                update={"settings": {**account().settings, "api_base_url": "http://127.0.0.4:5700"}}
             ),
             expected_revision=1,
             actor_id=users["operator"].id,
@@ -209,13 +207,13 @@ async def test_credentials_are_authorized_before_any_resolution_or_connection(
     connect.assert_not_called()
     allowed = await service.update_account(
         account().model_copy(
-            update={"settings": {**account().settings, "api_base_url": "https://allowed.test"}}
+            update={"settings": {**account().settings, "api_base_url": "http://127.0.0.5:5700"}}
         ),
         expected_revision=1,
         actor_id=users["binder"].id,
     )
     assert allowed.revision == 2
-    assert resolved == ["env:BOT_SECRET", "env:BOT_TOKEN"]
+    assert resolved == ["env:BOT_SECRET"]
 
 
 async def test_concurrent_admin_binding_invalidates_configuration_authorization(
@@ -235,7 +233,7 @@ async def test_concurrent_admin_binding_invalidates_configuration_authorization(
     update = asyncio.create_task(
         service.update_account(
             account().model_copy(
-                update={"settings": {**account().settings, "api_base_url": "https://other.test"}}
+                update={"settings": {**account().settings, "api_base_url": "http://127.0.0.6:5700"}}
             ),
             expected_revision=1,
             actor_id=users["binder"].id,
@@ -270,7 +268,7 @@ async def test_concurrent_configuration_change_invalidates_pending_identity_bind
     await asyncio.wait_for(entered.wait(), 2)
     await service.update_account(
         account().model_copy(
-            update={"settings": {**account().settings, "api_base_url": "https://other.test"}}
+            update={"settings": {**account().settings, "api_base_url": "http://127.0.0.6:5700"}}
         ),
         expected_revision=1,
         actor_id=users["admin"].id,
@@ -286,33 +284,32 @@ async def test_route_changes_require_existing_identity_authority_but_sending_doe
     service, _accounts, users, _resolved, _dispatched = platform
     await service.bind_identity("support", "200", users["admin"].id, actor_id=users["admin"].id)
     for operation in (
-        service.bind_route("support", "private:200", "controlled@1", actor_id=users["operator"].id),
+        service.bind_route("support", "c2c:200", "controlled@1", actor_id=users["operator"].id),
         service.bind_route("support", "group:300", "controlled@1", actor_id=users["operator"].id),
     ):
         with pytest.raises(OpsMeshError) as denied:
             await operation
         assert denied.value.code == "FORBIDDEN"
     original = await service.bind_route(
-        "support", "private:200", "trusted@1", actor_id=users["admin"].id
+        "support", "c2c:200", "trusted@1", actor_id=users["admin"].id
     )
     for operation in (
-        service.bind_route("support", "private:200", "controlled@1", actor_id=users["operator"].id),
-        service.unbind_route("support", "private:200", actor_id=users["operator"].id),
+        service.bind_route("support", "c2c:200", "controlled@1", actor_id=users["operator"].id),
+        service.unbind_route("support", "c2c:200", actor_id=users["operator"].id),
     ):
         with pytest.raises(OpsMeshError) as denied:
             await operation
         assert denied.value.code == "FORBIDDEN"
-    assert (
-        await service.get_route("support", "private:200", actor_id=users["operator"].id) == original
-    )
+    assert await service.get_route("support", "c2c:200", actor_id=users["operator"].id) == original
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(
             lambda request: httpx.Response(
-                200, json={"status": "ok", "retcode": 0, "data": {"message_id": 1}}
+                200, json={"id": "1", "access_token": "synthetic-token", "expires_in": 7200}
             )
         )
     ) as client:
-        onebot_adapter(service).client = client
+        qq_adapter(service).client = client
+        await qq_adapter(service).disconnect_account("support")
         receipt = await service.send(
             reply_target(),
             OpsMeshMessage("ordinary send"),
@@ -320,7 +317,7 @@ async def test_route_changes_require_existing_identity_authority_but_sending_doe
             actor_id=users["operator"].id,
         )
     assert receipt.message_id == "1"
-    await service.unbind_route("support", "private:200", actor_id=users["admin"].id)
+    await service.unbind_route("support", "c2c:200", actor_id=users["admin"].id)
     assert await service.list_routes("support", actor_id=users["admin"].id) == []
 
 
@@ -336,7 +333,7 @@ async def test_concurrent_admin_binding_invalidates_pending_route_change(platfor
 
     monkeypatch.setattr(service, "agent_resolver", resolve_after_binding)
     route = asyncio.create_task(
-        service.bind_route("support", "private:200", "controlled@1", actor_id=users["operator"].id)
+        service.bind_route("support", "c2c:200", "controlled@1", actor_id=users["operator"].id)
     )
     await asyncio.wait_for(entered.wait(), 2)
     await service.bind_identity("support", "200", users["admin"].id, actor_id=users["admin"].id)
@@ -362,9 +359,7 @@ async def test_concurrent_route_change_invalidates_pending_admin_binding(platfor
         service.bind_identity("support", "200", users["admin"].id, actor_id=users["admin"].id)
     )
     await asyncio.wait_for(entered.wait(), 2)
-    await service.bind_route(
-        "support", "private:200", "controlled@1", actor_id=users["operator"].id
-    )
+    await service.bind_route("support", "c2c:200", "controlled@1", actor_id=users["operator"].id)
     release.set()
     with pytest.raises(OpsMeshError) as conflict:
         await binding
@@ -421,7 +416,7 @@ async def test_route_snapshot_includes_target_after_identity_delete_recreate(pla
 
     monkeypatch.setattr(service, "agent_resolver", resolve_after_replacement)
     request = asyncio.create_task(
-        service.bind_route("support", "private:200", "controlled@1", actor_id=users["binder"].id)
+        service.bind_route("support", "c2c:200", "controlled@1", actor_id=users["binder"].id)
     )
     await asyncio.wait_for(entered.wait(), 2)
     await service.unbind_identity("support", "200", actor_id=users["admin"].id)

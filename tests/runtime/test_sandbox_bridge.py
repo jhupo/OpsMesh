@@ -50,7 +50,9 @@ async def test_workspace_checkpoint_resume_and_finalization(tmp_path, monkeypatc
 
     database = AsyncDatabase(f"sqlite+aiosqlite:///{tmp_path / 'workspace.db'}")
     workspaces = LocalWorkspaceService(database, tmp_path / "workspaces")
-    bridge = SandboxWorkspaceBridge(workspaces, database, session_factory=ManagedSandboxSession)
+    bridge = SandboxWorkspaceBridge(
+        workspaces, database, session_factories={"openai_agents": ManagedSandboxSession}
+    )
     await database.initialize()
     opened = []
 
@@ -81,16 +83,18 @@ async def test_workspace_checkpoint_resume_and_finalization(tmp_path, monkeypatc
         await workspaces.write("source", "input.txt", b"original")
         context = await bridge.prepare(view())
         assert opened[0][0][0][1] == b"original"
-        checkpoint = await context["checkpoint_resources"]()
+        checkpoint = await context.checkpoint_resources()
         assert opened[0][1].closed
         assert await workspaces.read(checkpoint["workspace_id"], "result.txt") == b"produced"
-        fresh = SandboxWorkspaceBridge(workspaces, database, session_factory=ManagedSandboxSession)
+        fresh = SandboxWorkspaceBridge(
+            workspaces, database, session_factories={"openai_agents": ManagedSandboxSession}
+        )
         resumed = await fresh.prepare(view())
         assert any(path == "result.txt" for path, _, _ in opened[-1][0])
         metadata = await fresh.finalize(view(), AgentRunCompleted(output="done"))
         assert opened[-1][1].closed
         assert len(metadata["artifacts"]) == 2
-        await resumed["cleanup_resources"]()
+        await resumed.cleanup_resources()
         assert (await fresh.finalize(view(), AgentRunCompleted(output="done"))) == metadata
         assert await workspaces.read("source", "input.txt") == b"original"
     finally:
@@ -149,7 +153,9 @@ async def test_old_attempt_cleanup_cannot_close_replacement_sandbox(tmp_path, mo
 
     database = AsyncDatabase(f"sqlite+aiosqlite:///{tmp_path / 'ownership.db'}")
     workspaces = LocalWorkspaceService(database, tmp_path / "workspaces")
-    bridge = SandboxWorkspaceBridge(workspaces, database, session_factory=ManagedSandboxSession)
+    bridge = SandboxWorkspaceBridge(
+        workspaces, database, session_factories={"openai_agents": ManagedSandboxSession}
+    )
     await database.initialize()
     opened = []
 
@@ -176,10 +182,76 @@ async def test_old_attempt_cleanup_cannot_close_replacement_sandbox(tmp_path, mo
         await workspaces.create("source")
         old = await bridge.prepare(view().model_copy(update={"attempt_id": "old"}))
         await bridge.prepare(view().model_copy(update={"attempt_id": "new"}))
-        await old["cleanup_resources"]()
+        await old.cleanup_resources()
         assert opened[0].closed and not opened[1].closed
         record = await bridge.bindings.get("run")
         assert record.data["attempt_id"] == "new" and record.data["cleanup_state"]
+    finally:
+        await bridge.close()
+        await database.close()
+
+
+async def test_alternative_backend_owns_sandbox_and_delegated_state(tmp_path):
+    from unittest.mock import AsyncMock
+
+    from opsmesh.framework.agents import AgentExecutionContext
+    from opsmesh.modules.runtime.internal.backends.openai_agents.execution_state import (
+        OpenAIExecutionState,
+    )
+
+    database = AsyncDatabase(f"sqlite:///{(tmp_path / 'alternative.db').as_posix()}")
+    workspaces = LocalWorkspaceService(database, tmp_path / "workspaces")
+    opened = []
+
+    class Transport:
+        session = object()
+
+        def cleanup_state(self):
+            return {"provider_owned": "opaque"}
+
+        async def archive(self):
+            return make_archive({"answer.txt": b"output"})
+
+        async def materialize_files(self, files):
+            pass
+
+        async def close(self):
+            pass
+
+    class AlternativeSessions:
+        @staticmethod
+        async def open(configuration, files, directories, **_kwargs):
+            opened.append(configuration)
+            return Transport()
+
+        @staticmethod
+        async def resume_cleanup(configuration, state, **_kwargs):
+            assert state == {"provider_owned": "opaque"}
+            return Transport()
+
+    bridge = SandboxWorkspaceBridge(
+        workspaces, database, session_factories={"alternative": AlternativeSessions}
+    )
+    await database.initialize()
+    specification = view().agent.model_copy(update={"backend": "alternative"})
+    parent_view = view().model_copy(update={"agent": specification})
+    parent = AgentExecutionContext("run", "session", "user", AsyncMock())
+    parent.state.usage_snapshot = {"input_tokens": 42}
+    parent.backend_state = OpenAIExecutionState(pending_model_requests=[{"call_id": "parent"}])
+    parent.services.authorize_workspace = AsyncMock()
+    try:
+        await workspaces.create("source")
+        parent.resources = await bridge.prepare(parent_view, parent)
+        child = await bridge.prepare_delegated(parent_view, specification, parent, "child-call")
+        assert len(opened) == 2
+        assert child.state.usage_snapshot == {} and child.backend_state is None
+        assert child.state is not parent.state and child.resources is not parent.resources
+        assert child.services is not parent.services
+        assert child.cancel_event is parent.cancel_event
+        await child.resources.checkpoint_resources()
+        assert len(parent.state.delegated_artifacts) == 1
+        assert child.state.delegated_artifacts == []
+        assert parent.state.usage_snapshot == {"input_tokens": 42}
     finally:
         await bridge.close()
         await database.close()

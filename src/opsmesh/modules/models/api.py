@@ -6,6 +6,8 @@ from pydantic import Field
 
 from opsmesh.framework.typing import OpsMeshContract
 
+from .validation import validate_model_profile as validate_model_profile
+
 
 class ModelProfile(OpsMeshContract):
     id: str = Field(min_length=1, max_length=100)
@@ -19,9 +21,11 @@ class ModelProfile(OpsMeshContract):
     supported_settings: frozenset[str] | None = None
     unsupported_settings: frozenset[str] = frozenset()
     revision: int = 1
+    owner_id: str | None = None
 
 
 class ModelProfiles(Protocol):
+    async def default_reference(self, owner_id: str) -> str | None: ...
     async def create(self, profile: ModelProfile) -> ModelProfile: ...
     async def get(self, profile_id: str) -> ModelProfile: ...
     async def get_definition(self, profile_id: str) -> ModelProfile:

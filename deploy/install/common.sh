@@ -15,6 +15,7 @@ Usage: sudo bash install.sh [options]
   --admin-password-file PATH     Read initial password from a private file
   --admin-password-stdin         Read initial password from stdin without a file
   --upgrade                     Stop app services and explicitly migrate schema
+  --expect-installed-version V   Refuse if target changed after online update check
   --no-start                    Prepare and initialize, without starting app services
   --help                        Show this help
 
@@ -29,10 +30,10 @@ USAGE
 
 parse_arguments() {
     MODE=local INSTANCE=opsmesh PORT=8000 ADMIN_USERNAME=admin PASSWORD_FILE=
-    UPGRADE=false START_APPLICATION=true PASSWORD_STDIN=false
+    UPGRADE=false START_APPLICATION=true PASSWORD_STDIN=false EXPECT_INSTALLED_VERSION=
     while (( $# )); do
         case $1 in
-            --mode|--instance|--port|--admin|--admin-password-file)
+            --mode|--instance|--port|--admin|--admin-password-file|--expect-installed-version)
                 (( $# >= 2 )) && [[ $2 != --* ]] || fail "Missing value for $1"
                 case $1 in
                     --mode) MODE=$2 ;;
@@ -40,6 +41,7 @@ parse_arguments() {
                     --port) PORT=$2 ;;
                     --admin) ADMIN_USERNAME=$2 ;;
                     --admin-password-file) PASSWORD_FILE=$2 ;;
+                    --expect-installed-version) EXPECT_INSTALLED_VERSION=$2 ;;
                 esac
                 shift 2 ;;
             --upgrade) UPGRADE=true; shift ;;
@@ -203,6 +205,11 @@ release_payload() {
 
 inspect_installation_state() {
     # The lock owns this decision: another first installer may have run since preflight.
+    if [[ -n $EXPECT_INSTALLED_VERSION ]]; then
+        [[ $UPGRADE == true && -f $CURRENT_RELEASE/VERSION ]] || fail 'Online update target is unavailable'
+        [[ $(<"$CURRENT_RELEASE/VERSION") == "$EXPECT_INSTALLED_VERSION" ]] ||
+            fail 'Installed version changed after update check; check the target again'
+    fi
     if [[ -f $MODE_FILE ]]; then
         [[ $(<"$MODE_FILE") == "$MODE" ]] ||
             fail 'Installed mode differs; use another --instance for the other mode'

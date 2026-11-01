@@ -28,7 +28,7 @@ class ReplyTarget(BaseModel):
     channel_id: str
     thread_id: str | None = None
     message_id: str | None = None
-    delivery_sequence: int = Field(default=1, ge=1, exclude_if=lambda value: value == 1)
+    delivery_sequence: int = Field(default=1, ge=1)
 
 
 class OpsMeshBot(ABC):
@@ -55,6 +55,10 @@ class OpsMeshBot(ABC):
 
     async def upload_file(self, target: ReplyTarget, name: str, content: bytes) -> str | None:
         raise OpsMeshError("UNSUPPORTED_FEATURE", "This adapter does not support file delivery")
+
+    async def remove_message(self, target: ReplyTarget) -> None:
+        """Remove the identified message, preserving provider permission/expiry failures."""
+        raise OpsMeshError("UNSUPPORTED_FEATURE", "This adapter does not support message removal")
 
     @abstractmethod
     async def call_api(self, api: str, **data: Any) -> Any:

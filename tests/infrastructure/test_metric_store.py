@@ -126,7 +126,7 @@ class MetricsBackend:
     version = "1"
     features = AgentBackendCapabilities()
     async def run(self, spec, input, context, **options):
-        context.services["observe_metric"]("model_duration_seconds", 0.25)
+        context.services.observe_metric("model_duration_seconds", 0.25)
         return AgentRunCompleted(output="worker completed")
 get_runtime_extensions().register_backend("metrics_fixture", MetricsBackend)
 """,

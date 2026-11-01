@@ -221,6 +221,7 @@ async def test_third_party_adapter_identity_routing_delivery_and_restart(registr
             "principal_id": "user",
             "bot_id": "support",
             "agent_revision": "assistant@2",
+            "bot_dispatch_mode": "direct",
         }
         target = await service.resolve_delivery_target(
             "support", "room:1", actor_id="user", message_id="message-1", delivery_sequence=2

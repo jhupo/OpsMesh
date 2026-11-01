@@ -76,7 +76,7 @@ def isolate_agent_tool(
         from .tools import build_agent_tool
         from .usage import publish_unknown_usage
 
-        prepare = wrapper.context.services.get("prepare_delegated_sandbox")
+        prepare = wrapper.context.resources.prepare_delegated_sandbox
         if prepare is None:
             raise OpsMeshError(
                 "DEPENDENCY_UNAVAILABLE", "Delegated sandbox lifecycle is unavailable"
@@ -97,7 +97,7 @@ def isolate_agent_tool(
             if pending is not None:
                 original_tools = target.tools
                 native_tools = restoration_tools(
-                    child_spec, child_context.services["openai_sandbox_session"]
+                    child_spec, child_context.resources.sandbox_session
                 )
                 target.tools = [*original_tools, *native_tools]
                 old_state = pending.to_state()
@@ -132,7 +132,7 @@ def isolate_agent_tool(
             nested_wrapper = replace(wrapper, context=child_context)
             set_agent_tool_state_scope(nested_wrapper, scope)
             result = await native.on_invoke_tool(nested_wrapper, arguments)
-            await child_context.services["checkpoint_resources"]()
+            await child_context.resources.checkpoint_resources()
             return result
         finally:
             try:
@@ -141,7 +141,7 @@ def isolate_agent_tool(
                 try:
                     await builder.close()
                 finally:
-                    await child_context.services["cleanup_resources"]()
+                    await child_context.resources.cleanup_resources()
 
     async def invoke(wrapper: Any, arguments: str) -> Any:
         task = asyncio.current_task()

@@ -6,7 +6,6 @@ from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import StoredRecord
 from opsmesh.modules.accounts.api import AccessRole, PermissionGrant, UserPrincipal
 
-from .permission_actions import canonical_action, matches_action
 from .service import LocalAccountService
 from .transactions import AccountTransaction
 
@@ -46,7 +45,7 @@ class AccountManagementPolicy:
         if actor.is_admin:
             return
         if any(
-            matches_action(action, grant.action) and fnmatchcase(resource, grant.resource)
+            fnmatchcase(action, grant.action) and fnmatchcase(resource, grant.resource)
             for grant in await self.grants(tx, actor)
         ):
             return
@@ -71,7 +70,7 @@ class AccountManagementPolicy:
 
         for grant in grants:
             if not any(
-                covered(canonical_action(grant.action), canonical_action(own.action))
+                covered(grant.action, own.action)
                 and covered(grant.resource, own.resource)
                 and (own.department is None or grant.department == own.department)
                 for own in available

@@ -1,18 +1,18 @@
 """Usage observation preserves cumulative SDK counters; pricing is a separate module."""
 
-import inspect
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
-from opsmesh.framework.agents import ModelUsageObservation
+from opsmesh.framework.agents import AgentExecutionContext, ModelUsageObservation
 from opsmesh.framework.errors import OpsMeshError
 
+from .execution_state import execution_state
 from .serialization import serialize_sdk_value
 
 
-def begin_request(context: Any, agent: Any, *, request_scope: Any = None) -> None:
-    context.services.setdefault("pending_model_requests", []).append(
+def begin_request(context: AgentExecutionContext, agent: Any, *, request_scope: Any = None) -> None:
+    execution_state(context).pending_model_requests.append(
         {
             "call_id": str(uuid4()),
             # SDK start/end hooks run in different Tasks. The RunContextWrapper is
@@ -24,7 +24,7 @@ def begin_request(context: Any, agent: Any, *, request_scope: Any = None) -> Non
             "model": agent.model
             if isinstance(agent.model, str)
             else getattr(agent.model, "model", None),
-            "model_profile_ref": context.services.get("agent_model_profiles", {}).get(agent.name),
+            "model_profile_ref": execution_state(context).agent_model_profiles.get(agent.name),
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
@@ -34,17 +34,18 @@ def begin_request(context: Any, agent: Any, *, request_scope: Any = None) -> Non
     )
 
 
-async def publish_unknown_usage(context: Any) -> None:
-    pending = context.services.pop("pending_model_requests", [])
+async def publish_unknown_usage(context: AgentExecutionContext) -> None:
+    state = execution_state(context)
+    pending, state.pending_model_requests = state.pending_model_requests, []
     if not pending:
         return
     for request in pending:
         request.pop("request_scope", None)
         started = request.pop("started_monotonic", None)
-        if started is not None and (metrics := context.services.get("observe_metric")):
+        if started is not None and (metrics := context.services.observe_metric):
             metrics("model_duration_seconds", perf_counter() - started)
-    prior = context.services.get("usage_snapshot", {})
-    context.services["usage_snapshot"] = ModelUsageObservation.model_validate(
+    prior = context.state.usage_snapshot
+    context.state.usage_snapshot = ModelUsageObservation.model_validate(
         dict(
             prior,
             requests=prior.get("requests", 0) + len(pending),
@@ -52,27 +53,25 @@ async def publish_unknown_usage(context: Any) -> None:
             entries=[*prior.get("entries", ()), *pending],
         )
     ).model_dump(mode="json")
-    observer = context.services.get("observe_usage")
+    observer = context.services.observe_usage
     if observer is not None:
         for observation in pending:
-            result = observer(observation)
-            if inspect.isawaitable(result):
-                await result
+            await observer(observation)
 
 
 async def publish_request_usage(
-    context: Any, agent: Any, response: Any, *, request_scope: Any = None
+    context: AgentExecutionContext, agent: Any, response: Any, *, request_scope: Any = None
 ) -> None:
-    observer = context.services.get("observe_usage")
+    observer = context.services.observe_usage
     usage = response.usage
-    pending = context.services.get("pending_model_requests", [])
+    pending = execution_state(context).pending_model_requests
     started: dict[str, Any] | None = None
     scope = agent if request_scope is None else request_scope
     for index, request in enumerate(pending):
         if request["agent_name"] == agent.name and request.get("request_scope") is scope:
             started = pending.pop(index)
             break
-    if started is not None and (metrics := context.services.get("observe_metric")):
+    if started is not None and (metrics := context.services.observe_metric):
         metrics("model_duration_seconds", perf_counter() - started["started_monotonic"])
     model = agent.model if isinstance(agent.model, str) else getattr(agent.model, "model", None)
     details = getattr(usage, "input_tokens_details", None)
@@ -82,7 +81,7 @@ async def publish_request_usage(
         "response_id": response.response_id,
         "run_id": context.run_id,
         "model": model,
-        "model_profile_ref": context.services.get("agent_model_profiles", {}).get(agent.name),
+        "model_profile_ref": execution_state(context).agent_model_profiles.get(agent.name),
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
         "cached_tokens": getattr(details, "cached_tokens", 0),
@@ -94,20 +93,20 @@ async def publish_request_usage(
     if not _record_completed_usage(context, observation, usage.requests):
         return
     if observer is not None:
-        result = observer(observation)
-        if inspect.isawaitable(result):
-            await result
+        await observer(observation)
     await publish_hosted_usage(context, response, observation["call_id"])
 
 
-def _record_completed_usage(context: Any, observation: dict[str, Any], requests: int) -> bool:
-    prior = context.services.get("usage_snapshot", {})
+def _record_completed_usage(
+    context: AgentExecutionContext, observation: dict[str, Any], requests: int
+) -> bool:
+    prior = context.state.usage_snapshot
     for entry in prior.get("entries", ()):
         if entry.get("call_id") == observation["call_id"]:
             if entry != observation:
                 raise OpsMeshError("CONFLICT", "Provider response identity has different usage")
             return False
-    context.services["usage_snapshot"] = ModelUsageObservation(
+    context.state.usage_snapshot = ModelUsageObservation(
         requests=prior.get("requests", 0) + requests,
         input_tokens=prior.get("input_tokens", 0) + observation["input_tokens"],
         output_tokens=prior.get("output_tokens", 0) + observation["output_tokens"],
@@ -134,8 +133,8 @@ def _numeric_usage(usage: Any) -> dict[str, int | float]:
     return result
 
 
-async def publish_hosted_usage(context: Any, response: Any, call_id: str) -> None:
-    observer = context.services.get("observe_resource_usage")
+async def publish_hosted_usage(context: AgentExecutionContext, response: Any, call_id: str) -> None:
+    observer = context.services.observe_resource_usage
     if observer is None:
         return
     kinds = {
@@ -151,7 +150,7 @@ async def publish_hosted_usage(context: Any, response: Any, call_id: str) -> Non
         if resource is None:
             continue
         identity = getattr(item, "id", None) or f"{call_id}:{index}"
-        result = observer(
+        await observer(
             {
                 "call_id": f"hosted:{identity}",
                 "resource_key": f"hosted:{resource}",
@@ -160,8 +159,6 @@ async def publish_hosted_usage(context: Any, response: Any, call_id: str) -> Non
                 "usage_available": True,
             }
         )
-        if inspect.isawaitable(result):
-            await result
 
 
 def observe_usage(result: Any) -> ModelUsageObservation:

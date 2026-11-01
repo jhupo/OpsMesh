@@ -56,9 +56,7 @@ async def platform(tmp_path):
         )
         for name in ("owner", "other", "admin")
     }
-    target = ReplyTarget(
-        bot=BotRef(adapter_id="onebot_v11", bot_id="support"), channel_id="private:1"
-    )
+    target = ReplyTarget(bot=BotRef(adapter_id="qq", bot_id="support"), channel_id="c2c:1")
     try:
         yield first, second, delivery, users, target
     finally:

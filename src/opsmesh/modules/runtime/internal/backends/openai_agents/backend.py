@@ -26,6 +26,7 @@ from .agent_builder import AgentGraphBuilder
 from .compaction import build_session
 from .config import build_run_config
 from .errors import translate_error
+from .execution_state import execution_state
 from .hooks import RegisteredRunHooks, resolve_hooks
 from .state import capture_outcome, restore_input
 from .streaming import execute_stream
@@ -106,7 +107,7 @@ class OpenAIAgentsBackend:
         emit: EventSink | None = None,
     ) -> BackendOutcome:
         builder = self._builder(context)
-        context.services["backend_event_sink"] = emit
+        execution_state(context).backend_event_sink = emit
         try:
             with bind_execution_context(context):
                 agent = await builder.build(spec)

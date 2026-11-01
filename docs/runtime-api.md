@@ -66,6 +66,10 @@ curl -fsS "$API/sessions/$SESSION_ID/messages" -H "Authorization: Bearer $TOKEN"
 
 `POST /runs` 返回 `202` 表示已接收，不表示模型执行完成。需要观察持久 Run 状态，成功终态为 `completed`；也可能进入 `waiting_approval`、`failed`、`blocked` 或 `cancelled`。验证使用真实 SQLite 服务与确定性测试后端；此交付没有调用付费模型，以上真实 OpenAI 流程需要部署者配置后执行。
 
+`GET /runs` 支持 `principal_id`、`session_id`、`status`、`limit` 和 `offset`。`limit` 默认 1000，范围 1–1000；`offset` 必须非负。查询先在 SQL 中过滤和分页，再逐项检查调用者权限，因此返回数量可能少于页大小。不会为凑满一页扫描全库。内部后台遍历使用稳定游标，流事件按 Run ID 和 sequence 进行有界查询。
+
+升级现有数据库前停止写入并备份，安装后依次执行 `opsmesh migrate`、`opsmesh check` 再重启。Run 与事件流新增索引投影，旧版程序不能与新版混合写入；详见[迁移 0002](../migrations/0002-runtime-projections.md)。
+
 Agent 的 `revision` 是发布版本；`AgentDefinition.revision` 是并发更新版本，两者不同。创建、编辑、发布后应重新读取 `GET /agents/{id}` 获取后续变更的 `expected_revision`。HTTP 运行会解析已发布版本；草稿不能直接执行。模型配置同样保留不可变 `id@revision`，发布 OpenAI Agent 必须引用具体模型版本。
 
 Run 的 `idempotency_key` 在提交主体范围内防止重复提交（会话属于请求内容）：相同内容重试返回同一 Run，不同内容复用键返回 `409`。每次新的用户输入应使用新的键。HTTP 接受字符串或 `role=user` 的消息列表，不允许注入 SDK 工具结果、系统指令或历史执行对象。
@@ -191,11 +195,11 @@ HTTP 只接受声明式数据：工具实现必须已通过插件注册，或来
 
 ## 机器人和插件
 
-平台通过独立适配器支持钉钉 Stream、QQ 官方签名 Webhook，以及 OneBot v11 兼容协议。`GET /bot-adapters` 返回启用实现及其设置 Schema、凭据名称与能力。创建通用 BotAccount（adapter/self_id/settings/credentials）后，通过 `/bots/{id}/identities` 绑定外部用户到本地主体，通过 `/bots/{id}/routes` 将该协议的频道目标绑定到已发布 Agent。配置示例与边界见[机器人适配器](design/bot-adapters.md)。账号、映射、路由与发送幂等状态持久化保存；已处理事件重复到达不会重复派发，每次仍检查本地主体和权限。
+平台通过独立适配器支持钉钉 Stream、QQ 官方签名 Webhook。`GET /bot-adapters` 返回启用实现及其设置 Schema、凭据名称与能力。创建通用 BotAccount（adapter/self_id/settings/credentials）后，通过 `/bots/{id}/identities` 绑定外部用户到本地主体，通过 `/bots/{id}/routes` 将该协议的频道目标绑定到已发布 Agent。配置示例与边界见[机器人适配器](design/bot-adapters.md)。账号、映射、路由与发送幂等状态持久化保存；已处理事件重复到达不会重复派发，每次仍检查本地主体和权限。
 
 绑定是平台`modules/bots`的核心功能，没有加载聊天插件也能触发默认Agent调用链。每个绑定固定一个发布版本；同一Bot可为不同频道选择不同Agent，同一Agent可被多个Bot使用。服务层统一校验`bots.manage`、Agent可用性和绑定者的`agent:run`权限，插件与HTTP入口共享相同规则。
 
-身份绑定额外要求针对目标 principal ID 的 `accounts:bot_identity:manage`，替换或解绑也检查原身份；映射平台管理员要求调用方本身为管理员。对已有身份映射的 Bot 修改连接配置或路由，同样检查这些身份，授权和写入之间的并发变化会被拒绝。Bot 密钥引用在解析前校验 `secret:use`；修改地址并沿用原密钥也需要该权限。兼容旧的 `secrets:use`、`secrets:*` 授权。普通发送仍使用 `bots.send`，不会要求消息发送者具有身份管理或密钥使用权限。
+身份绑定额外要求针对目标 principal ID 的 `accounts:bot_identity:manage`，替换或解绑也检查原身份；映射平台管理员要求调用方本身为管理员。对已有身份映射的 Bot 修改连接配置或路由，同样检查这些身份，授权和写入之间的并发变化会被拒绝。Bot 密钥引用在解析前校验 `secret:use`；修改地址并沿用原密钥也需要该权限。只使用 `secret:` 权限命名空间，不转换旧别名。普通发送仍使用 `bots.send`，不会要求消息发送者具有身份管理或密钥使用权限。
 
 | 方法与路径（前缀 `/api/v1`） | 功能 |
 | --- | --- |
@@ -206,19 +210,11 @@ HTTP 只接受声明式数据：工具实现必须已通过插件注册，或来
 
 传Agent名称时由服务解析并保存当时的发布版本；后续发布不会静默升级旧绑定。当前没有机器人级默认Agent或复杂条件路由。未绑定频道不会进入默认Agent链，但可被已加载的Matcher处理。插件可使用`Depends(get_bots)`取得同一`BotAccounts`服务；持久任务使用`Depends(get_scheduling)`取得`modules/scheduling/api.py`的服务。
 
-以下是独立 OneBot 兼容适配器的设置，连接选项均位于 `settings`。
-
-| `settings.transport` | 配置与接入 |
-|---|---|
-| `http` | `settings.api_base_url`、`credentials.webhook_secret` 必填，`credentials.access_token` 可选；事件 POST 到 `/api/v1/callbacks/onebot/{id}`，原始 body 使用 HMAC-SHA1 和 `X-Signature: sha1=<hex>` |
-| `websocket` | `settings.websocket_url` 必填，`credentials.access_token` 可选；具备后台连接职责的进程主动连接，断线按 `settings.reconnect_seconds` 起始退避重连；不要求 HTTP 回调 secret |
-| `reverse_websocket` | `credentials.access_token` 必填；OneBot Universal 客户端连接 `ws(s)://网关地址/plugins/onebot/ws`，提供 `X-Client-Role: Universal`、`X-Self-ID` 和 `Authorization: Bearer ...`；通过匹配启用账号与 token 后才接受连接 |
-
-HTTP 和 WebSocket 地址均禁止嵌入凭据、query、fragment。WebSocket 使用 echo 关联响应，连接中断后不自动重放尚未确认的发送动作。反向连接由机器人客户端发起重连；新连接替换旧连接时，旧连接清理不会误删新连接。
+机器人回调统一使用 `/api/v1/callbacks/bots/{id}`。QQ 支持签名 Webhook 和 Gateway，钉钉使用 Stream；配置项见[机器人适配器](design/bot-adapters.md)。
 
 发送消息携带 `idempotency_key`。确定未发送的瞬态连接失败或限流可以安全重试；本地不支持或供应商明确拒绝保留原错误，同 key 不重复调用，修正配置或内容后使用新 key。读超时、取消和无法判断的协议错误标记 `DELIVERY_UNKNOWN`，不会静默重发。QQ 被动回复可带 `message_id` 与 `delivery_sequence`；协议认证和发送限制见相应适配器文档。测试只使用受控服务和虚构凭据，不连接生产机器人。
 
-文件上传是显式的 NapCat 扩展，兼容 OneBot 账号需要设置 `settings.file_upload="napcat"`，不假定所有 OneBot 实现支持文件 API。`POST /bots/{id}/files` 请求 `{"channel_id":"private:123","workspace_id":"reports","path":"report.pdf","name":"report.pdf","idempotency_key":"report-1"}`；先检查工作区读取权，再检查 `bots.send`，不会接受任意宿主路径。服务上限为 16 MiB，通过 NapCat 的 `upload_private_file` / `upload_group_file` 发送 base64 内容。相同幂等键与同一内容返回原回执，改变目标或文件内容返回冲突；远端不提供 file ID 时回执的 `file_id` 可以为空。
+`POST /bots/{id}/files` 是协议可选扩展入口：先检查工作区读取权，再检查 `bots.send`，只接受受控工作区路径和安全文件名，上限 16 MiB。当前 QQ 与钉钉未声明文件上传能力，调用会明确返回不支持；第三方适配器可实现 `upload_file`。
 
 [可运行插件示例](../examples/custom_plugin/README.md) 展示 NoneBot 风格 import 注册、元数据、Matcher、Depends、yield 清理、AgentFactory、代码工具、运行 hook 和护栏。`get_run_context()` 只在执行上下文中有效；普通事件处理器使用 `DispatchContext`，不应假定每个事件都有 Bot 或 Run。
 
@@ -241,7 +237,7 @@ uv run pytest tests/http tests/framework tests/bots
 uv run python examples/custom_plugin/demo.py
 ```
 
-HTTP 测试覆盖真实账号与 SQLite 持久化、跨用户权限、发布版本、幂等提交、审批、工作区恢复、记忆隔离、代码与密钥边界、Bot 签名及重复事件、审计失败前置拦截、SSE 续接与取消/令牌吊销清理。扩展测试实际创建临时 Git 仓库、安装离线 wheel 并执行发布脚本，启动本地 MCP SSE、OneBot HTTP/主动 WS/反向 WS 服务，验证文件上传、断线重连和重复事件。真实 SDK 使用确定性 Model，包含实时记忆审批恢复和并发请求计量回归，没有调用付费模型或发送真实机器人消息。依赖实际 Docker daemon、数据库部署或远端服务的 opt-in 测试需要单独启用并准备环境，默认测试通过不代表这些部署集成已验收。
+HTTP 测试覆盖真实账号与 SQLite 持久化、跨用户权限、发布版本、幂等提交、审批、工作区恢复、记忆隔离、代码与密钥边界、Bot 签名及重复事件、审计失败前置拦截、SSE 续接与取消/令牌吊销清理。扩展测试实际创建临时 Git 仓库、安装离线 wheel 并执行发布脚本，启动本地 MCP SSE、QQ/钉钉 服务，验证文件上传、断线重连和重复事件。真实 SDK 使用确定性 Model，包含实时记忆审批恢复和并发请求计量回归，没有调用付费模型或发送真实机器人消息。依赖实际 Docker daemon、数据库部署或远端服务的 opt-in 测试需要单独启用并准备环境，默认测试通过不代表这些部署集成已验收。
 
 ## 单次 Run 配置
 

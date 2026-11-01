@@ -128,7 +128,7 @@ async def publish_skill(
             raise OpsMeshError("INVALID_REQUEST", "Skill source cannot traverse symbolic links")
     if not source.resolve().is_relative_to(root.resolve()) or not source.is_dir():
         raise OpsMeshError("INVALID_REQUEST", "Skill source directory is unavailable")
-    return await app.services.capability_management.publish_skill(
+    return await app.services.skill_management.publish(
         body.name, body.version, source, actor_id=user.id, description=body.description
     )
 
@@ -172,9 +172,7 @@ async def register_mcp(
         )
     for reference in body.header_secret_refs.values():
         validate_secret_reference(reference)
-    return await get_application(request).services.capability_management.register_mcp(
-        body, actor_id=user.id
-    )
+    return await get_application(request).services.mcp_management.register(body, actor_id=user.id)
 
 
 @router.get("/mcp/{reference:path}")

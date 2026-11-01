@@ -45,6 +45,16 @@ from opsmesh.framework.agents.native_tools import (
     ShellExecutionResult,
     ShellToolBinding,
 )
+from opsmesh.framework.agents.resources import (
+    AgentExecutionResources,
+    AgentExecutionServices,
+    AgentExecutionState,
+    SandboxProviderBinding,
+    SandboxProviderFactory,
+    SandboxProviderRegistry,
+    SandboxSession,
+    SandboxSessionFactory,
+)
 from opsmesh.framework.agents.specification import (
     AgentSpecification,
     AgentToolBinding,
@@ -67,6 +77,9 @@ __all__ = [
     "AgentBackendCapabilities",
     "AgentExecutionContext",
     "AgentExecutionEvent",
+    "AgentExecutionResources",
+    "AgentExecutionServices",
+    "AgentExecutionState",
     "AgentResolver",
     "AgentRunCompleted",
     "AgentRunInterrupted",
@@ -100,6 +113,11 @@ __all__ = [
     "OpsMeshAgentBackend",
     "PendingToolApproval",
     "SandboxConfiguration",
+    "SandboxProviderBinding",
+    "SandboxProviderFactory",
+    "SandboxProviderRegistry",
+    "SandboxSession",
+    "SandboxSessionFactory",
     "SessionCompactionConfiguration",
     "ShellCommandResult",
     "ShellExecutionRequest",

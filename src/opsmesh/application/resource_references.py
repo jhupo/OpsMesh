@@ -1,32 +1,32 @@
 """Cross-domain reference inspection at the composition boundary."""
 
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import select
 
 from opsmesh.framework.errors import OpsMeshError
-from opsmesh.infrastructure.database import StoredRecord, VersionedRecordStore
+from opsmesh.infrastructure.database import AsyncDatabase
 from opsmesh.infrastructure.database.transactions import database_connection
+from opsmesh.modules.accounts.api import AccountDirectory, UserPrincipal
+from opsmesh.modules.agents.api import AgentDefinitionCatalog
 from opsmesh.modules.resource_contracts import ResourceReference
-
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from opsmesh.modules.runtime.api import AgentRuntime, AgentRunView
+from opsmesh.modules.runtime.queries import iter_runs
 
 
 class PlatformResourceReferences:
     def __init__(
         self,
-        services: "ApplicationServices",
-        agent_records: Callable[[], Awaitable[list[StoredRecord]]] | None = None,
+        *,
+        accounts: AccountDirectory,
+        agents: AgentDefinitionCatalog,
+        runtime: AgentRuntime,
+        database: AsyncDatabase,
     ) -> None:
-        self.services = services
-        # Keep the reader injectable for composition roots that already own the
-        # catalog, while retaining the historical two-argument construction
-        # used by recovery tooling and standalone resource scans.
-        self._agent_records = (
-            agent_records or VersionedRecordStore(services.database, "agents_definitions").list
-        )
+        self.accounts = accounts
+        self.agents = agents
+        self.runtime = runtime
+        self.database = database
 
     async def lookup(
         self, actor_id: str, kind: str, reference: str
@@ -39,17 +39,24 @@ class PlatformResourceReferences:
             "mcp": {"mcp_refs"},
             "script": {"tool_ref", "resource_ref"},
         }.get(kind, {kind})
-        principal = await self.services.accounts.get_principal(actor_id)
-        for row in await self._agent_records():
+        principal = await self.accounts.get_principal(actor_id)
+        for definition in await self.agents.list():
             try:
-                await self.services.accounts.authorize(
-                    principal, "agent:read", row.id, owner_id=row.data["owner_id"]
+                await self.accounts.authorize(
+                    principal, "agent:read", definition.id, owner_id=definition.owner_id
                 )
             except OpsMeshError as error:
                 if error.code not in {"FORBIDDEN", "AUTHORIZATION_DENIED"}:
                     raise
                 continue
-            for path, value in walk_fields(row.data):
+            data = {
+                "draft": definition.draft.model_dump(),
+                "versions": {
+                    str(spec.revision): spec.model_dump()
+                    for spec in await self.agents.revisions(definition.id)
+                },
+            }
+            for path, value in walk_fields(data):
                 key = path.rsplit(".", 1)[-1]
                 values = value if isinstance(value, (list, tuple)) else [value]
                 if key in keys and any(
@@ -57,39 +64,47 @@ class PlatformResourceReferences:
                     and (item == reference or item.split("@", 1)[0] == reference)
                     for item in values
                 ):
-                    result.append(ResourceReference(kind="agent", reference=row.id, field=path))
-        for run in await self.services.runtime.list_runs():
-            if run.status not in {
+                    result.append(
+                        ResourceReference(kind="agent", reference=definition.id, field=path)
+                    )
+        async for run in iter_runs(
+            self.runtime,
+            statuses=(
                 "queued",
                 "preparing",
                 "running",
                 "waiting_approval",
                 "resuming",
                 "finalizing",
-            }:
-                continue
-            try:
-                await self.services.accounts.authorize(
-                    principal, "run:read", run.id, owner_id=run.principal_id
-                )
-            except OpsMeshError as error:
-                if error.code not in {"FORBIDDEN", "AUTHORIZATION_DENIED"}:
-                    raise
-                continue
-            for path, value in walk_fields(run.agent.model_dump()):
-                values = value if isinstance(value, (list, tuple)) else [value]
-                if path.rsplit(".", 1)[-1] in keys and any(
-                    isinstance(value, str)
-                    and (value == reference or value.split("@", 1)[0] == reference)
-                    for value in values
-                ):
-                    result.append(ResourceReference(kind="run", reference=run.id, field=path))
+            ),
+        ):
+            result.extend(await self._run_references(principal, run, reference, keys))
         return tuple(result)
+
+    async def _run_references(
+        self, principal: UserPrincipal, run: AgentRunView, reference: str, keys: set[str]
+    ) -> list[ResourceReference]:
+        result: list[ResourceReference] = []
+        try:
+            await self.accounts.authorize(principal, "run:read", run.id, owner_id=run.principal_id)
+        except OpsMeshError as error:
+            if error.code not in {"FORBIDDEN", "AUTHORIZATION_DENIED"}:
+                raise
+            return []
+        for path, value in walk_fields(run.agent.model_dump()):
+            values = value if isinstance(value, (list, tuple)) else [value]
+            if path.rsplit(".", 1)[-1] in keys and any(
+                isinstance(value, str)
+                and (value == reference or value.split("@", 1)[0] == reference)
+                for value in values
+            ):
+                result.append(ResourceReference(kind="run", reference=run.id, field=path))
+        return result
 
     async def snapshots(self) -> set[str]:
         # Retain snapshots referenced by any persisted definition, checkpoint or sandbox binding.
         references: set[str] = set()
-        database = self.services.database
+        database = self.database
         async with database_connection(database.engine) as connection:
             for table in database.metadata.sorted_tables:
                 if "data" not in table.c or "audit" in table.name:

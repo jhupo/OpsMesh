@@ -31,8 +31,8 @@ async def test_accepted_run_recovers_user_history_from_outbox(http_platform, mon
         for item in await app.services.database.pending_events(1000)
         if item["type"] == "runtime.run.queued" and item["correlation_id"] == run["id"]
     )
-    await app.coordinator.deliver(fact)
-    await app.coordinator.deliver(fact)
+    await app.outbox.deliver(fact)
+    await app.outbox.deliver(fact)
     history = await app.services.sessions.history(run["session_id"])
     assert [(item.role, item.text) for item in history] == [
         ("user", "retained input"),

@@ -22,6 +22,7 @@ from openai.types.responses import (
 
 from opsmesh.application.sandbox_bridge import archive_files
 from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification, SandboxConfiguration
+from opsmesh.framework.agents.resources import AgentExecutionServices
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.internal.backends.openai_agents.sandbox import prepare_capabilities
 from opsmesh.modules.runtime.internal.backends.openai_agents.sandbox_lifecycle import (
@@ -79,7 +80,7 @@ def context(observations, authorizations):
         "conversation",
         "principal",
         unused,
-        services={"observe_usage": observe, "authorize_model_request": authorize},
+        services=AgentExecutionServices(observe_usage=observe, authorize_model_request=authorize),
     )
 
 
@@ -108,7 +109,7 @@ async def test_native_memory_authorization_denied_before_request():
     async def denied(profile):
         raise OpsMeshError("AUTHORIZATION_DENIED", "Not allowed")
 
-    ctx.services["authorize_model_request"] = denied
+    ctx.services.authorize_model_request = denied
     delegate = ScriptedModel([[message("unused")]])
     model = MeteredMemoryModel(delegate, ctx, "model@1", "extract")
     with pytest.raises(OpsMeshError):
@@ -208,7 +209,7 @@ async def test_real_native_memory_two_stages_persist_before_cleanup(provider):
     manager = await ManagedSandboxSession.open(configuration, (), ())
     observations, authorizations = [], []
     ctx = context(observations, authorizations)
-    ctx.services["sandbox_lifecycle"] = manager
+    ctx.resources.sandbox_lifecycle = manager
     extraction = ScriptedModel(
         [
             [
@@ -294,8 +295,8 @@ async def test_native_memory_identity_excludes_runtime_clients_and_usage():
 
     observations = []
     ctx = context(observations, [])
-    ctx.services["live_docker_transport"] = RuntimeConnectionPool()
-    ctx.services["credential"] = "never-serialize-runtime-secret"
+    ctx.extensions["live_docker_transport"] = RuntimeConnectionPool()
+    ctx.extensions["credential"] = "never-serialize-runtime-secret"
     model = MeteredMemoryModel(ScriptedModel([[message("ok")]]), ctx, "model@1", "extract")
     memory = Memory.model_validate(
         {"generate": {"phase_one_model": model, "phase_two_model": model}}

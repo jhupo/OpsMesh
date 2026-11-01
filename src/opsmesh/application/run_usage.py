@@ -3,26 +3,26 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opsmesh.framework.agents import AgentRunCompleted
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.api import AgentRunView
-from opsmesh.modules.usage.api import ResourceUsageFact, UsageFact
+from opsmesh.modules.usage.api import ResourceUsageFact, UsageFact, UsageService
 
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from .ports import ApplicationSettings
 
 
 class RunUsageAccounting:
-    def __init__(self, services: ApplicationServices) -> None:
-        self.services = services
+    def __init__(self, *, usage: UsageService, settings: ApplicationSettings) -> None:
+        self.usage = usage
+        self.settings = settings
 
     async def reserve(self, run: AgentRunView) -> None:
-        settings = self.services.settings
-        status = await self.services.usage.budget(run.principal_id, settings.budget_currency)
+        settings = self.settings
+        status = await self.usage.budget(run.principal_id, settings.budget_currency)
         if status.limit is not None:
-            await self.services.usage.reserve(
+            await self.usage.reserve(
                 run.principal_id,
                 run.id,
                 Decimal(settings.run_reservation_amount),
@@ -30,7 +30,7 @@ class RunUsageAccounting:
             )
 
     async def observe(self, run: AgentRunView, data: dict[str, Any]) -> None:
-        await self.services.usage.record(
+        await self.usage.record(
             UsageFact(
                 call_id=f"{run.id}:{data['call_id']}",
                 principal_id=run.principal_id,
@@ -52,10 +52,9 @@ class RunUsageAccounting:
         )
 
     async def finish(self, run: AgentRunView, outcome: AgentRunCompleted) -> None:
-        services = self.services
-        if not await services.usage.has_request_usage(run.principal_id, run.id):
+        if not await self.usage.has_request_usage(run.principal_id, run.id):
             usage = outcome.usage
-            await services.usage.record(
+            await self.usage.record(
                 UsageFact(
                     call_id=f"{run.id}:aggregate:{run.attempt}",
                     principal_id=run.principal_id,
@@ -72,7 +71,7 @@ class RunUsageAccounting:
         await self.settle(run)
 
     async def observe_resource(self, run: AgentRunView, data: dict[str, Any]) -> None:
-        await self.services.usage.record_resource(
+        await self.usage.record_resource(
             ResourceUsageFact(
                 call_id=f"{run.id}:{data['call_id']}",
                 principal_id=run.principal_id,
@@ -86,22 +85,21 @@ class RunUsageAccounting:
         )
 
     async def settle(self, run: AgentRunView) -> None:
-        services = self.services
-        status = await services.usage.budget(run.principal_id, services.settings.budget_currency)
+        status = await self.usage.budget(run.principal_id, self.settings.budget_currency)
         if status.limit is None:
             return
-        costs = await services.usage.costs(run.principal_id, run.id)
+        costs = await self.usage.costs(run.principal_id, run.id)
         billable = [cost for cost in costs if cost.status != "ignored"]
         actual = (
             None
             if any(
-                cost.amount is None or cost.currency != services.settings.budget_currency
+                cost.amount is None or cost.currency != self.settings.budget_currency
                 for cost in billable
             )
             else sum((cost.amount or Decimal(0) for cost in billable), Decimal(0))
         )
         try:
-            await services.usage.settle(run.principal_id, run.id, actual)
+            await self.usage.settle(run.principal_id, run.id, actual)
         except OpsMeshError as error:
             if error.code != "NOT_FOUND":
                 raise

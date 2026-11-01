@@ -6,29 +6,49 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opsmesh.framework.agents import AgentExecutionContext
+from opsmesh.framework.agents.resources import AgentExecutionResources
 from opsmesh.framework.errors import OpsMeshError
+from opsmesh.infrastructure.coordination.admission import AtomicRunAdmission
+from opsmesh.infrastructure.database import VersionedRecordStore
+from opsmesh.modules.capabilities.api import AgentResources
+from opsmesh.modules.configuration.api import PlatformConfiguration
 from opsmesh.modules.runtime.api import AgentRunView
 
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from .memory_tools import MemoryResourceBindings
+from .sandbox_bridge import SandboxWorkspaceBridge
 
 logger = logging.getLogger(__name__)
 
 
 class RunResourceScope:
     def __init__(
-        self, services: ApplicationServices, run: AgentRunView, context: AgentExecutionContext
+        self,
+        *,
+        run: AgentRunView,
+        context: AgentExecutionContext,
+        admission: AtomicRunAdmission,
+        configuration: PlatformConfiguration,
+        memory_tools: MemoryResourceBindings,
+        resources: AgentResources,
+        sandbox_bridge: SandboxWorkspaceBridge,
+        workspace_owners: VersionedRecordStore,
     ) -> None:
-        self.services, self.run, self.context = services, run, context
+        self.admission = admission
+        self.configuration = configuration
+        self.memory_tools = memory_tools
+        self.resources = resources
+        self.sandbox_bridge = sandbox_bridge
+        self.workspace_owners = workspace_owners
+        self.run, self.context = run, context
         self.owner = f"{run.id}:{run.attempt_id}"
         self.token: str | None = None
         self._heartbeat: asyncio.Task[None] | None = None
         self._native_cleanup: Callable[[], Awaitable[None]] | None = None
 
-    async def open(self, prepare: Callable[[], Awaitable[Any]]) -> dict[str, Any]:
+    async def open(self, prepare: Callable[[], Awaitable[Any]]) -> AgentExecutionResources:
         try:
             await self._acquire()
             executing_task = asyncio.current_task()
@@ -37,9 +57,9 @@ class RunResourceScope:
                 self._renew(executing_task), name=f"admission:{self.run.id}"
             )
             await prepare()
-            bindings = await self.services.sandbox_bridge.prepare(self.run, self.context)
-            self._native_cleanup = bindings.get("cleanup_resources")
-            checkpoint = bindings.get("checkpoint_resources")
+            bindings = await self.sandbox_bridge.prepare(self.run, self.context)
+            self._native_cleanup = bindings.cleanup_resources
+            checkpoint = bindings.checkpoint_resources
             if checkpoint is not None:
 
                 async def checkpoint_owned_resources() -> dict[str, Any]:
@@ -47,12 +67,10 @@ class RunResourceScope:
                     await self.claim_workspace(metadata)
                     return metadata
 
-                bindings["checkpoint_resources"] = checkpoint_owned_resources
-            return {
-                **bindings,
-                "cleanup_resources": self.close,
-                "claim_workspace": self.claim_workspace,
-            }
+                bindings.checkpoint_resources = checkpoint_owned_resources
+            bindings.cleanup_resources = self.close
+            bindings.claim_workspace = self.claim_workspace
+            return bindings
         except BaseException:
             await self.close()
             raise
@@ -60,19 +78,17 @@ class RunResourceScope:
     async def claim_workspace(self, metadata: dict[str, Any]) -> None:
         workspace_id = metadata.get("workspace_id")
         if workspace_id is not None:
-            existing = await self.services.workspace_owners.get(workspace_id)
+            existing = await self.workspace_owners.get(workspace_id)
             if existing is None:
-                await self.services.workspace_owners.create(
+                await self.workspace_owners.create(
                     workspace_id, {"owner_id": self.run.principal_id}
                 )
 
     async def _acquire(self) -> None:
         while True:
-            policy = await self.services.configuration.admission_policy()
+            policy = await self.configuration.admission_policy()
             try:
-                self.token = await self.services.admission.acquire(
-                    self.owner, policy.max_active_runs
-                )
+                self.token = await self.admission.acquire(self.owner, policy.max_active_runs)
                 return
             except OpsMeshError as error:
                 if error.code != "CAPACITY_BUSY":
@@ -84,7 +100,7 @@ class RunResourceScope:
         try:
             while True:
                 await asyncio.sleep(5)
-                await self.services.admission.renew(self.owner, self.token)
+                await self.admission.renew(self.owner, self.token)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -102,9 +118,9 @@ class RunResourceScope:
             if self._native_cleanup is not None:
                 await self._native_cleanup()
         finally:
-            self.services.memory_tools.release(self.run)
+            self.memory_tools.release(self.run)
             try:
-                await self.services.resources.release(
+                await self.resources.release(
                     principal_id=self.run.principal_id,
                     run_id=self.run.id,
                     lifecycle_id=self.run.attempt_id,
@@ -113,4 +129,4 @@ class RunResourceScope:
                 if self.token is not None:
                     token, self.token = self.token, None
                     with suppress(OpsMeshError):
-                        await self.services.admission.release(self.owner, token)
+                        await self.admission.release(self.owner, token)

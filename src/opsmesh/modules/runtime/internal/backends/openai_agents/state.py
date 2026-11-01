@@ -66,7 +66,7 @@ def capture_outcome(
     result: Any, context: AgentExecutionContext, sdk_version: str, graph: dict[str, str]
 ) -> BackendOutcome:
     usage = observe_usage(result)
-    if not context.services.get("usage_snapshot", {}).get("usage_available", True):
+    if not context.state.usage_snapshot.get("usage_available", True):
         usage = usage.model_copy(update={"usage_available": False})
     if result.interruptions:
         return AgentRunInterrupted(

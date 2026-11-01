@@ -35,7 +35,6 @@ async def platform(tmp_path):
             registry,
             context,
             session_claims=sessions,
-            session_claim_reader=sessions.active_claims,
         )
 
     runtime = worker()

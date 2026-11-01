@@ -3,7 +3,7 @@
 import asyncio
 import time
 
-from opsmesh.application.coordinator import BackgroundCoordinator
+from opsmesh.application.approval_notifications import ApprovalNotificationCoordinator
 
 from .conftest import published_agent, submit_run
 
@@ -60,9 +60,14 @@ async def test_approval_reminders_and_expiry_are_idempotent_across_coordinators(
         },
         row.revision,
     )
-    first, second = BackgroundCoordinator(app), BackgroundCoordinator(app)
-    await asyncio.gather(first.notifications(), second.notifications())
-    await first.notifications()
+    first = ApprovalNotificationCoordinator(
+        app.services.runtime, app.services.triggers, app.services.notifications
+    )
+    second = ApprovalNotificationCoordinator(
+        app.services.runtime, app.services.triggers, app.services.notifications
+    )
+    await asyncio.gather(first.tick(), second.tick())
+    await first.tick()
     for name in ("alice", "bob"):
         records = await app.services.notifications.list_records(actor_id=principals[name])
         assert len(records) == 1 and records[0].event_type == "runtime.approval.reminder"
@@ -70,14 +75,14 @@ async def test_approval_reminders_and_expiry_are_idempotent_across_coordinators(
     await app.services.runtime.runs.update(
         run["id"], {**row.data, "approval_wait_started_at": time.time() - 11}, row.revision
     )
-    await asyncio.gather(first.notifications(), second.notifications())
+    await asyncio.gather(first.tick(), second.tick())
     blocked = await app.services.runtime.get_run(run["id"])
     assert blocked.status == "blocked"
     assert (await app.services.sessions.get(blocked.session_id)).active_run_id is None
     facts = await app.services.database.pending_events()
     expired = [fact for fact in facts if fact["type"] == "runtime.run.approval_expired"]
     assert len(expired) == 1
-    await asyncio.gather(first.deliver(expired[0]), second.deliver(expired[0]))
+    await asyncio.gather(app.outbox.deliver(expired[0]), app.outbox.deliver(expired[0]))
     records = await app.services.notifications.list_records(actor_id=principals["alice"])
     expiry_records = [item for item in records if item.event_type == "runtime.run.approval_expired"]
     assert len(expiry_records) == 1 and "blocked" in expiry_records[0].content

@@ -1,4 +1,4 @@
-"""Explicit version-1 schema installation and strict drift detection."""
+"""Versioned schema installation, declared upgrades and strict drift detection."""
 
 import hashlib
 import json
@@ -49,6 +49,8 @@ def _type_shape(column_type: Any) -> tuple[str, int | None]:
         return "datetime", None
     if "json" in name:
         return "json", None
+    if name in {"float", "double", "double_precision", "real"}:
+        return "float", None
     return name, None
 
 
@@ -99,7 +101,9 @@ def inspect_shape(connection: Connection, table_name: str) -> dict[str, Any]:
 
 
 def validate_table(connection: Connection, table: Table, applied: dict[str, Any]) -> None:
-    if applied["version"] != SCHEMA_VERSION or applied["fingerprint"] != schema_fingerprint(table):
+    if applied["version"] != table.info.get("schema_version", SCHEMA_VERSION) or applied[
+        "fingerprint"
+    ] != schema_fingerprint(table):
         raise OpsMeshError(
             "SCHEMA_VERSION_MISMATCH", f"Schema migration is required for {table.name}"
         )
@@ -113,7 +117,7 @@ def validate_version_catalog(connection: Connection, versions: Table) -> None:
 
 
 async def migrate_schema(engine: AsyncEngine, metadata: MetaData, versions: Table) -> set[str]:
-    """Install missing v1 tables; never alter or silently accept existing incompatible tables."""
+    """Apply declared migrations; reject unversioned tables and unrelated schema drift."""
     async with serialized_write(engine) as connection:
         if engine.dialect.name == "postgresql":
             await connection.execute(text("SELECT pg_advisory_xact_lock(784562102931)"))
@@ -135,6 +139,24 @@ async def migrate_schema(engine: AsyncEngine, metadata: MetaData, versions: Tabl
                     raise OpsMeshError(
                         "SCHEMA_DRIFT", f"Previously migrated table {table.name} is missing"
                     )
+                if applied[table.name]["version"] < table.info.get(
+                    "schema_version", SCHEMA_VERSION
+                ):
+                    from .projections import migrate_record_projections
+
+                    await connection.run_sync(
+                        migrate_record_projections, table, applied[table.name], versions
+                    )
+                    current = (
+                        (
+                            await connection.execute(
+                                select(versions).where(versions.c.table_name == table.name)
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    applied[table.name] = dict(current)
                 await connection.run_sync(validate_table, table, applied[table.name])
                 continue
             if table.name in existing:
@@ -146,7 +168,7 @@ async def migrate_schema(engine: AsyncEngine, metadata: MetaData, versions: Tabl
             await connection.execute(
                 insert(versions).values(
                     table_name=table.name,
-                    version=SCHEMA_VERSION,
+                    version=table.info.get("schema_version", SCHEMA_VERSION),
                     fingerprint=schema_fingerprint(table),
                     applied_at=datetime.now(UTC),
                 )

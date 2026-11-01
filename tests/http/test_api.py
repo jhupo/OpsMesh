@@ -1,8 +1,6 @@
 """HTTP integration tests exercise real persistence and authorization without paid APIs."""
 
 import asyncio
-import hashlib
-import hmac
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -326,38 +324,36 @@ async def test_model_configuration_conflicts_audit_and_limits(http_platform):
 
 
 async def test_bot_callback_signature_and_persistent_duplicate(http_platform, monkeypatch):
-    _, client, headers, _ = http_platform
+    app, client, headers, principals = http_platform
     monkeypatch.setenv("BOT_WEBHOOK", "webhook-secret")
     account = {
         "id": "qq",
         "self_id": "123",
-        "adapter": "onebot_v11",
-        "settings": {"api_base_url": "http://127.0.0.1:5700"},
-        "credentials": {"webhook_secret": "env:BOT_WEBHOOK"},
+        "adapter": "qq",
+        "settings": {"app_id": "12345", "api_base_url": "http://127.0.0.1:5700"},
+        "credentials": {"client_secret": "env:BOT_WEBHOOK"},
     }
     assert (
         await client.post("/api/v1/bots", json=account, headers=headers["admin"])
     ).status_code == 201
-    raw = json.dumps(
-        {
-            "time": 1,
-            "self_id": 123,
-            "post_type": "meta_event",
-            "meta_event_type": "heartbeat",
-            "interval": 1000,
-        }
-    ).encode()
-    assert (await client.post("/api/v1/callbacks/onebot/qq", content=raw)).status_code == 401
-    signature = "sha1=" + hmac.new(b"webhook-secret", raw, hashlib.sha1).hexdigest()
-    response = await client.post(
-        "/api/v1/callbacks/onebot/qq", content=raw, headers={"X-Signature": signature}
+    from unittest.mock import AsyncMock
+
+    from opsmesh.framework.message import DispatchResult
+    from tests.bots.fixtures import webhook
+
+    await app.services.bots.bind_identity(
+        "qq", "200", principals["admin"], actor_id=principals["admin"]
     )
+    dispatched = AsyncMock(return_value=DispatchResult("test-event"))
+    monkeypatch.setattr(app.services.bots.ingress, "dispatcher", dispatched)
+    raw, signature = webhook(secret_value="webhook-secret")
+    assert (await client.post("/api/v1/callbacks/bots/qq", content=raw)).status_code == 401
+    response = await client.post("/api/v1/callbacks/bots/qq", content=raw, headers=signature)
     assert response.status_code == 200, response.text
-    duplicate = await client.post(
-        "/api/v1/callbacks/onebot/qq", content=raw, headers={"X-Signature": signature}
-    )
+    duplicate = await client.post("/api/v1/callbacks/bots/qq", content=raw, headers=signature)
     assert duplicate.status_code == 200
-    assert duplicate.json()["status"] == "duplicate"
+    assert response.json() == duplicate.json() == {"op": 12}
+    dispatched.assert_awaited_once()
 
 
 async def test_schedule_persists_declared_identity_and_reference(http_platform):

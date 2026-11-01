@@ -1,6 +1,7 @@
 """Text Runner completion of pre-approval, resource selectors and versioned prompt bindings."""
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,6 +10,7 @@ from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.capabilities.api import PreparedAgentResources
 from opsmesh.modules.runtime.api import GuardrailDecision, PromptTemplateDefinition
 from opsmesh.modules.runtime.internal.backends.openai_agents.backend import OpenAIAgentsBackend
+from opsmesh.modules.runtime.internal.backends.openai_agents.execution_state import execution_state
 from opsmesh.modules.runtime.internal.backends.openai_agents.models import resolve_profile_model
 from opsmesh.modules.runtime.internal.extensions import RuntimeExtensionRegistry
 from tests.runtime.test_openai_backend import ScriptedModel, call, context, message
@@ -97,7 +99,7 @@ async def test_dynamic_mcp_selector_and_stop_alias_resolve_to_authorized_name():
         return PreparedAgentResources(tools=(binding,))
 
     ctx = context()
-    ctx.services["prepare_agent_resources"] = prepare
+    ctx.services.prepare_agent_resources = prepare
     spec = AgentSpecification(
         id="a",
         name="A",
@@ -173,8 +175,8 @@ async def test_versioned_prompt_registration_defaults_and_checkpoint_identity():
 async def test_chat_api_rejects_unsupported_configuration_before_secret_resolution(settings, extra):
     ctx = context()
     accessed = []
-    ctx.services["resolve_secret"] = lambda ref: accessed.append(ref)
-    ctx.services["model_profile"] = {
+    ctx.services.resolve_secret = AsyncMock(wraps=lambda ref: accessed.append(ref))
+    execution_state(ctx).model_profile = {
         "id": "chat",
         "revision": 1,
         "api": "chat_completions",
@@ -192,7 +194,7 @@ async def test_chat_api_rejects_unsupported_configuration_before_secret_resoluti
 @pytest.mark.asyncio
 async def test_model_declared_setting_policy_prevents_unsupported_temperature():
     ctx = context()
-    ctx.services["model_profile"] = {
+    execution_state(ctx).model_profile = {
         "id": "reasoner",
         "revision": 1,
         "api": "responses",
@@ -244,7 +246,7 @@ async def test_mcp_config_strict_names_dynamic_filter_and_safe_error_formatter()
         )
 
     ctx = context()
-    ctx.services["prepare_agent_resources"] = prepare
+    ctx.services.prepare_agent_resources = prepare
     ctx.invoke_tool = fail
     spec = AgentSpecification(
         id="a",
@@ -286,7 +288,7 @@ async def test_mcp_error_message_policy_cannot_swallow_authorization_denial():
         raise OpsMeshError("AUTHORIZATION_DENIED", "Permission revoked")
 
     ctx = context()
-    ctx.services["prepare_agent_resources"] = prepare
+    ctx.services.prepare_agent_resources = prepare
     ctx.invoke_tool = deny
     spec = AgentSpecification(
         id="a",
@@ -320,7 +322,7 @@ async def test_hosted_mcp_tool_choice_names_an_explicitly_allowed_server_tool():
     )
     model = ScriptedModel([[message("done")]])
     ctx = context()
-    ctx.services["authorize_hosted_tool"] = lambda binding: None
+    ctx.services.authorize_hosted_tool = AsyncMock(wraps=lambda binding: None)
     await OpenAIAgentsBackend(RuntimeExtensionRegistry(), model_resolver=lambda *_: model).run(
         spec, "go", ctx
     )

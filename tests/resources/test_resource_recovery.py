@@ -105,7 +105,7 @@ async def source_snapshot(management):
     return await management.snapshot("source", actor_id="alice")
 
 
-async def test_restore_storage_failure_retries_same_operation_and_legacy_reservation(
+async def test_restore_retries_same_operation_and_rejects_untyped_reservation(
     resources, monkeypatch
 ):
     _database, workspaces, owners, management, _memory = resources
@@ -137,7 +137,10 @@ async def test_restore_storage_failure_retries_same_operation_and_legacy_reserva
     assert (await workspaces.stat(restored.id, "document.txt")).read_only
     assert await management.restore(snapshot.id, "destination", actor_id="alice") == restored
     await owners.create("legacy", {"owner_id": "alice"})
-    assert (await management.restore(snapshot.id, "legacy", actor_id="alice")).id == "legacy"
+    with pytest.raises(OpsMeshError) as reserved:
+        await management.restore(snapshot.id, "legacy", actor_id="alice")
+    assert reserved.value.code == "CONFLICT"
+    assert (await owners.get("legacy")).data == {"owner_id": "alice"}
 
 
 async def test_pending_restore_pins_snapshot_and_completion_releases_reference(
@@ -145,7 +148,10 @@ async def test_pending_restore_pins_snapshot_and_completion_releases_reference(
 ):
     database, workspaces, _owners, management, _memory = resources
     references = PlatformResourceReferences(
-        SimpleNamespace(database=database), agent_records=lambda: _owners.list()
+        accounts=SimpleNamespace(),
+        agents=SimpleNamespace(),
+        runtime=SimpleNamespace(),
+        database=database,
     )
     management._snapshot_references = references.snapshots
     snapshot = await source_snapshot(management)

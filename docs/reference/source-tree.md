@@ -1,6 +1,6 @@
 # opsmesh 实际源码与工程文件树
 
-当前 366 个Python源码文件。由`scripts/generate_source_tree.py`生成。排除缓存、构建产物和没有文件的目录。不把预留名称当作已实现功能。
+当前 404 个Python源码文件。由`scripts/generate_source_tree.py`生成。排除缓存、构建产物和没有文件的目录。不把预留名称当作已实现功能。
 
 ```text
 opsmesh/
@@ -61,6 +61,7 @@ opsmesh/
 │   │   ├── memory.md
 │   │   ├── overview.md
 │   │   ├── plugins.md
+│   │   ├── qq-assistant.md
 │   │   ├── resource-governance.md
 │   │   ├── sdk-and-resources.md
 │   │   ├── sdk-coverage.md
@@ -70,7 +71,14 @@ opsmesh/
 │   │   └── source-tree.md
 │   ├── releases/
 │   │   ├── v0.3.0.md
-│   │   └── v0.3.1.md
+│   │   ├── v0.3.1.md
+│   │   └── v0.3.2.md
+│   ├── reviews/
+│   │   ├── 2026-11-01-architecture-refactor.md
+│   │   ├── 2026-11-01-inbox-cleanup.md
+│   │   ├── 2026-11-01-platform-follow-up.md
+│   │   ├── 2026-11-01-python-application-api.md
+│   │   └── 2026-11-01-source-review.md
 │   ├── development-naming.md
 │   ├── development.md
 │   ├── implementation-report.md
@@ -89,9 +97,30 @@ opsmesh/
 │   │   │   └── __init__.py
 │   │   ├── demo.py
 │   │   └── README.md
+│   ├── qq_community/
+│   │   ├── skills/
+│   │   │   └── gentle-sister/
+│   │   │       ├── agents/
+│   │   │       │   └── openai.yaml
+│   │   │       ├── references/
+│   │   │       │   ├── examples.md
+│   │   │       │   ├── golden_quotes.json
+│   │   │       │   ├── persona.md
+│   │   │       │   └── thinking_framework.md
+│   │   │       ├── metadata.json
+│   │   │       ├── README.md
+│   │   │       ├── SKILL.md
+│   │   │       └── UPSTREAM.md
+│   │   ├── tools/
+│   │   │   ├── __init__.py
+│   │   │   └── jev.py
+│   │   ├── AGENTS.md
+│   │   ├── main.py
+│   │   └── README.md
 │   └── README.md
 ├── migrations/
 │   ├── 0001-initial.md
+│   ├── 0002-runtime-projections.md
 │   └── README.md
 ├── scripts/
 │   ├── build_linux_release.py
@@ -103,22 +132,47 @@ opsmesh/
 ├── src/
 │   └── opsmesh/
 │       ├── application/
+│       │   ├── conversations/
+│       │   │   ├── __init__.py
+│       │   │   ├── activity.py
+│       │   │   ├── chat.py
+│       │   │   ├── configuration.py
+│       │   │   ├── contracts.py
+│       │   │   ├── coordinator.py
+│       │   │   ├── gateway.py
+│       │   │   ├── media.py
+│       │   │   ├── moderation.py
+│       │   │   ├── operations.py
+│       │   │   ├── README.md
+│       │   │   ├── reconfiguration.py
+│       │   │   ├── service.py
+│       │   │   ├── transcript.py
+│       │   │   └── validation.py
 │       │   ├── __init__.py
 │       │   ├── agent_bridge.py
 │       │   ├── agent_context.py
 │       │   ├── agent_validation.py
+│       │   ├── approval_notifications.py
 │       │   ├── authorization.py
 │       │   ├── coordinator.py
+│       │   ├── deployment.py
 │       │   ├── memory_bridge.py
+│       │   ├── memory_jobs.py
 │       │   ├── memory_tools.py
+│       │   ├── outbox_delivery.py
 │       │   ├── ports.py
+│       │   ├── publication.py
 │       │   ├── resource_references.py
+│       │   ├── run_finalization.py
 │       │   ├── run_resources.py
 │       │   ├── run_usage.py
+│       │   ├── run_workers.py
+│       │   ├── runtime_events.py
 │       │   ├── sandbox_bridge.py
 │       │   ├── schedule_bridge.py
 │       │   ├── trigger_bridge.py
-│       │   └── use_cases.py
+│       │   ├── use_cases.py
+│       │   └── waiting.py
 │       ├── bootstrap/
 │       │   ├── __init__.py
 │       │   ├── application.py
@@ -131,8 +185,10 @@ opsmesh/
 │       ├── entrypoints/
 │       │   ├── cli/
 │       │   │   ├── __init__.py
+│       │   │   ├── applications.py
 │       │   │   ├── main.py
-│       │   │   └── maintenance.py
+│       │   │   ├── maintenance.py
+│       │   │   └── updates.py
 │       │   ├── http/
 │       │   │   ├── routes/
 │       │   │   │   ├── __init__.py
@@ -148,16 +204,19 @@ opsmesh/
 │       │   │   │   ├── models.py
 │       │   │   │   ├── notifications.py
 │       │   │   │   ├── operations.py
+│       │   │   │   ├── personal_models.py
 │       │   │   │   ├── resource_sources.py
 │       │   │   │   ├── runs.py
 │       │   │   │   ├── scheduler.py
 │       │   │   │   ├── sessions.py
 │       │   │   │   ├── triggers.py
+│       │   │   │   ├── updates.py
 │       │   │   │   ├── usage.py
 │       │   │   │   └── workspaces.py
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
 │       │   │   ├── security.py
+│       │   │   ├── server.py
 │       │   │   ├── worker_diagnostics.py
 │       │   │   └── workspace_sources.py
 │       │   ├── __init__.py
@@ -181,6 +240,7 @@ opsmesh/
 │       │   │   ├── hosted.py
 │       │   │   ├── model_settings.py
 │       │   │   ├── native_tools.py
+│       │   │   ├── resources.py
 │       │   │   ├── specification.py
 │       │   │   └── state.py
 │       │   ├── dependencies/
@@ -231,16 +291,6 @@ opsmesh/
 │       │   │   │   ├── message.py
 │       │   │   │   ├── README.md
 │       │   │   │   └── stream.py
-│       │   │   ├── onebot/
-│       │   │   │   ├── __init__.py
-│       │   │   │   ├── adapter.py
-│       │   │   │   ├── bot.py
-│       │   │   │   ├── configuration.py
-│       │   │   │   ├── event.py
-│       │   │   │   ├── message.py
-│       │   │   │   ├── README.md
-│       │   │   │   ├── response.py
-│       │   │   │   └── websocket.py
 │       │   │   ├── qq/
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── adapter.py
@@ -249,18 +299,23 @@ opsmesh/
 │       │   │   │   ├── client.py
 │       │   │   │   ├── configuration.py
 │       │   │   │   ├── event.py
+│       │   │   │   ├── gateway.py
+│       │   │   │   ├── media.py
 │       │   │   │   ├── message.py
-│       │   │   │   └── README.md
+│       │   │   │   ├── README.md
+│       │   │   │   └── transport.py
 │       │   │   └── __init__.py
 │       │   ├── coordination/
 │       │   │   ├── __init__.py
 │       │   │   ├── admission.py
+│       │   │   ├── process_lock.py
 │       │   │   └── redis.py
 │       │   ├── database/
 │       │   │   ├── __init__.py
 │       │   │   ├── availability.py
 │       │   │   ├── connection.py
 │       │   │   ├── migrations.py
+│       │   │   ├── projections.py
 │       │   │   ├── records.py
 │       │   │   └── transactions.py
 │       │   ├── messaging/
@@ -296,7 +351,9 @@ opsmesh/
 │       │   ├── __init__.py
 │       │   ├── backup.py
 │       │   ├── database.py
-│       │   └── files.py
+│       │   ├── files.py
+│       │   ├── project_state.py
+│       │   └── updates.py
 │       ├── modules/
 │       │   ├── accounts/
 │       │   │   ├── internal/
@@ -306,7 +363,6 @@ opsmesh/
 │       │   │   │   ├── management_catalog.py
 │       │   │   │   ├── management_credentials.py
 │       │   │   │   ├── management_policy.py
-│       │   │   │   ├── permission_actions.py
 │       │   │   │   ├── service.py
 │       │   │   │   └── transactions.py
 │       │   │   ├── __init__.py
@@ -331,9 +387,17 @@ opsmesh/
 │       │   │   ├── operations.py
 │       │   │   └── README.md
 │       │   ├── bots/
-│       │   │   ├── internal/
+│       │   │   ├── conversations/
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── account_migration.py
+│       │   │   │   └── api.py
+│       │   │   ├── internal/
+│       │   │   │   ├── conversations/
+│       │   │   │   │   ├── __init__.py
+│       │   │   │   │   ├── batches.py
+│       │   │   │   │   ├── inbox.py
+│       │   │   │   │   ├── state.py
+│       │   │   │   │   └── storage.py
+│       │   │   │   ├── __init__.py
 │       │   │   │   ├── configuration_store.py
 │       │   │   │   ├── delivery.py
 │       │   │   │   ├── delivery_outcomes.py
@@ -348,6 +412,7 @@ opsmesh/
 │       │   ├── capabilities/
 │       │   │   ├── internal/
 │       │   │   │   ├── __init__.py
+│       │   │   │   ├── availability_management.py
 │       │   │   │   ├── catalog.py
 │       │   │   │   ├── code_tools.py
 │       │   │   │   ├── embeddings.py
@@ -405,12 +470,13 @@ opsmesh/
 │       │   ├── models/
 │       │   │   ├── internal/
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── service.py
-│       │   │   │   └── validation.py
+│       │   │   │   └── service.py
 │       │   │   ├── __init__.py
 │       │   │   ├── api.py
+│       │   │   ├── credentials.py
 │       │   │   ├── management.py
-│       │   │   └── README.md
+│       │   │   ├── README.md
+│       │   │   └── validation.py
 │       │   ├── notifications/
 │       │   │   ├── internal/
 │       │   │   │   ├── __init__.py
@@ -437,8 +503,10 @@ opsmesh/
 │       │   │   │   │   │   ├── config.py
 │       │   │   │   │   │   ├── delegation.py
 │       │   │   │   │   │   ├── errors.py
+│       │   │   │   │   │   ├── execution_state.py
 │       │   │   │   │   │   ├── extension_mapping.py
 │       │   │   │   │   │   ├── guardrails.py
+│       │   │   │   │   │   ├── history.py
 │       │   │   │   │   │   ├── hooks.py
 │       │   │   │   │   │   ├── hosted_mcp.py
 │       │   │   │   │   │   ├── hosted_tools.py
@@ -462,15 +530,18 @@ opsmesh/
 │       │   │   │   │   │   └── usage.py
 │       │   │   │   │   └── __init__.py
 │       │   │   │   ├── __init__.py
+│       │   │   │   ├── approvals.py
 │       │   │   │   ├── artifacts.py
 │       │   │   │   ├── cleanup.py
 │       │   │   │   ├── extensions.py
 │       │   │   │   ├── history.py
 │       │   │   │   ├── management_base.py
 │       │   │   │   ├── metrics.py
+│       │   │   │   ├── records.py
 │       │   │   │   ├── service.py
 │       │   │   │   ├── session_recovery.py
-│       │   │   │   └── validation.py
+│       │   │   │   ├── validation.py
+│       │   │   │   └── workers.py
 │       │   │   ├── __init__.py
 │       │   │   ├── api.py
 │       │   │   ├── approval_contracts.py
@@ -481,6 +552,7 @@ opsmesh/
 │       │   │   ├── openai_extensions.py
 │       │   │   ├── overrides.py
 │       │   │   ├── prompts.py
+│       │   │   ├── queries.py
 │       │   │   └── README.md
 │       │   ├── scheduling/
 │       │   │   ├── internal/
@@ -543,11 +615,6 @@ opsmesh/
 │       │   │   └── README.md
 │       │   ├── __init__.py
 │       │   └── resource_contracts.py
-│       ├── plugins/
-│       │   ├── scheduler/
-│       │   │   ├── __init__.py
-│       │   │   └── persistent.py
-│       │   └── __init__.py
 │       ├── __init__.py
 │       ├── __main__.py
 │       ├── _version.py
@@ -559,20 +626,39 @@ opsmesh/
 │   │   └── test_permission_actions.py
 │   ├── adapters/
 │   │   ├── test_dingtalk.py
-│   │   └── test_qq.py
+│   │   ├── test_qq.py
+│   │   ├── test_qq_gateway.py
+│   │   └── test_qq_media.py
+│   ├── application/
+│   │   ├── test_conversation_activity.py
+│   │   ├── test_conversation_agent_validation.py
+│   │   ├── test_conversation_coordinator.py
+│   │   ├── test_conversation_media.py
+│   │   ├── test_conversation_operations.py
+│   │   ├── test_conversation_reconfiguration.py
+│   │   ├── test_conversation_service.py
+│   │   ├── test_conversation_transcript.py
+│   │   ├── test_conversation_workers.py
+│   │   └── test_run_waiting.py
 │   ├── bots/
+│   │   ├── fixtures.py
 │   │   ├── helpers.py
 │   │   ├── test_adapter_registry.py
 │   │   ├── test_authorization_boundaries.py
 │   │   ├── test_bindings.py
+│   │   ├── test_conversation_inbox.py
+│   │   ├── test_conversation_queue_recovery.py
 │   │   ├── test_delivery_outcomes.py
 │   │   ├── test_management.py
-│   │   ├── test_onebot.py
-│   │   └── test_onebot_network.py
+│   │   └── test_unlinked_group_identity.py
 │   ├── deployment/
 │   │   ├── conftest.py
 │   │   ├── test_installation.py
 │   │   └── test_linux_release.py
+│   ├── examples/
+│   │   ├── conftest.py
+│   │   ├── test_qq_community_application.py
+│   │   └── test_qq_community_moderation.py
 │   ├── framework/
 │   │   ├── conftest.py
 │   │   ├── test_dependencies.py
@@ -595,8 +681,10 @@ opsmesh/
 │   │   ├── test_hosted_mcp_security.py
 │   │   ├── test_lifecycle.py
 │   │   ├── test_management_boundaries.py
+│   │   ├── test_model_profile_validation.py
 │   │   ├── test_notifications_operations.py
 │   │   ├── test_official_bot_adapters.py
+│   │   ├── test_personal_models.py
 │   │   ├── test_resource_extensions.py
 │   │   ├── test_resource_management.py
 │   │   ├── test_run_overrides.py
@@ -608,6 +696,7 @@ opsmesh/
 │   │   ├── test_admission.py
 │   │   ├── test_blob_storage.py
 │   │   ├── test_cache.py
+│   │   ├── test_conversation_inbox_postgresql.py
 │   │   ├── test_database.py
 │   │   ├── test_metric_store.py
 │   │   ├── test_notification_postgresql.py
@@ -616,6 +705,8 @@ opsmesh/
 │   │   ├── test_postgresql.py
 │   │   ├── test_postgresql_bot_authorization.py
 │   │   ├── test_postgresql_service.py
+│   │   ├── test_project_state_backup.py
+│   │   ├── test_release_updates.py
 │   │   ├── test_s3_integration.py
 │   │   ├── test_s3_storage.py
 │   │   └── test_telemetry_export.py
@@ -631,9 +722,11 @@ opsmesh/
 │   │   ├── test_live_memory_resume.py
 │   │   ├── test_live_model.py
 │   │   ├── test_memory_bridge.py
+│   │   ├── test_python_application_api.py
 │   │   ├── test_scheduling.py
 │   │   └── test_services.py
 │   ├── resources/
+│   │   ├── test_application_deployment.py
 │   │   ├── test_content_gc.py
 │   │   ├── test_docker_integration.py
 │   │   ├── test_git_skills.py
@@ -645,6 +738,7 @@ opsmesh/
 │   │   ├── test_resources.py
 │   │   ├── test_retrieval_mcp.py
 │   │   ├── test_script_tools.py
+│   │   ├── test_skill_resource_paths.py
 │   │   ├── test_workspace_concurrency.py
 │   │   └── test_workspace_management.py
 │   ├── runtime/
@@ -656,6 +750,7 @@ opsmesh/
 │   │   ├── test_extensions.py
 │   │   ├── test_hosted_mcp.py
 │   │   ├── test_hosted_tools.py
+│   │   ├── test_indexed_records.py
 │   │   ├── test_isolated_sandbox.py
 │   │   ├── test_kubernetes_integration.py
 │   │   ├── test_kubernetes_workers.py
@@ -691,6 +786,7 @@ opsmesh/
 │   ├── usage/
 │   │   ├── test_resource_billing.py
 │   │   └── test_usage.py
+│   ├── conftest.py
 │   ├── test_distribution.py
 │   └── test_import_boundaries.py
 ├── web/

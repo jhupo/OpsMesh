@@ -56,6 +56,16 @@ class RunManagement(ApprovalManagement):
         await self.authorize(actor_id, run, "run:read")
         return run
 
+    async def find_submission(self, idempotency_key: str, *, actor_id: str) -> AgentRunView | None:
+        """Resolve this actor's submission without scanning unrelated session history."""
+        actor = await self.accounts.get_principal(actor_id)
+        if not actor.active:
+            raise OpsMeshError("FORBIDDEN", "User is disabled")
+        run = await self.runtime.find_submission(actor_id, idempotency_key)
+        if run is not None:
+            await self.authorize(actor_id, run, "run:read")
+        return run
+
     async def list_runs(
         self,
         *,
@@ -63,16 +73,20 @@ class RunManagement(ApprovalManagement):
         principal_id: str | None = None,
         session_id: str | None = None,
         status: RunStatus | None = None,
+        limit: int = 1000,
+        offset: int = 0,
     ) -> list[AgentRunView]:
         actor = await self.accounts.get_principal(actor_id)
         if not actor.active:
             raise OpsMeshError("FORBIDDEN", "User is disabled")
         result = []
-        for run in await self.runtime.list_runs(principal_id):
-            if (session_id is not None and run.session_id != session_id) or (
-                status is not None and run.status != status
-            ):
-                continue
+        for run in await self.runtime.list_runs(
+            principal_id,
+            session_id=session_id,
+            statuses=(status,) if status else (),
+            limit=limit,
+            offset=offset,
+        ):
             try:
                 await self.authorize(actor_id, run, "run:read")
             except OpsMeshError as error:

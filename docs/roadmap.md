@@ -4,6 +4,10 @@
 
 ## 本轮平台补齐
 
+架构整改已完成七组已确认问题：Run/事件流索引查询、审核记忆策略、显式应用依赖、中立执行资源、运行时和后台所有权、能力管理写入口。全量回归和临时 PostgreSQL 验收通过，数据库升级必须显式迁移；见[架构重构记录](reviews/2026-11-01-architecture-refactor.md)。本轮未部署远端。
+
+代码应用使用 `opsmesh.create_application`、`register_tool`、`define/publish` 与 `add_conversation`。QQ 示例已删除专用 BotProject、环境变量模板及 workspace 包装目录；网关启动时读取平台 BotRoute，凭据支持创建应用时传入。见[应用入口重构](reviews/2026-11-01-python-application-api.md)。
+
 后续审查 R01—R08 已实现修复，包含 Bot 权限委托、终态会话恢复、定时重放、通知并发、记忆失效、workspace 恢复和历史补价；行为与验证见[审查修复记录](review-fixes.md)。
 
 原审查F01—F05与平台管理闭环已经实现：受保护HTTP/DI、完整持久计划、事件/Webhook触发、通知收件箱、审批策略、本地账号/Bot/资源治理、费用版本查询及Outbox/插件运维。接口、测试及一致性边界见[平台补齐记录](platform-completion.md)。通用工作流经确认不建设。
@@ -19,7 +23,7 @@
 | 资源与工具 | 授权网关、Git固定commit Skill、eager/lazy装配、隔离脚本/wheel、MCP stdio/HTTP/SSE、向量/词法混合检索与embedding插件 | [资源测试](../tests/resources/)；默认embedding为确定性词/字符hash，不是预训练语义模型；生产可注册embedding |
 | 环境与工作区 | 受控命令执行、Run子进程/Docker配置、原生sandbox、工作区快照/session引用、独立子Agent环境/产物、清理、blob GC | [Linux子沙箱](../tests/runtime/test_isolated_sandbox.py)、[来源](../tests/runtime/test_sandbox_sources.py)、[GC](../tests/resources/test_content_gc.py)；Linux真实Docker与远程mTLS通过 |
 | 文件记忆 | 平台两阶段生成、native Memory授权/计量/捕获前flush、实时更新/CAS/幂等、审批后回调恢复、namespace retention | [原生Memory](../tests/runtime/test_sandbox_memory.py)、[记忆恢复](../tests/platform/test_live_memory_resume.py)、[生命周期](../tests/resources/test_memory_lifecycle.py)；Linux实际文件闭环通过 |
-| 机器人 | 中立适配器注册/生命周期；钉钉Stream+OpenAPI；QQ官方签名Webhook+OpenAPI；独立OneBot兼容；平台身份/Agent路由和投递幂等 | [适配器设计与范围](design/bot-adapters.md)、[协议测试](../tests/adapters/)；没有向真实外部机器人账号发消息 |
+| 机器人 | 中立适配器注册/生命周期；钉钉Stream+OpenAPI；QQ官方签名Webhook+OpenAPI；平台身份/Agent路由和投递幂等 | [适配器设计与范围](design/bot-adapters.md)、[协议测试](../tests/adapters/)；没有向真实外部机器人账号发消息 |
 | 持久化与可靠性 | SQL迁移/漂移拒绝、CAS、事务Outbox、死信/重投、Redis限流/租约 | [PostgreSQL](../tests/infrastructure/test_postgresql.py)17.11真实临时实例8项通过；Redis5.0.14.1已实测；集群故障待验收 |
 | 观测与费用 | JSON日志、有限标签指标/时长、W3C/OTLP、请求/资源用量、版本价格/FX、补价、预算、账单对账 | [OTLP](../tests/infrastructure/test_telemetry_export.py)、[账单](../tests/usage/test_resource_billing.py)；loopback真实协议，不等于供应商账单已验收 |
 | 工程与部署 | src布局、MIT/贡献/安全文档、uv锁、CI、CLI/HTTP/SSE、独立Linux安装包、默认本地/systemd、可选Compose/Kubernetes | [Linux安装](../deploy/linux.md)、[部署](../deploy/README.md)；v0.3.1增加Linux安装包，历史v0.3.0不包含此制品；构建脚本生成wheel/哈希依赖清单/部署文件，实际验证以制品CI为准；未发布PyPI或托管生产服务 |

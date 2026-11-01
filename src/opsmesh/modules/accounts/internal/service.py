@@ -16,8 +16,6 @@ from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
 from opsmesh.modules.accounts.api import AccessRole, AccessToken, DepartmentProfile, UserPrincipal
 
-from .permission_actions import matches_action
-
 _OWN_ACTIONS = frozenset(
     {
         "session:read",
@@ -217,7 +215,7 @@ class LocalAccountService:
                 continue
             for grant in AccessRole.model_validate(row.data).grants:
                 if (
-                    matches_action(action, grant.action)
+                    fnmatchcase(action, grant.action)
                     and fnmatchcase(resource, grant.resource)
                     and (grant.department is None or grant.department in principal.departments)
                 ):

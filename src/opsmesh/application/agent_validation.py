@@ -2,22 +2,54 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from opsmesh.framework.agents import AgentSpecification
 from opsmesh.framework.errors import OpsMeshError
+from opsmesh.modules.agents.api import AgentDefinitionCatalog
+from opsmesh.modules.capabilities.api import (
+    CapabilityCatalog,
+    CodeToolRegistry,
+    MCPServerCatalog,
+    ScriptTools,
+    SkillCatalog,
+)
+from opsmesh.modules.models.api import ModelProfiles
+from opsmesh.modules.models.credentials import ModelCredentialManagement
+from opsmesh.modules.runtime.api import RuntimeExtensions
 
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
+from .authorization import PlatformAuthorization
+from .ports import ApplicationSettings
 
 
 class AgentPublicationValidator:
-    def __init__(self, services: ApplicationServices) -> None:
-        self.services = services
+    def __init__(
+        self,
+        *,
+        agents: AgentDefinitionCatalog,
+        capabilities: CapabilityCatalog,
+        code_tools: CodeToolRegistry,
+        extensions: RuntimeExtensions,
+        mcp_catalog: MCPServerCatalog,
+        models: ModelProfiles,
+        authorization: PlatformAuthorization,
+        model_credentials: ModelCredentialManagement,
+        scripts: ScriptTools,
+        settings: ApplicationSettings,
+        skills: SkillCatalog,
+    ) -> None:
+        self.agents = agents
+        self.capabilities = capabilities
+        self.code_tools = code_tools
+        self.extensions = extensions
+        self.mcp_catalog = mcp_catalog
+        self.models = models
+        self.authorization = authorization
+        self.model_credentials = model_credentials
+        self.scripts = scripts
+        self.settings = settings
+        self.skills = skills
 
     async def validate(self, specification: AgentSpecification) -> None:
-        services = self.services
-        services.extensions.backend(specification.backend)
+        self.extensions.backend(specification.backend)
         if specification.backend == "openai_agents" and not specification.model_profile_ref:
             raise OpsMeshError(
                 "CONFIG_INVALID", "Published OpenAI agents need a model profile revision"
@@ -42,21 +74,21 @@ class AgentPublicationValidator:
                 required.add("tools")
             if specification.output_schema or specification.output_type_ref:
                 required.add("structured_output")
-            await services.models.require_features(specification.model_profile_ref, required)
+            await self.models.require_features(specification.model_profile_ref, required)
         for binding in specification.tools:
-            tool = await services.capabilities.get_tool(binding.tool_ref or binding.name)
+            tool = await self.capabilities.get_tool(binding.tool_ref or binding.name)
             if tool.code_ref.startswith("script:"):
-                await services.scripts.get(tool.code_ref.removeprefix("script:"))
+                await self.scripts.get(tool.code_ref.removeprefix("script:"))
             else:
-                services.code_tools.resolve(tool.code_ref)
+                self.code_tools.resolve(tool.code_ref)
             if binding.input_schema != tool.input_schema:
                 raise OpsMeshError(
                     "CONFIG_INVALID", "Bound tool schema differs from its catalog version"
                 )
         for reference in specification.skill_refs:
-            await services.skills.get(reference)
+            await self.skills.get(reference)
         for reference in specification.mcp_refs:
-            await services.mcp_catalog.get(reference)
+            await self.mcp_catalog.get(reference)
         for reference in [item.agent_ref for item in specification.handoffs] + [
             item.agent_ref for item in specification.agent_tools
         ]:
@@ -64,23 +96,23 @@ class AgentPublicationValidator:
                 raise OpsMeshError(
                     "CONFIG_INVALID", "Delegated agents require a published revision"
                 )
-            await services.agents.get_revision(reference)
+            await self.agents.get_revision(reference)
         for guard in specification.guardrails:
-            services.extensions.guardrail(guard.ref)
+            self.extensions.guardrail(guard.ref)
         for hook in specification.hooks:
-            services.extensions.hook(hook.ref)
+            self.extensions.hook(hook.ref)
         if specification.instruction_ref:
-            services.extensions.instruction(specification.instruction_ref)
+            self.extensions.instruction(specification.instruction_ref)
         self._validate_extensions(specification)
         if (
             specification.sandbox
             and specification.sandbox.provider == "local"
-            and not services.settings.allow_trusted_local
+            and not self.settings.allow_trusted_local
         ):
             raise OpsMeshError("FORBIDDEN", "Trusted local execution is disabled")
 
     def _validate_extensions(self, spec: AgentSpecification) -> None:
-        extensions = self.services.extensions
+        extensions = self.extensions
         if spec.prompt_ref:
             extensions.prompt(spec.prompt_ref)
         if spec.output_type_ref:
@@ -118,3 +150,23 @@ class AgentPublicationValidator:
                 extensions.output_type(tool.input_type_ref)
             if tool.input_builder_ref:
                 extensions.agent_input(tool.input_builder_ref)
+
+    async def prepare(self, specification: AgentSpecification, owner_id: str) -> AgentSpecification:
+        if specification.model_profile_ref is None and specification.backend == "openai_agents":
+            reference = await self.models.default_reference(owner_id)
+            if reference is None:
+                raise OpsMeshError(
+                    "CONFIG_INVALID", "Configure a default model or bind one explicitly"
+                )
+            await self.authorization.check(owner_id, "model:use", reference)
+            specification = specification.model_copy(update={"model_profile_ref": reference})
+        if specification.model_profile_ref:
+            profile = await self.models.get(specification.model_profile_ref)
+            if profile.owner_id:
+                await self.authorization.check(
+                    owner_id, "model:use", specification.model_profile_ref
+                )
+                await self.model_credentials.validate_reference(
+                    profile.secret_ref, actor_id=owner_id
+                )
+        return specification

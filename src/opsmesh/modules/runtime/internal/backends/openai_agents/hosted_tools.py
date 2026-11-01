@@ -30,6 +30,7 @@ from opsmesh.framework.agents import (
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.modules.runtime.api import RuntimeExtensions
 
+from .execution_state import execution_state
 from .hosted_mcp import build_hosted_mcp
 
 
@@ -95,7 +96,7 @@ async def build_hosted_tools(
 ) -> list[Any]:
     if not spec.hosted_tools:
         return []
-    authorize = context.services.get("authorize_hosted_tool")
+    authorize = context.services.authorize_hosted_tool
     if authorize is None:
         raise OpsMeshError(
             "DEPENDENCY_UNAVAILABLE",
@@ -112,7 +113,7 @@ async def build_hosted_tools(
             result.append(await build_hosted_mcp(binding, context, extensions))
         else:
             result.append(map_hosted_tool(binding))
-    emit = context.services.get("backend_event_sink")
+    emit = execution_state(context).backend_event_sink
     if emit is not None:
         await emit(
             AgentExecutionEvent(

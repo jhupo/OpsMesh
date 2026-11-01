@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal, Protocol, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from opsmesh.framework.adapters import (
     BotAdapterConnectionStatus,
@@ -31,6 +31,40 @@ BotPrincipalResolver = Callable[[str], Awaitable[UserPrincipal]]
 class BotAccount(BotConnectionConfiguration):
     """A persisted platform account using one independently registered bot adapter."""
 
+    unlinked_principal_id: str | None = Field(default=None, min_length=1, max_length=256)
+    unlinked_channels: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_unlinked_policy(self) -> Self:
+        """Unknown users may share one delegated identity in explicitly listed groups."""
+        if bool(self.unlinked_principal_id) != bool(self.unlinked_channels):
+            raise ValueError(
+                "An unlinked identity and its allowed groups must be configured together"
+            )
+        if self.unlinked_principal_id is not None and any(
+            character.isspace() or not character.isprintable()
+            for character in self.unlinked_principal_id
+        ):
+            raise ValueError(
+                "Unlinked principal ID must not contain whitespace or control characters"
+            )
+        if len(set(self.unlinked_channels)) != len(self.unlinked_channels):
+            raise ValueError("Unlinked group channels must be unique")
+        for channel in self.unlinked_channels:
+            if (
+                not channel.startswith("group:")
+                or len(channel) <= len("group:")
+                or len(channel) > 256
+                or any(
+                    character in "*?[]" or character.isspace() or not character.isprintable()
+                    for character in channel
+                )
+            ):
+                raise ValueError(
+                    "Unlinked channels must be exact group:<id> values without wildcards"
+                )
+        return self
+
 
 class BotIdentity(OpsMeshContract):
     bot_id: str = Field(min_length=1, max_length=100)
@@ -44,11 +78,16 @@ class BotConnectionStatus(BotAdapterConnectionStatus):
 
 
 class BotRoute(OpsMeshContract):
-    """One exact conversation target bound to an immutable published Agent revision."""
+    """An exact conversation bound to a published Agent.
+
+    Managed routes require an event handler to accept and stop propagation; they
+    never fall back to direct runtime submission when that handler is absent.
+    """
 
     bot_id: str = Field(min_length=1, max_length=100)
     channel_id: str = Field(min_length=1, max_length=256)
     agent_revision: str = Field(min_length=1, max_length=256)
+    dispatch_mode: Literal["direct", "managed"] = "direct"
 
     @field_validator("channel_id")
     @classmethod
@@ -135,6 +174,7 @@ class BotAccounts(Protocol):
         agent_revision: str,
         *,
         actor_id: str,
+        dispatch_mode: Literal["direct", "managed"] = "direct",
     ) -> BotRoute: ...
     async def get_route(self, bot_id: str, channel_id: str, *, actor_id: str) -> BotRoute: ...
     async def list_routes(self, bot_id: str, *, actor_id: str) -> list[BotRoute]: ...

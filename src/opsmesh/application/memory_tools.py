@@ -1,26 +1,37 @@
 """Bind opt-in live memory tools to one principal, namespace and run attempt."""
 
 import hashlib
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opsmesh.framework.agents import ToolBinding
 from opsmesh.framework.errors import OpsMeshError
-from opsmesh.modules.capabilities.api import PreparedAgentResources, ToolCallback, ToolDefinition
-from opsmesh.modules.memory.api import MemoryCandidate
+from opsmesh.modules.capabilities.api import (
+    CapabilityCatalog,
+    CodeToolRegistry,
+    PreparedAgentResources,
+    ToolCallback,
+    ToolDefinition,
+)
+from opsmesh.modules.memory.api import MemoryCandidate, MemoryService
 from opsmesh.modules.runtime.api import AgentRunView
-
-if TYPE_CHECKING:
-    from .ports import ApplicationServices
 
 
 class MemoryResourceBindings:
-    def __init__(self, services: "ApplicationServices") -> None:
-        self.services = services
+    def __init__(
+        self,
+        *,
+        memory: MemoryService,
+        capabilities: CapabilityCatalog,
+        code_tools: CodeToolRegistry,
+    ) -> None:
+        self.memory = memory
+        self.capabilities = capabilities
+        self.code_tools = code_tools
         self._scopes: dict[tuple[str, str | None], set[str]] = {}
         self._owners: dict[str, set[tuple[str, str | None]]] = {}
 
     async def prepare(self, run: AgentRunView, namespace_id: str) -> PreparedAgentResources:
-        memory = self.services.memory
+        memory = self.memory
         namespace = await memory.get_namespace(namespace_id, principal_id=run.principal_id)
         content = await memory.read(namespace_id, principal_id=run.principal_id)
         instructions = (
@@ -98,11 +109,11 @@ class MemoryResourceBindings:
     ) -> ToolBinding:
         code_ref = f"resource:{name}:{identity}"
         try:
-            self.services.code_tools.resolve(code_ref)
+            self.code_tools.resolve(code_ref)
         except OpsMeshError as error:
             if error.code != "NOT_FOUND":
                 raise
-            self.services.code_tools.register_runtime(code_ref, callback)
+            self.code_tools.register_runtime(code_ref, callback)
         self._scopes.setdefault((run.id, run.attempt_id), set()).add(code_ref)
         self._owners.setdefault(code_ref, set()).add((run.id, run.attempt_id))
         definition = ToolDefinition(
@@ -114,7 +125,7 @@ class MemoryResourceBindings:
             side_effects=side_effects,
             allowed_principals=(run.principal_id,),
         )
-        await self.services.capabilities.register_tool(definition)
+        await self.capabilities.register_tool(definition)
         return ToolBinding(
             name=name,
             tool_ref=definition.ref,
@@ -129,4 +140,4 @@ class MemoryResourceBindings:
             if owners:
                 continue
             self._owners.pop(reference, None)
-            self.services.code_tools.unregister_runtime(reference)
+            self.code_tools.unregister_runtime(reference)

@@ -27,7 +27,7 @@ class ApplicationTestBackend:
     async def run(self, spec, input, context, **options: Any):
         assert get_run_context() is context
         output = await context.invoke_tool(spec.tools[0].tool_ref, {"value": input}, "one")
-        await context.services["observe_usage"](
+        await context.services.observe_usage(
             {"call_id": "request-1", "model": "offline", "input_tokens": 4, "output_tokens": 2}
         )
         return AgentRunCompleted(
@@ -116,10 +116,10 @@ async def test_application_run_persists_output_costs_history_and_idempotency(tmp
             )
         facts = await app.services.database.pending_events()
         for fact in facts:
-            await app.coordinator.deliver(fact)
+            await app.outbox.deliver(fact)
         count = len(await app.services.audit.query())
         for fact in facts:
-            await app.coordinator.deliver(fact)
+            await app.outbox.deliver(fact)
         assert len(await app.services.audit.query()) == count
     finally:
         await app.close()

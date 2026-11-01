@@ -23,8 +23,8 @@ class BotConnectionConfiguration(OpsMeshContract):
         for name, reference in value.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
                 raise ValueError("Credential names must be lower-case identifiers")
-            if not re.fullmatch(r"env:[A-Za-z_][A-Za-z0-9_]*", reference):
-                raise ValueError("Bot credentials require deployed environment references")
+            if not re.fullmatch(r"[a-z][a-z0-9_]*:[A-Za-z_][A-Za-z0-9_.-]*", reference):
+                raise ValueError("Bot credentials require named secret references")
         return value
 
 

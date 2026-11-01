@@ -8,6 +8,7 @@ from opsmesh.modules.audit.operations import audited_operation
 from opsmesh.modules.runtime.internal.management_base import RuntimeManagementBase
 
 from .api import AgentRunView, RunApprovalItem, RunApprovalPolicy
+from .queries import iter_runs
 
 
 class ApprovalManagement(RuntimeManagementBase):
@@ -42,9 +43,7 @@ class ApprovalManagement(RuntimeManagementBase):
         if not actor.active:
             raise OpsMeshError("FORBIDDEN", "User is disabled")
         items = []
-        for run in await self.runtime.list_runs():
-            if run.status != "waiting_approval":
-                continue
+        async for run in iter_runs(self.runtime, statuses=("waiting_approval",)):
             try:
                 await self._review_permission(run, actor_id)
             except OpsMeshError as error:

@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from agents import CodeInterpreterTool, FileSearchTool, ImageGenerationTool, WebSearchTool
 from pydantic import ValidationError
@@ -11,6 +13,7 @@ from opsmesh.framework.agents import (
     WebSearchBinding,
 )
 from opsmesh.framework.errors import OpsMeshError
+from opsmesh.modules.runtime.internal.backends.openai_agents.execution_state import execution_state
 from opsmesh.modules.runtime.internal.backends.openai_agents.hosted_tools import build_hosted_tools
 
 
@@ -35,12 +38,12 @@ async def test_hosted_tools_require_admission_and_map_actual_sdk_types():
     assert error.value.code == "DEPENDENCY_UNAVAILABLE"
     admitted = []
     events = []
-    context.services["authorize_hosted_tool"] = admitted.append
+    context.services.authorize_hosted_tool = AsyncMock(wraps=admitted.append)
 
     async def emit(event):
         events.append(event)
 
-    context.services["backend_event_sink"] = emit
+    execution_state(context).backend_event_sink = emit
     tools = await build_hosted_tools(spec, context)
     assert [type(tool) for tool in tools] == [
         WebSearchTool,

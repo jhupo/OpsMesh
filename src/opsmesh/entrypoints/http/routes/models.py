@@ -1,24 +1,40 @@
 """Versioned model profiles containing credential references only."""
 
-from urllib.parse import urlsplit
-
 from fastapi import APIRouter, Request
 from pydantic import Field
 
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.typing import OpsMeshContract
-from opsmesh.modules.models.api import ModelProfile
+from opsmesh.modules.models.api import ModelProfile, validate_model_profile
+from opsmesh.modules.models.management import DefaultModel
 from opsmesh.modules.resource_contracts import ResourceReference, VersionAvailability
 
 from ..security import (
     CurrentUser,
     authorize,
     get_application,
-    reject_secret_values,
-    validate_secret_reference,
 )
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+class DefaultModelRequest(OpsMeshContract):
+    reference: str | None
+    expected_revision: int = Field(ge=0)
+
+
+@router.get("/settings/default")
+async def default_model(request: Request, user: CurrentUser) -> DefaultModel:
+    return await get_application(request).services.model_management.default(actor_id=user.id)
+
+
+@router.put("/settings/default")
+async def set_default_model(
+    body: DefaultModelRequest, request: Request, user: CurrentUser
+) -> DefaultModel:
+    return await get_application(request).services.model_management.set_default(
+        body.reference, body.expected_revision, actor_id=user.id
+    )
 
 
 class UpdateModelRequest(OpsMeshContract):
@@ -26,27 +42,10 @@ class UpdateModelRequest(OpsMeshContract):
     expected_revision: int = Field(ge=1)
 
 
-def validate_profile(profile: ModelProfile) -> None:
-    validate_secret_reference(profile.secret_ref)
-    reject_secret_values(profile.settings)
-    if profile.base_url:
-        url = urlsplit(profile.base_url)
-        if (
-            url.scheme not in {"http", "https"}
-            or not url.hostname
-            or url.username
-            or url.password
-            or url.query
-        ):
-            raise OpsMeshError(
-                "CONFIG_INVALID", "Model endpoint must be HTTP(S) without embedded credentials"
-            )
-
-
 @router.post("", status_code=201)
 async def create_profile(body: ModelProfile, request: Request, user: CurrentUser) -> ModelProfile:
     await authorize(request, user, "model:manage", body.id)
-    validate_profile(body)
+    validate_model_profile(body)
     return await get_application(request).services.model_management.create(body, actor_id=user.id)
 
 
@@ -117,7 +116,7 @@ async def update_profile(
     await authorize(request, user, "model:manage", profile_id)
     if profile_id != body.profile.id:
         raise OpsMeshError("INVALID_REQUEST", "Model identifier cannot change")
-    validate_profile(body.profile)
+    validate_model_profile(body.profile)
     return await get_application(request).services.model_management.update(
         body.profile, body.expected_revision, actor_id=user.id
     )

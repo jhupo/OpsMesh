@@ -8,6 +8,7 @@ import pytest
 
 from opsmesh.application.sandbox_bridge import SandboxWorkspaceBridge
 from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification, SandboxConfiguration
+from opsmesh.framework.agents.resources import AgentExecutionServices
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase
 from opsmesh.modules.runtime.api import AgentRunView
@@ -30,7 +31,7 @@ async def test_native_session_resume_and_workspace_snapshot_have_distinct_identi
         workspaces,
         database,
         allow_trusted_local=True,
-        session_factory=ManagedSandboxSession,
+        session_factories={"openai_agents": ManagedSandboxSession},
     )
     await database.initialize()
     authorized = []
@@ -59,32 +60,34 @@ async def test_native_session_resume_and_workspace_snapshot_have_distinct_identi
             updated_at=datetime.now(UTC),
         )
         context = AgentExecutionContext(
-            run_id, "session", principal, invoke, services={"authorize_workspace": authorize}
+            run_id,
+            "session",
+            principal,
+            invoke,
+            services=AgentExecutionServices(authorize_workspace=authorize),
         )
-        context.services.update(await bridge.prepare(view, context))
+        context.resources = await bridge.prepare(view, context)
         return context
 
     try:
         first = await prepare("original")
-        session = first.services["openai_sandbox_session"]
+        session = first.resources.sandbox_session
         identity = session.state.session_id
         await session._exec_checked_nonzero("sh", "-c", "printf durable > artifact.txt")
-        source = await first.services["checkpoint_resources"]()
+        source = await first.resources.checkpoint_resources()
         resumed = await prepare("resumed", session_ref="original")
-        resumed_session = resumed.services["openai_sandbox_session"]
+        resumed_session = resumed.resources.sandbox_session
         assert resumed_session.state.session_id == identity
         assert await resumed_session.read_bounded("artifact.txt", max_bytes=100) == b"durable"
-        await resumed.services["checkpoint_resources"]()
+        await resumed.resources.checkpoint_resources()
         copied = await prepare("snapshot", snapshot_ref=source["workspace_snapshot_id"])
-        assert copied.services["openai_sandbox_session"].state.session_id != identity
+        assert copied.resources.sandbox_session.state.session_id != identity
         assert (
-            await copied.services["openai_sandbox_session"].read_bounded(
-                "artifact.txt", max_bytes=100
-            )
+            await copied.resources.sandbox_session.read_bounded("artifact.txt", max_bytes=100)
             == b"durable"
         )
         assert source["workspace_id"] in authorized
-        await copied.services["checkpoint_resources"]()
+        await copied.resources.checkpoint_resources()
         with pytest.raises(OpsMeshError) as forbidden:
             await prepare("foreign", principal="mallory", session_ref="original")
         assert forbidden.value.code == "AUTHORIZATION_DENIED"

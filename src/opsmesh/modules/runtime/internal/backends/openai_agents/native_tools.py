@@ -24,7 +24,7 @@ from opsmesh.modules.runtime.api import RuntimeExtensions
 
 
 async def authorize_native(context: AgentExecutionContext, binding: NativeToolBinding) -> None:
-    authorize = context.services.get("authorize_native_tool")
+    authorize = context.services.authorize_native_tool
     if authorize is None:
         raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Native tools require per-call authorization")
     value = authorize(binding)

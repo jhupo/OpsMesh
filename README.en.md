@@ -2,20 +2,20 @@
 
 An asynchronous, event-driven agent and bot platform. OpenAI Agents SDK is the first execution backend; other SDKs require explicit backend adapters and capability validation.
 
-[中文](README.md) · [v0.3.1 release notes](docs/releases/v0.3.1.md) · [Design and coverage](docs/README.md) · [HTTP API guide](docs/runtime-api.md) · [Contributing](CONTRIBUTING.md) · [MIT](LICENSE)
+[中文](README.md) · [v0.3.2 release notes](docs/releases/v0.3.2.md) · [Design and coverage](docs/README.md) · [HTTP API guide](docs/runtime-api.md) · [Contributing](CONTRIBUTING.md) · [MIT](LICENSE)
 
-Early developer release `0.3.1` includes a NoneBot-style plugin framework, local accounts and permissions, versioned agents and model profiles, durable runs and approvals, tools/skills/MCP/knowledge, workspace snapshots, sandbox integration, managed memory jobs, HTTP/SSE, independent DingTalk and official QQ bot adapters, OneBot v11 compatibility, schedules, audit, usage and budgets. See the [bot adapter architecture and setup](docs/design/bot-adapters.md).
+Early developer release `0.3.2` includes a NoneBot-style plugin framework, local accounts and permissions, versioned agents and model profiles, durable runs and approvals, tools/skills/MCP/knowledge, workspace snapshots, sandbox integration, managed memory jobs, HTTP/SSE, independent DingTalk and official QQ bot adapters, schedules, audit, usage and budgets. Platform and personal model defaults, encrypted credentials, online release staging and reviewed conversation batching share the platform APIs. See the [bot adapter architecture and setup](docs/design/bot-adapters.md).
 
 This release replaces the architecture previously published as `0.2.x` and earlier. Existing databases, configuration files, plugins and checkpoints are not compatible by assumption. Back up the previous deployment, install into a separate directory and database, and follow the [release notes](docs/releases/v0.3.0.md). There is no automatic upgrade from the old architecture.
 
 ## Install a Linux service
 
-Download `opsmesh-0.3.1-linux.tar.gz` and its `.sha256` file from the [v0.3.1 release](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1), then verify, extract and install:
+Download `opsmesh-0.3.2-linux.tar.gz` and its `.sha256` file from the [v0.3.2 release](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.2), then verify, extract and install:
 
 ```sh
-sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
-tar -xzf opsmesh-0.3.1-linux.tar.gz
-cd opsmesh-0.3.1-linux
+sha256sum --check opsmesh-0.3.2-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.2-linux.tar.gz
+cd opsmesh-0.3.2-linux
 sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
@@ -32,7 +32,7 @@ The installer preserves configuration and data, and requires `--upgrade` when re
 Python 3.11+ is required. Create a virtual environment with `python -m venv .venv`, then activate it using `. .venv/bin/activate` on Linux/macOS or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 
 ```sh
-python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.1/opsmesh-0.3.1-py3-none-any.whl"
+python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.2/opsmesh-0.3.2-py3-none-any.whl"
 opsmesh --version
 opsmesh init
 opsmesh check
@@ -66,4 +66,4 @@ uv build
 
 The [plugin example](examples/custom_plugin/README.md) demonstrates public service providers and code extensions. SDK-specific objects remain in the OpenAI backend. `bootstrap` owns startup composition, `application` owns cross-module execution flows, and `infrastructure/run_workers` implements isolated Run workers. The 17 business domains expose their contracts through `api.py` and keep private implementations in `internal`.
 
-Release packages are published through [GitHub Releases](https://github.com/jhupo/OpsMesh/releases). Check the [actual CI runs](https://github.com/jhupo/OpsMesh/actions) for the declared Windows/Linux and Python 3.11–3.14 matrix; local validation alone does not establish matrix coverage. The project does not provide a hosted service or imply a PyPI publication.
+Release packages are published through [GitHub Releases](https://github.com/jhupo/OpsMesh/releases). CI validates Python 3.11–3.14 on Linux and exercises native systemd and Docker installation. Windows is outside the release support scope. Check the [actual CI runs](https://github.com/jhupo/OpsMesh/actions); local validation alone does not establish matrix coverage. The project does not provide a hosted service or imply a PyPI publication.

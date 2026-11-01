@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import StoredRecord, VersionedRecordStore
-from opsmesh.modules.runtime.api import TERMINAL_STATES, SessionClaimReader, SessionClaims
+from opsmesh.modules.runtime.api import TERMINAL_STATES, SessionClaims
 
 
 class RunSessionRecovery:
@@ -14,10 +14,9 @@ class RunSessionRecovery:
         claims: VersionedRecordStore,
         claim_key: Callable[[str], str],
         external_claims: SessionClaims | None,
-        claim_reader: SessionClaimReader | None,
     ) -> None:
         self.runs, self.claims, self.claim_key = runs, claims, claim_key
-        self.external_claims, self.claim_reader = external_claims, claim_reader
+        self.external_claims = external_claims
 
     async def release(self, record: StoredRecord) -> None:
         """A delayed cleanup can only release the same Run, never a replacement owner."""
@@ -46,22 +45,19 @@ class RunSessionRecovery:
 
     async def reconcile_active(self) -> int:
         """Use occupied sessions as the work set, including claims created by late workers."""
-        if self.claim_reader is not None:
-            selected = await self.claim_reader()
-            owners = []
-            for session_id, run_id in selected.items():
-                record = await self.runs.get(run_id)
-                if record is not None and record.data["session_id"] == session_id:
-                    owners.append(record)
-        elif self.external_claims is None:
+        if self.external_claims is None:
             owners = []
             for claim in await self.claims.list():
                 record = await self.runs.get(claim.data["run_id"])
                 if record is not None and self.claim_key(record.data["session_id"]) == claim.id:
                     owners.append(record)
         else:
-            # Compatibility for externally registered claim providers without an inventory API.
-            owners = await self.runs.list()
+            selected = await self.external_claims.active_claims()
+            owners = []
+            for session_id, run_id in selected.items():
+                record = await self.runs.get(run_id)
+                if record is not None and record.data["session_id"] == session_id:
+                    owners.append(record)
         recovered = 0
         for record in owners:
             if record.data["status"] in TERMINAL_STATES:

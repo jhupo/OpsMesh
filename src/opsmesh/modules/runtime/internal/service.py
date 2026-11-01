@@ -6,11 +6,9 @@ import asyncio
 import hashlib
 import json
 import logging
-import math
 import time
 from collections.abc import AsyncIterator
 from contextlib import suppress
-from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
@@ -31,26 +29,27 @@ from opsmesh.infrastructure.database import AsyncDatabase, StoredRecord, Version
 from opsmesh.modules.runtime.api import (
     TERMINAL_STATES,
     AgentRunView,
-    ApprovalDecisionRecord,
     ContextFactory,
     Finalizer,
     MetricObserver,
     RunApprovalPolicy,
     RunStreamEvent,
     RuntimeExtensions,
-    SessionClaimReader,
     SessionClaims,
     SubmitRunRequest,
     resolve_run_agent,
 )
 from opsmesh.modules.runtime.events import lifecycle_event
 
+from .approvals import RunApprovalService
 from .artifacts import merge_delegated_artifacts
 from .cleanup import finish_run_cleanup
 from .history import ModelHistory
 from .metrics import RunMetrics
+from .records import RunRecordStore, RunStreamStore, run_view
 from .session_recovery import RunSessionRecovery
 from .validation import validate_backend
+from .workers import RunWorkerOwnership
 
 logger = logging.getLogger(__name__)
 
@@ -70,80 +69,58 @@ class PersistentAgentRuntime:
         agent_resolver: AgentResolver | None = None,
         finalizer: Finalizer | None = None,
         session_claims: SessionClaims | None = None,
-        session_claim_reader: SessionClaimReader | None = None,
         observe_metric: MetricObserver | None = None,
     ) -> None:
-        self.runs = VersionedRecordStore(database, "runtime_runs")
+        self.runs = RunRecordStore(database)
         self.claims = VersionedRecordStore(database, "runtime_session_claims")
         self.histories = VersionedRecordStore(database, "runtime_history")
-        self.streams = VersionedRecordStore(database, "runtime_stream")
+        self.streams = RunStreamStore(database)
         self.extensions = extensions
         self.context_factory = context_factory
         self.agent_resolver = agent_resolver
         self.finalizer = finalizer
         self.session_claims = session_claims
-        self.session_recovery = RunSessionRecovery(
-            self.runs, self.claims, digest, session_claims, session_claim_reader
-        )
+        self.session_recovery = RunSessionRecovery(self.runs, self.claims, digest, session_claims)
         self.metrics = RunMetrics(observe_metric)
+        self.approvals = RunApprovalService(self.runs, self.metrics, self.session_recovery)
+        self.workers = RunWorkerOwnership(self.runs, self.metrics, self.session_recovery)
         self._tasks: dict[str, asyncio.Task[AgentRunView]] = {}
 
-    async def _record(self, run_id: str) -> StoredRecord:
-        record = await self.runs.get(run_id)
-        if record is None:
-            raise OpsMeshError("not_found", "Run does not exist")
-        return record
-
-    @staticmethod
-    def _view(record: StoredRecord) -> AgentRunView:
-        data = record.data
-        return AgentRunView(
-            id=record.id,
-            revision=record.revision,
-            principal_id=data["principal_id"],
-            session_id=data["session_id"],
-            agent=data["agent"],
-            published_agent_ref=data.get("published_agent_ref", ""),
-            published_agent_fingerprint=data.get("published_agent_fingerprint", ""),
-            effective_agent_fingerprint=data.get("effective_agent_fingerprint", ""),
-            overrides=data.get("overrides", {}),
-            status=data["status"],
-            attempt_id=data.get("attempt_id"),
-            attempt=data.get("attempt", 0),
-            output=data.get("output"),
-            usage=data.get("usage", {}),
-            approvals=data.get("approvals", []),
-            approval_policy=data.get("approval_policy", {}),
-            approval_requested_at=datetime.fromtimestamp(data["approval_wait_started_at"], UTC)
-            if data.get("approval_wait_started_at") is not None
-            else None,
-            approval_reviews=data.get("approval_reviews", {}),
-            has_checkpoint=data.get("checkpoint") is not None,
-            has_final_outcome=data.get("final_outcome") is not None,
-            cancel_requested=data.get("cancel_requested", False),
-            error=data.get("error"),
-            metadata=data.get("metadata", {}),
-            created_at=record.created_at,
-            updated_at=record.updated_at,
-        )
-
     async def get_run(self, run_id: str) -> AgentRunView:
-        return self._view(await self._record(run_id))
+        return run_view(await self.runs.require(run_id))
 
     async def find_submission(self, principal_id: str, idempotency_key: str) -> AgentRunView | None:
         record = await self.runs.get("run_" + digest([principal_id, idempotency_key])[:40])
-        return self._view(record) if record else None
+        return run_view(record) if record else None
 
     async def get_run_input(self, run_id: str) -> str | list[dict[str, Any]]:
         # submit() validates this immutable field with SubmitRunRequest before persistence.
-        return cast(str | list[dict[str, Any]], (await self._record(run_id)).data["input"])
+        return cast(str | list[dict[str, Any]], (await self.runs.require(run_id)).data["input"])
 
-    async def list_runs(self, principal_id: str | None = None) -> list[AgentRunView]:
+    async def list_runs(
+        self,
+        principal_id: str | None = None,
+        *,
+        statuses: tuple[str, ...] = (),
+        session_id: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+        after_id: str | None = None,
+    ) -> list[AgentRunView]:
         return [
-            self._view(row)
-            for row in await self.runs.list()
-            if principal_id is None or row.data["principal_id"] == principal_id
+            run_view(row)
+            for row in await self.runs.select_runs(
+                principal_id=principal_id,
+                statuses=statuses,
+                session_id=session_id,
+                limit=limit,
+                offset=offset,
+                after_id=after_id,
+            )
         ]
+
+    async def count_runs(self, statuses: tuple[str, ...]) -> int:
+        return await self.runs.count_statuses(statuses)
 
     async def submit(self, request: SubmitRunRequest) -> AgentRunView:
         # One deterministic ID scopes an idempotency key to its submitting principal.
@@ -156,7 +133,7 @@ class PersistentAgentRuntime:
         if existing:
             if existing.data["request_hash"] != request_hash:
                 raise OpsMeshError("conflict", "Idempotency key used with different input")
-            return self._view(existing)
+            return run_view(existing)
         effective = resolve_run_agent(request.agent, request.overrides)
         validate_backend(effective, self.extensions.backend(effective.backend))
         data = dict(
@@ -189,7 +166,7 @@ class PersistentAgentRuntime:
             if exc.code != "CONFLICT":
                 raise
             return await self.submit(request)
-        return self._view(record)
+        return run_view(record)
 
     def start(self, run_id: str, *, launch_token: str | None = None) -> asyncio.Task[AgentRunView]:
         task = self._tasks.get(run_id)
@@ -218,13 +195,13 @@ class PersistentAgentRuntime:
                 return await self.execute(run_id, launch_token=launch_token)
             except OpsMeshError as error:
                 if error.code == "OWNERSHIP_LOST":
-                    return await self.get_run(run_id)
+                    return run_view(await self.runs.require(run_id))
                 if error.code == "SESSION_BUSY" and error.retryable:
                     await asyncio.sleep(0.2)
                     continue
-                record = await self._record(run_id)
+                record = await self.runs.require(run_id)
                 if record.data["status"] not in {"queued", "resuming"}:
-                    return self._view(record)  # A different worker already owns the run.
+                    return run_view(record)  # A different worker already owns the run.
                 if error.code == "CONFLICT":
                     await asyncio.sleep(0.2)
                     continue  # Session claim CAS raced with another run.
@@ -234,7 +211,7 @@ class PersistentAgentRuntime:
                     launch_token=launch_token,
                     event="failed",
                 )
-                return self._view(record)
+                return run_view(record)
 
     async def close(self) -> None:
         tasks = [task for task in self._tasks.values() if not task.done()]
@@ -260,9 +237,6 @@ class PersistentAgentRuntime:
         if claim is None or claim.data["run_id"] != record.id:
             raise OpsMeshError("session_busy", "Another run owns this session", retryable=True)
 
-    async def _release_session(self, record: StoredRecord) -> None:
-        await self.session_recovery.release(record)
-
     async def reconcile_session(self, run_id: str) -> bool:
         return await self.session_recovery.reconcile(run_id)
 
@@ -276,7 +250,7 @@ class PersistentAgentRuntime:
         event: str | None = None,
     ) -> StoredRecord:
         for _ in range(8):
-            record = await self._record(run_id)
+            record = await self.runs.require(run_id)
             if attempt_id is not None and record.data.get("attempt_id") != attempt_id:
                 raise OpsMeshError("ownership_lost", "Run execution ownership changed")
             if record.data["status"] in TERMINAL_STATES:
@@ -307,7 +281,7 @@ class PersistentAgentRuntime:
         raise OpsMeshError("conflict", "Run is changing concurrently")
 
     async def _prepare_attempt(self, run_id: str, launch_token: str | None = None) -> StoredRecord:
-        record = await self._record(run_id)
+        record = await self.runs.require(run_id)
         if record.data["status"] not in {"queued", "resuming"}:
             raise OpsMeshError("CONFLICT", "Run is not ready for execution")
         expected_token = record.data.get("worker_launch_token")
@@ -335,9 +309,9 @@ class PersistentAgentRuntime:
                 events=[lifecycle_event(run_id, "started", {"attempt_id": attempt_id})],
             )
         except BaseException:
-            latest = await self._record(run_id)
+            latest = await self.runs.require(run_id)
             if latest.data["status"] in TERMINAL_STATES:
-                await self._release_session(latest)
+                await self.session_recovery.release(latest)
             raise
         self.metrics.transition(record, updated)
         return updated
@@ -347,7 +321,7 @@ class PersistentAgentRuntime:
         try:
             while True:
                 await asyncio.sleep(0.2)
-                latest = await self._record(record.id)
+                latest = await self.runs.require(record.id)
                 if (
                     latest.data.get("cancel_requested")
                     or latest.data["status"] in TERMINAL_STATES
@@ -389,7 +363,7 @@ class PersistentAgentRuntime:
         expected = record.data.get("effective_agent_fingerprint")
         if expected and expected != digest(record.data["agent"]):
             raise OpsMeshError("CHECKPOINT_INCOMPATIBLE", "Effective run configuration changed")
-        view = self._view(record)
+        view = run_view(record)
         context = await self.context_factory(view)
         if (context.run_id, context.session_id, context.principal_id) != (
             view.id,
@@ -398,11 +372,12 @@ class PersistentAgentRuntime:
         ):
             raise OpsMeshError("CONTEXT_INVALID", "Execution context identity mismatch")
         context.resolve_agent = context.resolve_agent or self.agent_resolver
-        context.services.setdefault("model_history", ModelHistory(self.histories, view.session_id))
-        context.services["usage_snapshot"] = view.usage.model_dump(mode="json")
-        context.services["delegated_artifacts"] = merge_delegated_artifacts(
+        if context.state.model_history is None:
+            context.state.model_history = ModelHistory(self.histories, view.session_id)
+        context.state.usage_snapshot = view.usage.model_dump(mode="json")
+        context.state.delegated_artifacts = merge_delegated_artifacts(
             view.metadata.get("delegated_artifacts", []),
-            context.services.get("delegated_artifacts", []),
+            context.state.delegated_artifacts,
         )
         return context
 
@@ -415,7 +390,7 @@ class PersistentAgentRuntime:
         metadata = dict(record.data.get("metadata", {}), **(extra or {}))
         receipts = merge_delegated_artifacts(
             metadata.get("delegated_artifacts", []),
-            context.services.get("delegated_artifacts", []),
+            context.state.delegated_artifacts,
         )
         if receipts:
             metadata["delegated_artifacts"] = receipts
@@ -446,7 +421,7 @@ class PersistentAgentRuntime:
     ) -> BackendOutcome:
         if record.data.get("final_outcome"):
             return AgentRunCompleted.model_validate(record.data["final_outcome"])
-        view = self._view(record)
+        view = run_view(record)
         checkpoint = self._checkpoint_payload(record, backend)
         await self._change(record.id, {"status": "running"}, attempt_id=view.attempt_id)
         async with asyncio.timeout(view.agent.timeout_seconds):
@@ -494,7 +469,7 @@ class PersistentAgentRuntime:
             },
             attempt_id=record.data["attempt_id"],
         )
-        view = self._view(record)
+        view = run_view(record)
         if self.finalizer is None and view.agent.sandbox is not None:
             raise OpsMeshError("FINALIZER_REQUIRED", "Sandbox runs need an artifact finalizer")
         metadata = await self.finalizer(view, outcome) if self.finalizer else {}
@@ -531,14 +506,12 @@ class PersistentAgentRuntime:
             "error": error.info.model_dump(mode="json"),
             "lease_expires": None,
         }
-        if context is not None and not context.services.get("usage_snapshot", {}).get(
-            "usage_available", True
-        ):
-            changes["usage"] = context.services["usage_snapshot"]
+        if context is not None and not context.state.usage_snapshot.get("usage_available", True):
+            changes["usage"] = context.state.usage_snapshot
         elif error.details and "usage" in error.details:
             changes["usage"] = error.details["usage"]
-        elif context is not None and context.services.get("usage_snapshot"):
-            changes["usage"] = context.services["usage_snapshot"]
+        elif context is not None and context.state.usage_snapshot:
+            changes["usage"] = context.state.usage_snapshot
         return await self._change(
             record.id, changes, attempt_id=record.data["attempt_id"], event=status
         )
@@ -546,11 +519,11 @@ class PersistentAgentRuntime:
     async def _cancel_attempt(
         self, record: StoredRecord, usage: dict[str, Any] | None = None
     ) -> None:
-        latest = await self._record(record.id)
+        latest = await self.runs.require(record.id)
         if latest.data.get("attempt_id") != record.data["attempt_id"]:
             return  # A fenced-out worker cannot cancel its replacement.
         if latest.data["status"] in TERMINAL_STATES:
-            await self._release_session(latest)
+            await self.session_recovery.release(latest)
             return
         changes: dict[str, Any] = {
             "status": "cancelled",
@@ -565,7 +538,7 @@ class PersistentAgentRuntime:
             attempt_id=record.data["attempt_id"],
             event="cancelled",
         )
-        await self._release_session(latest)
+        await self.session_recovery.release(latest)
 
     async def _cleanup_attempt(
         self,
@@ -581,22 +554,22 @@ class PersistentAgentRuntime:
         try:
             if cancelled:
                 await self._cancel_attempt(
-                    record, context.services.get("usage_snapshot") if context else None
+                    record, context.state.usage_snapshot if context else None
                 )
             elif record.data["status"] in TERMINAL_STATES:
-                await self._release_session(record)
+                await self.session_recovery.release(record)
         finally:
-            if context is not None and context.services.get("cleanup_resources") is not None:
+            if context is not None and context.resources.cleanup_resources is not None:
                 try:
-                    await context.services["cleanup_resources"]()
+                    await context.resources.cleanup_resources()
                 except Exception:
                     logger.exception("Run resource cleanup needs retry: %s", record.id)
 
     async def execute(self, run_id: str, *, launch_token: str | None = None) -> AgentRunView:
-        record = await self._record(run_id)
+        record = await self.runs.require(run_id)
         if record.data["status"] in TERMINAL_STATES:
-            await self._release_session(record)
-            return self._view(record)
+            await self.session_recovery.release(record)
+            return run_view(record)
         record = await self._prepare_attempt(run_id, launch_token)
         owner = asyncio.current_task()
         assert owner is not None
@@ -606,11 +579,11 @@ class PersistentAgentRuntime:
         try:
             context = await self._execution_context(record)
             with bind_execution_context(context):
-                backend = self.extensions.backend(self._view(record).agent.backend)
+                backend = self.extensions.backend(run_view(record).agent.backend)
                 outcome = await self._invoke(record, context, backend)
                 resource_metadata = None
                 if isinstance(outcome, AgentRunInterrupted):
-                    checkpoint_resources = context.services.get("checkpoint_resources")
+                    checkpoint_resources = context.resources.checkpoint_resources
                     if checkpoint_resources is not None:
                         resource_metadata = await checkpoint_resources()
                 record = await self._persist_execution_metadata(record, context, resource_metadata)
@@ -630,16 +603,16 @@ class PersistentAgentRuntime:
             await finish_run_cleanup(
                 self._cleanup_attempt(record, context, watcher, cancelled=cancelled)
             )
-        return self._view(record)
+        return run_view(record)
 
     async def cancel(self, run_id: str, *, launch_token: str | None = None) -> AgentRunView:
         for _ in range(8):
-            record = await self._record(run_id)
+            record = await self.runs.require(run_id)
             if launch_token is not None and record.data.get("worker_launch_token") != launch_token:
-                return self._view(record)
+                return run_view(record)
             if record.data["status"] in TERMINAL_STATES:
-                await self._release_session(record)
-                return self._view(record)
+                await self.session_recovery.release(record)
+                return run_view(record)
             inactive = record.data["status"] in {"queued", "resuming", "waiting_approval"}
             changes = dict(record.data, cancel_requested=True)
             if inactive:
@@ -660,14 +633,14 @@ class PersistentAgentRuntime:
         else:
             raise OpsMeshError("CONFLICT", "Run is changing concurrently")
         if inactive:
-            await self._release_session(record)
+            await self.session_recovery.release(record)
         task = self._tasks.get(run_id)
         if task is not None and task is not asyncio.current_task() and not task.done():
             task.cancel()
-        return self._view(record)
+        return run_view(record)
 
     async def list_approvals(self, run_id: str) -> tuple[PendingToolApproval, ...]:
-        return (await self.get_run(run_id)).approvals
+        return await self.approvals.list_approvals(run_id)
 
     async def decide(
         self,
@@ -679,55 +652,9 @@ class PersistentAgentRuntime:
         actor_id: str | None = None,
         reason: str = "",
     ) -> AgentRunView:
-        record = await self._record(run_id)
-        if record.revision != expected_revision or record.data["status"] != "waiting_approval":
-            raise OpsMeshError("conflict", "Run is not at this approval revision")
-        approvals = [dict(item) for item in record.data["approvals"]]
-        item = next((item for item in approvals if item["id"] == approval_id), None)
-        if item is None:
-            raise OpsMeshError("not_found", "Approval does not exist")
-        if item.get("approved") is not None:
-            raise OpsMeshError("conflict", "Approval already decided")
-        policy = RunApprovalPolicy.model_validate(record.data.get("approval_policy", {}))
-        started_at = record.data.get("approval_wait_started_at", record.updated_at.timestamp())
-        if time.time() >= started_at + policy.timeout_seconds:
-            raise OpsMeshError("APPROVAL_EXPIRED", "Approval review deadline has passed")
-        if policy.require_reason and not reason.strip():
-            raise OpsMeshError("INVALID_REQUEST", "Approval decision requires a reason")
-        review = ApprovalDecisionRecord(
-            actor_id=actor_id or record.data["principal_id"],
-            approved=approved,
-            reason=reason,
-            decided_at=datetime.now(UTC),
+        return await self.approvals.decide(
+            run_id, approval_id, approved, expected_revision, actor_id=actor_id, reason=reason
         )
-        item["approved"] = approved
-        decisions = dict(record.data["decisions"], **{approval_id: approved})
-        record = await self.runs.update(
-            run_id,
-            dict(
-                record.data,
-                approvals=approvals,
-                decisions=decisions,
-                approval_reviews={
-                    **record.data.get("approval_reviews", {}),
-                    approval_id: review.model_dump(mode="json"),
-                },
-            ),
-            expected_revision,
-            events=[
-                lifecycle_event(
-                    run_id,
-                    "approval_decided",
-                    {
-                        "approval_id": approval_id,
-                        "approved": approved,
-                        "actor_id": review.actor_id,
-                        "reason": reason,
-                    },
-                ),
-            ],
-        )
-        return self._view(record)
 
     async def set_approval_policy(
         self,
@@ -737,215 +664,44 @@ class PersistentAgentRuntime:
         *,
         actor_id: str,
     ) -> AgentRunView:
-        record = await self._record(run_id)
-        if record.data["status"] not in {"queued", "waiting_approval"} or record.data.get(
-            "decisions"
-        ):
-            raise OpsMeshError(
-                "CONFLICT", "Approval policy can change only before review decisions"
-            )
-        updated = await self.runs.update(
-            run_id,
-            {**record.data, "approval_policy": policy.model_dump(mode="json")},
-            expected_revision,
-            events=[lifecycle_event(run_id, "approval_policy_changed", {"actor_id": actor_id})],
+        return await self.approvals.set_approval_policy(
+            run_id, policy, expected_revision, actor_id=actor_id
         )
-        return self._view(updated)
 
     async def expire_approvals(self, run_id: str, expected_revision: int) -> AgentRunView:
-        record = await self._record(run_id)
-        policy = RunApprovalPolicy.model_validate(record.data.get("approval_policy", {}))
-        started_at = record.data.get("approval_wait_started_at", record.updated_at.timestamp())
-        pending = any(item.get("approved") is None for item in record.data.get("approvals", []))
-        if record.data["status"] != "waiting_approval" or not pending:
-            raise OpsMeshError("CONFLICT", "Run has no pending approval review")
-        if time.time() < started_at + policy.timeout_seconds:
-            raise OpsMeshError("CONFLICT", "Approval deadline has not passed")
-        error = OpsMeshError("APPROVAL_EXPIRED", "Approval review expired; execution is blocked")
-        updated = await self.runs.update(
-            run_id,
-            {**record.data, "status": "blocked", "error": error.info.model_dump(mode="json")},
-            expected_revision,
-            events=[lifecycle_event(run_id, "approval_expired", {})],
-        )
-        self.metrics.transition(record, updated)
-        await self._release_session(updated)
-        return self._view(updated)
+        return await self.approvals.expire_approvals(run_id, expected_revision)
 
     async def resume(self, run_id: str, expected_revision: int) -> AgentRunView:
-        record = await self._record(run_id)
-        if record.revision != expected_revision or record.data["status"] != "waiting_approval":
-            raise OpsMeshError("conflict", "Run is not at this resumable revision")
-        if not record.data.get("decisions"):
-            raise OpsMeshError("approval_required", "No approval decisions have been made")
-        pending = any(item.get("approved") is None for item in record.data.get("approvals", []))
-        if pending:
-            policy = RunApprovalPolicy.model_validate(record.data.get("approval_policy", {}))
-            started_at = record.data.get("approval_wait_started_at", record.updated_at.timestamp())
-            if time.time() >= started_at + policy.timeout_seconds:
-                raise OpsMeshError("APPROVAL_EXPIRED", "Approval review deadline has passed")
-        updated = await self.runs.update(
-            run_id,
-            dict(
-                record.data,
-                status="resuming",
-                worker_launch_token=None,
-                worker_launch_expires=None,
-                queued_at=time.time(),
-            ),
-            expected_revision,
-            events=[lifecycle_event(run_id, "resuming", {})],
-        )
-        self.metrics.transition(record, updated)
-        return self._view(updated)
+        return await self.approvals.resume(run_id, expected_revision)
 
     async def recover(self, run_id: str, expected_revision: int) -> AgentRunView:
-        """Recover an expired worker without blindly replaying external side effects."""
-        record = await self._record(run_id)
-        before = record
-        if record.revision != expected_revision:
-            raise OpsMeshError("conflict", "Run revision changed")
-        if record.data["status"] not in {"preparing", "running", "finalizing"}:
-            raise OpsMeshError("conflict", "Run does not have an abandoned worker")
-        if (record.data.get("lease_expires") or 0) > time.time():
-            raise OpsMeshError("conflict", "Worker lease is still valid")
-        if record.data.get("cancel_requested"):
-            record = await self.runs.update(
-                run_id,
-                dict(record.data, status="cancelled"),
-                expected_revision,
-                events=[lifecycle_event(run_id, "cancelled", {})],
-            )
-            await self._release_session(record)
-        elif record.data.get("final_outcome"):
-            record = await self.runs.update(
-                run_id,
-                dict(
-                    record.data,
-                    status="queued",
-                    attempt_id=None,
-                    worker_launch_token=None,
-                    worker_launch_expires=None,
-                    queued_at=time.time(),
-                ),
-                expected_revision,
-            )
-        else:
-            error = OpsMeshError("worker_lost", "Worker lost; side effects require reconciliation")
-            record = await self.runs.update(
-                run_id,
-                dict(record.data, status="failed", error=error.info.model_dump(mode="json")),
-                expected_revision,
-                events=[lifecycle_event(run_id, "failed", {"code": "worker_lost"})],
-            )
-            await self._release_session(record)
-        self.metrics.transition(before, record)
-        return self._view(record)
+        return await self.workers.recover(run_id, expected_revision)
 
     async def recover_stale(self) -> list[AgentRunView]:
-        await self.session_recovery.reconcile_active()
-        recovered = []
-        for record in await self.runs.list():
-            if (
-                record.data["status"] in {"preparing", "running", "finalizing"}
-                and (record.data.get("lease_expires") or 0) <= time.time()
-            ):
-                try:
-                    recovered.append(await self.recover(record.id, record.revision))
-                except OpsMeshError as error:
-                    if error.code != "CONFLICT":
-                        raise
-        return recovered
+        return await self.workers.recover_stale()
 
     async def claim_worker_launch(self, run_id: str, token: str, lease_seconds: float = 30) -> bool:
-        if not token or not math.isfinite(lease_seconds) or lease_seconds <= 0:
-            raise OpsMeshError("CONFIG_INVALID", "Launch owner and positive lease are required")
-        for _ in range(5):
-            record = await self._record(run_id)
-            if record.data["status"] not in {"queued", "resuming"}:
-                return False
-            active = (record.data.get("worker_launch_expires") or 0) > time.time()
-            if active and record.data.get("worker_launch_token") != token:
-                return False
-            try:
-                await self.runs.update(
-                    run_id,
-                    dict(
-                        record.data,
-                        worker_launch_token=token,
-                        worker_launch_expires=time.time() + lease_seconds,
-                    ),
-                    record.revision,
-                )
-                return True
-            except OpsMeshError as error:
-                if error.code != "CONFLICT":
-                    raise
-        return False
+        return await self.workers.claim_worker_launch(run_id, token, lease_seconds)
 
     async def renew_worker_launch(self, run_id: str, token: str, lease_seconds: float = 30) -> bool:
-        if not token or not math.isfinite(lease_seconds) or lease_seconds <= 0:
-            raise OpsMeshError("CONFIG_INVALID", "Launch owner and positive lease are required")
-        record = await self._record(run_id)
-        if (
-            record.data["status"] not in {"queued", "resuming"}
-            or record.data.get("worker_launch_token") != token
-            or (record.data.get("worker_launch_expires") or 0) <= time.time()
-        ):
-            return False
-        try:
-            await self.runs.update(
-                run_id,
-                dict(record.data, worker_launch_expires=time.time() + lease_seconds),
-                record.revision,
-            )
-            return True
-        except OpsMeshError as error:
-            if error.code != "CONFLICT":
-                raise
-            return False
+        return await self.workers.renew_worker_launch(run_id, token, lease_seconds)
 
     async def worker_exited(
         self, run_id: str, exit_code: int, *, launch_token: str | None = None
     ) -> AgentRunView:
-        record = await self._record(run_id)
-        if record.data.get("worker_launch_token") != launch_token:
-            return self._view(record)
-        if exit_code and record.data["status"] in {"queued", "resuming"}:
-            error = OpsMeshError(
-                "WORKER_START_FAILED",
-                "Worker exited before acquiring this run",
-                details={"exit_code": exit_code},
-            )
-            try:
-                updated = await self.runs.update(
-                    run_id,
-                    dict(record.data, status="failed", error=error.info.model_dump(mode="json")),
-                    record.revision,
-                    events=[lifecycle_event(run_id, "failed", {"code": error.code})],
-                )
-                self.metrics.transition(record, updated)
-                record = updated
-            except OpsMeshError as error:
-                if error.code != "CONFLICT":
-                    raise
-                return await self.get_run(run_id)
-            await self._release_session(record)
-        return self._view(record)
+        return await self.workers.worker_exited(run_id, exit_code, launch_token=launch_token)
 
     async def subscribe(self, run_id: str, after_seq: int = 0) -> AsyncIterator[RunStreamEvent]:
         cursor = after_seq
         while True:
-            view = await self.get_run(run_id)
-            rows = [
-                row
-                for row in await self.streams.list()
-                if row.data["run_id"] == run_id and row.data["seq"] > cursor
-            ]
-            for row in sorted(rows, key=lambda row: row.data["seq"]):
+            view = run_view(await self.runs.require(run_id))
+            rows = await self.streams.read(run_id, cursor)
+            for row in rows:
                 event = RunStreamEvent.model_validate(row.data)
                 cursor = event.seq
                 yield event
+            if len(rows) == 128:
+                continue
             if view.status in TERMINAL_STATES or view.status == "waiting_approval":
                 seq = view.attempt * 1_000_000 + 999999
                 if cursor < seq:

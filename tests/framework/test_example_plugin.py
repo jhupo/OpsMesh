@@ -47,6 +47,6 @@ async def test_example_plugin_handler_yield_factory_tool_and_hook(tmp_path, monk
             assert await callback({"text": "hello"}) == {"text": "HELLO", "run_id": "run-1"}
             hook = application.services.extensions.hook("example.observe@1")
             await hook(execution, "agent.start", {})
-        assert execution.services["example_hook_events"] == ["agent.start"]
+        assert execution.extensions["example_hook_events"] == ["agent.start"]
     finally:
         await application.close()

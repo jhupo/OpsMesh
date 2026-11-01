@@ -146,7 +146,7 @@ async def test_crud_revision_preview_manual_idempotency_and_tombstone(harness):
 
 async def test_input_resources_delivery_and_run_completion_are_separate(harness):
     scheduler, contexts, statuses, _, checked, notifications = harness
-    target = ReplyTarget(bot=BotRef(adapter_id="onebot", bot_id="bot"), channel_id="group:10")
+    target = ReplyTarget(bot=BotRef(adapter_id="qq", bot_id="bot"), channel_id="group:10")
     schedule = await scheduler.create(
         PersistentSchedule(
             id="rich",

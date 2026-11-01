@@ -22,7 +22,7 @@ def receipt(call_id, snapshot):
 async def test_delegated_artifacts_survive_approval_and_merge_by_tool_call(tmp_path):
     class Backend(ControlledBackend):
         async def run(self, spec, input, context, **options):
-            restored = context.services["delegated_artifacts"]
+            restored = context.state.delegated_artifacts
             if options.get("checkpoint"):
                 assert restored == [receipt("child-a", "paused")]
                 restored.extend([receipt("child-a", "completed"), receipt("child-b", "second")])
@@ -62,7 +62,7 @@ async def test_finalizer_restart_preserves_child_receipts_without_reexecuting_mo
 
     class Backend(ControlledBackend):
         async def run(self, spec, input, context, **options):
-            context.services["delegated_artifacts"].append(receipt("child", "saved"))
+            context.state.delegated_artifacts.append(receipt("child", "saved"))
             return await super().run(spec, input, context, **options)
 
     async def interrupted_finalizer(view, outcome):

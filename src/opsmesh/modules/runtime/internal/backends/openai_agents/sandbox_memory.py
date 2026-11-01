@@ -11,7 +11,7 @@ import asyncio
 import inspect
 from collections.abc import AsyncIterator
 from importlib.metadata import version
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from agents import RunConfig
@@ -26,6 +26,9 @@ from opsmesh.framework.errors import OpsMeshError
 
 from .models import resolve_profile_model, resolve_settings
 from .usage import _numeric_usage
+
+if TYPE_CHECKING:
+    from .sandbox_lifecycle import ManagedSandboxSession
 
 
 async def run_phase_two(
@@ -97,10 +100,16 @@ class MeteredMemoryModel(Model):
             "usage_available": bool(usage is not None and getattr(usage, "requests", 0)),
         }
         self._observations.append(item)
-        await self._context.services["observe_usage"](item)
+        observer = self._context.services.observe_usage
+        if observer is None:
+            raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Native memory requires usage accounting")
+        await observer(item)
 
     async def get_response(self, *args: Any, **kwargs: Any) -> Any:
-        await self._context.services["authorize_model_request"](self.profile)
+        authorize = self._context.services.authorize_model_request
+        if authorize is None:
+            raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Native memory requires model admission")
+        await authorize(self.profile)
         call_id = f"memory:{self.stage}:{uuid4().hex}"
         try:
             response = await self._delegate.get_response(*args, **kwargs)
@@ -214,14 +223,15 @@ async def prepare_memory(
 ) -> Memory:
     if version("openai-agents") != "0.24.0":
         raise OpsMeshError("CHECKPOINT_INCOMPATIBLE", "Native memory adapter requires SDK 0.24.0")
-    owner = context.services.get("sandbox_lifecycle")
+    owner = cast("ManagedSandboxSession | None", context.resources.sandbox_lifecycle)
     if owner is None:
         raise OpsMeshError(
             "DEPENDENCY_UNAVAILABLE", "Native memory requires a managed sandbox lifecycle"
         )
-    for callback in ("authorize_model_request", "observe_usage"):
-        if callback not in context.services:
-            raise OpsMeshError("DEPENDENCY_UNAVAILABLE", f"Native memory requires {callback}")
+    if context.services.authorize_model_request is None or context.services.observe_usage is None:
+        raise OpsMeshError(
+            "DEPENDENCY_UNAVAILABLE", "Native memory requires admission and accounting"
+        )
     data = dict(options)
     generation = dict(data.get("generate") or {})
     configuration = {

@@ -57,9 +57,11 @@ async def test_live_memory_approval_resumes_on_new_attempt_and_reads_current_mem
 
         def execution(attempt):
             context = AgentExecutionContext(run.id, run.session_id, principal.id, invoke, resolve)
-            context.services["prepare_agent_resources"] = lambda _: (
-                app.services.memory_tools.prepare(attempt, "memory")
-            )
+
+            async def prepare(_specification):
+                return await app.services.memory_tools.prepare(attempt, "memory")
+
+            context.services.prepare_agent_resources = prepare
             return context
 
         model = ScriptedModel(

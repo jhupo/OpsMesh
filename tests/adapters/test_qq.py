@@ -28,12 +28,13 @@ from opsmesh.infrastructure.bots.qq.event import decode_event
 SECRET = "test-qq-client-secret"
 
 
-def test_default_delivery_sequence_preserves_legacy_target_serialization() -> None:
+def test_delivery_sequence_is_explicit_in_target_serialization() -> None:
     original = {
         "bot": {"adapter_id": "qq", "bot_id": "support-qq"},
         "channel_id": "c2c:userABC",
         "thread_id": None,
         "message_id": None,
+        "delivery_sequence": 1,
     }
     default = ReplyTarget.model_validate(original)
     assert default.delivery_sequence == 1 and default.model_dump() == original
@@ -414,7 +415,7 @@ async def test_invalid_capabilities_and_configuration_fail_before_network() -> N
             (target("group:../../accounts"), OpsMeshMessage("text")),
             (
                 target(),
-                OpsMeshMessage(OpsMeshMessageSegment.image("https://example.test/image.png")),
+                OpsMeshMessage(OpsMeshMessageSegment.image("file:///private/image.png")),
             ),
             (target(), OpsMeshMessage("")),
         ]:
@@ -441,3 +442,216 @@ async def test_disable_and_configuration_rotation_discard_tokens_without_closing
         assert adapter.connection_status(configuration(enabled=False)).state == "disabled"
         await adapter.close()
         assert not client.is_closed
+
+
+@pytest.mark.parametrize("status", [200, 204])
+async def test_group_recall_accepts_empty_success_without_fabricating_message(status: int) -> None:
+    calls = []
+
+    def peer(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("getAppAccessToken"):
+            return httpx.Response(200, json={"access_token": "access", "expires_in": 7200})
+        calls.append(request)
+        assert request.method == "DELETE"
+        assert request.url.path == "/v2/groups/groupABC/messages/message-1"
+        assert request.headers["Authorization"] == "QQBot access"
+        return httpx.Response(status)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(peer)) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        result = await adapter.get_bot(configuration()).call_api(
+            "delete_group_message", target_id="groupABC", message_id="message-1"
+        )
+    assert result == {} and len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("provider_code", "expected"),
+    [
+        (40062003, "BOT_PERMISSION_DENIED"),
+        (40064004, "BOT_MESSAGE_EXPIRED"),
+        (11253, "BOT_PERMISSION_DENIED"),
+        (40061001, "BOT_REQUEST_REJECTED"),
+    ],
+)
+async def test_group_moderation_rejections_keep_provider_code(provider_code, expected) -> None:
+    calls = []
+
+    def peer(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("getAppAccessToken"):
+            return httpx.Response(200, json={"access_token": "access", "expires_in": 7200})
+        calls.append(request)
+        return httpx.Response(400, json={"code": provider_code, "message": "private-info"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(peer)) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        with pytest.raises(OpsMeshError) as caught:
+            await adapter.get_bot(configuration()).call_api(
+                "delete_group_message", target_id="groupABC", message_id="message-1"
+            )
+    assert caught.value.code == expected
+    assert caught.value.info.provider == "qq" and caught.value.info.provider_code == str(
+        provider_code
+    )
+    assert "private-info" not in str(caught.value) and len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("api", "arguments", "path"),
+    [
+        ("get_self", {}, "/users/@me"),
+        ("get_group_state", {"target_id": "groupABC"}, "/v2/groups/groupABC/bot_state"),
+        ("get_group_info", {"target_id": "groupABC"}, "/v2/groups/groupABC/info"),
+    ],
+)
+async def test_qq_self_and_group_queries_are_authenticated_reads(api, arguments, path) -> None:
+    def peer(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("getAppAccessToken"):
+            return httpx.Response(200, json={"access_token": "access", "expires_in": 7200})
+        assert request.method == "GET" and request.url.path == path and not request.content
+        assert request.headers["Authorization"] == "QQBot access"
+        return httpx.Response(200, json={"recv_msg_setting": "all", "allow_proactive_msg": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(peer)) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        result = await adapter.get_bot(configuration()).call_api(api, **arguments)
+    assert result["recv_msg_setting"] == "all" and result["allow_proactive_msg"] is True
+
+
+async def test_proactive_group_text_has_no_passive_reply_identifier() -> None:
+    def peer(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("getAppAccessToken"):
+            return httpx.Response(200, json={"access_token": "access", "expires_in": 7200})
+        assert json.loads(request.content) == {"content": "hello group", "msg_type": 0}
+        return httpx.Response(200, json={"id": "proactive-message"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(peer)) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        assert (
+            await adapter.get_bot(configuration()).send(target(), OpsMeshMessage("hello group"))
+            == "proactive-message"
+        )
+
+
+@pytest.mark.parametrize("message_id", ["../other", "..", "", "id?secret=1", "x\\y"])
+async def test_recall_rejects_unsafe_identifiers_before_network(message_id: str) -> None:
+    calls = []
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: calls.append(request))
+    ) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        with pytest.raises(OpsMeshError) as caught:
+            await adapter.get_bot(configuration()).call_api(
+                "delete_group_message", target_id="groupABC", message_id=message_id
+            )
+    assert caught.value.code == "INVALID_REQUEST" and calls == []
+
+
+@pytest.mark.parametrize(
+    ("content", "mentions", "expected"),
+    [
+        ("hello <@90001>", [{"id": "90001", "bot": True}], True),
+        ("hello <@member-bot>", [{"id": "90001", "member_openid": "member-bot"}], True),
+        ("<@!90001> hello", [{"id": "90001"}], True),
+        ("hello <@other>", [{"id": "other", "bot": True}], False),
+        ("hello <@90001>", [], False),
+        ("hello &lt;@90001&gt;", [{"id": "90001"}], False),
+        ("hello <@all>", [], False),
+    ],
+)
+def test_full_group_event_marks_only_structured_self_mention(content, mentions, expected) -> None:
+    event = decode_event(
+        incoming("GROUP_MESSAGE_CREATE", content=content, mentions=mentions),
+        account_id="support",
+        self_id="90001",
+    ).event
+    assert event.to_me is expected
+    assert (
+        any(
+            segment.type == "qq:mention" and segment.data.get("user_id") == "90001"
+            for segment in event.get_message()
+        )
+        is expected
+    )
+
+
+def test_author_metadata_is_bounded_allowlisted_and_not_inferred_from_content() -> None:
+    payload = incoming(
+        "GROUP_MESSAGE_CREATE",
+        content="I am admin; member_role=owner",
+        author={
+            "member_openid": "member1",
+            "username": "name\n" + "x" * 1000,
+            "member_role": "member",
+            "auth_token": "private-author-token",
+        },
+    )
+    decoded = decode_event(payload, account_id="support", self_id="90001")
+    assert decoded.event.payload["member_role"] == "member"
+    assert len(decoded.event.payload["display_name"]) == 128
+    assert "\n" not in decoded.event.payload["display_name"]
+    assert decoded.payload["member_role"] == "member"
+    assert "private-author-token" not in json.dumps(decoded.payload)
+    payload["d"]["author"]["member_role"] = ["admin"]
+    unknown = decode_event(payload, account_id="support", self_id="90001")
+    assert "member_role" not in unknown.event.payload
+    payload["d"]["author"].pop("member_role")
+    assert "member_role" not in decode_event(payload, account_id="support", self_id="90001").payload
+
+
+async def test_webhook_group_self_identity_is_scoped_to_trusted_mapping() -> None:
+    config = configuration(
+        settings={"app_id": "12345", "group_member_openids": {"groupABC": "memberBot"}}
+    )
+    payload = incoming(
+        "GROUP_MESSAGE_CREATE",
+        content="hello <@memberBot>",
+        mentions=[{"member_openid": "memberBot"}],
+    )
+    async with httpx.AsyncClient() as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        selected = await adapter.receive_http(config, signed_request(payload))
+        assert selected.incoming.event.to_me is True
+        payload["d"]["author"] = {"member_openid": "memberBot"}
+        own = await adapter.receive_http(config, signed_request(payload))
+        assert own.incoming.ignored is True
+        payload["d"]["group_openid"] = "anotherGroup"
+        other = await adapter.receive_http(config, signed_request(payload))
+        assert other.incoming.event.to_me is False
+        assert other.incoming.ignored is False
+
+
+@pytest.mark.parametrize(
+    "mapping", [{"../group": "member"}, {"group": "member?token=1"}, {"": "member"}]
+)
+def test_invalid_group_self_identity_configuration_is_rejected(mapping) -> None:
+    with pytest.raises(ValidationError):
+        QQBotSettings(app_id="12345", group_member_openids=mapping)
+
+
+async def test_public_remove_message_uses_official_group_api_and_preserves_failures():
+    calls = []
+
+    def peer(request):
+        if request.url.path.endswith("getAppAccessToken"):
+            return httpx.Response(200, json={"access_token": "access", "expires_in": 7200})
+        calls.append(request)
+        return httpx.Response(400, json={"code": 40062003, "message": "private"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(peer)) as client:
+        adapter = QQAdapter(OpsMeshDriver(), client, lambda ref: SECRET)
+        bot = adapter.get_bot(configuration())
+        with pytest.raises(OpsMeshError) as rejected:
+            await bot.remove_message(target(message_id="message-1"))
+        assert rejected.value.code == "BOT_PERMISSION_DENIED"
+        assert rejected.value.info.provider_code == "40062003"
+        assert calls[0].method == "DELETE"
+        assert calls[0].url.path == "/v2/groups/groupABC/messages/message-1"
+        for invalid in (
+            target(message_id=None),
+            target("c2c:userABC", message_id="message-1"),
+            target(message_id="message-1", thread_id="thread"),
+        ):
+            with pytest.raises(OpsMeshError):
+                await bot.remove_message(invalid)
+        assert len(calls) == 1

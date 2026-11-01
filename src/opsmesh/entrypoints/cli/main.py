@@ -26,6 +26,15 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument("--host")
     serve.add_argument("--port", type=int)
     commands.add_parser("worker", help="Run durable agent, memory, timer and outbox workers")
+    update = commands.add_parser(
+        "update", help="Check, download or install an official Linux release"
+    )
+    update.add_argument("update_action", choices=("check", "download", "install"))
+    update.add_argument("--release-version", help="Stable version, e.g. 0.3.2; defaults to latest")
+    update.add_argument("--directory", default="/var/cache/opsmesh/updates")
+    update.add_argument("--instance", default="opsmesh")
+    update.add_argument("--mode", choices=("local", "docker"), default="local")
+    update.add_argument("--no-start", action="store_true")
     collect = commands.add_parser(
         "storage-gc", help="Preview unreferenced content; apply only during maintenance"
     )
@@ -52,6 +61,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 async def _execute(arguments: argparse.Namespace) -> None:
+    if arguments.command == "update":
+        from opsmesh.entrypoints.cli.updates import execute_update
+
+        await execute_update(arguments)
+        return
     from opsmesh.bootstrap.application import OpsMeshApplication
     from opsmesh.infrastructure.telemetry.logging import configure_logging
 
@@ -88,19 +102,9 @@ async def _execute(arguments: argparse.Namespace) -> None:
             await application.start()
             await asyncio.Event().wait()
         elif arguments.command == "serve":
-            import uvicorn
+            from opsmesh.entrypoints.http.server import serve
 
-            from opsmesh.entrypoints.http.app import create_http_app
-
-            server = uvicorn.Server(
-                uvicorn.Config(
-                    create_http_app(application),
-                    host=arguments.host or application.settings.host,
-                    port=arguments.port or application.settings.port,
-                    log_config=None,
-                )
-            )
-            await server.serve()
+            await serve(application, host=arguments.host, port=arguments.port)
     finally:
         await application.close()
 

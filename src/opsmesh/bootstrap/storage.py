@@ -1,14 +1,14 @@
 """Select content storage without putting provider credentials in workspace records."""
 
 from opsmesh.framework.errors import OpsMeshError
-from opsmesh.infrastructure.secrets import EnvironmentSecretResolver
+from opsmesh.infrastructure.secrets import DeploymentSecretResolver
 from opsmesh.infrastructure.storage.api import BlobStore
 
 from .settings import OpsMeshSettings
 
 
 def create_blob_store(
-    settings: OpsMeshSettings, secrets: EnvironmentSecretResolver
+    settings: OpsMeshSettings, secrets: DeploymentSecretResolver
 ) -> BlobStore | None:
     if settings.storage_backend == "local":
         return None

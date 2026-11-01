@@ -57,7 +57,7 @@ async def test_postgres_notification_receipt_merges_concurrent_read(postgres_url
             resource_id="run",
             status="failed",
             default_target=ReplyTarget(
-                bot=BotRef(adapter_id="onebot_v11", bot_id="support"), channel_id="private:1"
+                bot=BotRef(adapter_id="qq", bot_id="support"), channel_id="c2c:1"
             ),
         )
         task = asyncio.create_task(first.tick())

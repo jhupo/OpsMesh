@@ -87,6 +87,18 @@ class WorkspaceService(Protocol):
     async def write(
         self, workspace_id: str, path: str, data: bytes, *, read_only: bool = False
     ) -> WorkspaceArtifact: ...
+    async def replace_managed_file(
+        self,
+        workspace_id: str,
+        path: str,
+        data: bytes,
+        *,
+        expected_digest: str | None,
+        read_only: bool = True,
+    ) -> WorkspaceArtifact:
+        """Compare and replace deployment-owned content, including read-only files."""
+        ...
+
     async def read(self, workspace_id: str, path: str) -> bytes: ...
     async def put_blob(self, data: bytes) -> str: ...
     async def get_blob(self, digest: str) -> bytes: ...

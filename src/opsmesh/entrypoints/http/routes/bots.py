@@ -1,5 +1,7 @@
 """Protocol-independent bot management and adapter-authenticated callbacks."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import Field
@@ -13,7 +15,6 @@ from opsmesh.modules.bots.api import (
     BotRoute,
     DeliveryReceipt,
     FileDeliveryReceipt,
-    InboundReceipt,
 )
 
 from ..security import CurrentUser, get_application
@@ -38,6 +39,7 @@ class BindIdentityRequest(OpsMeshContract):
 class BindRouteRequest(OpsMeshContract):
     channel_id: str = Field(min_length=1, max_length=256)
     agent_revision: str = Field(min_length=1, max_length=256)
+    dispatch_mode: Literal["direct", "managed"] = "direct"
 
 
 class SendMessageRequest(OpsMeshContract):
@@ -135,7 +137,11 @@ async def route(
 ) -> BotRoute:
     app = get_application(request)
     return await app.services.bots.bind_route(
-        bot_id, body.channel_id, body.agent_revision, actor_id=user.id
+        bot_id,
+        body.channel_id,
+        body.agent_revision,
+        actor_id=user.id,
+        dispatch_mode=body.dispatch_mode,
     )
 
 
@@ -196,19 +202,6 @@ async def send_file(
     )
     return await app.services.bots.upload_file(
         target, body.name, content, idempotency_key=body.idempotency_key, actor_id=user.id
-    )
-
-
-@router.post("/callbacks/onebot/{bot_id}", response_model=None)
-async def legacy_callback(bot_id: str, request: Request) -> InboundReceipt | Response:
-    app = get_application(request)
-    address = request.client.host if request.client else "unknown"
-    await app.services.rate_limiter.check(f"bot:{bot_id}:{address}", limit=600)
-    result = await app.services.bots.receive_webhook(
-        bot_id, BotWebhookRequest(await request.body(), dict(request.headers))
-    )
-    return result.receipt or JSONResponse(
-        result.response.body, status_code=result.response.status_code
     )
 
 

@@ -11,6 +11,8 @@ from agents.usage import _response_usage_to_usage
 from opsmesh.framework.agents import AgentExecutionContext, AgentSpecification
 from opsmesh.framework.errors import OpsMeshError
 
+from .execution_state import execution_state
+from .history import OpenAIHistorySession
 from .usage import begin_request, publish_request_usage
 
 
@@ -21,16 +23,14 @@ class MeteredCompactionResponses:
         self.responses, self.context, self.spec = responses, context, spec
 
     async def compact(self, **arguments: Any) -> Any:
-        authorize = self.context.services.get("authorize_model_request")
+        authorize = self.context.services.authorize_model_request
         if authorize is None:
             raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Compaction requires model admission")
         authorized = authorize(self.spec.model_profile_ref)
         if inspect.isawaitable(authorized):
             await authorized
         agent = SimpleNamespace(name=f"compaction [{self.spec.ref}]", model=arguments["model"])
-        self.context.services.setdefault("agent_model_profiles", {})[agent.name] = (
-            self.spec.model_profile_ref
-        )
+        execution_state(self.context).agent_model_profiles[agent.name] = self.spec.model_profile_ref
         begin_request(self.context, agent)
         compacted = await self.responses.compact(**arguments)
         await publish_request_usage(
@@ -48,7 +48,8 @@ class MeteredCompactionResponses:
 def build_session(
     spec: AgentSpecification, context: AgentExecutionContext, model: Any, client: Any = None
 ) -> Any:
-    session = context.services.get("model_history")
+    history = context.state.model_history
+    session = OpenAIHistorySession(context.session_id, history) if history is not None else None
     configuration = spec.session_compaction
     if configuration is None:
         return session
@@ -56,7 +57,7 @@ def build_session(
         raise OpsMeshError(
             "DEPENDENCY_UNAVAILABLE", "Session compaction requires persistent history"
         )
-    client = context.services.get("compaction_client") or client
+    client = execution_state(context).compaction_client or client
     if client is None:
         raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Responses compaction client is unavailable")
     proxy: Any = SimpleNamespace(

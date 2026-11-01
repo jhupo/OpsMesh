@@ -2,6 +2,7 @@
 
 import base64
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from openai.types.responses import (
@@ -47,7 +48,7 @@ async def test_shell_approval_serialization_and_execution_after_resume():
     model = ScriptedModel([[native], [message("done")]])
     backend = OpenAIAgentsBackend(registry, model_resolver=lambda *_: model)
     ctx = context()
-    ctx.services["authorize_native_tool"] = lambda binding: None
+    ctx.services.authorize_native_tool = AsyncMock(wraps=lambda binding: None)
     pending = await backend.run(spec, "hi", ctx)
     assert not seen and pending.pending[0].arguments["commands"] == ["echo ok"]
     result = await backend.run(
@@ -84,7 +85,9 @@ async def test_patch_runs_registered_editor_with_run_context():
     backend = OpenAIAgentsBackend(registry, model_resolver=lambda *_: model)
     ctx = context()
     admissions = []
-    ctx.services["authorize_native_tool"] = lambda binding: admissions.append(binding.type)
+    ctx.services.authorize_native_tool = AsyncMock(
+        wraps=lambda binding: admissions.append(binding.type)
+    )
     assert (await backend.run(spec, "hi", ctx)).output == "done"
     assert operations[0][1].path == "hello.txt" and admissions == ["apply_patch"]
 
@@ -126,6 +129,6 @@ async def test_computer_actions_safety_and_disposal():
     model = ScriptedModel([[native], [message("done")]])
     backend = OpenAIAgentsBackend(registry, model_resolver=lambda *_: model)
     ctx = context()
-    ctx.services["authorize_native_tool"] = lambda binding: None
+    ctx.services.authorize_native_tool = AsyncMock(wraps=lambda binding: None)
     assert (await backend.run(spec, "hi", ctx)).output == "done"
     assert actions == ["click", "screenshot"] and computer.closed

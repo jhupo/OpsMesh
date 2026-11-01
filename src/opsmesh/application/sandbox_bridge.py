@@ -7,7 +7,7 @@ import io
 import tarfile
 from dataclasses import replace
 from pathlib import PurePosixPath
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 from opsmesh.framework.agents import (
@@ -16,43 +16,18 @@ from opsmesh.framework.agents import (
     AgentSpecification,
     SandboxConfiguration,
 )
+from opsmesh.framework.agents.resources import (
+    AgentExecutionResources,
+    AgentExecutionState,
+    SandboxProviderBinding,
+    SandboxProviderFactory,
+    SandboxSession,
+    SandboxSessionFactory,
+)
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.infrastructure.database import AsyncDatabase, StoredRecord, VersionedRecordStore
 from opsmesh.modules.runtime.api import AgentRunView
-from opsmesh.modules.runtime.openai_extensions import OpenAISandboxProviderFactory
 from opsmesh.modules.workspaces.api import WorkspaceService
-
-
-class SandboxSession(Protocol):
-    """Session operations needed to preserve and clean up a managed workspace."""
-
-    @property
-    def session(self) -> Any: ...
-    def cleanup_state(self) -> dict[str, Any]: ...
-    async def archive(self) -> bytes: ...
-    async def materialize_files(self, files: tuple[tuple[str, bytes, bool], ...]) -> None: ...
-    async def close(self) -> None: ...
-
-
-class SandboxSessionFactory(Protocol):
-    async def open(
-        self,
-        configuration: SandboxConfiguration,
-        files: tuple[tuple[str, bytes, bool], ...],
-        directories: tuple[str, ...],
-        *,
-        context: AgentExecutionContext | None = None,
-        provider: Any = None,
-        trusted_source: bool = False,
-    ) -> SandboxSession: ...
-
-    async def resume_cleanup(
-        self,
-        configuration: SandboxConfiguration,
-        state: dict[str, Any],
-        *,
-        provider: Any = None,
-    ) -> SandboxSession: ...
 
 
 def archive_files(
@@ -108,29 +83,32 @@ class SandboxWorkspaceBridge:
         database: AsyncDatabase,
         *,
         allow_trusted_local: bool = False,
-        session_factory: SandboxSessionFactory | None = None,
+        session_factories: dict[str, SandboxSessionFactory] | None = None,
     ) -> None:
         self.workspaces = workspaces
         self.bindings = VersionedRecordStore(database, "runtime_workspace_bindings")
         self.allow_trusted_local = allow_trusted_local
-        self._session_factory = session_factory
+        self._session_factories = dict(session_factories or {})
         self._active: dict[str, SandboxSession] = {}
-        self._providers: dict[str, OpenAISandboxProviderFactory] = {}
+        self._providers: dict[str, SandboxProviderFactory] = {}
         self._contexts: dict[str, AgentExecutionContext] = {}
 
-    def _sessions(self) -> SandboxSessionFactory:
-        if self._session_factory is None:
+    def _sessions(self, backend: str) -> SandboxSessionFactory:
+        factory = self._session_factories.get(backend)
+        if factory is None:
             raise OpsMeshError("DEPENDENCY_UNAVAILABLE", "Managed sandbox backend is unavailable")
-        return self._session_factory
+        return factory
 
-    def register_provider(self, reference: str, factory: OpenAISandboxProviderFactory) -> None:
+    def register_provider(self, reference: str, factory: SandboxProviderFactory) -> None:
         if "@" not in reference or reference in self._providers:
             raise OpsMeshError(
                 "CONFIG_INVALID", "Sandbox providers require unique versioned references"
             )
         self._providers[reference] = factory
 
-    async def _provider(self, view: AgentRunView, context: AgentExecutionContext | None) -> Any:
+    async def _provider(
+        self, view: AgentRunView, context: AgentExecutionContext | None
+    ) -> SandboxProviderBinding | None:
         assert view.agent.sandbox is not None
         name = view.agent.sandbox.provider
         if name in {"local", "docker"}:
@@ -182,7 +160,7 @@ class SandboxWorkspaceBridge:
 
     async def _authorize_workspace(self, view: AgentRunView, workspace_id: str) -> None:
         context = self._contexts.get(view.id)
-        authorize = context.services.get("authorize_workspace") if context else None
+        authorize = context.services.authorize_workspace if context else None
         if authorize is not None:
             await authorize(workspace_id)
         elif workspace_id != view.agent.workspace_id:
@@ -221,7 +199,7 @@ class SandboxWorkspaceBridge:
 
     async def prepare(
         self, view: AgentRunView, context: AgentExecutionContext | None = None
-    ) -> dict[str, Any]:
+    ) -> AgentExecutionResources:
         async def delegated(
             specification: AgentSpecification, parent: AgentExecutionContext, call_id: str
         ) -> AgentExecutionContext:
@@ -229,10 +207,10 @@ class SandboxWorkspaceBridge:
 
         configuration = view.agent.sandbox
         if configuration is None or view.has_final_outcome:
-            return {"prepare_delegated_sandbox": delegated}
+            return AgentExecutionResources(prepare_delegated_sandbox=delegated)
         if configuration.provider == "local" and not self.allow_trusted_local:
             raise OpsMeshError("FORBIDDEN", "Trusted local sandboxes are disabled")
-        sessions = self._sessions()
+        sessions = self._sessions(view.agent.backend)
         if context is not None:
             self._contexts[view.id] = context
         await self._close(view)
@@ -289,15 +267,15 @@ class SandboxWorkspaceBridge:
                 if self._contexts.get(view.id) is context:
                     self._contexts.pop(view.id, None)
 
-        return {
-            "openai_sandbox_session": manager.session,
-            "sandbox_lifecycle": manager,
-            "sandbox_root_specification": view.agent,
-            "sync_resources": manager.materialize_files,
-            "checkpoint_resources": checkpoint,
-            "cleanup_resources": cleanup,
-            "prepare_delegated_sandbox": delegated,
-        }
+        return AgentExecutionResources(
+            sandbox_session=manager.session,
+            sandbox_lifecycle=manager,
+            sandbox_root_specification=view.agent,
+            sync_resources=manager.materialize_files,
+            checkpoint_resources=checkpoint,
+            cleanup_resources=cleanup,
+            prepare_delegated_sandbox=delegated,
+        )
 
     async def prepare_delegated(
         self,
@@ -320,53 +298,46 @@ class SandboxWorkspaceBridge:
                 "has_checkpoint": False,
             }
         )
-        services = {
-            key: value
-            for key, value in parent.services.items()
-            if key
-            not in {
-                "openai_sandbox_session",
-                "sandbox_lifecycle",
-                "sandbox_root_specification",
-                "sync_resources",
-                "checkpoint_resources",
-                "cleanup_resources",
-                "usage_snapshot",
-                "pending_model_requests",
-                "agent_model_profiles",
-            }
-        }
-        child = replace(parent, services=services)
+        child = replace(
+            parent,
+            services=replace(parent.services),
+            resources=AgentExecutionResources(),
+            state=AgentExecutionState(attempt_id=parent.state.attempt_id),
+            backend_state=None,
+            extensions=dict(parent.extensions),
+        )
         if specification.workspace_id:
-            authorize = services.get("authorize_workspace")
+            authorize = child.services.authorize_workspace
             if authorize is None:
                 raise OpsMeshError(
                     "AUTHORIZATION_DENIED", "Delegated workspace authorization unavailable"
                 )
             await authorize(specification.workspace_id)
         bindings = await self.prepare(child_view, child)
-        child.services.update(bindings)
-        checkpoint = bindings["checkpoint_resources"]
+        child.resources = bindings
+        checkpoint = bindings.checkpoint_resources
+        if checkpoint is None:
+            raise OpsMeshError("CONTEXT_INVALID", "Delegated sandbox has no checkpoint owner")
 
         async def save() -> dict[str, Any]:
             metadata: dict[str, Any] = await checkpoint()
             metadata["delegated_agent"] = specification.ref
             metadata["tool_call_id"] = call_id
-            claim = parent.services.get("claim_workspace")
+            claim = parent.resources.claim_workspace
             if claim is not None:
                 await claim(metadata)
-            parent.services.setdefault("delegated_artifacts", []).append(metadata)
+            parent.state.delegated_artifacts.append(metadata)
             return metadata
 
         async def invoke(tool_ref: str, arguments: dict[str, Any], nested_call_id: str) -> Any:
             value = await parent.invoke_tool(tool_ref, arguments, f"{call_id}:{nested_call_id}")
-            synchronize = child.services.get("sync_agent_resources")
+            synchronize = child.services.sync_agent_resources
             if synchronize is not None:
                 await synchronize(child, tool_ref, arguments)
             return value
 
         child.invoke_tool = invoke
-        child.services["checkpoint_resources"] = save
+        child.resources.checkpoint_resources = save
         return child
 
     async def _capture(self, view: AgentRunView, *, finalized: bool) -> dict[str, Any]:
@@ -430,7 +401,7 @@ class SandboxWorkspaceBridge:
         manager = owned_manager or self._active.get(view.id)
         if manager is None and record and record.data.get("cleanup_state"):
             assert view.agent.sandbox is not None
-            manager = await self._sessions().resume_cleanup(
+            manager = await self._sessions(view.agent.backend).resume_cleanup(
                 view.agent.sandbox,
                 record.data["cleanup_state"],
                 provider=await self._provider(view, self._contexts.get(view.id)),

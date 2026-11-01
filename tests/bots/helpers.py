@@ -2,7 +2,7 @@
 
 from opsmesh.framework.adapters import BotAdapterRegistry, BotWebhookRequest
 from opsmesh.framework.drivers import OpsMeshDriver
-from opsmesh.infrastructure.bots.onebot import OneBotAdapter
+from opsmesh.infrastructure.bots.qq import QQAdapter
 from opsmesh.modules.bots.internal.service import BotService
 
 
@@ -11,8 +11,8 @@ def create_bot_service(
 ):
     driver = driver or OpsMeshDriver()
     adapters = BotAdapterRegistry(driver)
-    if OneBotAdapter.name not in driver.adapters:
-        adapters.register(OneBotAdapter(driver, client, resolve_secret))
+    if QQAdapter.name not in driver.adapters:
+        adapters.register(QQAdapter(driver, client, resolve_secret))
     return BotService(
         store,
         resolve_secret,
@@ -23,12 +23,12 @@ def create_bot_service(
     )
 
 
-def onebot_adapter(service):
-    return service.adapters.get(OneBotAdapter.name)
+def qq_adapter(service):
+    return service.adapters.get(QQAdapter.name)
 
 
-async def receive_onebot(service, bot_id, body, *, signature=None):
-    request = BotWebhookRequest(body, {"X-Signature": signature} if signature is not None else {})
+async def receive_qq_event(service, bot_id, body, *, signature=None):
+    request = BotWebhookRequest(body, signature or {})
     result = await service.receive_webhook(bot_id, request)
     assert result.receipt is not None
     return result.receipt

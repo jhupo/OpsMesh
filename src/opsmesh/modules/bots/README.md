@@ -2,7 +2,7 @@
 
 机器人账号、外部身份映射、连接、Agent绑定和消息投递；这些是平台核心能力，不依赖业务插件加载。
 
-已实现机器人账号、外部身份映射、Agent路由、投递状态和幂等处理。厂商协议独立位于 `opsmesh.infrastructure.bots`，通过框架 `OpsMeshBotAdapter`、`BotAdapterRegistry` 注入；本模块不导入 QQ、钉钉或 OneBot 实现。当前提供钉钉应用机器人、QQ 官方机器人及独立 OneBot 兼容实现。
+已实现机器人账号、外部身份映射、Agent路由、投递状态和幂等处理。厂商协议独立位于 `opsmesh.infrastructure.bots`，通过框架 `OpsMeshBotAdapter`、`BotAdapterRegistry` 注入；本模块不导入 QQ 或钉钉实现。当前仅内置钉钉应用机器人和 QQ 官方机器人。
 
 `BotRoute`持久保存`(bot_id, channel_id) → agent_revision`。`BotAccounts`提供绑定/替换、单项读取、按Bot列出与解绑；所有入口都经服务检查Bot权限。绑定服务还通过组装层注入的Agent目录解析可用发布版本并检查绑定者的`agent:run`权限；名称解析后保存固定版本，后续发布不会自动修改旧绑定。入站消息仍以映射用户重新授权，管理员配置绑定不替代用户执行权限。
 
@@ -14,7 +14,7 @@ Bot配置创建、更新在解析凭据之前逐一检查`secret:use`，即使�
 
 Agent路由的创建、替换与解绑也检查Bot全体身份映射的目标管理权限，避免将管理员的合法入站消息导向未经其授权管理者设置的Agent。路由写入检查已授权身份快照，身份写入反向检查路由快照，并在同一账号行锁下提交，防止并发绕过；快照包含版本与目标，删除后用相同ID重新建立不同目标也不能复用旧授权。读取路由和普通消息发送仍只使用各自的Bot权限。
 
-`BotAccount` 只保存 `id`、`adapter`、`self_id`、`settings`、`credentials`、`enabled`、`revision`。协议设置由适配器自己的模型校验；所有凭据都是具名 `env:` 引用。已有账号的 adapter 和 self_id 不可替换，新机器人须显式创建账号。旧 OneBot 持久行在读取时兼容转换，显式更新后保存新结构。
+`BotAccount` 只保存 `id`、`adapter`、`self_id`、`settings`、`credentials`、`enabled`、`revision`。协议设置由适配器自己的模型校验；所有凭据都是具名 `env:` 引用。已有账号的 adapter 和 self_id 不可替换，新机器人须显式创建账号。配置使用当前结构，旧字段不会在读取时自动转换。
 
 `internal/service.py` 组装适配器生命周期；`ingress.py` 统一身份映射、Agent路由和入站去重；`delivery.py` 负责消息/文件的权限、幂等和回执；`management.py` 与 `configuration_store.py` 保持账号/身份/绑定的授权快照事务。SDK签名、token、WebSocket和消息编解码均由独立适配器负责。
 
@@ -23,3 +23,7 @@ Agent路由的创建、替换与解绑也检查Bot全体身份映射的目标管
 `MessageDelivery.upload_file` 仍通过已授权的工作区读取内容，最多16MiB；当前只有显式启用 NapCat 的兼容适配器实现该能力，QQ/钉钉未实现的文件能力返回明确错误。详见[完整机器人适配器设计](../../../../docs/design/bot-adapters.md)。
 
 公开调用合同位于`api.py`，实现归`internal/`。跨模块只依赖公开合同，`bootstrap/`负责具体实现的组装。当前支持状态与测试证据见[SDK覆盖表](../../../../docs/design/sdk-coverage.md)，职责设计见[架构设计](../../../../docs/design/architecture.md)。
+
+`conversations/api.py` 只定义 `ConversationInbox`、消息和批次合同。持久化位于 `internal/conversations`，复用平台 `AsyncDatabase`、事务和 `VersionedRecordStore`，支持 SQLite/PostgreSQL；应用按项目 namespace 注入收件箱，不再创建独立队列文件。
+
+Outbox 负责可靠事件投递；收件箱负责机器人消息的审核状态、合批、Run 关联和恢复，它们共享存储机制并保留各自语义。项目状态隔离，重复消息不覆盖首份内容，同一频道只能有一个活动批次。消费流程仍由本机进程锁保证单消费者，不声明分布式审核租约。

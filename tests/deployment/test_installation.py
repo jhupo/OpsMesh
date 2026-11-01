@@ -499,6 +499,29 @@ inspect_installation_state
     assert (tmp_path / "config/source.sha256").read_text(encoding="utf-8") == "old-source-digest"
 
 
+def test_online_update_rechecks_installed_version_inside_install_lock(bash, installation):
+    setup, environment = installation
+    result = invoke(
+        bash,
+        setup
+        + """
+UPGRADE=true
+EXPECT_INSTALLED_VERSION=0.3.1
+mkdir -p "$CURRENT_RELEASE"
+printf '%s\\n' 0.4.0 > "$CURRENT_RELEASE/VERSION"
+release_payload() { printf reviewed; }
+# Git Bash cannot pass its dynamic descriptors to the bundled native flock.
+# Exercise the installer decision after a successfully acquired lock.
+flock() { :; }
+acquire_installation_lock
+inspect_installation_state
+""",
+        environment=environment,
+    )
+    assert result.returncode != 0
+    assert "Installed version changed" in result.stderr
+
+
 def test_docker_initialization_precedes_application_start_and_does_not_pass_password_in_argv(
     bash, tmp_path, installation
 ):

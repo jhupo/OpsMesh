@@ -46,6 +46,22 @@ def _message_index(data: JsonData) -> str:
     return str(data.get("msg_seq", data.get("seq", "")))
 
 
+def _author_metadata(author: JsonData) -> JsonData:
+    """Provider-reported display metadata is not a platform authorization grant."""
+    metadata: JsonData = {}
+    role = author.get("member_role")
+    if isinstance(role, str) and role in {"member", "admin", "owner"}:
+        metadata["member_role"] = role
+    name = author.get("username")
+    if isinstance(name, str):
+        display_name = " ".join(
+            "".join(c if c.isprintable() else " " for c in name[:1024]).split()
+        )[:128]
+        if display_name:
+            metadata["display_name"] = display_name
+    return metadata
+
+
 def decode_event(payload: JsonData, *, account_id: str, self_id: str) -> BotInboundEvent:
     kind = _identifier(payload.get("t"), "type")
     data = payload.get("d")
@@ -90,6 +106,11 @@ def decode_event(payload: JsonData, *, account_id: str, self_id: str) -> BotInbo
     else:
         occurred_at = datetime.now(UTC)
     message = decode_message(data, self_id=self_id)
+    metadata = _author_metadata(author)
+    mentioned_self = any(
+        segment.type == "qq:mention" and segment.data.get("user_id") == self_id
+        for segment in message
+    )
     index = _message_index(data)
     identity = _identity_digest((kind, channel, message_id, index))
     event = QQMessageEvent(
@@ -103,14 +124,15 @@ def decode_event(payload: JsonData, *, account_id: str, self_id: str) -> BotInbo
         user_id=user_id,
         session_id=f"qq:{account_id}:{channel}",
         occurred_at=occurred_at,
-        to_me=kind
+        to_me=mentioned_self
+        or kind
         in {
             "C2C_MESSAGE_CREATE",
             "DIRECT_MESSAGE_CREATE",
             "GROUP_AT_MESSAGE_CREATE",
             "AT_MESSAGE_CREATE",
         },
-        payload={"event_type": kind, "message_index": index},
+        payload={"event_type": kind, "message_index": index, **metadata},
     )
     return BotInboundEvent(
         event=event,
@@ -121,6 +143,7 @@ def decode_event(payload: JsonData, *, account_id: str, self_id: str) -> BotInbo
             "index": index,
             "user_id": user_id,
             "message": message.model_dump(mode="json"),
+            **metadata,
         },
-        ignored=author.get("bot") is True,
+        ignored=author.get("bot") is True or user_id == self_id,
     )

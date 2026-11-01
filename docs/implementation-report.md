@@ -1,5 +1,21 @@
 # opsmesh 实施与验收记录
 
+2026-11-01 架构审查整改：完成 Run/流事件索引与显式迁移、审核记忆准入、显式依赖、类型化执行资源、运行时与后台职责拆分，以及能力写入口收拢。全量回归 999 passed、32 skipped，另补充持久 Run 策略回归 1 passed，临时 PostgreSQL 10 passed；Ruff、mypy（404 源文件）、仓库检查和构建通过。本轮未部署远端，详细变更和升级限制见[架构重构记录](reviews/2026-11-01-architecture-refactor.md)。以下保留此前各轮结果。
+
+队列批处理修正：取消固定 24 条聊天上限，当前已审核积压按估算上下文预算合并，一轮结束立即继续消费；超出预算的消息保留到下一批。相关回归 249 passed、1 skipped；服务器真实 PostgreSQL 独立收件箱的 60 条积压合并受控测试通过，QQ 连接与生产队列正常。详见 [QQ 助手设计](design/qq-assistant.md)。
+
+2026-11-01 最新 QQ 助手增量：普通文本默认接话、稳定成员标识、同群 Session、确认投递后知识与 Memory 生成、禁用工具的独立图片分析通道，见 [QQ 助手设计与验收](design/qq-assistant.md)。全量回归 985 passed、31 skipped，Ruff、mypy（387 源码文件）、仓库检查与构建通过。已部署并确认真实 QQ 群文字投递和 Memory 生成成功；平台图片 Run 实测成功，真实群图片待用户后续验收；当前网关语音两接口返回 404，视频理解尚未接入。后文保留各轮历史记录。
+
+本日最新增量：默认与个人模型、加密凭据、显式在线更新、Jev 仅审核/Agent 决定回复、群 Session 共享、CLI 职责拆分及项目队列备份恢复已实现；测试和真实服务结果见[补齐与架构复核](reviews/2026-11-01-platform-follow-up.md)。后文保留各轮历史验证范围。
+
+2026-11-01 开发增量：QQ 官方 WebSocket、群内机器人身份映射、管理员撤回与主动消息；
+平台可将指定群的未映射成员委派给非管理员身份。[QQ 群工作空间示例](../examples/qq_community/README.md)
+通过平台创建/发布一个沙箱 Agent，绑定上游人物 Skill、Jev 工具与原生知识库。
+通用审核、聊天合并、主动参与及已投递问答归档由平台对话服务协调；示例不再维护
+第二个 FAQ Agent、知识检索工具或知识/记忆文件镜像。此次审查的实际接口与缺口见
+[源码审查](reviews/2026-11-01-source-review.md)。此处仅记录实现范围，真实部署和端到端结果
+应以本次验收记录为准；旧测试数字保留其当时范围。
+
 目录后续修正见[全源码职责审查](design/source-layout.md)：协议现归 `infrastructure/bots`，事务消息现有真实实现 `infrastructure/messaging/outbox.py`；本文保留各历史轮次的验证记录。
 
 
@@ -42,7 +58,6 @@ opsmesh/
 │   ├── infrastructure/  # SQL/迁移/Outbox、Redis、本地/S3、日志/指标/追踪
 │   ├── maintenance/     # 完整离线备份、摘要验证与空目标恢复
 │   ├── dependencies.py  # 插件通过Depends获取公开业务服务
-│   └── plugins/         # 可选扩展命名空间；旧调度路径兼容导出
 ├── tests/               # 框架、平台、SDK、HTTP、资源、费用、基础设施、机器人
 ├── docs/                # 设计、覆盖矩阵、命名、运维、开发、API说明
 ├── examples/            # 可运行的代码插件示例
@@ -60,7 +75,7 @@ opsmesh/
 
 业务类型使用完整语义，如`AgentSpecification`、`ConversationSession`、`UserPrincipal`、`ModelProfile`、`WorkspaceSnapshot`。具体实现使用`OpenAIAgentsBackend`、`AgentDefinitionCatalog`、`PersistentAgentRuntime`等名称；不机械给所有类加前缀，也不保留大量旧名字alias。规范见[命名约定](development-naming.md)。
 
-OpenAI后端的 `backend.py` 只编排图构建、恢复、Runner执行、结果转换与清理；模型、输出、普通/Hosted/原生工具、委派、护栏、流、检查点、压缩、沙箱生命周期/子环境/记忆、追踪、错误与用量分别维护。组装中的 `AgentExecutionBridge` 委托发布校验、上下文绑定、资源作用域与计量组件；服务构造也按能力、运行时和传输分阶段。拆分以职责和资源所有权为依据，不以单个函数行数作为完成标准。
+OpenAI后端的 `backend.py` 只编排图构建、恢复、Runner执行、结果转换与清理；模型、输出、普通/Hosted/原生工具、委派、护栏、流、检查点、压缩、沙箱生命周期/子环境/记忆、追踪、错误与用量分别维护。`AgentPublicationValidator` 负责发布准备和验证，`AgentExecutionBridge` 负责执行上下文和资源，`RunResultFinalizer` 负责制品、历史和终态计量；服务构造按能力、运行时和传输分阶段。拆分以职责和资源所有权为依据，不以单个函数行数作为完成标准。
 
 ## 已落地的主要能力
 
@@ -114,7 +129,7 @@ HTTP小规模请求检查不代表容量基准；单VM上的K3s不能证明跨�
 
 机器人/频道到Agent发布版本的绑定由`modules/bots`拥有。服务补齐查询、列表、解绑，并统一校验管理权限、Agent版本/启用状态和绑定者执行权限；原HTTP专有版本校验下沉到服务。入站仍检查消息发送者权限；解绑不取消已经提交的Run，并发新绑定不会被旧解绑删除。
 
-进程内定时器移到`framework/scheduling.py`，持久任务移到`modules/scheduling/api.py`与`internal/service.py`；旧`plugins/scheduler`仅兼容导出。`Depends(get_bots)`和`Depends(get_scheduling)`提供同一平台服务。新增测试实际验证`plugins=()`时Bot与定时事件都能创建并执行Agent Run，而非仅断言接口存在。仓库规则禁止核心模块、入口与组装根静态依赖业务插件。
+进程内定时器移到`framework/scheduling.py`，持久任务移到`modules/scheduling/api.py`与`internal/service.py`；旧调度兼容导出已删除。`Depends(get_bots)`和`Depends(get_scheduling)`提供同一平台服务。新增测试实际验证`plugins=()`时Bot与定时事件都能创建并执行Agent Run，而非仅断言接口存在。仓库规则禁止核心模块、入口与组装根静态依赖业务插件。
 
 ### 核心回归证据
 
@@ -122,14 +137,14 @@ HTTP小规模请求检查不代表容量基准；单VM上的K3s不能证明跨�
 - [SDK与审批](../tests/runtime/test_openai_backend.py)、[类型化扩展](../tests/runtime/test_advanced_extensions.py)、[原生工具](../tests/runtime/test_native_tools.py)、[Hosted MCP](../tests/runtime/test_hosted_mcp.py)、[压缩与WebSocket](../tests/runtime/test_compaction_and_websocket.py)。
 - [单次覆盖](../tests/runtime/test_run_overrides.py)、[HTTP覆盖授权](../tests/http/test_run_overrides.py)、[子产物与指标](../tests/runtime/test_execution_metadata.py)、[请求计量](../tests/runtime/test_usage_observation.py)。
 - [原生记忆](../tests/runtime/test_sandbox_memory.py)、[独立子沙箱](../tests/runtime/test_isolated_sandbox.py)、[来源授权](../tests/runtime/test_sandbox_sources.py)、[记忆审批恢复](../tests/platform/test_live_memory_resume.py)。
-- [Git Skill](../tests/resources/test_git_skills.py)、[脚本工具](../tests/resources/test_script_tools.py)、[混合检索/MCP](../tests/resources/test_retrieval_mcp.py)、[机器人协议](../tests/bots/test_onebot_network.py)。
+- [Git Skill](../tests/resources/test_git_skills.py)、[脚本工具](../tests/resources/test_script_tools.py)、[混合检索/MCP](../tests/resources/test_retrieval_mcp.py)、[机器人协议](../tests/adapters/test_qq_gateway.py)。
 - [PostgreSQL](../tests/infrastructure/test_postgresql.py)、[Redis](../tests/infrastructure/test_cache.py)、[OTLP](../tests/infrastructure/test_telemetry_export.py)、[资源费用/FX/对账](../tests/usage/test_resource_billing.py)、[内容GC](../tests/resources/test_content_gc.py)。
 
 本次修复了真实组合场景中的问题：SDK start/end hook在不同Task中导致重复unknown计量；记忆工具attempt身份变化破坏检查点恢复；补价提前释放仍有未知成本的预算；子Agent产物只留在内存；并发子调用失败后资源未排空；独立Worker退出丢指标；traceparent变化破坏业务幂等。对应测试验证实际Runner或真实进程/数据库行为，不只检查接口存在。
 
 ## 实现范围与环境边界
 
-- 早期6个插件占位名混淆了平台能力和可选命令。Agent管理、Bot/频道绑定、会话运行、知识检索和持久调度已有平台服务；插件仅增加命令、领域规则和提供商。通用通知中心和工作流仍缺少平台实现。持久调度现归`modules/scheduling`，旧`plugins/scheduler`仅兼容导出。详见[平台与插件职责](design/plugins.md#内置插件的实际状态)。
+- 早期6个插件占位名混淆了平台能力和可选命令。Agent管理、Bot/频道绑定、会话运行、知识检索和持久调度已有平台服务；插件仅增加命令、领域规则和提供商。通用通知中心和工作流仍缺少平台实现。持久调度现归`modules/scheduling`，旧调度兼容导出已删除。详见[平台与插件职责](design/plugins.md#内置插件的实际状态)。
 - Web按要求仅预留；Claude、Realtime/Voice、跨SDK原生状态迁移不在本次实现。完整88项逐条边界见[覆盖表](design/sdk-coverage.md)。
 - 实际支持本地/S3存储、RemoteDocker mTLS和逐Run Kubernetes Job；不会把通用Provider注册称作每个云厂商都已适配。
 - 已验证真实模型的两条核心流程。随后网关返回余额不足，没有继续发收费请求；Hosted/远程Prompt模板/真实Memory费用等供应商分支仍需对应额度和资源验收。

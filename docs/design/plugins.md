@@ -52,7 +52,6 @@ src/opsmesh/
 │   └── scheduling/            # 平台持久任务、授权与租约调度
 │       ├── api.py              # PersistentSchedule、SchedulingService
 │       └── internal/service.py # PersistentScheduler
-├── plugins/scheduler/         # 旧调度import路径的兼容导出，无业务实现
 └── bootstrap/                  # 组装服务、绑定 provider、加载插件及运行编排
 ```
 
@@ -75,7 +74,7 @@ src/opsmesh/
 
 以上6个占位包没有插件实现，源码已移除，本地可能仍有零文件目录壳。不能据此断言平台服务也未实现，也不应为补齐目录而重复实现一套服务。通知中心已由modules/notifications实现；通用工作流不在当前范围。
 
-调度实现现已归位到 `framework/scheduling.py` 和 `modules/scheduling/`；`plugins/scheduler/` 仅保留旧import路径兼容层。平台启动不经 `PluginManager` 加载这两个组件，HTTP和代码插件都使用同一持久调度服务；插件可通过 `Depends(get_scheduling)` 获取它。`OpsMeshSettings.plugins` 默认为空。真正使用Loader的可运行示例位于 `examples/custom_plugin/`。
+调度实现现已归位到 `framework/scheduling.py` 和 `modules/scheduling/`；旧调度兼容层已删除。平台启动不经 `PluginManager` 加载这两个组件，HTTP和代码插件都使用同一持久调度服务；插件可通过 `Depends(get_scheduling)` 获取它。`OpsMeshSettings.plugins` 默认为空。真正使用Loader的可运行示例位于 `examples/custom_plugin/`。
 
 ### 平台绑定与插件规则
 
