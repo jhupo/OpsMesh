@@ -1,30 +1,43 @@
-# Local deployment example. Explicitly initialize schema before starting api/worker.
+# Optional Docker deployment. The Linux installer defaults to native systemd.
 name: opsmesh-dev
 services:
   api:
+    image: ${OPSMESH_IMAGE:-opsmesh-local:current}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${OPSMESH_ENV_FILE:-../.env}
     environment: &application-environment
       OPSMESH_DATA_DIRECTORY: /var/lib/opsmesh
+      OPSMESH_HOST: 0.0.0.0
+      OPSMESH_PORT: "8000"
       OPSMESH_DATABASE_URL: ${OPSMESH_DATABASE_URL:?Set an async PostgreSQL URL using host postgres}
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_WORKER_ENABLED: "false"
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPSMESH_ADMIN_PASSWORD: ${OPSMESH_ADMIN_PASSWORD:-}
+      # Bootstrap is passed only to `compose run -e OPSMESH_ADMIN_PASSWORD ... init`.
+      OPSMESH_ADMIN_PASSWORD: ""
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${OPSMESH_BIND_HOST:-127.0.0.1}:${OPSMESH_PORT:-8000}:8000"
     volumes:
       - opsmesh-data:/var/lib/opsmesh
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 12
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
   worker:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+    image: ${OPSMESH_IMAGE:-opsmesh-local:current}
+    restart: unless-stopped
+    env_file:
+      - ${OPSMESH_ENV_FILE:-../.env}
     command: ["worker"]
     environment:
       <<: *application-environment
@@ -38,12 +51,11 @@ services:
         condition: service_healthy
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: opsmesh
       POSTGRES_DB: opsmesh
       POSTGRES_PASSWORD: ${OPSMESH_POSTGRES_PASSWORD:?Set OPSMESH_POSTGRES_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -53,8 +65,7 @@ services:
       retries: 10
   redis:
     image: redis:7.4-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

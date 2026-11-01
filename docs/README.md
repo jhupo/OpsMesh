@@ -1,6 +1,8 @@
 # opsmesh 设计与实现文档
 
-核对日期：2026-10-31。本目录覆盖平台模块、NoneBot风格插件机制、Agent后端、能力装配、工作区/执行、文件记忆、持久化、观测与开源工程。
+核对日期：2026-11-01。本目录覆盖平台模块、NoneBot风格插件机制、Agent后端、能力装配、工作区/执行、文件记忆、持久化、观测与开源工程。
+
+v0.3.1 新增独立 Linux 安装包，默认采用本地 systemd 服务，Docker 为显式可选方式；制品内容和升级边界见 [v0.3.1 发布说明](releases/v0.3.1.md)。
 
 全源码目录责任审查、迁移说明和边界规则见[目录职责审查](design/source-layout.md)与[文件职责表](reference/source-responsibilities.md)。
 
@@ -42,6 +44,7 @@
 | [数据与协议](design/data-and-protocols.md) | 实体、持久化、HTTP/事件/错误合同及一致性目标 |
 | [当前状态与路线](roadmap.md) | 已实现范围、正确性补齐、外部验收及后续开发 |
 | [开发说明](development.md) | 安装、检查、锁文件、测试、导入规则和构建 |
+| [Linux 安装与服务管理](../deploy/linux.md) | wheel与依赖清单构成的独立安装包、默认本地systemd、可选Docker、配置与升级 |
 | [初始化交付记录](initialization-report.md) | 初次开源脚手架建立时的历史记录，不代表当前实现仍停留在该阶段 |
 | [运维说明](operations.md) | 进程、数据库、恢复、指标、追踪、成本与部署边界 |
 | [ADR 0001](adr/0001-modular-monolith.md) | 模块化单体与业务所有权 |

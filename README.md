@@ -2,11 +2,11 @@
 
 异步事件驱动、插件可扩展的 Agent 与机器人平台。以 OpenAI Agents SDK 为首个执行后端，通过独立的 AgentBackend 接口保留接入其他 SDK 的边界。
 
-[English](README.en.md) · [v0.3.0 发布说明](docs/releases/v0.3.0.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
+[English](README.en.md) · [v0.3.1 发布说明](docs/releases/v0.3.1.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
 
 ## 当前功能
 
-`0.3.0` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
+`0.3.1` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
 
 - NoneBot2 风格的 Driver、Adapter、Bot、Event、Message、Matcher、插件元数据、Depends 和上下文。
 - 本地用户、部门、角色权限、Agent 草稿/不可变版本、模型配置与代码工厂。
@@ -22,6 +22,25 @@ Web 门户和控制台仅预留目录；Claude 后端为后续适配。已在独
 
 本版本替换了仓库原 `0.2.x` 及更早版本的架构。旧数据库、配置、插件及检查点不能直接沿用；请先备份旧部署，在新目录和独立数据库中安装，按[发布说明](docs/releases/v0.3.0.md)重新配置。
 
+### Linux 服务安装
+
+从 [v0.3.1 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1)下载 `opsmesh-0.3.1-linux.tar.gz` 及对应 `.sha256` 文件，校验、解压后默认安装本地 systemd 服务：
+
+```sh
+sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.1-linux.tar.gz
+cd opsmesh-0.3.1-linux
+sudo bash install.sh
+sudo systemctl status opsmesh.service --no-pager
+sudo journalctl -u opsmesh.service -f
+```
+
+安装包包含 wheel、带哈希的运行依赖清单和部署文件，不携带 Python、`.venv` 或整套源码仓库。安装时优先复用服务用户可访问的本机 Python 3.11–3.14；没有适用解释器时在线获取 Python 3.13，再创建虚拟环境并安装锁定依赖。依赖安装需要联网。
+
+默认使用本地 SQLite，配置保存在 `/etc/opsmesh/opsmesh.env`，数据保存在 `/var/lib/opsmesh`。首次输入管理员密码后即可访问 `http://127.0.0.1:8000/docs`，无需 Docker 或 Kubernetes。需要 Docker 部署时显式执行 `sudo bash install.sh --mode docker`。两种模式的启停、升级、多实例及备份操作见 [Linux 安装指南](deploy/linux.md)。原 `v0.3.0` 历史发布没有该 Linux 安装包；开发者可用 `uv run python scripts/build_linux_release.py --output-dir dist/linux` 从当前源码构建。
+
+### 手动安装发行包
+
 支持范围以测试记录为准，项目要求 Python 3.11+。推荐在独立虚拟环境中安装。下面的发行包命令直接使用 GitHub Release，不要求 PyPI 上存在同名包。
 
 ```sh
@@ -31,7 +50,7 @@ python -m venv .venv
 Linux/macOS 执行 `. .venv/bin/activate`，Windows PowerShell 执行 `.venv\Scripts\Activate.ps1`，然后安装并启动：
 
 ```sh
-python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.0/opsmesh-0.3.0-py3-none-any.whl"
+python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.1/opsmesh-0.3.1-py3-none-any.whl"
 opsmesh --version
 opsmesh init
 opsmesh check

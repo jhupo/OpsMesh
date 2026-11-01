@@ -19,6 +19,11 @@ opsmesh/
 │   │   └── .gitkeep
 │   ├── edge/
 │   │   └── .gitkeep
+│   ├── install/
+│   │   ├── check_ready.py
+│   │   ├── common.sh
+│   │   ├── docker.sh
+│   │   └── local.sh
 │   ├── kubernetes/
 │   │   ├── job-mode/
 │   │   │   ├── api.yaml
@@ -37,8 +42,12 @@ opsmesh/
 │   │   └── worker.yaml
 │   ├── observability/
 │   │   └── .gitkeep
+│   ├── systemd/
+│   │   └── opsmesh.service
 │   ├── compose.yaml
 │   ├── Dockerfile
+│   ├── install.sh
+│   ├── linux.md
 │   └── README.md
 ├── docs/
 │   ├── adr/
@@ -60,7 +69,8 @@ opsmesh/
 │   │   ├── source-responsibilities.md
 │   │   └── source-tree.md
 │   ├── releases/
-│   │   └── v0.3.0.md
+│   │   ├── v0.3.0.md
+│   │   └── v0.3.1.md
 │   ├── development-naming.md
 │   ├── development.md
 │   ├── implementation-report.md
@@ -84,6 +94,8 @@ opsmesh/
 │   ├── 0001-initial.md
 │   └── README.md
 ├── scripts/
+│   ├── build_linux_release.py
+│   ├── check_linux_installation.py
 │   ├── check_repository.py
 │   ├── check_sdist.py
 │   ├── check_sdk_surface.py
@@ -557,6 +569,10 @@ opsmesh/
 │   │   ├── test_management.py
 │   │   ├── test_onebot.py
 │   │   └── test_onebot_network.py
+│   ├── deployment/
+│   │   ├── conftest.py
+│   │   ├── test_installation.py
+│   │   └── test_linux_release.py
 │   ├── framework/
 │   │   ├── conftest.py
 │   │   ├── test_dependencies.py

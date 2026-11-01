@@ -2,7 +2,24 @@
 
 此目录提供API/Worker双副本、显式数据库迁移Job、共享内容PVC、Service和API中断预算；没有创建外部PostgreSQL、Redis或公共Ingress。已在独立K3s v1.34.1集群验收逐Run Job完成、跨Pod审批恢复、取消、缺镜像deadline失败与日志回收。
 
-共享PVC预先保证控制器与Run worker的UID/GID（默认10001）有读写权限；hostPath不会自动替宿主root创建的子目录修复权限。部署前构建`deploy/Dockerfile`，用Kustomize overlay将`opsmesh:0.3.0`替换为自己镜像仓库中的固定digest。配置一个支持ReadWriteMany和POSIX一致读写的存储类；不能把不同Pod本地目录视为共享工作区。数据库使用外部PostgreSQL，Redis用于跨Gateway限流。
+镜像从包含wheel和锁定依赖清单的Linux发行包构建。`deploy/Dockerfile`不再接受源码仓库根目录作为构建上下文。在v0.3.1源码仓库中先生成并解压发行包，再使用包内的Dockerfile：
+
+```sh
+uv run python scripts/build_linux_release.py --output-dir dist/linux
+(
+  set -e
+  cd dist/linux
+  sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
+  tar -xzf opsmesh-0.3.1-linux.tar.gz
+  cd opsmesh-0.3.1-linux
+  sha256sum --check SHA256SUMS
+  docker build --file deploy/Dockerfile --tag opsmesh:0.3.1 .
+)
+```
+
+也可直接下载并校验v0.3.1的Linux发行包，从解压步骤开始。将生成的镜像推送到自己的镜像仓库，再用Kustomize overlay将`opsmesh:0.3.1`替换为固定digest；本示例标签不表示存在公开容器镜像。后续`kubectl`命令仍从源码仓库根目录执行，使用本目录中的部署清单。
+
+共享PVC预先保证控制器与Run worker的UID/GID（默认10001）有读写权限；hostPath不会自动替宿主root创建的子目录修复权限。配置一个支持ReadWriteMany和POSIX一致读写的存储类；不能把不同Pod本地目录视为共享工作区。数据库使用外部PostgreSQL，Redis用于跨Gateway限流。
 
 在`opsmesh`命名空间创建已有Secret `opsmesh-secrets`，至少提供`OPSMESH_DATABASE_URL`、`OPSMESH_REDIS_URL`和模型/提供商环境引用。模型密钥应另行设置`OPSMESH_RUN_WORKER_ENVIRONMENT_ALLOWLIST`才能传给子进程。启用OTLP时提供`OPSMESH_TRACING_ENDPOINT`，认证JSON放到被`OPSMESH_TRACING_HEADERS_SECRET_REF`引用的环境变量；不把凭据写进仓库。
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+## 0.3.1 — 2026-11-01
+
+- Add a dedicated `opsmesh-<VERSION>-linux.tar.gz` installation bundle containing
+  the built wheel, hash-locked runtime requirements and deployment files. Exclude
+  Python interpreters, virtual environments, development source trees and tests.
+- Default to native systemd installation, reusing a service-accessible Python
+  3.11–3.14 or downloading managed Python 3.13 when needed. Install runtime
+  dependencies online into a new virtual environment. Docker remains an explicit
+  `--mode docker` and installs the same wheel and locked dependencies.
+- Preserve instance configuration and data across repeat installs, require
+  explicit upgrades, and accept bootstrap passwords through an interactive
+  prompt, stdin or an existing protected secret file without persisting them in
+  long-lived services.
+- Add instance isolation, service readiness checks and installation behavior
+  tests from the built artifact. Publish only the HTTP port in Compose and use
+  bounded HTTPS package downloads while building the application image. Keep the
+  existing v0.3.0 release and its assets unchanged.
+
 ## 0.3.0 — 2026-10-31
 
 This release replaces the architecture used by the repository's previous `0.2.x`
