@@ -403,7 +403,7 @@ async def test_service_failure_is_safe_and_failed_audit_blocks_mutation(http_pla
         await app.services.agents.get("blocked")
 
 
-@pytest.mark.parametrize("finish", ["cancel", "revoke"])
+@pytest.mark.parametrize("finish", ["cancel", "revoke", "probe_cancel", "cleanup_cancel"])
 async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
     http_platform, monkeypatch, finish
 ):
@@ -411,18 +411,30 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
     reference = await published_agent(client, headers["alice"])
     run, _ = await submit_run(client, headers["alice"], reference)
     started, closed = asyncio.Event(), asyncio.Event()
+    probe_started, disconnect = asyncio.Event(), asyncio.Event()
+    cleanup_started, finish_cleanup = asyncio.Event(), asyncio.Event()
+    subscription_task = None
 
     async def subscriber(run_id, after_seq):
+        nonlocal subscription_task
         try:
             yield RunStreamEvent(run_id=run_id, attempt_id=None, seq=1, kind="delta", payload={})
+            subscription_task = asyncio.current_task()
             started.set()
             await asyncio.Event().wait()
         finally:
+            if finish == "cleanup_cancel":
+                cleanup_started.set()
+                await finish_cleanup.wait()
             closed.set()
 
     monkeypatch.setattr(app.services.runtime, "subscribe", subscriber)
 
     async def receive():
+        if disconnect.is_set():
+            return {"type": "http.disconnect"}
+        if finish == "probe_cancel" and started.is_set():
+            probe_started.set()
         await asyncio.Event().wait()
 
     request = Request(
@@ -458,8 +470,20 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
         # completed anext() call that happened to return a heartbeat.
         consumer = asyncio.create_task(consume_until_error())
         await asyncio.wait_for(started.wait(), 10)
-        if finish == "cancel":
+        if finish != "revoke":
+            if finish == "probe_cancel":
+                await asyncio.wait_for(probe_started.wait(), 10)
             consumer.cancel()
+            if finish == "cleanup_cancel":
+                await asyncio.wait_for(cleanup_started.wait(), 10)
+                consumer.cancel()
+                await asyncio.sleep(0)
+                assert not closed.is_set() and not consumer.done()
+                finish_cleanup.set()
+            # asyncio.wait does not inject another cancellation that might hide
+            # the fact that the original request was swallowed by a cancel scope.
+            done, _ = await asyncio.wait({consumer}, timeout=10)
+            assert done, "The stream swallowed an external cancellation"
             with pytest.raises(asyncio.CancelledError):
                 await consumer
         else:
@@ -467,8 +491,11 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
             chunk = await asyncio.wait_for(consumer, 10)
             assert "UNAUTHENTICATED" in chunk
     finally:
+        disconnect.set()
+        finish_cleanup.set()
         if consumer is not None:
             consumer.cancel()
-            await asyncio.gather(consumer, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(consumer, return_exceptions=True), 10)
         await iterator.aclose()
     await asyncio.wait_for(closed.wait(), 10)
+    assert subscription_task is not None and subscription_task.done()

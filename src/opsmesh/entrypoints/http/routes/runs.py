@@ -198,7 +198,14 @@ async def events(
         try:
             while True:
                 done, _ = await asyncio.wait({pending}, timeout=app.settings.sse_heartbeat_seconds)
-                if await request.is_disconnected():
+                disconnected = await request.is_disconnected()
+                # Starlette polls receive inside a cancelled AnyIO scope. If an
+                # external task cancellation races with that probe, the scope may
+                # consume its exception while leaving the cancellation requested.
+                current_task = asyncio.current_task()
+                if current_task is not None and current_task.cancelling():
+                    raise asyncio.CancelledError
+                if disconnected:
                     break
                 if time.monotonic() - last_authorization >= app.settings.sse_heartbeat_seconds:
                     current = await app.services.accounts.authenticate(request.state.bearer_token)
@@ -223,12 +230,25 @@ async def events(
             logger.exception("Run stream failed for %s", run_id_fingerprint)
             yield 'event: error\ndata: {"code":"INTERNAL_ERROR"}\n\n'
         finally:
-            pending.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await pending
-            close = getattr(iterator, "aclose", None)
-            if close is not None:
-                await close()
+
+            async def close_subscription() -> None:
+                pending.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await pending
+                close = getattr(iterator, "aclose", None)
+                if close is not None:
+                    await close()
+
+            cleanup = asyncio.create_task(close_subscription())
+            interrupted = False
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    interrupted = True
+            cleanup.result()
+            if interrupted:
+                raise asyncio.CancelledError
 
     return StreamingResponse(
         stream(),
