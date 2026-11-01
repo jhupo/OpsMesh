@@ -289,13 +289,15 @@ async def test_unsuccessful_run_never_returns_output_as_success(harness, status)
 
 
 async def test_wait_timeout_keeps_run_and_recovery_does_not_resubmit(harness):
-    harness.platform.settings = harness.settings.model_copy(update={"run_wait_seconds": 0.05})
+    harness.platform.settings = harness.settings.model_copy(update={"run_wait_seconds": 1})
     harness.runtime.status = "running"
     with pytest.raises(OpsMeshError) as caught:
         await run(harness)
     assert caught.value.code == "CONVERSATION_RUN_TIMEOUT"
     assert caught.value.retryable
+    assert caught.value.details["run_id"] == "run-1"
     harness.runtime.cancel.assert_not_awaited()
+    harness.platform.settings = harness.settings
     harness.runtime.after_read_status = "completed"
     assert (await run(harness)).id == "run-1"
     assert len(harness.runtime.submissions) == 1
