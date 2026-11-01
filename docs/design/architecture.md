@@ -43,11 +43,12 @@ opsmesh/
 │   │   ├── usage/                      # 用量事实、价格、汇率、预算、对账
 │   │   ├── audit/                      # 操作证据与查询
 │   │   └── configuration/              # 平台设置、运行准入策略
-│   ├── bootstrap/                      # 组装根与跨域调用链
+│   ├── bootstrap/                      # 部署配置、启动和服务组装
+│   ├── application/                    # 跨模块调用链与后台协调
 │   ├── entrypoints/                    # CLI、HTTP/SSE、Run Worker入口
 │   ├── infrastructure/                 # 具体技术实现
 │   │   ├── bots/                       # dingtalk、qq、onebot协议实现
-│   │   ├── workers/                    # 子进程、Docker、Kubernetes Run Worker
+│   │   ├── run_workers/                # 子进程、Docker、Kubernetes Run Worker
 │   │   ├── database/                   # 连接、迁移、事务、CAS记录与资源可用性存储
 │   │   ├── messaging/                  # 事务Outbox、领取租约、重试与死信
 │   │   ├── coordination/               # 容量准入、Redis租约与请求限速

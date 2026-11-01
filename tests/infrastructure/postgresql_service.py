@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
 import os
 import secrets
 import socket
 import subprocess
+from base64 import b64encode
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -14,11 +17,25 @@ from tempfile import TemporaryDirectory
 from sqlalchemy.engine import URL
 
 
+def _scram_verifier(password: str) -> str:
+    """Build PostgreSQL's SCRAM verifier for this fixture's generated ASCII password."""
+    salt = secrets.token_bytes(16)
+    iterations = 4096
+    salted = hashlib.pbkdf2_hmac("sha256", password.encode("ascii"), salt, iterations)
+    client_key = hmac.digest(salted, b"Client Key", "sha256")
+    stored_key = hashlib.sha256(client_key).digest()
+    server_key = hmac.digest(salted, b"Server Key", "sha256")
+    encoded_salt, encoded_stored, encoded_server = (
+        b64encode(value).decode("ascii") for value in (salt, stored_key, server_key)
+    )
+    return f"SCRAM-SHA-256${iterations}:{encoded_salt}${encoded_stored}:{encoded_server}"
+
+
 @dataclass
 class TemporaryPostgreSQL:
     binaries: Path
     port: int = 0
-    credential: str = field(default_factory=lambda: secrets.token_urlsafe(30), repr=False)
+    password: str = field(default_factory=lambda: secrets.token_urlsafe(30), repr=False)
     username: str = "opsmesh_test"
     directory: Path | None = None
 
@@ -26,7 +43,7 @@ class TemporaryPostgreSQL:
         return URL.create(
             "postgresql+asyncpg" if async_driver else "postgresql",
             username=self.username,
-            password=self.credential,
+            password=self.password,
             host="127.0.0.1",
             port=self.port,
             database=database,
@@ -76,25 +93,34 @@ class TemporaryPostgreSQL:
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
         self.data = self.directory / "data"
-        password_file = self.directory / "init.password"
-        password_file.write_text(self.credential, encoding="utf-8")
+        verifier_file = self.directory / "init.scram"
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]
         try:
-            self._command(
-                "initdb",
-                "-D",
-                str(self.data),
-                "--username",
-                self.username,
-                "--pwfile",
-                str(password_file),
-                "--auth=scram-sha-256",
-                "--no-locale",
-                "--encoding=UTF8",
-            )
-            password_file.unlink()
+            # initdb passes this value to ALTER ROLE, which preserves SCRAM verifiers.
+            # Persist only the salted verifier, never the connection password.
+            with os.fdopen(
+                os.open(verifier_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                "w",
+                encoding="ascii",
+            ) as output:
+                output.write(_scram_verifier(self.password))
+            try:
+                self._command(
+                    "initdb",
+                    "-D",
+                    str(self.data),
+                    "--username",
+                    self.username,
+                    "--pwfile",
+                    str(verifier_file),
+                    "--auth=scram-sha-256",
+                    "--no-locale",
+                    "--encoding=UTF8",
+                )
+            finally:
+                verifier_file.unlink(missing_ok=True)
             with (self.data / "postgresql.conf").open("a", encoding="utf-8") as configuration:
                 configuration.write(
                     f"\nlisten_addresses='127.0.0.1'\nport={self.port}\n"

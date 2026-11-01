@@ -1,6 +1,6 @@
 # 文件级职责清单
 
-调整前 355 个 Python 源码文件均已映射到保留、迁移、拆分或退役记录；当前 365 个文件逐项列于下表。
+调整前 355 个 Python 源码文件均已映射到保留、迁移、拆分或退役记录；当前 366 个文件逐项列于下表。
 
 本表从实际源码 AST 提取路径、声明和导入，结合目录所有权规则整理。职责说明沿用文件文档和主要符号；不能据此推断每一个函数都已逐行验证。审查决策、依赖规则和迁移风险见[目录职责审查](../design/source-layout.md)。
 
@@ -315,6 +315,7 @@
 | [modules/runtime/internal/backends/openai_agents/usage.py](../../src/opsmesh/modules/runtime/internal/backends/openai_agents/usage.py) | runtime / 私有 SDK 实现 | Usage observation preserves cumulative SDK counters; pricing is a separate module.；begin_request, publish_unknown_usage, publish_request_usage, _record_completed_usage, _numeric_usage, publish_hosted_usage, observe_usage | 保留 |
 | [modules/runtime/internal/extensions.py](../../src/opsmesh/modules/runtime/internal/extensions.py) | runtime / 私有状态与实现 | Owned, in-process runtime code declarations.；require_plugin, OwnedAgentBackend, RuntimeExtensionRegistry | 保留 |
 | [modules/runtime/internal/history.py](../../src/opsmesh/modules/runtime/internal/history.py) | runtime / 私有状态与实现 | CAS-protected model history; independent of display-message history.；ModelHistory | 保留 |
+| [modules/runtime/internal/cleanup.py](../../src/opsmesh/modules/runtime/internal/cleanup.py) | runtime / 私有状态与实现 | 重复取消时等待会话释放和资源清理结束，再传播取消；finish_run_cleanup | 新增取消清理边界 |
 | [modules/runtime/internal/management_base.py](../../src/opsmesh/modules/runtime/internal/management_base.py) | runtime / 私有状态与实现 | Authorization shared by user-facing Run and approval management.；RuntimeManagementBase | 迁移：`modules/runtime/management_base.py` |
 | [modules/runtime/internal/metrics.py](../../src/opsmesh/modules/runtime/internal/metrics.py) | runtime / 私有状态与实现 | Observe committed state transitions; metrics failure cannot roll back run facts.；RunMetrics | 保留 |
 | [modules/runtime/internal/service.py](../../src/opsmesh/modules/runtime/internal/service.py) | runtime / 私有状态与实现 | Durable run coordination with CAS ownership, approvals and session exclusion.；digest, PersistentAgentRuntime | 保留 |

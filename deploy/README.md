@@ -2,6 +2,8 @@
 
 The default local application needs only Python and SQLite. `Dockerfile` and `compose.yaml` also provide API/Worker/PostgreSQL/Redis services. These are deployment examples. A separate Linux test host has validated actual Docker isolation/cancellation, mutual-TLS remote sandboxes and per-run Jobs on K3s. Kubernetes setup and RBAC are documented in [kubernetes](kubernetes/README.md).
 
+Kubernetes is optional. A single workstation does not need a cluster: start with `opsmesh serve`, or use Compose when PostgreSQL and Redis are wanted. Use the Kubernetes examples only when deploying to an existing cluster or needing per-Run Jobs; multiple services alone do not require Kubernetes.
+
 ## Local Compose
 
 Copy `.env.example` to `.env`, then configure a database password and an async URL with the Compose hostname `postgres`. Percent-encode special characters in URL credentials; the PostgreSQL password remains its original value. Set a first administrator password (12+ characters) or allow `init` to prompt interactively.

@@ -1,6 +1,6 @@
 # opsmesh 实际源码与工程文件树
 
-当前 365 个Python源码文件。由`scripts/generate_source_tree.py`生成。排除缓存、构建产物和没有文件的目录。不把预留名称当作已实现功能。
+当前 366 个Python源码文件。由`scripts/generate_source_tree.py`生成。排除缓存、构建产物和没有文件的目录。不把预留名称当作已实现功能。
 
 ```text
 opsmesh/
@@ -10,7 +10,8 @@ opsmesh/
 │   │   ├── config.yml
 │   │   └── feature_request.yml
 │   ├── workflows/
-│   │   └── ci.yml
+│   │   ├── ci.yml
+│   │   └── codeql.yml
 │   ├── dependabot.yml
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── deploy/
@@ -450,6 +451,7 @@ opsmesh/
 │       │   │   │   │   └── __init__.py
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── artifacts.py
+│       │   │   │   ├── cleanup.py
 │       │   │   │   ├── extensions.py
 │       │   │   │   ├── history.py
 │       │   │   │   ├── management_base.py
@@ -597,6 +599,7 @@ opsmesh/
 │   │   ├── test_platform_backup.py
 │   │   ├── test_postgresql.py
 │   │   ├── test_postgresql_bot_authorization.py
+│   │   ├── test_postgresql_service.py
 │   │   ├── test_s3_integration.py
 │   │   ├── test_s3_storage.py
 │   │   └── test_telemetry_export.py

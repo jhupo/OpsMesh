@@ -421,10 +421,6 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
             closed.set()
 
     monkeypatch.setattr(app.services.runtime, "subscribe", subscriber)
-    if finish == "cancel":
-        monkeypatch.setattr(
-            app, "settings", app.settings.model_copy(update={"sse_heartbeat_seconds": 10})
-        )
 
     async def receive():
         await asyncio.Event().wait()
@@ -443,22 +439,36 @@ async def test_stream_releases_pending_iterator_on_cancel_or_revocation(
     user = await app.services.accounts.get_principal(principals["alice"])
     response = await events(run["id"], request, user)
     iterator = response.body_iterator
-    first_chunk = await anext(iterator)
-    while ": heartbeat" in first_chunk:
-        first_chunk = await asyncio.wait_for(anext(iterator), 1)
-    assert "id: 1" in first_chunk
-    next_chunk = asyncio.create_task(anext(iterator))
-    await asyncio.wait_for(started.wait(), 1)
-    if finish == "cancel":
-        next_chunk.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await next_chunk
-    else:
-        await app.services.accounts.logout(token)
-        chunk = await asyncio.wait_for(next_chunk, 1)
-        # DB logout can overlap one heartbeat; continue until revocation is observed.
-        while "event: error" not in chunk:
-            chunk = await asyncio.wait_for(anext(iterator), 1)
-        assert "UNAUTHENTICATED" in chunk
+
+    async def consume_until_error():
+        async for chunk in iterator:
+            if "event: error" in chunk:
+                return chunk
+            assert chunk == ": heartbeat\n\n"
+        raise AssertionError("Stream ended before revocation was reported")
+
+    consumer = None
+    try:
+        async with asyncio.timeout(10):
+            first_chunk = await anext(iterator)
+            while first_chunk == ": heartbeat\n\n":
+                first_chunk = await anext(iterator)
+        assert "id: 1" in first_chunk
+        # Consume all heartbeats so cancellation targets the stream, not an already
+        # completed anext() call that happened to return a heartbeat.
+        consumer = asyncio.create_task(consume_until_error())
+        await asyncio.wait_for(started.wait(), 10)
+        if finish == "cancel":
+            consumer.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await consumer
+        else:
+            await app.services.accounts.logout(token)
+            chunk = await asyncio.wait_for(consumer, 10)
+            assert "UNAUTHENTICATED" in chunk
+    finally:
+        if consumer is not None:
+            consumer.cancel()
+            await asyncio.gather(consumer, return_exceptions=True)
         await iterator.aclose()
-    await asyncio.wait_for(closed.wait(), 1)
+    await asyncio.wait_for(closed.wait(), 10)

@@ -150,6 +150,59 @@ async def test_cancel_propagates_and_releases_session(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_repeated_cancellation_drains_session_and_resource_cleanup(tmp_path, monkeypatch):
+    backend = ControlledBackend(block=True)
+    runtime, database = await create_runtime(tmp_path, backend)
+    releasing, release = asyncio.Event(), asyncio.Event()
+    cleaning, finish_cleanup = asyncio.Event(), asyncio.Event()
+    resource_closed = asyncio.Event()
+    original_release = runtime._release_session
+    original_factory = runtime.context_factory
+
+    async def blocked_release(record):
+        releasing.set()
+        await release.wait()
+        await original_release(record)
+
+    async def cleanup():
+        cleaning.set()
+        await finish_cleanup.wait()
+        resource_closed.set()
+
+    async def factory(view):
+        context = await original_factory(view)
+        context.services["cleanup_resources"] = cleanup
+        return context
+
+    monkeypatch.setattr(runtime, "_release_session", blocked_release)
+    monkeypatch.setattr(runtime, "context_factory", factory)
+    try:
+        run = await runtime.submit(request())
+        task = runtime.start(run.id)
+        await asyncio.wait_for(backend.started.wait(), 5)
+        task.cancel()
+        await asyncio.wait_for(releasing.wait(), 5)
+        task.cancel()
+        release.set()
+        await asyncio.wait_for(cleaning.wait(), 5)
+        task.cancel()
+        finish_cleanup.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        assert resource_closed.is_set()
+        assert (await runtime.get_run(run.id)).status == "cancelled"
+        assert await runtime.claims.list() == []
+        backend.block = False
+        following = await runtime.submit(request("next"))
+        assert (await asyncio.wait_for(runtime.start(following.id), 5)).status == "completed"
+    finally:
+        release.set()
+        finish_cleanup.set()
+        await runtime.close()
+        await database.close()
+
+
+@pytest.mark.asyncio
 async def test_checkpoint_tampering_fails_closed(tmp_path):
     runtime, database = await create_runtime(tmp_path, ControlledBackend(pause=True))
     try:

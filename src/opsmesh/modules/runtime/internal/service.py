@@ -46,6 +46,7 @@ from opsmesh.modules.runtime.api import (
 from opsmesh.modules.runtime.events import lifecycle_event
 
 from .artifacts import merge_delegated_artifacts
+from .cleanup import finish_run_cleanup
 from .history import ModelHistory
 from .metrics import RunMetrics
 from .session_recovery import RunSessionRecovery
@@ -546,11 +547,11 @@ class PersistentAgentRuntime:
         self, record: StoredRecord, usage: dict[str, Any] | None = None
     ) -> None:
         latest = await self._record(record.id)
-        if (
-            latest.data.get("attempt_id") != record.data["attempt_id"]
-            or latest.data["status"] in TERMINAL_STATES
-        ):
+        if latest.data.get("attempt_id") != record.data["attempt_id"]:
             return  # A fenced-out worker cannot cancel its replacement.
+        if latest.data["status"] in TERMINAL_STATES:
+            await self._release_session(latest)
+            return
         changes: dict[str, Any] = {
             "status": "cancelled",
             "cancel_requested": True,
@@ -566,6 +567,31 @@ class PersistentAgentRuntime:
         )
         await self._release_session(latest)
 
+    async def _cleanup_attempt(
+        self,
+        record: StoredRecord,
+        context: AgentExecutionContext | None,
+        watcher: asyncio.Task[None],
+        *,
+        cancelled: bool,
+    ) -> None:
+        watcher.cancel()
+        with suppress(asyncio.CancelledError):
+            await watcher
+        try:
+            if cancelled:
+                await self._cancel_attempt(
+                    record, context.services.get("usage_snapshot") if context else None
+                )
+            elif record.data["status"] in TERMINAL_STATES:
+                await self._release_session(record)
+        finally:
+            if context is not None and context.services.get("cleanup_resources") is not None:
+                try:
+                    await context.services["cleanup_resources"]()
+                except Exception:
+                    logger.exception("Run resource cleanup needs retry: %s", record.id)
+
     async def execute(self, run_id: str, *, launch_token: str | None = None) -> AgentRunView:
         record = await self._record(run_id)
         if record.data["status"] in TERMINAL_STATES:
@@ -576,6 +602,7 @@ class PersistentAgentRuntime:
         assert owner is not None
         watcher = asyncio.create_task(self._watch_attempt(record, owner))
         context: AgentExecutionContext | None = None
+        cancelled = False
         try:
             context = await self._execution_context(record)
             with bind_execution_context(context):
@@ -592,25 +619,17 @@ class PersistentAgentRuntime:
                 else:
                     record = await self._finalize(record, outcome)
         except asyncio.CancelledError:
-            if context is not None:
-                context.cancel_event.set()
-            await self._cancel_attempt(
-                record, context.services.get("usage_snapshot") if context else None
-            )
+            cancelled = True
             raise
         except Exception as error:
             record = await self._fail(record, error, context)
         finally:
-            watcher.cancel()
-            with suppress(asyncio.CancelledError):
-                await watcher
-            if context is not None and context.services.get("cleanup_resources") is not None:
-                try:
-                    await context.services["cleanup_resources"]()
-                except Exception:
-                    logger.exception("Run resource cleanup needs retry: %s", run_id)
-        if record.data["status"] in TERMINAL_STATES:
-            await self._release_session(record)
+            cancelled = cancelled or owner.cancelling() > 0
+            if cancelled and context is not None:
+                context.cancel_event.set()
+            await finish_run_cleanup(
+                self._cleanup_attempt(record, context, watcher, cancelled=cancelled)
+            )
         return self._view(record)
 
     async def cancel(self, run_id: str, *, launch_token: str | None = None) -> AgentRunView:

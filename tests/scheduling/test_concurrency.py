@@ -1,11 +1,12 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from opsmesh.framework.drivers import OpsMeshDriver
 from opsmesh.framework.errors import OpsMeshError
 from opsmesh.framework.message import DispatchResult
 from opsmesh.infrastructure.database import AsyncDatabase, VersionedRecordStore
 from opsmesh.modules.scheduling.api import PersistentSchedule
+from opsmesh.modules.scheduling.internal import repository as repository_module
 from opsmesh.modules.scheduling.internal.service import PersistentScheduler
 
 
@@ -13,7 +14,17 @@ async def allow(actor, action, resource):
     return None
 
 
-async def test_fresh_clock_per_claim_prevents_repeated_second_dispatch(tmp_path):
+async def test_fresh_clock_per_claim_prevents_repeated_second_dispatch(tmp_path, monkeypatch):
+    due = datetime.now(UTC)
+    lease_time = due
+
+    class LeaseClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return lease_time.astimezone(tz)
+
+    # Advance persisted lease time explicitly, independently of I/O and the event loop.
+    monkeypatch.setattr(repository_module, "datetime", LeaseClock)
     url = f"sqlite+aiosqlite:///{(tmp_path / 'multi.sqlite').as_posix()}"
     database = AsyncDatabase(url)
     second_database = AsyncDatabase(url)
@@ -26,31 +37,35 @@ async def test_fresh_clock_per_claim_prevents_repeated_second_dispatch(tmp_path)
     finish_second = asyncio.Event()
 
     async def dispatch(context):
+        nonlocal lease_time
         observed.append(context.event.job_id)
         if context.event.job_id == "first":
-            await asyncio.sleep(0.18)
+            lease_time = due + timedelta(seconds=40)
         else:
             second_started.set()
             await finish_second.wait()
         return DispatchResult(context.event.id, matched=1)
 
-    first = PersistentScheduler(OpsMeshDriver(), store, allow, dispatch, lease_seconds=2)
-    second = PersistentScheduler(OpsMeshDriver(), second_store, allow, dispatch, lease_seconds=2)
+    first = PersistentScheduler(OpsMeshDriver(), store, allow, dispatch, lease_seconds=60)
+    second = PersistentScheduler(OpsMeshDriver(), second_store, allow, dispatch, lease_seconds=60)
     task = None
     try:
-        due = datetime.now(UTC)
         for identifier in ("first", "second"):
             await first.create(
                 PersistentSchedule(id=identifier, principal_id="owner", next_run_at=due),
                 actor_id="owner",
             )
         task = asyncio.create_task(first.tick(now=due))
-        await asyncio.wait_for(second_started.wait(), 2)
-        # The old batch-start lease is expired; the second task's fresh lease is live.
-        await asyncio.sleep(0.14)
-        assert await second.tick(now=datetime.now(UTC)) == 0
+        await asyncio.wait_for(second_started.wait(), 10)
+        # A lease based on the batch start expired at t+60; the second claim is live to t+100.
+        lease_time = due + timedelta(seconds=70)
+        plan = await store.get("second")
+        assert plan is not None
+        expiry = datetime.fromisoformat(plan.data["lease_expires_at"])
+        assert due + timedelta(seconds=60) < lease_time < expiry
+        assert await second.tick(now=lease_time) == 0
         finish_second.set()
-        assert await task == 2
+        assert await asyncio.wait_for(task, 10) == 2
         assert observed == ["first", "second"]
         assert first.errors == [] and second.errors == []
     finally:
