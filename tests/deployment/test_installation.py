@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -27,15 +28,19 @@ def bash() -> str:
     return executable
 
 
-def invoke(bash: str, script: str, *arguments: str, environment=None):
-    return subprocess.run(
+def invoke(bash: str, script: str, *arguments: str, environment=None, input_text=None):
+    result = subprocess.run(
         [bash, "--noprofile", "--norc", "-c", script, "installer-test", *arguments],
         cwd=ROOT,
         env={**os.environ, "OPSMESH_TEST_REPO": ROOT.as_posix(), **(environment or {})},
-        text=True,
+        # Preserve the stdin bytes; Windows text mode would turn LF into CRLF.
+        input=None if input_text is None else input_text.encode("utf-8"),
         capture_output=True,
         timeout=15,
         check=False,
+    )
+    return subprocess.CompletedProcess(
+        result.args, result.returncode, result.stdout.decode("utf-8"), result.stderr.decode("utf-8")
     )
 
 
@@ -57,6 +62,7 @@ def test_help_does_not_require_root_systemd_or_docker(bash):
         ["--port", "not-a-port"],
         ["--mode"],
         ["--unknown-option"],
+        ["--admin-password-stdin", "--admin-password-file", "/unused/password"],
     ],
 )
 def test_invalid_arguments_are_rejected_before_host_mutations(bash, tmp_path, arguments):
@@ -210,6 +216,58 @@ mark_initialized
     assert "OPSMESH_ADMIN_PASSWORD" not in configuration
     assert password not in configuration + "\n".join(arguments) + result.stdout + result.stderr
     assert (tmp_path / "config/initialized").read_text(encoding="utf-8").strip() == "initialized"
+
+
+@pytest.mark.parametrize("line_ending", ["\n", ""])
+def test_stdin_password_reaches_only_initialization_without_touching_disk(
+    bash, tmp_path, installation, line_ending
+):
+    setup, environment = installation
+    password = secrets.token_urlsafe(32)
+    result = invoke(
+        bash,
+        setup
+        + """
+parse_arguments --admin-password-stdin
+unset OPSMESH_ADMIN_PASSWORD
+read_administrator_password
+bash -c '[[ ! ${ADMINISTRATOR_PASSWORD+x} && ! ${OPSMESH_ADMIN_PASSWORD+x} ]]'
+systemd-run() {
+    [[ $(printf '%s' "$OPSMESH_ADMIN_PASSWORD" | sha256sum) == "$OPSMESH_TEST_DIGEST "* ]]
+    printf '%s\\n' "$@" > "$OPSMESH_TEST_DIRECTORY/arguments"
+}
+run_local_command init --admin admin
+mark_initialized
+[[ ! ${ADMINISTRATOR_PASSWORD+x} && ! ${OPSMESH_ADMIN_PASSWORD+x} ]]
+""",
+        environment={**environment, "OPSMESH_TEST_DIGEST": sha256(password.encode()).hexdigest()},
+        input_text=password + line_ending,
+    )
+    assert result.returncode == 0, result.stderr
+    assert password not in result.stdout + result.stderr
+    arguments = (tmp_path / "arguments").read_text(encoding="utf-8").splitlines()
+    assert "--setenv=OPSMESH_ADMIN_PASSWORD" in arguments
+    for written_file in tmp_path.rglob("*"):
+        if written_file.is_file():
+            assert password.encode() not in written_file.read_bytes()
+
+
+def test_empty_stdin_password_fails_without_starting_initialization(bash, tmp_path, installation):
+    setup, environment = installation
+    result = invoke(
+        bash,
+        setup
+        + """
+parse_arguments --admin-password-stdin
+read_administrator_password
+printf unexpected > "$OPSMESH_TEST_DIRECTORY/initialization-started"
+""",
+        environment=environment,
+        input_text="",
+    )
+    assert result.returncode != 0
+    assert "No administrator password received on stdin" in result.stderr
+    assert not (tmp_path / "initialization-started").exists()
 
 
 def test_failed_environment_preparation_does_not_stop_an_existing_service(

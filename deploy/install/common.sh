@@ -13,6 +13,7 @@ Usage: sudo bash deploy/install.sh [options]
   --port PORT                   Initial HTTP port (default: 8000)
   --admin USER                  First administrator username (default: admin)
   --admin-password-file PATH     Read initial password from a private file
+  --admin-password-stdin         Read initial password from stdin without a file
   --upgrade                     Stop app services and explicitly migrate schema
   --no-start                    Prepare and initialize, without starting app services
   --help                        Show this help
@@ -26,7 +27,7 @@ USAGE
 
 parse_arguments() {
     MODE=local INSTANCE=opsmesh PORT=8000 ADMIN_USERNAME=admin PASSWORD_FILE=
-    UPGRADE=false START_APPLICATION=true
+    UPGRADE=false START_APPLICATION=true PASSWORD_STDIN=false
     while (( $# )); do
         case $1 in
             --mode|--instance|--port|--admin|--admin-password-file)
@@ -40,12 +41,15 @@ parse_arguments() {
                 esac
                 shift 2 ;;
             --upgrade) UPGRADE=true; shift ;;
+            --admin-password-stdin) PASSWORD_STDIN=true; shift ;;
             --no-start) START_APPLICATION=false; shift ;;
             --help|-h) usage; exit 0 ;;
             *) fail "Unknown option: $1" ;;
         esac
     done
     [[ $MODE == local || $MODE == docker ]] || fail 'Mode must be local or docker'
+    [[ $PASSWORD_STDIN == false || -z $PASSWORD_FILE ]] ||
+        fail '--admin-password-stdin and --admin-password-file are mutually exclusive'
     [[ $INSTANCE =~ ^[a-z][a-z0-9-]{0,30}[a-z0-9]$ || $INSTANCE =~ ^[a-z]$ ]] ||
         fail 'Instance must be 1-32 lowercase letters/digits/hyphens, beginning with a letter'
     [[ $PORT =~ ^[0-9]{1,5}$ ]] && (( 10#$PORT >= 1 && 10#$PORT <= 65535 )) ||
@@ -106,7 +110,7 @@ validate_installation() {
     if [[ -e $CONFIG_FILE ]]; then
         [[ -f $CONFIG_FILE ]] || fail 'Configuration must be a regular file'
         if grep -Eq '^[[:space:]]*(export[[:space:]]+)?OPSMESH_ADMIN_PASSWORD[[:space:]]*=' "$CONFIG_FILE"; then
-            fail 'Remove OPSMESH_ADMIN_PASSWORD from persistent configuration; use --admin-password-file'
+            fail 'Remove OPSMESH_ADMIN_PASSWORD from persistent configuration; use --admin-password-stdin or --admin-password-file'
         fi
     fi
     if [[ -n $PASSWORD_FILE ]]; then
@@ -204,10 +208,13 @@ activate_release() {
 read_administrator_password() {
     [[ ! -f $INITIALIZED_FILE ]] || return 0
     local password confirmation
-    if [[ -n $PASSWORD_FILE ]]; then
+    if [[ ${PASSWORD_STDIN:-false} == true ]]; then
+        IFS= read -r -s password || [[ -n $password ]] ||
+            fail 'No administrator password received on stdin'
+    elif [[ -n $PASSWORD_FILE ]]; then
         password=$(<"$PASSWORD_FILE")
     else
-        [[ -t 0 ]] || fail 'First installation needs a terminal or --admin-password-file'
+        [[ -t 0 ]] || fail 'First installation needs a terminal, --admin-password-stdin or --admin-password-file'
         IFS= read -r -s -p 'First administrator password: ' password
         printf '\n'
         IFS= read -r -s -p 'Confirm administrator password: ' confirmation

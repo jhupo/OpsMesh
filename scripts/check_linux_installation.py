@@ -16,7 +16,6 @@ import secrets
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -53,14 +52,17 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def command(arguments: list[str], *, timeout: float = 120, check: bool = True) -> str:
+def command(
+    arguments: list[str], *, timeout: float = 120, check: bool = True, input_text: str | None = None
+) -> str:
     """Capture output so installer errors cannot echo credentials into CI logs."""
     label = " ".join(arguments[:2])
     try:
         result = subprocess.run(
             arguments,
             cwd=ROOT,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL if input_text is None else None,
+            input=input_text,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -136,7 +138,7 @@ class InstallationCheck:
                 arguments += ["--filter", f"label=com.docker.compose.project={self.instance}"]
                 require(not command(arguments), "CI Compose project already has resources")
 
-    def install(self, *arguments: str) -> None:
+    def install(self, *arguments: str, initialize: bool = False) -> None:
         command(
             [
                 "bash",
@@ -150,6 +152,7 @@ class InstallationCheck:
                 *arguments,
             ],
             timeout=1200,
+            input_text=self.password + "\n" if initialize else None,
         )
 
     def assert_not_started(self) -> None:
@@ -280,15 +283,8 @@ class InstallationCheck:
     def run(self) -> None:
         self.assert_fresh_instance()
         try:
-            with tempfile.TemporaryDirectory(prefix="opsmesh-install-ci-") as temporary:
-                credential = Path(temporary) / "administrator-password"
-                with open(
-                    credential, "x", opener=lambda path, flags: os.open(path, flags, 0o600)
-                ) as stream:
-                    stream.write(self.password)
-                print(f"Checking {self.mode}: first install with --no-start", flush=True)
-                self.install("--admin-password-file", str(credential), "--no-start")
-                credential.unlink()
+            print(f"Checking {self.mode}: first install with --no-start", flush=True)
+            self.install("--admin-password-stdin", "--no-start", initialize=True)
             self.assert_not_started()
             self.start()
             original_principal = self.authenticated_principal()

@@ -145,7 +145,8 @@ sudo bash deploy/install.sh --help
 | `--instance opsmesh` | 实例名，决定目录、服务/项目名称 |
 | `--port 8000` | 首次生成配置时使用的宿主 HTTP 端口 |
 | `--admin admin` | 首次初始化的本地管理员用户名 |
-| `--admin-password-file PATH` | 从受限权限文件读取首次管理员密码，用于无人值守安装 |
+| `--admin-password-stdin` | 从标准输入读取单行首次管理员密码，适合密钥管理器直接提供 |
+| `--admin-password-file PATH` | 从已有受限权限文件读取首次管理员密码，与 `--admin-password-stdin` 互斥 |
 | `--upgrade` | 显式升级已安装实例，并执行本架构登记的数据库迁移 |
 | `--no-start` | 完成初始化和检查，但不启动或重启应用；本地单元仍启用开机启动 |
 
@@ -156,7 +157,9 @@ sudo bash deploy/install.sh --instance opsmesh-test --port 18000
 sudo systemctl status opsmesh-test.service --no-pager
 ```
 
-无人值守安装先通过部署系统创建仅 root 可读的密码文件，然后传入路径。文件内容不应出现在 shell 历史、命令行参数或安装日志中。安装完成后按部署系统的密钥生命周期清理该文件。重复安装不会用 `--admin` 或密码文件重置已有管理员。
+交互安装默认使用隐藏输入。无人值守安装推荐由密钥管理器将单行密码直接写入安装进程的标准输入，并启用 `--admin-password-stdin`；安装器只在内存中接收密码，传给一次性初始化进程，不创建中间密码文件。接入命令由实际密钥管理器决定，密码不得展开到命令行参数、shell 历史或日志中。
+
+部署系统已经提供受限 secret 文件时，也可以使用 `--admin-password-file` 指向该文件，并确保仅 root 可读。两个密码输入选项不能同时使用。安装完成后按部署系统的密钥生命周期管理已有文件。重复安装不会通过这些输入选项或 `--admin` 重置已有管理员。
 
 ```sh
 sudo bash deploy/install.sh --admin-password-file /root/opsmesh-admin-password
