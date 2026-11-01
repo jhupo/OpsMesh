@@ -1,5 +1,5 @@
 # Optional Docker deployment. The Linux installer defaults to native systemd.
-name: opsmesh
+name: opsmesh-dev
 services:
   api:
     image: ${OPSMESH_IMAGE:-opsmesh-local:current}
