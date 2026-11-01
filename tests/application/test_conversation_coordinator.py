@@ -153,13 +153,28 @@ async def test_restart_resumes_existing_batch_with_its_run_before_new_arrivals(h
     assert await harness.queue.ready_channels() == ()
 
 
-async def test_batch_delay_collects_arrivals_before_claim(harness):
+async def test_batch_delay_collects_arrivals_before_claim(harness, monkeypatch):
+    debounce_started, arrivals_ready = asyncio.Event(), asyncio.Event()
+    original_sleep = asyncio.sleep
+
+    async def wait_for_arrivals(delay):
+        if delay == 0.03:
+            debounce_started.set()
+            await arrivals_ready.wait()
+        else:
+            await original_sleep(delay)
+
+    monkeypatch.setattr(coordinator_module.asyncio, "sleep", wait_for_arrivals)
     harness.coordinator.settings = harness.settings.model_copy(update={"batch_delay_seconds": 0.03})
     await enqueue(harness, "one")
     task = asyncio.create_task(harness.coordinator.chat_tick(harness.group))
-    await asyncio.sleep(0.005)
-    await enqueue(harness, "two")
-    await task
+    try:
+        await asyncio.wait_for(debounce_started.wait(), timeout=1)
+        await enqueue(harness, "two")
+    finally:
+        arrivals_ready.set()
+        await task
+    harness.coordinator.chat_worker.process.assert_awaited_once()
     claimed = harness.coordinator.chat_worker.process.await_args.args[1]
     assert [item.event_id for item in claimed.messages] == ["one", "two"]
 
