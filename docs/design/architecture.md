@@ -61,7 +61,7 @@ opsmesh/
 ├── examples/                           # 插件公开API示例
 ├── docs/                               # 设计、API、命名、运维与验证记录
 ├── .env.example / migrations/           # 实际环境配置示例与schema版本说明
-├── deploy/                             # Docker、Compose、Kubernetes示例
+├── deploy/                             # Linux安装、systemd服务、Compose与可选Kubernetes
 ├── web/                                # 门户与管理界面预留
 └── .github/                            # CI、issue与PR模板
 ```
@@ -154,7 +154,7 @@ Outbox原子提交事实并租约领取，重试/死信支持恢复；模型请�
 
 日志、Prometheus指标、OTel追踪、审计和收费分别负责不同证据。W3C上下文跨HTTP/Outbox/Run传递，OTLP队列与关闭等待有界；trace失败不改变业务事实。用量支持请求级未知费用、资源价格、显式汇率、补价和账单差异；预算预占不保证供应商实际花费永不超过估算。
 
-Compose和Kubernetes部署位于deploy。Linux测试服务器已验证Docker命令隔离、SDK原生/远程mTLS沙箱、S3/PostgreSQL备份恢复、真实模型Responses和逐Run Kubernetes Job。外部机器人账号、供应商账单与多节点高可用仍须按部署验收。详细操作见[运维](../operations.md)，完整结果见[实施记录](../implementation-report.md)。
+Linux安装脚本与systemd服务、Compose和可选Kubernetes部署位于deploy。本机默认安装Python环境并通过systemd管理，Docker需显式选择；具体目录、配置和升级边界见[Linux安装](../../deploy/linux.md)。Linux测试服务器已验证Docker命令隔离、SDK原生/远程mTLS沙箱、S3/PostgreSQL备份恢复、真实模型Responses和逐Run Kubernetes Job。外部机器人账号、供应商账单与多节点高可用仍须按部署验收。详细操作见[运维](../operations.md)，完整结果见[实施记录](../implementation-report.md)。
 
 ## 机器人协议实现
 

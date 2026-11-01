@@ -22,7 +22,7 @@
 | 机器人 | 中立适配器注册/生命周期；钉钉Stream+OpenAPI；QQ官方签名Webhook+OpenAPI；独立OneBot兼容；平台身份/Agent路由和投递幂等 | [适配器设计与范围](design/bot-adapters.md)、[协议测试](../tests/adapters/)；没有向真实外部机器人账号发消息 |
 | 持久化与可靠性 | SQL迁移/漂移拒绝、CAS、事务Outbox、死信/重投、Redis限流/租约 | [PostgreSQL](../tests/infrastructure/test_postgresql.py)17.11真实临时实例8项通过；Redis5.0.14.1已实测；集群故障待验收 |
 | 观测与费用 | JSON日志、有限标签指标/时长、W3C/OTLP、请求/资源用量、版本价格/FX、补价、预算、账单对账 | [OTLP](../tests/infrastructure/test_telemetry_export.py)、[账单](../tests/usage/test_resource_billing.py)；loopback真实协议，不等于供应商账单已验收 |
-| 工程与部署 | src布局、MIT/贡献/安全文档、uv锁、CI、CLI/HTTP/SSE、Compose/Kubernetes配置 | [部署](../deploy/README.md)；未发布远程仓库、PyPI或生产服务 |
+| 工程与部署 | src布局、MIT/贡献/安全文档、uv锁、CI、CLI/HTTP/SSE、默认Linux本地/systemd安装、可选Compose/Kubernetes | [Linux安装](../deploy/linux.md)、[部署](../deploy/README.md)；v0.3.0已在GitHub发布，新增安装脚本以当前源码为准；未发布PyPI或托管生产服务 |
 
 每项详细范围见[88项SDK覆盖表](design/sdk-coverage.md)，完整测试结果见[实施记录](implementation-report.md)。目标架构不能代替实现证据。
 

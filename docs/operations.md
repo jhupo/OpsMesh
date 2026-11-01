@@ -4,6 +4,18 @@
 
 ## 安装、初始化与启动
 
+Linux 正式常驻运行默认使用本地安装脚本，在独立 Python 环境中运行 `opsmesh.service`。Docker 为显式可选模式，操作系统服务安装不覆盖 Windows：
+
+```sh
+sudo bash deploy/install.sh
+sudo systemctl status opsmesh.service --no-pager
+sudo journalctl -u opsmesh.service -f
+```
+
+本地安装配置为 `/etc/opsmesh/opsmesh.env`，数据为 `/var/lib/opsmesh`。升级执行 `sudo bash deploy/install.sh --upgrade`，首次初始化与迁移分别处理，已有配置和数据保留。完整参数、`systemctl` 启停、已安装环境的 CLI、Compose 命令与备份步骤见 [Linux 安装指南](../deploy/linux.md)。历史 `v0.3.0` 源码包不包含新增脚本；需使用包含脚本的源码版本。
+
+### 手动开发运行
+
 从项目根目录执行。`.env`不会由应用隐式读取，使用`uv run --env-file`明确加载；首次可从`.env.example`复制后填写本地配置，填入的凭据不得提交。
 
 ```console

@@ -8,7 +8,21 @@ Early developer release `0.3.0` includes a NoneBot-style plugin framework, local
 
 This release replaces the architecture previously published as `0.2.x` and earlier. Existing databases, configuration files, plugins and checkpoints are not compatible by assumption. Back up the previous deployment, install into a separate directory and database, and follow the [release notes](docs/releases/v0.3.0.md). There is no automatic upgrade from the old architecture.
 
-## Install a release
+## Install a Linux service
+
+From a source checkout containing the installer, run:
+
+```sh
+sudo bash deploy/install.sh
+sudo systemctl status opsmesh.service --no-pager
+sudo journalctl -u opsmesh.service -f
+```
+
+The default is a native Python installation managed by systemd, with SQLite and the API/background coordinator in one service. Configuration lives in `/etc/opsmesh/opsmesh.env`; persistent data lives in `/var/lib/opsmesh`. Docker and Kubernetes are not required. Select Compose explicitly with `sudo bash deploy/install.sh --mode docker`; that mode requires Docker Engine and Docker Compose and runs API, Worker, PostgreSQL and Redis services.
+
+The installer preserves existing configuration and data, and requires `--upgrade` when replacing installed source. See the [Linux installation and operations guide](deploy/linux.md) for upgrades, multiple instances and service management. It installs no Windows service. This installer was added after the original `v0.3.0` release and is not present in that release's source archive.
+
+## Install a release manually
 
 Python 3.11+ is required. Create a virtual environment with `python -m venv .venv`, then activate it using `. .venv/bin/activate` on Linux/macOS or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 

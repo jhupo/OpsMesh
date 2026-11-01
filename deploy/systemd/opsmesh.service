@@ -1,0 +1,34 @@
+[Unit]
+Description=OpsMesh Agent and Bot Platform (@INSTANCE@)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=@INSTANCE@
+Group=@INSTANCE@
+WorkingDirectory=@DATA_DIRECTORY@
+EnvironmentFile=@CONFIG_FILE@
+Environment=HOME=@DATA_DIRECTORY@
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PATH=@INSTALL_DIRECTORY@/current/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=@INSTALL_DIRECTORY@/current/.venv/bin/opsmesh check
+ExecStart=@INSTALL_DIRECTORY@/current/.venv/bin/opsmesh serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@DATA_DIRECTORY@
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

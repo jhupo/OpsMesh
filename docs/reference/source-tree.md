@@ -19,6 +19,11 @@ opsmesh/
 │   │   └── .gitkeep
 │   ├── edge/
 │   │   └── .gitkeep
+│   ├── install/
+│   │   ├── check_ready.py
+│   │   ├── common.sh
+│   │   ├── docker.sh
+│   │   └── local.sh
 │   ├── kubernetes/
 │   │   ├── job-mode/
 │   │   │   ├── api.yaml
@@ -37,8 +42,12 @@ opsmesh/
 │   │   └── worker.yaml
 │   ├── observability/
 │   │   └── .gitkeep
+│   ├── systemd/
+│   │   └── opsmesh.service
 │   ├── compose.yaml
 │   ├── Dockerfile
+│   ├── install.sh
+│   ├── linux.md
 │   └── README.md
 ├── docs/
 │   ├── adr/
@@ -84,6 +93,7 @@ opsmesh/
 │   ├── 0001-initial.md
 │   └── README.md
 ├── scripts/
+│   ├── check_linux_installation.py
 │   ├── check_repository.py
 │   ├── check_sdist.py
 │   ├── check_sdk_surface.py
@@ -557,6 +567,8 @@ opsmesh/
 │   │   ├── test_management.py
 │   │   ├── test_onebot.py
 │   │   └── test_onebot_network.py
+│   ├── deployment/
+│   │   └── test_installation.py
 │   ├── framework/
 │   │   ├── conftest.py
 │   │   ├── test_dependencies.py

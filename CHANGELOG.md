@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add a Linux installer that defaults to a native Python environment managed by
+  systemd, with Docker Compose available through an explicit `--mode docker`.
+  Preserve instance configuration and data across repeat installs, require
+  explicit upgrades, and keep bootstrap passwords out of long-lived services.
+- Add instance isolation, service readiness checks and installation behavior
+  tests. Publish only the HTTP port in Compose and use bounded HTTPS package
+  downloads while building the application image.
+
 ## 0.3.0 — 2026-10-31
 
 This release replaces the architecture used by the repository's previous `0.2.x`
