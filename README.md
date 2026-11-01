@@ -110,7 +110,7 @@ uv build
 uv run python scripts/check_sdist.py
 ```
 
-CI 定义了 Windows/Linux 与 Python 3.11-3.14 矩阵；以[对应提交的实际运行结果](https://github.com/jhupo/OpsMesh/actions)为准。版本包在 [GitHub Releases](https://github.com/jhupo/OpsMesh/releases)发布；本项目不提供托管服务，GitHub Release 不等于已发布到 PyPI。
+CI 在 Linux 上验证 Python 3.11-3.14，并验收本机 systemd 和 Docker 安装；Windows 不在发布支持范围。以[对应提交的实际运行结果](https://github.com/jhupo/OpsMesh/actions)为准。版本包在 [GitHub Releases](https://github.com/jhupo/OpsMesh/releases)发布；本项目不提供托管服务，GitHub Release 不等于已发布到 PyPI。
 
 
 平台管理与本轮补齐范围见[平台补齐记录](docs/platform-completion.md)：持久计划、事件触发、通知、审批、账号/Bot/资源治理和运维入口均属于平台核心；业务插件使用受保护Provider扩展。
