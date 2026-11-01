@@ -48,6 +48,7 @@ async def test_two_database_instances_cannot_overbook_capacity(pools):
 
 async def test_capacity_stays_bounded_while_workers_recycle_slots(pools):
     active = maximum = 0
+    occupied_pair = asyncio.Barrier(2)
 
     async def worker(index):
         nonlocal active, maximum
@@ -65,7 +66,9 @@ async def test_capacity_stays_bounded_while_workers_recycle_slots(pools):
         maximum = max(maximum, active)
         try:
             assert active <= 2
-            await asyncio.sleep(0.005)
+            # Each pair must occupy both slots before either can renew and release.
+            # A sleep only hoped that the database could admit the second worker in time.
+            await occupied_pair.wait()
             await pool.renew(f"worker-{index}", token)
         finally:
             active -= 1
