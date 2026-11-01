@@ -71,6 +71,42 @@ async def test_download_and_extract_verified_release_with_api_or_checksum_digest
         assert (root / "install.sh").read_bytes().startswith(b"#!/bin/bash")
 
 
+@pytest.mark.parametrize(
+    "version",
+    ["0" * 100_000 + ".0.0", "v1.0.0/../other", "1.0.0rc1"],
+    ids=["oversized", "traversal", "prerelease"],
+)
+async def test_invalid_version_is_rejected_before_network_request(version):
+    def no_request(_request):
+        pytest.fail("Invalid versions must not issue a request")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(no_request)) as client:
+        with pytest.raises(OpsMeshError) as error:
+            await ReleaseUpdateService(client).check(version)
+        assert error.value.code == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize(
+    "tag",
+    ["v" + "0" * 100_000 + ".0.0", "v1.0.0rc1", 123],
+    ids=["oversized", "prerelease", "nontext"],
+)
+async def test_invalid_remote_tag_is_rejected_before_asset_download(tag):
+    requests = []
+
+    def handle(request):
+        requests.append(request.url.host)
+        metadata = release_metadata(archive_bytes())
+        metadata["tag_name"] = tag
+        return httpx.Response(200, json=metadata)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(OpsMeshError) as error:
+            await ReleaseUpdateService(client).check()
+        assert error.value.code == "UPDATE_INVALID"
+    assert requests == ["api.github.com"]
+
+
 async def test_bad_download_does_not_replace_previously_verified_asset(tmp_path):
     good = archive_bytes()
 

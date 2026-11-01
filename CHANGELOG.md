@@ -4,6 +4,7 @@
 
 ## 0.3.2 - 2026-11-01
 
+- Bound release version validation before network and archive operations.
 - Add explicit v2 migrations and transactional SQL indexes for Run and stream queries.
 - Replace execution service dictionaries with typed ports and backend-owned state;
   inject sandbox lifecycle factories without SDK dependencies in the framework.

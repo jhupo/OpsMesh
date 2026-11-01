@@ -22,6 +22,7 @@ from opsmesh.framework.typing import OpsMeshContract
 
 REPOSITORY = "jhupo/OpsMesh"
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
+_STABLE_VERSION = re.compile(r"[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}")
 
 
 class ReleaseUpdate(OpsMeshContract):
@@ -95,8 +96,8 @@ class ReleaseUpdateService:
         raise OpsMeshError("UPDATE_INVALID", "Too many release redirects")
 
     async def check(self, version: str | None = None) -> ReleaseUpdate:
-        if version is not None and not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+", version):
-            raise OpsMeshError("INVALID_REQUEST", "Choose a stable release version such as 0.3.1")
+        if version is not None and not _STABLE_VERSION.fullmatch(version.removeprefix("v")):
+            raise OpsMeshError("INVALID_REQUEST", "Choose a stable release version such as 0.3.2")
         selector = "latest" if version is None else "tags/v" + version.removeprefix("v")
         with tempfile.TemporaryDirectory(prefix="opsmesh-release-") as temporary:
             metadata = Path(temporary) / "release.json"
@@ -111,7 +112,9 @@ class ReleaseUpdateService:
                 if (
                     release.get("draft")
                     or release.get("prerelease")
-                    or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)
+                    or not isinstance(tag, str)
+                    or not tag.startswith("v")
+                    or not _STABLE_VERSION.fullmatch(tag[1:])
                 ):
                     raise ValueError("Not stable")
                 resolved = tag[1:]
@@ -154,7 +157,7 @@ class ReleaseUpdateService:
     async def download(self, release: ReleaseUpdate, directory: Path) -> Path:
         name = f"opsmesh-{release.version}-linux.tar.gz"
         if (
-            not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", release.version)
+            not _STABLE_VERSION.fullmatch(release.version)
             or release.asset_name != name
             or release.download_url
             != f"https://github.com/{REPOSITORY}/releases/download/v{release.version}/{name}"
@@ -175,7 +178,7 @@ class ReleaseUpdateService:
 
     @staticmethod
     def extract(archive: Path, directory: Path, version: str) -> Path:
-        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        if not _STABLE_VERSION.fullmatch(version):
             raise OpsMeshError("UPDATE_INVALID", "Release version is invalid")
         if directory.is_symlink() or (directory.exists() and any(directory.iterdir())):
             raise OpsMeshError("UPDATE_INVALID", "Extraction directory must be empty")
