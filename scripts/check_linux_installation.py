@@ -204,7 +204,8 @@ class InstallationCheck:
         )
         SENSITIVE_VALUES.add(login["token"])
         principal_id = login["principal"]["id"]
-        require(isinstance(principal_id, str) and bool(principal_id), "Login returned no principal")
+        if not isinstance(principal_id, str) or not principal_id:
+            raise RuntimeError("Login returned no principal")
         request = urllib.request.Request(
             f"{self.base_url}/api/v1/auth/me",
             headers={"Authorization": f"Bearer {login['token']}"},
@@ -228,20 +229,21 @@ class InstallationCheck:
             require(pid > 1, "Native service has no process")
             process = Path("/proc") / str(pid)
             identity = re.search(r"(?m)^Uid:\s+(.+)$", (process / "status").read_text())
-            require(identity is not None, "Native process UID is unavailable")
+            if identity is None:
+                raise RuntimeError("Native process UID is unavailable")
             require(
                 all(int(value) > 0 for value in identity[1].split()), "Native service runs as root"
             )
-            environment = (process / "environ").read_bytes()
+            process_environment = (process / "environ").read_bytes()
             argv = (process / "cmdline").read_bytes()
             require(
-                self.password.encode() not in environment + argv,
+                self.password.encode() not in process_environment + argv,
                 "Bootstrap password reached service",
             )
-            for assignment in environment.split(b"\0"):
-                if assignment.startswith(b"OPSMESH_ADMIN_PASSWORD="):
+            for process_assignment in process_environment.split(b"\0"):
+                if process_assignment.startswith(b"OPSMESH_ADMIN_PASSWORD="):
                     require(
-                        assignment == b"OPSMESH_ADMIN_PASSWORD=",
+                        process_assignment == b"OPSMESH_ADMIN_PASSWORD=",
                         "Service retained bootstrap password",
                     )
         else:
@@ -280,8 +282,8 @@ class InstallationCheck:
         try:
             with tempfile.TemporaryDirectory(prefix="opsmesh-install-ci-") as temporary:
                 credential = Path(temporary) / "administrator-password"
-                with credential.open(
-                    "x", opener=lambda path, flags: os.open(path, flags, 0o600)
+                with open(
+                    credential, "x", opener=lambda path, flags: os.open(path, flags, 0o600)
                 ) as stream:
                     stream.write(self.password)
                 print(f"Checking {self.mode}: first install with --no-start", flush=True)
