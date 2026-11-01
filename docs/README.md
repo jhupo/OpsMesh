@@ -1,6 +1,8 @@
 # opsmesh 设计与实现文档
 
-核对日期：2026-10-31。本目录覆盖平台模块、NoneBot风格插件机制、Agent后端、能力装配、工作区/执行、文件记忆、持久化、观测与开源工程。
+核对日期：2026-11-01。本目录覆盖平台模块、NoneBot风格插件机制、Agent后端、能力装配、工作区/执行、文件记忆、持久化、观测与开源工程。
+
+v0.3.1 新增独立 Linux 安装包，默认采用本地 systemd 服务，Docker 为显式可选方式；制品内容和升级边界见 [v0.3.1 发布说明](releases/v0.3.1.md)。
 
 全源码目录责任审查、迁移说明和边界规则见[目录职责审查](design/source-layout.md)与[文件职责表](reference/source-responsibilities.md)。
 

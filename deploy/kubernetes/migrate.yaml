@@ -15,7 +15,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: migrate
-          image: opsmesh:0.3.0
+          image: opsmesh:0.3.1
           args: [migrate]
           envFrom:
             - configMapRef: {name: opsmesh-settings}

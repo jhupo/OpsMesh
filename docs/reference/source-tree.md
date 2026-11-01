@@ -69,7 +69,8 @@ opsmesh/
 │   │   ├── source-responsibilities.md
 │   │   └── source-tree.md
 │   ├── releases/
-│   │   └── v0.3.0.md
+│   │   ├── v0.3.0.md
+│   │   └── v0.3.1.md
 │   ├── development-naming.md
 │   ├── development.md
 │   ├── implementation-report.md

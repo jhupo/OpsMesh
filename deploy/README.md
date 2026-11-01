@@ -1,10 +1,11 @@
 # Deployment
 
-Deploy Linux with the dedicated `opsmesh-VERSION-linux.tar.gz` installation bundle. Replace `VERSION` with the actual release version and run from the extracted directory:
+Deploy Linux with `opsmesh-0.3.1-linux.tar.gz` from the [v0.3.1 release](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1). Download the matching `.sha256` file, verify the archive, then install from its extracted directory:
 
 ```sh
-tar -xzf opsmesh-VERSION-linux.tar.gz
-cd opsmesh-VERSION-linux
+sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.1-linux.tar.gz
+cd opsmesh-0.3.1-linux
 sha256sum --check SHA256SUMS
 sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager

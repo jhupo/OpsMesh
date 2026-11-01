@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-01
+
 - Add a dedicated `opsmesh-<VERSION>-linux.tar.gz` installation bundle containing
   the built wheel, hash-locked runtime requirements and deployment files. Exclude
   Python interpreters, virtual environments, development source trees and tests.

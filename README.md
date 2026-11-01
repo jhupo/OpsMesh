@@ -2,11 +2,11 @@
 
 异步事件驱动、插件可扩展的 Agent 与机器人平台。以 OpenAI Agents SDK 为首个执行后端，通过独立的 AgentBackend 接口保留接入其他 SDK 的边界。
 
-[English](README.en.md) · [v0.3.0 发布说明](docs/releases/v0.3.0.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
+[English](README.en.md) · [v0.3.1 发布说明](docs/releases/v0.3.1.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
 
 ## 当前功能
 
-`0.3.0` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
+`0.3.1` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
 
 - NoneBot2 风格的 Driver、Adapter、Bot、Event、Message、Matcher、插件元数据、Depends 和上下文。
 - 本地用户、部门、角色权限、Agent 草稿/不可变版本、模型配置与代码工厂。
@@ -24,11 +24,12 @@ Web 门户和控制台仅预留目录；Claude 后端为后续适配。已在独
 
 ### Linux 服务安装
 
-使用独立的 `opsmesh-VERSION-linux.tar.gz` 安装包。将 `VERSION` 替换为实际发行版本，解压后默认安装本地 systemd 服务：
+从 [v0.3.1 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.1)下载 `opsmesh-0.3.1-linux.tar.gz` 及对应 `.sha256` 文件，校验、解压后默认安装本地 systemd 服务：
 
 ```sh
-tar -xzf opsmesh-VERSION-linux.tar.gz
-cd opsmesh-VERSION-linux
+sha256sum --check opsmesh-0.3.1-linux.tar.gz.sha256
+tar -xzf opsmesh-0.3.1-linux.tar.gz
+cd opsmesh-0.3.1-linux
 sudo bash install.sh
 sudo systemctl status opsmesh.service --no-pager
 sudo journalctl -u opsmesh.service -f
@@ -49,7 +50,7 @@ python -m venv .venv
 Linux/macOS 执行 `. .venv/bin/activate`，Windows PowerShell 执行 `.venv\Scripts\Activate.ps1`，然后安装并启动：
 
 ```sh
-python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.0/opsmesh-0.3.0-py3-none-any.whl"
+python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.1/opsmesh-0.3.1-py3-none-any.whl"
 opsmesh --version
 opsmesh init
 opsmesh check
