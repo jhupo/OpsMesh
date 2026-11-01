@@ -194,7 +194,8 @@ async def test_repeated_cancellation_drains_session_and_resource_cleanup(tmp_pat
         assert await runtime.claims.list() == []
         backend.block = False
         following = await runtime.submit(request("next"))
-        assert (await asyncio.wait_for(runtime.start(following.id), 5)).status == "completed"
+        # Hosted Windows filesystem commits can take several seconds.
+        assert (await asyncio.wait_for(runtime.start(following.id), 30)).status == "completed"
     finally:
         release.set()
         finish_cleanup.set()
