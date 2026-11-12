@@ -25,7 +25,7 @@ async def count_items(
 
 ## 独立迁移历史
 
-发行包拆分后的官方插件 ID 为 `opsmesh.plugins.database`、`opsmesh.plugins.execution` 等；功能插件如 `example_chat` 的 ID 不变。历史转换清单中的旧 `execution` owner 必须保持原值，不能随着模块重命名改成 `opsmesh.plugins.execution`。
+官方插件的导入模块为 `opsmesh.plugins.database`、`opsmesh.plugins.execution` 等，插件 ID 为 `database`、`execution`；功能插件如 `example_chat` 的 ID 不变。历史转换清单中的旧 `execution` owner 必须保持原值，不能随着模块重命名改成完整导入路径。
 
 每个插件的版本表为 `opsmesh_version_<stable-owner-sha256-first-40-hex>`，包括 `parent:child` 等框架插件标识。表名安全编码不改变插件身份，部署时不得更改已有插件 ID。
 
