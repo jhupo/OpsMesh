@@ -251,6 +251,37 @@ class ProbeTransport:
 
 
 @pytest.mark.anyio
+async def test_dynamic_operations_are_not_used_as_lifecycle_hooks():
+    from opsmesh_channels.lifecycle import ChannelLifecycles
+
+    events = []
+
+    class DynamicTransport:
+        async def startup(self):
+            events.append("start")
+
+        def stop_accepting(self):
+            events.append("stop")
+
+        async def shutdown(self):
+            events.append("close")
+
+        def __getattr__(self, operation):
+            async def call():
+                pytest.fail(f"Lifecycle invoked dynamic operation: {operation}")
+
+            return call
+
+    lifecycle = ChannelLifecycles()
+    await lifecycle.startup(DynamicTransport())
+    try:
+        await lifecycle.stopping()
+    finally:
+        await lifecycle.shutdown()
+    assert events == ["start", "stop", "close"]
+
+
+@pytest.mark.anyio
 async def test_partial_startup_closes_every_acquired_transport():
     from opsmesh_channels.lifecycle import ChannelLifecycles
 

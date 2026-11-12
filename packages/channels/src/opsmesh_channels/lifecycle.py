@@ -1,6 +1,7 @@
 """Coordinate the configured API and plugin-declared bot transports."""
 
-from typing import Any, Protocol, runtime_checkable
+from inspect import getattr_static
+from typing import Any, Protocol, cast
 
 import anyio
 
@@ -21,7 +22,6 @@ class ChannelTransport(Protocol):
         """Release resources, including partially initialized ones."""
 
 
-@runtime_checkable
 class BufferedTransport(ChannelTransport, Protocol):
     """A transport that owns work beyond the HTTP request lifetime."""
 
@@ -82,10 +82,11 @@ class ChannelLifecycles:
             except Exception as error:
                 errors.append(error)
         for transport in reversed(self._started):
-            if not isinstance(transport, BufferedTransport):
+            # Channel.__getattr__ exposes RPC methods, not lifecycle hooks.
+            if getattr_static(transport, "drain", None) is None:
                 continue
             try:
-                await transport.drain()
+                await cast(BufferedTransport, transport).drain()
             except Exception as error:
                 errors.append(error)
         if errors:

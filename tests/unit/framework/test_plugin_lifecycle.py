@@ -1,5 +1,6 @@
 """Verify dependency-ordered plugin lifecycle and failure isolation."""
 
+import importlib
 import sys
 from types import ModuleType
 
@@ -39,6 +40,7 @@ def _host_module(name: str) -> ModuleType:
 
 def _load(path, name, source, *, required=False):
     (path / f"{name}.py").write_text(source, encoding="utf-8")
+    importlib.invalidate_caches()
     manager = PluginManager([name], required=required)
     registry._managers.append(manager)
     return manager.load_plugin(name)

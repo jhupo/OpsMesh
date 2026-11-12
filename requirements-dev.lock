@@ -272,12 +272,15 @@ pydantic==2.14.3
     #   mcp-types
     #   openai
     #   openai-agents
+    #   pydantic-settings
 pydantic-core==2.50.4
     # via
     #   -c requirements-dev.lock
     #   -c requirements.lock
     #   -r requirements.txt
     #   pydantic
+pydantic-settings==2.16.2
+    # via -r requirements-dev.txt
 pygments==2.21.0
     # via
     #   -c requirements-dev.lock
@@ -300,6 +303,8 @@ pytest==8.4.2
     # via
     #   -c requirements-dev.lock
     #   -r requirements-dev.txt
+python-dotenv==1.2.4
+    # via pydantic-settings
 python-multipart==0.0.33
     # via
     #   -c requirements-dev.lock
@@ -360,6 +365,7 @@ typing-extensions==4.16.0
     #   -r requirements.txt
     #   alembic
     #   anyio
+    #   httpx2
     #   langfuse
     #   mcp
     #   mcp-types
@@ -372,7 +378,10 @@ typing-extensions==4.16.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
+    #   referencing
     #   sqlalchemy
+    #   starlette
     #   typing-inspection
 typing-inspection==0.4.5
     # via
@@ -380,6 +389,7 @@ typing-inspection==0.4.5
     #   -c requirements.lock
     #   mcp
     #   pydantic
+    #   pydantic-settings
 urllib3==2.8.0
     # via
     #   -c requirements-dev.lock

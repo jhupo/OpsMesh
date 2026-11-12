@@ -1,5 +1,6 @@
 """Exercise native plugin metadata and import failure cleanup."""
 
+import importlib
 import sys
 from types import ModuleType
 
@@ -27,6 +28,7 @@ def plugin_path(tmp_path, monkeypatch):
 
 def load_source(path, name, source):
     (path / f"{name}.py").write_text(source, encoding="utf-8")
+    importlib.invalidate_caches()
     manager = PluginManager([name])
     registry._managers.append(manager)
     return manager.load_plugin(name)
