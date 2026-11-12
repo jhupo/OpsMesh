@@ -65,7 +65,7 @@ registry._managers.append(manager)
 plugin = manager.load_plugin("schema_probe")
 assert plugin is not None
 from opsmesh.plugins.database import migrations, schema as database_schema
-assert plugin.dependencies == ["opsmesh.plugins.database"]
+assert plugin.dependencies == ["database"]
 schema = plugin.metadata.extra["database"]
 assert database_schema.registry.get("schema_probe").head == schema.head
 migrations.validate_migrations("schema_probe")
