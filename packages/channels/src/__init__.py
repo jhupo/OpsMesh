@@ -5,7 +5,7 @@ from types import ModuleType
 
 from opsmesh.plugins import PluginMetadata
 
-from .config import CONFIG_NAMESPACE, ChannelsSettings
+from .config import ChannelsSettings
 from .context import UserContext
 from .dependencies import Connection
 from .lifecycle import hooks as _lifecycle  # noqa: F401
@@ -31,7 +31,6 @@ __plugin_meta__ = PluginMetadata(
 )
 
 __all__ = [
-    "CONFIG_NAMESPACE",
     "ChannelsSettings",
     "Connection",
     "UserContext",

@@ -16,7 +16,6 @@ from .callbacks import (
     on_tool_start,
 )
 from .config import (
-    CONFIG_NAMESPACE,
     LangfuseSettings,
     Settings,
     TracingSettings,
@@ -33,7 +32,6 @@ __plugin_meta__ = PluginMetadata(
 )
 
 __all__ = [
-    "CONFIG_NAMESPACE",
     "Settings",
     "LangfuseSettings",
     "TracingSettings",

@@ -23,7 +23,7 @@ from ._paths import (
     relative_path_parts,
     resolve_caller_plugin,
 )
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .errors import (
     ArchiveRejected,
     FilesystemClosed,
@@ -152,7 +152,7 @@ async def export_archive(source: str | Path) -> ArchiveExport:
 @on_startup
 async def _startup() -> None:
     global _roots, _settings
-    settings = get_plugin_config(Settings, namespace=CONFIG_NAMESPACE)
+    settings = get_plugin_config(Settings)
     _roots = Roots.prepare(settings.root)
     _settings = settings
 

@@ -91,7 +91,6 @@ def _new_plugin(
         module_name=module_name,
         manager=manager,
         parent_plugin=parent_plugin,
-        config_namespace=manager.config_namespace,
         config_values=deepcopy(manager.config_values),
         required=bool(getattr(manager, "required", False)),
     )

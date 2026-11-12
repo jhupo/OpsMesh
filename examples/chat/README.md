@@ -35,13 +35,12 @@ examples are separate from the conversation logic.
 Install the independent channels, execution and database packages first. For a frozen Linux host, add the matching official plugin runtime archive's `site/` directory to `plugin_paths`; these packages are not embedded in the framework executable.
 
 Add `examples/common` and this `chat/` directory to the host's `plugin_paths` and load
-`example_chat`. Use `example_chat` as its configuration namespace:
+`example_chat`. Configure the plugin through its own `config` field:
 
 ```json
 {
   "module": "example_chat",
   "required": true,
-  "config_namespace": "example_chat",
   "config": {"model": "your-model-name"}
 }
 ```

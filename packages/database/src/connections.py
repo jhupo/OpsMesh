@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
 from opsmesh import on_shutdown, on_startup
 from opsmesh.plugins.config import get_plugin_config
 
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .errors import DatabaseUnavailableError
 
 
@@ -106,7 +106,7 @@ def _prepare() -> Database:
     """Validate settings and construct the database owner without I/O."""
     global _database
     if _database is None:
-        settings = get_plugin_config(Settings, namespace=CONFIG_NAMESPACE)
+        settings = get_plugin_config(Settings)
         _database = Database(settings)
     return _database
 

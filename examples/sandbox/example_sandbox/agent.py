@@ -8,7 +8,7 @@ from opsmesh.plugins.config import get_plugin_config
 from . import channels
 from .config import SandboxSettings
 
-settings = get_plugin_config(SandboxSettings, namespace="example_sandbox")
+settings = get_plugin_config(SandboxSettings)
 agent = SandboxAgent[channels.UserContext](
     name="Sandbox assistant",
     instructions="Use your workspace to solve the task and explain the result.",

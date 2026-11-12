@@ -1,6 +1,6 @@
 # opsmesh-database
 
-Independent OpsMesh plugin for PostgreSQL connections, SQLAlchemy sessions and plugin-owned Alembic migrations. The import module and configuration namespace are `opsmesh.plugins.database`.
+Independent OpsMesh plugin for PostgreSQL connections, SQLAlchemy sessions and plugin-owned Alembic migrations. The import module is `opsmesh.plugins.database`.
 
 The framework does not require this package. Install it only for plugins that need PostgreSQL. Database owns connections and migration mechanics; consumer plugins own their business tables.
 

@@ -13,13 +13,12 @@ Add `examples/common` and `examples/sandbox` to the host's `plugin_paths`.
 Allow `conversation_support`, `opsmesh.plugins.channels`,
 `opsmesh.plugins.execution`, `opsmesh.plugins.database` and
 `opsmesh.plugins.filesystem` in the host manifest. Load `example_sandbox`
-with its own configuration namespace:
+with its own configuration:
 
 ```json
 {
   "module": "example_sandbox",
   "required": true,
-  "config_namespace": "example_sandbox",
   "config": {
     "model": "your-model-name",
     "reasoning": {"effort": "medium"},

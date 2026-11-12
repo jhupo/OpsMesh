@@ -4,8 +4,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-CONFIG_NAMESPACE = "opsmesh.plugins.filesystem"
-
 
 class Settings(BaseModel):
     """Configure plugin roots, relative paths, and import/copy limits.

@@ -124,7 +124,6 @@ def plugin_entry(module: str, config: dict) -> dict:
     return {
         "module": module,
         "required": True,
-        "config_namespace": module,
         "config": config,
     }
 

@@ -89,8 +89,6 @@ class Plugin:
     """Plugin metadata."""
     cleanups: list[Callable[[], None]] = field(default_factory=list, repr=False)
     """Registration removals in acquisition order; never arbitrary effects."""
-    config_namespace: str | None = None
-    """Explicit namespace for the host-supplied installation configuration."""
     config_values: dict[Any, Any] | None = field(default=None, repr=False)
     """Owned startup values, independent of global deployment configuration."""
     dependencies: list[str] = field(default_factory=list)

@@ -6,8 +6,6 @@ from pydantic import BaseModel, ConfigDict
 
 from opsmesh.plugins.config import get_plugin_config
 
-CONFIG_NAMESPACE = "opsmesh.plugins.channels"
-
 
 class ChannelsSettings(BaseModel):
     """Keep protocol sections unparsed until a declared entrance needs them."""
@@ -21,5 +19,5 @@ class ChannelsSettings(BaseModel):
 
 def protocol_settings(name: str) -> Any:
     """Return one section; its protocol owns validation and defaults."""
-    settings = get_plugin_config(ChannelsSettings, namespace=CONFIG_NAMESPACE)
+    settings = get_plugin_config(ChannelsSettings)
     return getattr(settings, name)

@@ -13,8 +13,6 @@ from pydantic import (
     model_validator,
 )
 
-CONFIG_NAMESPACE = "opsmesh.plugins.execution"
-
 
 class LangfuseSettings(BaseModel):
     """Optional Langfuse bridge configuration."""

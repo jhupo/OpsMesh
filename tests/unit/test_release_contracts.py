@@ -168,7 +168,7 @@ for module, values in {
     ]}},
 }.items():
     registry.register_plugin_manager(
-        PluginManager([module], config=values, namespace=module)
+        PluginManager([module], config=values)
     )
 manager = PluginManager(["release_probe"])
 registry.register_plugin_manager(manager)

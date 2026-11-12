@@ -296,7 +296,6 @@ def run_scenario(plugin, routes):
             from opsmesh.plugins import get_plugin
 
             storage = get_plugin("filesystem")
-            storage.config_namespace = "opsmesh.plugins.filesystem"
             storage.config_values = {"root": temporary + "/files"}
             await files._startup()
             engine = create_async_engine(

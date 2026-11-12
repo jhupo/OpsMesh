@@ -2,7 +2,7 @@
 
 from opsmesh.plugins import PluginMetadata
 
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .errors import (
     ArchiveRejected,
     FilesystemClosed,
@@ -35,7 +35,6 @@ __plugin_meta__ = PluginMetadata(
 )
 
 __all__ = [
-    "CONFIG_NAMESPACE",
     "Settings",
     "ArchiveRejected",
     "FilesystemClosed",

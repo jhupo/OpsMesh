@@ -301,7 +301,7 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
         "from opsmesh.plugins import get_plugin_config\n"
         "class Settings(BaseModel):\n"
         "    value: str\n"
-        "config = get_plugin_config(Settings, namespace='host.test.b')\n"
+        "config = get_plugin_config(Settings)\n"
         "Path(__file__).with_name('b.config').write_text(config.value)\n",
         encoding="utf-8",
     )
@@ -312,7 +312,6 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
                 host.PluginEntry(
                     module="host_test_b",
                     autoload=False,
-                    config_namespace="host.test.b",
                     config={"value": "declared"},
                 ),
             ),
@@ -323,32 +322,17 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
     assert (host_dir / "b.config").read_text(encoding="utf-8") == "declared"
 
 
-def test_manifest_accepts_config_in_the_module_namespace():
+def test_manifest_accepts_plugin_configuration():
     entry = host.PluginEntry(module="host_test_alpha", config={"a": 1})
     assert entry.config == {"a": 1}
 
 
-def test_manifest_rejects_duplicate_modules_and_conflicting_config():
+def test_manifest_rejects_duplicate_modules():
     with pytest.raises(ValidationError, match="Duplicate plugin module"):
         host.HostManifest(
             plugins=(
                 host.PluginEntry(module="host_test_alpha"),
                 host.PluginEntry(module="host_test_alpha"),
-            )
-        )
-    with pytest.raises(ValidationError, match="Conflicting config"):
-        host.HostManifest(
-            plugins=(
-                host.PluginEntry(
-                    module="host_test_a",
-                    config_namespace="shared",
-                    config={"value": 1},
-                ),
-                host.PluginEntry(
-                    module="host_test_b",
-                    config_namespace="shared",
-                    config={"value": 2},
-                ),
             )
         )
 
@@ -390,7 +374,7 @@ async def test_automatic_dependency_config_and_cleanup_after_root_failure(
         "class Settings(BaseModel):\n"
         "    value: str\n"
         "settings = get_plugin_config(\n"
-        "    Settings, namespace='host_test_config_dep')\n"
+        "    Settings)\n"
         "assert settings.value == 'configured'\n",
     )
     write_plugin(

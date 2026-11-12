@@ -57,19 +57,11 @@ class PluginManager:
         search_path: Iterable[str] | None = None,
         *,
         config: Mapping[str, Any] | None = None,
-        namespace: str | None = None,
         required: bool = False,
     ):
-        if (config is None) != (namespace is None):
-            raise ValueError(
-                "Plugin configuration and namespace are required together"
-            )
-        if namespace is not None and not namespace.strip():
-            raise ValueError("Plugin configuration namespace cannot be empty")
         self.config_values = (
             deepcopy(dict(config)) if config is not None else None
         )
-        self.config_namespace = namespace
         self.required = bool(required)
         """Whether a startup failure of this plugin must abort the host."""
         # simple plugin not in search path

@@ -26,7 +26,6 @@ driver = Driver(Env(), Config())
 driver_state.set_driver(driver)
 manager = PluginManager(
     ["opsmesh.plugins.channels"], config=settings,
-    namespace="opsmesh.plugins.channels"
 )
 registry.register_plugin_manager(manager)
 channels = manager.load_plugin("opsmesh.plugins.channels")

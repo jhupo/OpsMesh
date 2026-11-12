@@ -27,7 +27,7 @@ for module, values in {
         "qq": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"},
     },
 }.items():
-    manager = PluginManager([module], config=values, namespace=module)
+    manager = PluginManager([module], config=values)
     registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
@@ -39,9 +39,7 @@ assert get_plugin("api") is None
 assert get_plugin("qq") is None
 # Explicit manifest configuration belongs to channels, not its consumer.
 from opsmesh.plugins.channels.qq.config import get_settings
-channels.config_namespace = "opsmesh.plugins.channels"
 channels.config_values = {"qq": {"concurrency": 3}}
-plugin.config_namespace = "example_chat"
 plugin.config_values = {"model": "different"}
 token = registry._current_plugin.set(plugin)
 try:

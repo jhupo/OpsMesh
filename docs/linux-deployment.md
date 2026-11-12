@@ -67,13 +67,11 @@ sudo tar -xzf opsmesh-plugins-0.5.0-linux-x86_64.tar.gz \
     {
       "module": "opsmesh.plugins.filesystem",
       "required": true,
-      "config_namespace": "opsmesh.plugins.filesystem",
       "config": {"root": "/var/lib/opsmesh/files"}
     },
     {
       "module": "opsmesh.plugins.execution",
       "required": true,
-      "config_namespace": "opsmesh.plugins.execution",
       "config": {"tracing": {"destination": "local"}}
     }
   ]

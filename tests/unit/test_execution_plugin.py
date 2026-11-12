@@ -11,8 +11,16 @@ from opsmesh.drivers import base as driver_state
 from opsmesh.plugins.execution import _lifecycle as lifecycle
 
 
+@pytest.fixture
+def execution_settings(monkeypatch):
+    """Supply settings for lifecycle tests without loading a plugin host."""
+    monkeypatch.setattr(lifecycle, "get_plugin_config", lambda model: model())
+
+
 @pytest.mark.anyio
-async def test_lifecycle_starts_and_stops_execution(tmp_path, monkeypatch):
+async def test_lifecycle_starts_and_stops_execution(
+    execution_settings, monkeypatch
+):
     monkeypatch.setattr(driver_state, "_driver", None)
     driver = Driver(Env(), Config())
     driver_state.set_driver(driver)
@@ -37,7 +45,9 @@ def test_unstarted_execution_rejects_access():
 
 
 @pytest.mark.anyio
-async def test_execution_drains_before_consumers_release_resources(monkeypatch):
+async def test_execution_drains_before_consumers_release_resources(
+    execution_settings, monkeypatch
+):
     monkeypatch.setattr(driver_state, "_driver", None)
     monkeypatch.setattr(lifecycle, "_runtime", None)
     driver = Driver(Env(), Config())

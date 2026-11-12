@@ -8,7 +8,7 @@ from opsmesh.plugins.config import get_plugin_config
 from . import channels, execution
 from .config import ChatSettings
 
-settings = get_plugin_config(ChatSettings, namespace="example_chat")
+settings = get_plugin_config(ChatSettings)
 agent = Agent[channels.UserContext](
     name=settings.name,
     instructions=settings.instructions,

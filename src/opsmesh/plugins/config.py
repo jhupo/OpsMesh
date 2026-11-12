@@ -1,4 +1,4 @@
-"""Validate plugin settings from explicit deployment namespaces."""
+"""Validate settings owned by the calling plugin."""
 
 import inspect
 from copy import deepcopy
@@ -11,23 +11,20 @@ from .registry import _current_plugin, get_plugin_by_module_name
 C = TypeVar("C", bound=BaseModel)
 
 
-def get_plugin_config(config: type[C], *, namespace: str) -> C:
+def get_plugin_config(config: type[C]) -> C:
     """Validate a copy of one plugin's startup configuration.
 
     Args:
         config: A plain Pydantic model declaring the plugin settings.
-        namespace: The configuration namespace declared by this plugin.
 
     Returns:
-        A separately owned model. Missing namespaces use model defaults;
+        A separately owned model. Missing configuration uses model defaults;
         missing required fields raise a validation error.
 
     Raises:
         TypeError: The model reads external settings instead of plain values.
-        ValueError: The namespace is empty.
+        RuntimeError: The caller does not belong to a loaded plugin.
     """
-    if not namespace.strip():
-        raise ValueError("A plugin configuration namespace is required")
     if any(
         "_settings_build_values" in base.__dict__ for base in config.__mro__
     ):
@@ -42,8 +39,11 @@ def get_plugin_config(config: type[C], *, namespace: str) -> C:
         )
         plugin = provider or _current_plugin.get()
     finally:
+        del caller
         del frame
-    if plugin is not None and plugin.config_namespace not in (None, namespace):
-        raise ValueError("Plugin configuration belongs to another namespace")
-    values = plugin.config_values if plugin is not None else None
+    if plugin is None:
+        raise RuntimeError(
+            "Plugin configuration requires a loaded plugin owner"
+        )
+    values = plugin.config_values
     return config.model_validate(deepcopy(values) if values is not None else {})

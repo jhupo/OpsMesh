@@ -1,6 +1,6 @@
 # opsmesh-execution
 
-Independent OpsMesh plugin that runs native OpenAI Agents SDK `Agent` and `SandboxAgent` objects. The import module and configuration namespace are `opsmesh.plugins.execution`.
+Independent OpsMesh plugin that runs native OpenAI Agents SDK `Agent` and `SandboxAgent` objects. The import module is `opsmesh.plugins.execution`.
 
 Execution provides run/stream lifetime management, bounded cleanup, framework dependency-aware callbacks and optional tracing. It does not require the database, filesystem or channels plugins. It does not construct agents, store conversation indexes or persist usage ledgers.
 

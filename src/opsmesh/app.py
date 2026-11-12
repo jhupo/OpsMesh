@@ -57,8 +57,8 @@ class HostStartupError(RuntimeError):
 class PluginEntry(BaseModel):
     """One controlled plugin in the startup snapshot.
 
-    Only the module name addresses the plugin. Display names, paths used for
-    storage, and configuration namespaces never replace it.
+    Only the module name addresses the plugin. Display names and paths used for
+    storage never replace it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -67,7 +67,6 @@ class PluginEntry(BaseModel):
     enabled: bool = True
     autoload: bool = True
     required: bool = False
-    config_namespace: str | None = None
     config: dict[str, Any] | None = None
     expected_origin: str | None = None
 
@@ -91,22 +90,12 @@ class HostManifest(BaseModel):
     plugins: tuple[PluginEntry, ...] = ()
 
     @model_validator(mode="after")
-    def _unique_modules_and_namespaces(self) -> HostManifest:
+    def _unique_modules(self) -> HostManifest:
         modules: set[str] = set()
-        namespaces: dict[str, dict[str, Any]] = {}
         for entry in self.plugins:
             if entry.module in modules:
                 raise ValueError(f"Duplicate plugin module: {entry.module}")
             modules.add(entry.module)
-            if entry.config is None:
-                continue
-            namespace = entry.config_namespace or entry.module
-            previous = namespaces.get(namespace)
-            if previous is not None and previous != entry.config:
-                raise ValueError(
-                    f"Conflicting config for namespace: {namespace}"
-                )
-            namespaces[namespace] = entry.config
         return self
 
 
@@ -219,11 +208,6 @@ async def load_host(
             manager = PluginManager(
                 [entry.module],
                 config=entry.config,
-                namespace=(
-                    entry.config_namespace or entry.module
-                    if entry.config is not None
-                    else None
-                ),
                 required=entry.required,
             )
             register_plugin_manager(manager)

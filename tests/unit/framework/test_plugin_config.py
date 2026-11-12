@@ -11,16 +11,14 @@ from opsmesh.plugins import config as plugin_config
 
 
 class Settings(BaseModel):
-    """Required values used to test copy and namespace boundaries."""
+    """Required values used to test configuration ownership."""
 
     values: list[int]
 
 
 @pytest.fixture
 def owner(monkeypatch):
-    plugin = SimpleNamespace(
-        config_namespace="example", config_values={"values": [1]}
-    )
+    plugin = SimpleNamespace(config_values={"values": [1]})
     monkeypatch.setattr(
         plugin_config,
         "_current_plugin",
@@ -31,15 +29,18 @@ def owner(monkeypatch):
 
 def test_configuration_uses_plugin_values_without_driver(owner, monkeypatch):
     monkeypatch.setenv("VALUES", "[999]")
-    settings = get_plugin_config(Settings, namespace="example")
+    settings = get_plugin_config(Settings)
     settings.values.append(2)
     assert owner.config_values == {"values": [1]}
-    assert get_plugin_config(Settings, namespace="example").values == [1]
+    assert get_plugin_config(Settings).values == [1]
 
 
-def test_plugin_cannot_read_another_namespace(owner):
-    with pytest.raises(ValueError, match="another namespace"):
-        get_plugin_config(Settings, namespace="other")
+def test_configuration_requires_a_plugin_owner(monkeypatch):
+    monkeypatch.setattr(
+        plugin_config, "_current_plugin", ContextVar("no_owner", default=None)
+    )
+    with pytest.raises(RuntimeError, match="loaded plugin owner"):
+        get_plugin_config(Settings)
 
 
 def test_defaults_and_required_values_belong_to_plugin_model(owner):
@@ -47,9 +48,9 @@ def test_defaults_and_required_values_belong_to_plugin_model(owner):
         limit: int = 3
 
     owner.config_values = None
-    assert get_plugin_config(Defaults, namespace="example").limit == 3
+    assert get_plugin_config(Defaults).limit == 3
     with pytest.raises(ValidationError):
-        get_plugin_config(Settings, namespace="example")
+        get_plugin_config(Settings)
 
 
 def test_plugin_configuration_rejects_external_settings_sources():
@@ -59,4 +60,4 @@ def test_plugin_configuration_rejects_external_settings_sources():
         pass
 
     with pytest.raises(TypeError, match="plain BaseModel"):
-        get_plugin_config(ExternalSettings, namespace="example")
+        get_plugin_config(ExternalSettings)

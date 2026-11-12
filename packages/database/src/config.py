@@ -2,8 +2,6 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-CONFIG_NAMESPACE = "opsmesh.plugins.database"
-
 _ASYNC_DSN_PREFIX = "postgresql+asyncpg://"
 
 

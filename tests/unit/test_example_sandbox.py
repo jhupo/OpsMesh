@@ -15,8 +15,7 @@ from opsmesh.plugins import get_plugin, registry
 from opsmesh.plugins.manager import PluginManager
 
 driver_state.set_driver(Driver(Env(), Config()))
-manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"},
-                        namespace="example_sandbox")
+manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"})
 registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None

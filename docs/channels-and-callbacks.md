@@ -38,7 +38,6 @@ packages/channels/
 {
   "module": "opsmesh.plugins.channels",
   "required": true,
-  "config_namespace": "opsmesh.plugins.channels",
   "config": {
     "api": {
       "host": "127.0.0.1",

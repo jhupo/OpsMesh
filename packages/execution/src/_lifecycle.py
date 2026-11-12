@@ -5,7 +5,7 @@ from opsmesh.plugins.config import get_plugin_config
 
 from ._calls import ActiveCalls
 from ._tracing import TracingSupport
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .errors import ExecutionClosed
 
 
@@ -47,9 +47,7 @@ def get_runtime() -> ExecutionRuntime:
 @on_startup
 async def startup() -> None:
     global _runtime
-    runtime = ExecutionRuntime(
-        get_plugin_config(Settings, namespace=CONFIG_NAMESPACE)
-    )
+    runtime = ExecutionRuntime(get_plugin_config(Settings))
     await runtime.startup()
     _runtime = runtime
 
