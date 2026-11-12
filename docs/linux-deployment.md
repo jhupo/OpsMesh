@@ -109,7 +109,7 @@ sudo systemctl restart opsmesh
   --command opsmesh.plugins.database.commands:migrate
 ```
 
-执行命令的环境必须带有数据库配置与凭据，且清单已允许加载 database 和待迁移的功能插件。迁移前按业务要求备份；从旧共享历史升级时阅读 [数据库迁移](database-migrations.md)。宿主升级或二进制回退均不会自动改变数据库。
+执行命令的环境必须带有数据库配置与凭据，且宿主已加载待迁移的功能插件及其 database 依赖。迁移前按业务要求备份；从旧共享历史升级时阅读 [数据库迁移](database-migrations.md)。宿主升级或二进制回退均不会自动改变数据库。
 
 Langfuse 是独立服务；OpsMesh 不安装其 PostgreSQL、ClickHouse、Redis、对象存储或 Worker。页面超时应检查这些服务，而不只是增加查询超时。追踪接入及上游限制见 [Langfuse 说明](langfuse-tracing.md)。
 
