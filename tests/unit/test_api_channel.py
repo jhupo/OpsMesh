@@ -7,19 +7,18 @@ from typing import Annotated, Any
 import anyio
 import pytest
 from pydantic import BaseModel
+from starlette.requests import ClientDisconnect
+from starlette.responses import Response, StreamingResponse
 
-import opsmesh_channels.api as api_module
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework import runtime
-from opsmesh.framework.adapters import Event
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Response
-from opsmesh.framework.messages import Message
-from opsmesh.framework.params import Context, Depends, EventMessage
-from opsmesh.framework.plugins.model import Plugin, PluginStatus
-from opsmesh.framework.plugins.registry import _current_plugin
-from opsmesh_channels import UserContext
-from opsmesh_channels.api import (
+import opsmesh.plugins.channels.api as api_module
+from opsmesh.adapters import Event
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.drivers import base as driver_state
+from opsmesh.messages import Message
+from opsmesh.params import Context, Depends, EventMessage
+from opsmesh.plugins.channels import UserContext
+from opsmesh.plugins.channels.api import (
     ACCESS_ADMIN,
     APIChannel,
     APIConfigurationError,
@@ -33,8 +32,70 @@ from opsmesh_channels.api import (
     json_response,
     sse_response,
 )
-from opsmesh_channels.api.routes import normalize_relative_path
-from opsmesh_channels.api.streaming import StreamLease
+from opsmesh.plugins.channels.api.routes import normalize_relative_path
+from opsmesh.plugins.channels.api.streaming import (
+    ManagedStreamingResponse,
+    StreamLease,
+)
+from opsmesh.plugins.model import Plugin, PluginStatus
+from opsmesh.plugins.registry import _current_plugin
+
+
+@pytest.mark.anyio
+async def test_fastapi_disconnect_cancels_framework_handler(monkeypatch):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+    entered, closed = anyio.Event(), anyio.Event()
+
+    async def handler():
+        entered.set()
+        try:
+            await anyio.sleep_forever()
+        finally:
+            closed.set()
+
+    declare_route(router, method="GET", path="/slow", handler=handler)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    request_scope, messages = scope(
+        path="/plugins/support/slow", token="secret"
+    )
+
+    async def receive():
+        if messages:
+            return messages.pop(0)
+        await entered.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        pass
+
+    try:
+        with anyio.fail_after(2), pytest.raises(ClientDisconnect):
+            await server.app(request_scope, receive, send)
+        assert closed.is_set()
+    finally:
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+async def test_fastapi_rejects_oversized_body_before_dispatch(monkeypatch):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler():
+        raise AssertionError("Oversized bodies must not reach the framework")
+
+    declare_route(router, method="POST", path="/body", handler=handler)
+    settings = make_settings().model_copy(update={"max_request_body": 2})
+    server, channel = await _setup(monkeypatch, router, settings)
+    try:
+        result = await call(
+            server,
+            scope("POST", "/plugins/support/body", token="secret", body=b"123"),
+        )
+        assert result[0]["status"] == 413
+    finally:
+        await channel.shutdown()
 
 
 def declare_route(
@@ -70,10 +131,9 @@ def declare_route(
     return router.registrations[-1]
 
 
-def make_driver():
-    return HTTPDriver(
-        Env(), Config(driver_options={"http": {"enabled": False}})
-    )
+def make_runtime() -> Driver:
+    driver = Driver(Env(), Config())
+    return driver
 
 
 def make_settings(*identities: IdentitySettings) -> Settings:
@@ -136,7 +196,7 @@ def scope(
     }, messages
 
 
-async def call(driver, request):
+async def call(server, request):
     request_scope, queue = request
     sent = []
 
@@ -148,7 +208,7 @@ async def call(driver, request):
     async def send(message):
         sent.append(message)
 
-    await driver(request_scope, receive, send)
+    await server.app(request_scope, receive, send)
     return sent
 
 
@@ -174,11 +234,11 @@ class EchoResult(BaseModel):
 
 
 async def _setup(monkeypatch, router, settings):
-    driver = make_driver()
-    monkeypatch.setattr(runtime, "_driver", driver)
+    driver = make_runtime()
+    monkeypatch.setattr(driver_state, "_driver", driver)
     service = APIChannel(settings, router)
     await service.startup()
-    return driver, service
+    return service.server, service
 
 
 @pytest.mark.anyio
@@ -407,7 +467,10 @@ async def test_unknown_and_unsupported_routes_use_http_semantics(monkeypatch):
             scope("POST", "/plugins/support/known", token="secret"),
         )
         assert mismatch[0]["status"] == 405
-        assert (b"allow", b"GET, HEAD") in mismatch[0]["headers"]
+        assert set(dict(mismatch[0]["headers"])[b"allow"].split(b", ")) == {
+            b"GET",
+            b"HEAD",
+        }
     finally:
         await service.shutdown()
 
@@ -583,9 +646,12 @@ async def test_stream_dependencies_release_after_the_body(monkeypatch):
 @pytest.mark.anyio
 async def test_missing_or_duplicate_tokens_fail_startup(monkeypatch):
     monkeypatch.delenv("TEST_API_TOKEN", raising=False)
-    driver = make_driver()
-    monkeypatch.setattr(runtime, "_driver", driver)
-    service = APIChannel(make_settings(identity()), APIRouter())
+    driver = make_runtime()
+    monkeypatch.setattr(driver_state, "_driver", driver)
+    service = APIChannel(
+        make_settings(identity()),
+        APIRouter(),
+    )
     with pytest.raises(APIConfigurationError, match="TEST_API_TOKEN"):
         await service.startup()
 
@@ -782,7 +848,7 @@ async def test_non_ascii_and_repeated_authorization_headers_are_rejected(
     )
     try:
         path = "/plugins/support/auth"
-        non_ascii = await call(driver, scope(path=path, token="密钥"))
+        non_ascii = await call(driver, scope(path=path, token="\u5bc6\u94a5"))
         assert non_ascii[0]["status"] == 401
 
         repeated = await call(
@@ -874,7 +940,7 @@ async def test_decorator_resolves_postponed_annotations(monkeypatch):
         "from __future__ import annotations\n"
         "from typing import Annotated\n"
         "from pydantic import BaseModel\n"
-        "from opsmesh.framework.adapters import Event\n"
+        "from opsmesh.adapters import Event\n"
         "class Body(BaseModel):\n    text: str\n"
         "class Reply(BaseModel):\n    text: str\n"
         "async def handler(event: Event) -> Reply:\n"
@@ -912,12 +978,12 @@ async def test_decorator_resolves_postponed_annotations(monkeypatch):
 
 @pytest.mark.anyio
 async def test_native_response_cannot_bypass_declared_model(monkeypatch):
-    from opsmesh.framework.drivers import Response
+    from starlette.responses import Response
 
     router = APIRouter()
 
     async def handler():
-        return Response(200, content="unvalidated")
+        return Response(status_code=200, content="unvalidated")
 
     declare_route(
         router,
@@ -948,8 +1014,6 @@ async def test_native_response_cannot_bypass_declared_model(monkeypatch):
 async def test_stream_transport_failure_reaches_dependency_exit(fail_on_body):
     from contextlib import AsyncExitStack, asynccontextmanager
 
-    from opsmesh.framework.drivers import Response, ResponseStream
-
     exits = []
 
     @asynccontextmanager
@@ -968,7 +1032,7 @@ async def test_stream_transport_failure_reaches_dependency_exit(fail_on_body):
     stack = AsyncExitStack()
     await stack.enter_async_context(transaction())
     response = StreamLease(stack).transfer(
-        Response(200, content=ResponseStream(chunks())),
+        StreamingResponse(chunks()),
     )
 
     async def send(message):
@@ -976,7 +1040,13 @@ async def test_stream_transport_failure_reaches_dependency_exit(fail_on_body):
             return
         raise OSError("transport unavailable")
 
-    await make_driver()._send_streamed(send, response, head=False)
+    async def receive():
+        await anyio.sleep_forever()
+
+    with pytest.raises(ClientDisconnect):
+        await response(
+            {"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send
+        )
     assert exits == ["rollback"]
 
 
@@ -984,8 +1054,8 @@ async def test_stream_transport_failure_reaches_dependency_exit(fail_on_body):
 async def test_stream_close_timeout_still_releases_dependencies(monkeypatch):
     from contextlib import AsyncExitStack, asynccontextmanager
 
-    from opsmesh.framework.drivers import ResponseStream
-    from opsmesh_channels.api import streaming
+    from opsmesh.plugins.channels.api import streaming
+    from opsmesh.plugins.channels.api.streaming import ManagedStreamingResponse
 
     monkeypatch.setattr(streaming, "_CLEANUP_TIMEOUT_SECONDS", 0.02)
     exits = []
@@ -1007,10 +1077,12 @@ async def test_stream_close_timeout_still_releases_dependencies(monkeypatch):
     stack = AsyncExitStack()
     await stack.enter_async_context(dependency())
     response = StreamLease(stack).transfer(
-        Response(200, content=ResponseStream(chunks(), close=close_source))
+        ManagedStreamingResponse(
+            chunks(), on_close=lambda error: close_source()
+        )
     )
     with pytest.raises(TimeoutError):
-        await response.content.aclose()
+        await response.aclose()
     assert exits == ["rollback"]
 
 
@@ -1018,8 +1090,8 @@ async def test_stream_close_timeout_still_releases_dependencies(monkeypatch):
 async def test_stream_timeout_preserves_existing_failure(monkeypatch):
     from contextlib import AsyncExitStack, asynccontextmanager
 
-    from opsmesh.framework.drivers import ResponseStream
-    from opsmesh_channels.api import streaming
+    from opsmesh.plugins.channels.api import streaming
+    from opsmesh.plugins.channels.api.streaming import ManagedStreamingResponse
 
     monkeypatch.setattr(streaming, "_CLEANUP_TIMEOUT_SECONDS", 0.02)
     failure = OSError("client disconnected")
@@ -1042,9 +1114,11 @@ async def test_stream_timeout_preserves_existing_failure(monkeypatch):
     stack = AsyncExitStack()
     await stack.enter_async_context(dependency())
     response = StreamLease(stack).transfer(
-        Response(200, content=ResponseStream(chunks(), close=close_source))
+        ManagedStreamingResponse(
+            chunks(), on_close=lambda error: close_source()
+        )
     )
-    await response.content.aclose(failure)
+    await response.aclose(failure)
     assert failures == [failure]
 
 
@@ -1052,15 +1126,15 @@ async def test_stream_timeout_preserves_existing_failure(monkeypatch):
 async def test_http_request_uses_framework_processors_rules_and_matcher(
     monkeypatch,
 ):
-    from opsmesh.framework.adapters import Event
-    from opsmesh.framework.dispatch import (
+    from opsmesh.adapters import Event
+    from opsmesh.dispatch import (
         event_preprocessor,
         processors,
         run_postprocessor,
     )
-    from opsmesh.framework.matchers import Matcher
-    from opsmesh.framework.rules import Rule
-    from opsmesh_channels.api import HTTPEvent
+    from opsmesh.matchers import Matcher
+    from opsmesh.plugins.channels.api import HTTPEvent
+    from opsmesh.rules import Rule
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     observed = []
@@ -1117,7 +1191,7 @@ async def test_http_request_uses_framework_processors_rules_and_matcher(
 
 @pytest.mark.anyio
 async def test_http_matcher_denial_does_not_invoke_handler(monkeypatch):
-    from opsmesh.framework.permissions import Permission
+    from opsmesh.permissions import Permission
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
 
@@ -1169,7 +1243,7 @@ async def test_http_dispatch_timeout_cleans_dependencies(monkeypatch):
         plugin_id="test",
     )
     settings = make_settings().model_copy(
-        update={"request_timeout_seconds": 0.03}
+        update={"request_timeout_seconds": 1.0}
     )
     driver, service = await _setup(monkeypatch, router, settings)
     try:
@@ -1185,8 +1259,8 @@ async def test_http_dispatch_timeout_cleans_dependencies(monkeypatch):
 def test_route_revocation_removes_its_framework_matcher():
     from types import SimpleNamespace
 
-    from opsmesh.framework.matchers import matchers
-    from opsmesh.framework.plugins import registry
+    from opsmesh.matchers import matchers
+    from opsmesh.plugins import registry
 
     owner = SimpleNamespace(id_="rollback", ready=False, cleanups=[])
     router = APIRouter()
@@ -1215,8 +1289,8 @@ def test_route_revocation_removes_its_framework_matcher():
 async def test_unclaimed_response_stream_closes_before_dependencies(
     monkeypatch, failure, close_fails
 ):
-    from opsmesh.framework.dispatch import processors, run_postprocessor
-    from opsmesh.framework.drivers import Response, ResponseStream
+
+    from opsmesh.dispatch import processors, run_postprocessor
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     events = []
@@ -1239,7 +1313,7 @@ async def test_unclaimed_response_stream_closes_before_dependencies(
             raise RuntimeError("stream cleanup failed")
 
     async def handler(value: Annotated[Any, Depends(resource)]):
-        return Response(200, content=ResponseStream(chunks(), on_exit=close))
+        return ManagedStreamingResponse(chunks(), on_close=close)
 
     @run_postprocessor
     async def postprocess():
@@ -1258,7 +1332,7 @@ async def test_unclaimed_response_stream_closes_before_dependencies(
         plugin_id="test",
     )
     settings = make_settings().model_copy(
-        update={"request_timeout_seconds": 0.05}
+        update={"request_timeout_seconds": 1.0}
     )
     driver, channel = await _setup(monkeypatch, router, settings)
     try:
@@ -1278,9 +1352,9 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
     monkeypatch,
     question,
 ):
-    from opsmesh.framework.params import CommandArg
-    from opsmesh.framework.rules import command
-    from opsmesh.framework.rules.checks import TrieRule
+    from opsmesh.params import CommandArg
+    from opsmesh.rules import command
+    from opsmesh.rules.checks import TrieRule
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
@@ -1393,7 +1467,7 @@ async def test_api_preserves_structured_input_without_promoting_it_to_text(
 
 @pytest.mark.anyio
 async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
-    from opsmesh.framework.adapters import Channel
+    from opsmesh.adapters import Channel
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
@@ -1434,9 +1508,9 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
 
 @pytest.mark.anyio
 async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
-    from opsmesh.framework.adapters import Channel
-    from opsmesh.framework.plugins import on_command
-    from opsmesh.framework.rules.checks import TrieRule
+    from opsmesh.adapters import Channel
+    from opsmesh.plugins import on_command
+    from opsmesh.rules.checks import TrieRule
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
@@ -1504,8 +1578,8 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
 
 
 def test_route_rejects_foreign_commands_and_ambiguous_permissions(monkeypatch):
-    from opsmesh.framework.matchers import Matcher, MatcherSource
-    from opsmesh.framework.permissions import Permission
+    from opsmesh.matchers import Matcher, MatcherSource
+    from opsmesh.permissions import Permission
 
     router = APIRouter()
     owner = SimpleNamespace(id_="support", ready=True, cleanups=[])

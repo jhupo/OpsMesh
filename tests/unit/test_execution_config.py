@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from opsmesh_execution.config import (
+from opsmesh.plugins.execution.config import (
     LangfuseSettings,
     Settings,
     TracingSettings,

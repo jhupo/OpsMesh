@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from opsmesh.framework.plugins import PluginMetadata, require
+from opsmesh.plugins import PluginMetadata, require
 
-channels = require("opsmesh_channels")
-execution = require("opsmesh_execution")
-database = require("opsmesh_database")
-filesystem = require("opsmesh_filesystem")
+channels = require("channels")
+execution = require("execution")
+database = require("database")
+filesystem = require("filesystem")
 conversations = require("conversation_support")
 
 from . import handlers  # noqa: E402, F401

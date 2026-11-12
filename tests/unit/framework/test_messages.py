@@ -1,7 +1,7 @@
 import pytest
 
-from opsmesh.framework.adapters import Message, MessageSegment
-from opsmesh.framework.messages.template import MessageTemplate
+from opsmesh.adapters import Message, MessageSegment
+from opsmesh.messages.template import MessageTemplate
 
 
 class TextSegment(MessageSegment):

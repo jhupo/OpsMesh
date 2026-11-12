@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-filesystem"
-version = "0.4.0"
+version = "0.5.0"
 description = "OpsMesh filesystem plugin"
 readme = "README.md"
 license = "MIT"
@@ -20,12 +20,14 @@ classifiers = [
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements-core.txt", "requirements.txt"]}
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["opsmesh_filesystem*"]
+[tool.setuptools]
+package-dir = {"opsmesh.plugins.filesystem" = "src"}
+
+[project.entry-points."opsmesh.plugins"]
+filesystem = "opsmesh.plugins.filesystem"
 
 [tool.setuptools.package-data]
-"opsmesh_filesystem" = ["py.typed"]
+"opsmesh.plugins.filesystem" = ["py.typed"]
 
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"

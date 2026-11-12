@@ -5,10 +5,10 @@ from typing import Annotated
 
 from pydantic import ValidationError
 
-from opsmesh.framework.adapters import Channel, Event
-from opsmesh.framework.messages import Message
-from opsmesh.framework.params import Command, CommandArg, Context, Depends
-from opsmesh.framework.plugins import on_command
+from opsmesh.adapters import Channel, Event
+from opsmesh.messages import Message
+from opsmesh.params import Command, CommandArg, Context, Depends
+from opsmesh.plugins import on_command
 
 from . import channels
 from .conversation import answer, conversation, respond

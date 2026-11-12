@@ -1,1 +1,1 @@
-opsmesh==0.4.0
+opsmesh==0.5.0

@@ -5,8 +5,8 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from opsmesh.framework.adapters import Event
-from opsmesh.framework.params import Context, Depends
+from opsmesh.adapters import Event
+from opsmesh.params import Context, Depends
 
 from . import channels
 from .commands import COMMAND_MATCHERS
@@ -50,8 +50,8 @@ async def list_conversations(
 ) -> list[ConversationView]:
     """List owned conversations with bounded pagination."""
     try:
-        limit = int(event.request.url.query.get("limit", "50"))
-        offset = int(event.request.url.query.get("offset", "0"))
+        limit = int(event.request.query_params.get("limit", "50"))
+        offset = int(event.request.query_params.get("offset", "0"))
         return await get_conversations().list(
             caller.id, limit=limit, offset=offset
         )

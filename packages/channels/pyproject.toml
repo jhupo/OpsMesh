@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-channels"
-version = "0.4.0"
+version = "0.5.0"
 description = "OpsMesh channels plugin"
 readme = "README.md"
 license = "MIT"
@@ -20,12 +20,14 @@ classifiers = [
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements-core.txt", "requirements.txt"]}
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["opsmesh_channels*"]
+[tool.setuptools]
+package-dir = {"opsmesh.plugins.channels" = "src"}
+
+[project.entry-points."opsmesh.plugins"]
+channels = "opsmesh.plugins.channels"
 
 [tool.setuptools.package-data]
-"opsmesh_channels" = ["py.typed"]
+"opsmesh.plugins.channels" = ["py.typed"]
 
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"

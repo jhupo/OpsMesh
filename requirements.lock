@@ -8,28 +8,10 @@ anyio==4.16.0
     # via
     #   -c requirements.lock
     #   -r requirements.txt
-click==8.5.0
-    # via
-    #   -c requirements.lock
-    #   uvicorn
-h11==0.16.0
-    # via
-    #   -c requirements.lock
-    #   uvicorn
 idna==3.20
     # via
     #   -c requirements.lock
     #   anyio
-    #   yarl
-multidict==7.2.1
-    # via
-    #   -c requirements.lock
-    #   -r requirements.txt
-    #   yarl
-propcache==0.5.4
-    # via
-    #   -c requirements.lock
-    #   yarl
 pydantic==2.14.3
     # via
     #   -c requirements.lock
@@ -55,11 +37,3 @@ typing-inspection==0.4.5
     # via
     #   -c requirements.lock
     #   pydantic
-uvicorn==0.54.0
-    # via
-    #   -c requirements.lock
-    #   -r requirements.txt
-yarl==1.25.1
-    # via
-    #   -c requirements.lock
-    #   -r requirements.txt

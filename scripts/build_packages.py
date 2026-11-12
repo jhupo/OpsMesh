@@ -40,7 +40,7 @@ def verify_wheel(path: Path) -> None:
         )
         metadata = email.message_from_bytes(archive.read(metadata_path))
         name = metadata["Name"]
-        module = name.replace("-", "_")
+        module = "opsmesh"
         code_roots = {
             member.split("/")[0]
             for member in members
@@ -51,7 +51,11 @@ def verify_wheel(path: Path) -> None:
                 f"Unexpected code packages in {name}: {code_roots}"
             )
         if name == "opsmesh":
-            if any(member.startswith("opsmesh/plugins/") for member in members):
+            if any(
+                member.startswith(f"opsmesh/plugins/{plugin}/")
+                for member in members
+                for plugin in PLUGIN_NAMES
+            ):
                 raise ValueError("The framework wheel contains plugins")
             forbidden = (
                 "openai",
@@ -59,6 +63,11 @@ def verify_wheel(path: Path) -> None:
                 "alembic",
                 "asyncpg",
                 "langfuse",
+                "uvicorn",
+                "httpx",
+                "websockets",
+                "multidict",
+                "yarl",
                 "opsmesh-",
             )
             if any(
@@ -66,8 +75,20 @@ def verify_wheel(path: Path) -> None:
                 for requirement in metadata.get_all("Requires-Dist", [])
             ):
                 raise ValueError("The framework depends on a plugin runtime")
+        if name != "opsmesh":
+            prefix = f"opsmesh/plugins/{name.removeprefix('opsmesh-')}/"
+            code = [
+                member
+                for member in members
+                if member.endswith((".py", ".pyi", "py.typed"))
+            ]
+            if any(not member.startswith(prefix) for member in code):
+                raise ValueError("Plugin wheel contains framework code")
         if name == "opsmesh-database":
-            if "opsmesh_database/_alembic/script.py.mako" not in members:
+            if (
+                "opsmesh/plugins/database/_alembic/script.py.mako"
+                not in members
+            ):
                 raise ValueError("The database migration template is missing")
 
 

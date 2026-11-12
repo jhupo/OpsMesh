@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from opsmesh_channels import UserContext
+from opsmesh.plugins.channels import UserContext
 
 
 def test_caller_copies_identity_collections():

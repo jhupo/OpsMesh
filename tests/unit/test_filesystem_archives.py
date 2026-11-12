@@ -6,9 +6,9 @@ import zipfile
 
 import pytest
 
-from opsmesh_filesystem import _archives as archives
-from opsmesh_filesystem.config import Settings
-from opsmesh_filesystem.errors import ArchiveRejected, PathRejected
+from opsmesh.plugins.filesystem import _archives as archives
+from opsmesh.plugins.filesystem.config import Settings
+from opsmesh.plugins.filesystem.errors import ArchiveRejected, PathRejected
 
 
 def archive_bytes(files, *, symlink=False):

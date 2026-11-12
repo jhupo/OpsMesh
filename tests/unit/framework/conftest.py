@@ -1,22 +1,11 @@
-import logging
 from types import SimpleNamespace
 
 import pytest
 
-from opsmesh.framework.adapters import Channel, Event
-from opsmesh.framework.config import Config
-from opsmesh.framework.drivers import Driver as BaseDriver
-from opsmesh.framework.messages import Message, MessageSegment
-
-
-class MemoryDriver(BaseDriver):
-    @property
-    def type(self):
-        return "memory"
-
-    @property
-    def logger(self):
-        return logging.getLogger(__name__)
+from opsmesh.adapters import Channel, Event
+from opsmesh.config import Config
+from opsmesh.drivers import Driver
+from opsmesh.messages import Message, MessageSegment
 
 
 class TextSegment(MessageSegment):
@@ -75,8 +64,8 @@ def anyio_backend():
 
 
 @pytest.fixture
-def driver_type():
-    return MemoryDriver
+def runtime_type():
+    return Driver
 
 
 @pytest.fixture

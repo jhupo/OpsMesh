@@ -1,2 +1,7 @@
 cryptography==50.0.2
+dingtalk-stream==0.24.3
 httpx==0.28.1
+uvicorn==0.54.0
+websockets==16.1.1
+yarl>=1.7.2,<2.0.0
+fastapi==0.162.5

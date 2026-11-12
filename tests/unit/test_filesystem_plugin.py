@@ -1,31 +1,20 @@
 """Check plugin ownership resolution and filesystem lifecycle integration."""
 
-import logging
 import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
-import opsmesh_filesystem as filesystem
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Driver as BaseDriver
-from opsmesh.framework.plugins import load as plugin_load
-from opsmesh.framework.plugins import manager as plugin_manager
-from opsmesh.framework.plugins import registry
-from opsmesh.framework.plugins.manager import PluginManager
-from opsmesh_filesystem import files
-from opsmesh_filesystem._paths import resolve_caller_plugin
-
-
-class LifecycleDriver(BaseDriver):
-    @property
-    def type(self):
-        return "test"
-
-    @property
-    def logger(self):
-        return logging.getLogger(__name__)
+import opsmesh.plugins.filesystem as filesystem
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import load as plugin_load
+from opsmesh.plugins import manager as plugin_manager
+from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.filesystem import files
+from opsmesh.plugins.filesystem._paths import resolve_caller_plugin
 
 
 @pytest.fixture
@@ -48,7 +37,7 @@ def _load_owner(tmp_path, monkeypatch, managers):
     name = "filesystem_owner_demo"
     (tmp_path / f"{name}.py").write_text(
         """
-from opsmesh_filesystem._paths import resolve_caller_plugin
+from opsmesh.plugins.filesystem._paths import resolve_caller_plugin
 
 
 def owner():
@@ -79,16 +68,14 @@ def test_unregistered_caller_is_rejected(clean_registry):
 async def test_lifecycle_prepares_roots_and_rejects_access(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(runtime, "_driver", None)
-    driver = LifecycleDriver(
-        Env(),
-        Config(
-            plugin_configs={
-                filesystem.CONFIG_NAMESPACE: {"root": str(tmp_path / "files")}
-            }
-        ),
+    monkeypatch.setattr(driver_state, "_driver", None)
+    driver = Driver(Env(), Config())
+    monkeypatch.setattr(
+        files,
+        "get_plugin_config",
+        lambda model, **kwargs: model(root=str(tmp_path / "files")),
     )
-    runtime.set_driver(driver)
+    driver_state.set_driver(driver)
     plugin = filesystem
     driver.on_startup(files._startup)
     driver.on_shutdown(files._shutdown)

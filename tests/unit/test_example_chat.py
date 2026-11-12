@@ -8,53 +8,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 SCRIPT = """
-import logging
 
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Driver
-from opsmesh.framework.plugins import get_plugin, registry
-from opsmesh.framework.plugins.manager import PluginManager
-
-
-class SmokeDriver(Driver):
-    @property
-    def type(self):
-        return "smoke"
-
-    @property
-    def logger(self):
-        return logging.getLogger("smoke")
+from opsmesh.drivers import base as driver_state
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import get_plugin, registry
+from opsmesh.plugins.manager import PluginManager
 
 
-config = Config(
-    plugin_configs={
-        "opsmesh_channels": {"api": {
-            "identities": [
-                {"id": "smoke-user", "token_ref": "SMOKE_TOKEN"}
-            ]
-        }},
-        "example_chat": {
-            "model": "gpt-4o-mini",
-            "reasoning": {"effort": "medium"},
-            "qq": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"},
-        },
-    }
-)
-runtime.set_driver(SmokeDriver(Env(), config))
-manager = PluginManager(["example_chat"])
-registry._managers.append(manager)
+driver_state.set_driver(Driver(Env(), Config()))
+for module, values in {
+    "opsmesh.plugins.channels": {"api": {"identities": [
+        {"id": "smoke-user", "token_ref": "SMOKE_TOKEN"}
+    ]}},
+    "example_chat": {
+        "model": "gpt-4o-mini",
+        "reasoning": {"effort": "medium"},
+        "qq": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"},
+    },
+}.items():
+    manager = PluginManager([module], config=values, namespace=module)
+    registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
 assert plugin.metadata is not None
 assert get_plugin("example_chat") is plugin
-channels = get_plugin("opsmesh_channels")
+channels = get_plugin("channels")
 assert channels is not None
 assert get_plugin("api") is None
 assert get_plugin("qq") is None
 # Explicit manifest configuration belongs to channels, not its consumer.
-from opsmesh_channels.qq.config import get_settings
-channels.config_namespace = "opsmesh_channels"
+from opsmesh.plugins.channels.qq.config import get_settings
+channels.config_namespace = "opsmesh.plugins.channels"
 channels.config_values = {"qq": {"concurrency": 3}}
 plugin.config_namespace = "example_chat"
 plugin.config_values = {"model": "different"}
@@ -63,18 +48,19 @@ try:
     assert get_settings().concurrency == 3
 finally:
     registry._current_plugin.reset(token)
-from opsmesh_channels.qq import connections
-assert connections._adapter is not None
-assert connections._adapter.started is False
-assert connections._adapter.declarations[0].owner_id == plugin.id_
+from opsmesh.plugins.channels.qq import connections
+assert driver_state.get_driver().get_adapter("qq") is not None
+assert driver_state.get_driver().get_adapter("qq").started is False
+adapter = driver_state.get_driver().get_adapter("qq")
+assert adapter.declarations[0].owner_id == plugin.id_
 owned_startups = [
     entry
-    for entry in runtime.get_driver()._lifespan._startup_funcs
+    for entry in driver_state.get_driver()._lifespan._startup_funcs
     if entry.plugin is channels
 ]
 assert len(owned_startups) == 1, owned_startups
 
-from opsmesh_channels.api import get_router
+from opsmesh.plugins.channels.api import get_router
 
 routes = [
     route

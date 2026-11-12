@@ -5,11 +5,11 @@ import sys
 from graphlib import TopologicalSorter
 from pathlib import Path
 
-from opsmesh import framework
-from opsmesh.framework.config import Config
-from opsmesh.framework.permissions import MESSAGE, Permission
-from opsmesh.framework.plugins import load_from_toml
-from opsmesh.framework.rules import Rule, regex
+import opsmesh as framework
+from opsmesh.config import Config
+from opsmesh.permissions import MESSAGE, Permission
+from opsmesh.plugins import load_from_toml
+from opsmesh.rules import Rule, regex
 
 
 def test_core_import_does_not_load_platform_or_transport_implementations():
@@ -18,16 +18,28 @@ import importlib.abc
 import sys
 class Boundary(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        transports = {'httpx', 'aiohttp', 'fastapi', 'quart', 'websockets',
+        transports = {'uvicorn', 'httpx', 'aiohttp', 'fastapi', 'quart',
+                      'websockets', 'yarl', 'multidict',
                       'loguru', 'pydantic_settings', 'dotenv', 'agents'}
         if (fullname.startswith(('opsmesh.gateway', 'opsmesh.infra',
                                  'opsmesh.modules', 'opsmesh.integrations'))
                 or fullname in transports):
             raise AssertionError('Forbidden core dependency: ' + fullname)
 sys.meta_path.insert(0, Boundary())
-import opsmesh.framework
-import opsmesh.framework.dependencies
-import opsmesh.framework.plugins
+import opsmesh
+import opsmesh.dependencies
+import opsmesh.plugins
+from opsmesh.app import HostManifest, load_host
+import anyio
+
+async def verify():
+    async with load_host(HostManifest()) as driver:
+        async with driver.lifespan():
+            assert driver.started
+            assert not hasattr(driver, "http")
+    assert not driver.started
+
+anyio.run(verify)
 """
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -40,13 +52,18 @@ import opsmesh.framework.plugins
 
 def test_core_config_does_not_choose_a_server():
     config = Config()
-    assert {"driver", "host", "port"}.isdisjoint(type(config).model_fields)
+    assert {"driver", "driver_options", "host", "port"}.isdisjoint(
+        type(config).model_fields
+    )
 
 
 def test_framework_does_not_expose_host_entrypoints():
     assert not hasattr(framework, "init")
     assert not hasattr(framework, "run")
     assert not hasattr(framework, "logger")
+    assert not hasattr(framework, "get_app")
+    assert not hasattr(framework, "get_asgi")
+    assert not hasattr(framework.exceptions, "WebSocketClosed")
 
 
 def test_framework_does_not_create_or_run_asgi_hosts():
@@ -60,8 +77,10 @@ def test_framework_does_not_create_or_run_asgi_hosts():
         "anyio.run",
         "signal.signal",
     }
-    for package in ("framework",):
+    for package in ("opsmesh",):
         for path in (root / package).rglob("*.py"):
+            if path.name in {"app.py", "cli.py"}:
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if (
@@ -84,7 +103,7 @@ def test_public_predicates_remain_usable_after_package_split():
 def test_plugin_configuration_uses_nested_opsmesh_table(tmp_path):
     path = tmp_path / "plugins.toml"
     path.write_text(
-        "[tool.opsmesh.framework]\nplugins = []\nplugin_dirs = []\n",
+        "[tool.opsmesh]\nplugins = []\nplugin_dirs = []\n",
         encoding="utf-8",
     )
     assert load_from_toml(str(path)) == set()
@@ -110,13 +129,11 @@ def _import_targets(path, source_root):
 
 
 def test_framework_dependencies_follow_layer_boundaries():
-    package = "framework"
     forbidden_prefixes = (
-        "opsmesh.plugins",
-        "opsmesh_channels",
-        "opsmesh_database",
-        "opsmesh_execution",
-        "opsmesh_filesystem",
+        "opsmesh.plugins.channels",
+        "opsmesh.plugins.database",
+        "opsmesh.plugins.execution",
+        "opsmesh.plugins.filesystem",
         "opsmesh.app",
         "opsmesh.api",
         "opsmesh.modules",
@@ -127,14 +144,17 @@ def test_framework_dependencies_follow_layer_boundaries():
         "openai",
         "mcp",
         "httpx",
+        "uvicorn",
         "fastapi",
         "pydantic_settings",
         "dotenv",
     )
-    source_root = Path(framework.__file__).resolve().parents[2]
-    root = source_root / "opsmesh" / package
+    source_root = Path(framework.__file__).resolve().parents[1]
+    root = source_root / "opsmesh"
     forbidden = []
     for path in root.rglob("*.py"):
+        if path.name in {"app.py", "cli.py"}:
+            continue
         for target in _import_targets(path, source_root):
             if any(
                 target == prefix or target.startswith(prefix + ".")
@@ -146,7 +166,7 @@ def test_framework_dependencies_follow_layer_boundaries():
 
 def test_framework_has_no_sdk_import_exceptions():
     root = Path(framework.__file__).resolve().parent
-    source_root = root.parents[1]
+    source_root = root.parent
     violations = []
     for path in root.rglob("*.py"):
         if any(
@@ -159,12 +179,12 @@ def test_framework_has_no_sdk_import_exceptions():
 
 def test_internal_components_do_not_import_public_framework_entrypoint():
     root = Path(framework.__file__).resolve().parent
-    source_root = root.parents[1]
+    source_root = root.parent
     forbidden = []
     for path in root.rglob("*.py"):
-        if path == root / "__init__.py":
+        if path in (root / "__init__.py", root / "app.py"):
             continue
-        if "opsmesh.framework" in _import_targets(path, source_root):
+        if "opsmesh" in _import_targets(path, source_root):
             forbidden.append(str(path.relative_to(source_root)))
     assert forbidden == []
 
@@ -225,7 +245,7 @@ class EagerImports(ast.NodeVisitor):
 
 def test_explicit_module_body_imports_are_acyclic():
     root = Path(framework.__file__).resolve().parent
-    source_root = root.parents[1]
+    source_root = root.parent
     modules = {
         ".".join(
             path.relative_to(source_root).with_suffix("").parts

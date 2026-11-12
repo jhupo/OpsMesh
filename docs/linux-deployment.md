@@ -24,7 +24,7 @@
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.4.0-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.0-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 ```
 
@@ -41,7 +41,7 @@ sudo bash install.sh \
   previous -> releases/...
 /etc/opsmesh/
   host.json                # 宿主清单
-  opsmesh.env              # systemd 环境配置
+  opsmesh.env              # 可选的插件环境变量，按需创建
 /var/lib/opsmesh/
   plugins/                 # 外部插件部署位置
 /etc/systemd/system/opsmesh.service
@@ -52,9 +52,9 @@ sudo bash install.sh \
 独立插件运行包的 `site/` 包含四个官方插件及其额外依赖。管理员验证校验和后，解压到独立的版本目录，例如：
 
 ```bash
-sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.4.0
-sudo tar -xzf opsmesh-plugins-0.4.0-linux-x86_64.tar.gz \
-  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.4.0
+sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.5.0
+sudo tar -xzf opsmesh-plugins-0.5.0-linux-x86_64.tar.gz \
+  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.0
 ```
 
 将实际 `site` 路径加入宿主清单：
@@ -62,32 +62,35 @@ sudo tar -xzf opsmesh-plugins-0.4.0-linux-x86_64.tar.gz \
 ```json
 {
   "environment": "production",
-  "http": {"host": "127.0.0.1", "port": 8080},
-  "plugin_paths": ["/var/lib/opsmesh/plugins/official-0.4.0/site"],
+  "plugin_paths": ["/var/lib/opsmesh/plugins/official-0.5.0/site"],
   "plugins": [
     {
-      "module": "opsmesh_filesystem",
+      "module": "opsmesh.plugins.filesystem",
       "required": true,
-      "config_namespace": "opsmesh_filesystem",
+      "config_namespace": "opsmesh.plugins.filesystem",
       "config": {"root": "/var/lib/opsmesh/files"}
     },
     {
-      "module": "opsmesh_execution",
+      "module": "opsmesh.plugins.execution",
       "required": true,
-      "config_namespace": "opsmesh_execution",
+      "config_namespace": "opsmesh.plugins.execution",
       "config": {"tracing": {"destination": "local"}}
     }
   ]
 }
 ```
 
-这个示例只启用文件与执行能力，尚未定义对话入口。安装包存在不等于自动启用；每个实际加载的插件和功能插件依赖都必须出现在允许清单中。只选择需要的模块，未启用的包不会成为业务功能。
+这个示例只启用文件与执行能力，不打开 HTTP 监听。需要网络入口时，启用 channels，并在其 `config.api` 配置监听地址，详见[通道配置](channels-and-callbacks.md)。安装包存在不等于自动启用；入口插件列入启动清单；依赖通过 `require()` 自动加载，不需要重复列出。只有覆盖依赖的默认配置、显式禁用或校验来源时才添加对应条目，配置用条目可设置 `autoload: false`。只选择需要的模块，未启用的包不会成为业务功能。
 
 ```bash
 sudo -u opsmesh /opt/opsmesh/current/opsmesh \
   --manifest /etc/opsmesh/host.json --check
 sudo systemctl restart opsmesh
 ```
+
+`host.json` 的 `framework` 只配置框架基础行为，例如 `"framework": {"command_start": ["/"], "command_sep": ["."]}`；省略字段时使用框架默认值。插件参数放在各自的 `plugins[].config` 中，由插件定义字段与校验规则。
+
+环境文件不是必需文件。systemd 和安装检查允许 `/etc/opsmesh/opsmesh.env` 不存在；需要插件凭据时通过 `--env-file` 显式提供，升级保留已有文件。可选 Docker 示例的 `env_file.required: false` 需要 Docker Compose 2.24.0 或更新版本。
 
 检查命令会导入插件并验证配置，不执行生命周期启动。因此它不证明数据库、MCP 或模型服务可用。手工执行命令需要提供与 systemd 相同的插件凭据；`opsmesh.env` 不会被命令行自动读取。
 
@@ -101,9 +104,9 @@ sudo systemctl restart opsmesh
 
 ```bash
 /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:check
+  --command opsmesh.plugins.database.commands:check
 /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:migrate
+  --command opsmesh.plugins.database.commands:migrate
 ```
 
 执行命令的环境必须带有数据库配置与凭据，且清单已允许加载 database 和待迁移的功能插件。迁移前按业务要求备份；从旧共享历史升级时阅读 [数据库迁移](database-migrations.md)。宿主升级或二进制回退均不会自动改变数据库。
@@ -134,3 +137,5 @@ sudo bash install.sh --rollback
 ## 构建与验收
 
 构建命令、tag 发布附件和工作流职责见 [发布说明](releases.md)。构建必须在目标架构 Linux 执行。源代码单元测试、wheel 安装检查、冻结可执行程序测试及 systemd 安装测试是不同证据；只有对应工作流实际成功，才能声明该版本通过相应验收。
+
+升级至 v0.5.0 时，插件模块改为 `opsmesh.plugins.<name>`，核心导入移除 `.framework`；源码目录扁平化不改变独立插件 wheel 的部署方式。将 channels 的旧 `config.http` 监听字段合入 `config.api`；QQ 若启用则单独配置 `config.qq` 监听地址，更新反向代理的 QQ 回调上游。钉钉使用 Stream。

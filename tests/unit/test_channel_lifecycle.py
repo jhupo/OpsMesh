@@ -6,18 +6,17 @@ from contextlib import contextmanager
 import anyio
 import pytest
 
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import URL, HTTPServerSetup
-from opsmesh.framework.plugins import registry
-from opsmesh_channels._queue import EventQueue
-from opsmesh_channels.dingtalk import (
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
+from opsmesh.plugins.channels._queue import EventQueue
+from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
     DingTalkConfigurationError,
     DingTalkConnectionSettings,
     DingTalkSettings,
 )
-from opsmesh_channels.qq import (
+from opsmesh.plugins.channels.qq import (
     QQAdapter,
     QQConfigurationError,
     QQConnectionSettings,
@@ -46,10 +45,26 @@ def owned_by(plugin):
         registry._current_plugin.reset(token)
 
 
-def make_driver() -> HTTPDriver:
-    return HTTPDriver(
-        Env(), Config(driver_options={"http": {"enabled": False}})
-    )
+@pytest.fixture(autouse=True)
+def connected_stream(monkeypatch):
+    from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
+
+    async def receive(stream):
+        stream.adapter.stream_connected(stream.channel)
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(DingTalkStream, "_receive", receive)
+
+
+async def wait_ready(channel):
+    with anyio.fail_after(2):
+        while not channel.ready:
+            await anyio.sleep(0)
+
+
+def make_runtime() -> Driver:
+    driver = Driver(Env(), Config())
+    return driver
 
 
 def declare_qq(adapter, name="primary"):
@@ -70,17 +85,19 @@ def declare_dingtalk(adapter, name="internal"):
 async def test_two_channel_adapters_share_one_driver_lifespan(monkeypatch):
     monkeypatch.setenv("QQ_SECRET", QQ_SECRET)
     monkeypatch.setenv("DINGTALK_SECRET", DINGTALK_SECRET)
-    driver = make_driver()
-    qq = QQAdapter(driver, settings=QQSettings())
+    driver = make_runtime()
+    qq = QQAdapter(driver, settings=QQSettings(enabled=False))
     dingtalk = DingTalkAdapter(driver, settings=DingTalkSettings())
     qq_channel = declare_qq(qq)
     dingtalk_channel = declare_dingtalk(dingtalk)
     driver.on_startup(qq.startup)
     driver.on_startup(dingtalk.startup)
+    driver.on_started(dingtalk.start_accepting)
     driver.on_shutdown(dingtalk.shutdown)
     driver.on_shutdown(qq.shutdown)
 
     async with driver.lifespan():
+        await wait_ready(dingtalk_channel)
         assert qq_channel.ready is True
         assert dingtalk_channel.ready is True
 
@@ -123,15 +140,21 @@ async def test_event_queue_cancels_stuck_workers_in_the_host_group():
 
 @pytest.mark.anyio
 async def test_channel_startup_requires_a_running_driver_lifespan():
-    qq = QQAdapter(make_driver(), settings=QQSettings())
+    qq = QQAdapter(
+        make_runtime(),
+        settings=QQSettings(),
+    )
     declare_qq(qq)
-    with pytest.raises(QQConfigurationError, match="running driver lifespan"):
+    with pytest.raises(QQConfigurationError, match="running runtime lifespan"):
         await qq.startup()
 
-    dingtalk = DingTalkAdapter(make_driver(), settings=DingTalkSettings())
+    dingtalk = DingTalkAdapter(
+        make_runtime(),
+        settings=DingTalkSettings(),
+    )
     declare_dingtalk(dingtalk)
     with pytest.raises(
-        DingTalkConfigurationError, match="running driver lifespan"
+        DingTalkConfigurationError, match="running runtime lifespan"
     ):
         await dingtalk.startup()
 
@@ -139,17 +162,16 @@ async def test_channel_startup_requires_a_running_driver_lifespan():
 @pytest.mark.anyio
 async def test_qq_startup_failure_rolls_back_routes_and_workers(monkeypatch):
     monkeypatch.setenv("QQ_SECRET", QQ_SECRET)
-    driver = make_driver()
-    adapter = QQAdapter(driver, settings=QQSettings())
+    driver = make_runtime()
+    adapter = QQAdapter(driver, settings=QQSettings(enabled=False))
     first = declare_qq(adapter, "first")
     second = declare_qq(adapter, "second")
 
     async def handler(request):
         return None
 
-    driver.setup_http_server(
-        HTTPServerSetup(URL(second.path), "POST", "occupied", handler)
-    )
+    adapter.app.add_api_route(second.path, handler, methods=["POST"])
+    occupied = adapter.app.router.routes[-1]
 
     async with driver.lifespan():
         with pytest.raises(QQConfigurationError, match="unavailable"):
@@ -159,7 +181,7 @@ async def test_qq_startup_failure_rolls_back_routes_and_workers(monkeypatch):
         assert first.state == "closed"
         assert second.state == "closed"
 
-        driver.remove_http_server("POST", second.path)
+        adapter.app.router.routes.remove(occupied)
         await adapter.startup()
         assert adapter.started is True
         assert first.ready is True
@@ -171,16 +193,18 @@ async def test_qq_startup_failure_rolls_back_routes_and_workers(monkeypatch):
 async def test_channels_drain_before_consumers_and_transports_close(
     monkeypatch,
 ):
-    from opsmesh_channels import lifecycle
+    from opsmesh.plugins.channels.lifecycle import (
+        transports as transport_module,
+    )
 
     monkeypatch.setenv("QQ_SECRET", QQ_SECRET)
     monkeypatch.setenv("DINGTALK_SECRET", DINGTALK_SECRET)
-    driver = make_driver()
-    qq = QQAdapter(driver, settings=QQSettings())
+    driver = make_runtime()
+    qq = QQAdapter(driver, settings=QQSettings(enabled=False))
     dingtalk = DingTalkAdapter(driver, settings=DingTalkSettings())
     qq_channel = declare_qq(qq)
     dingtalk_channel = declare_dingtalk(dingtalk)
-    transports = lifecycle.ChannelLifecycles()
+    transports = transport_module.ChannelTransports()
     transports.use(qq)
     transports.use(dingtalk)
     consumer = FakePlugin("consumer")
@@ -213,10 +237,12 @@ async def test_channels_drain_before_consumers_and_transports_close(
         consumer.ready = False
 
     driver.on_startup(transports.startup)
+    driver.on_started(transports.start_accepting)
     driver.on_stopping(transports.stopping)
     driver.on_shutdown(transports.shutdown)
     driver.on_shutdown(close_consumer)
     async with driver.lifespan():
+        await wait_ready(dingtalk_channel)
         assert qq._queue.put_nowait("qq")
         assert dingtalk._queue.put_nowait("dingtalk")
     assert not consumer.ready
@@ -252,7 +278,7 @@ class ProbeTransport:
 
 @pytest.mark.anyio
 async def test_dynamic_operations_are_not_used_as_lifecycle_hooks():
-    from opsmesh_channels.lifecycle import ChannelLifecycles
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
 
     events = []
 
@@ -272,7 +298,7 @@ async def test_dynamic_operations_are_not_used_as_lifecycle_hooks():
 
             return call
 
-    lifecycle = ChannelLifecycles()
+    lifecycle = ChannelTransports()
     await lifecycle.startup(DynamicTransport())
     try:
         await lifecycle.stopping()
@@ -283,7 +309,7 @@ async def test_dynamic_operations_are_not_used_as_lifecycle_hooks():
 
 @pytest.mark.anyio
 async def test_partial_startup_closes_every_acquired_transport():
-    from opsmesh_channels.lifecycle import ChannelLifecycles
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
 
     events = []
     first = ProbeTransport("first", events)
@@ -291,7 +317,7 @@ async def test_partial_startup_closes_every_acquired_transport():
     unused = ProbeTransport("unused", events)
     failing.start_error = ValueError("Invalid protocol configuration")
     failing.close_error = RuntimeError("Injected cleanup failure")
-    lifecycle = ChannelLifecycles()
+    lifecycle = ChannelTransports()
     for transport in (first, failing, unused):
         lifecycle.use(transport)
     with pytest.raises(ExceptionGroup) as failure:
@@ -309,11 +335,11 @@ async def test_partial_startup_closes_every_acquired_transport():
 
 @pytest.mark.anyio
 async def test_revoking_one_consumer_keeps_other_transport_claims():
-    from opsmesh_channels.lifecycle import ChannelLifecycles
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
 
     events = []
     transport = ProbeTransport("shared", events)
-    lifecycle = ChannelLifecycles()
+    lifecycle = ChannelTransports()
     first = FakePlugin("first")
     second = FakePlugin("second")
     with owned_by(first):
@@ -335,7 +361,7 @@ async def test_revoking_one_consumer_keeps_other_transport_claims():
 
 @pytest.mark.anyio
 async def test_cancelled_startup_still_releases_partial_resources():
-    from opsmesh_channels.lifecycle import ChannelLifecycles
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
 
     events = []
     acquired = anyio.Event()
@@ -346,7 +372,7 @@ async def test_cancelled_startup_still_releases_partial_resources():
         await anyio.sleep_forever()
 
     transport.startup = startup
-    lifecycle = ChannelLifecycles()
+    lifecycle = ChannelTransports()
     lifecycle.use(transport)
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(lifecycle.startup)

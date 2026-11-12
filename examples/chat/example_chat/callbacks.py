@@ -5,7 +5,7 @@ from typing import Annotated
 
 from agents.items import ModelResponse
 
-from opsmesh.framework.params import Context
+from opsmesh.params import Context
 
 from . import channels, execution
 

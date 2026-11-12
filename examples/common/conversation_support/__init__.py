@@ -1,6 +1,6 @@
 """Reusable example support; each consumer owns its schema and sessions."""
 
-from opsmesh.framework.plugins import PluginMetadata
+from opsmesh.plugins import PluginMetadata
 
 from .models import ConversationRecord
 from .schemas import (

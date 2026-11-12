@@ -7,7 +7,9 @@ services:
     read_only: true
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    env_file: ../opsmesh.env
+    env_file:
+      - path: ../opsmesh.env
+        required: false
     ports: ["127.0.0.1:8080:8080"]
     volumes:
       - ../host.json:/etc/opsmesh/host.json:ro

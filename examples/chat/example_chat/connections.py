@@ -2,7 +2,7 @@
 
 from agents.mcp import MCPServerManager, MCPServerStreamableHttp
 
-from opsmesh.framework import on_shutdown, on_startup
+from opsmesh import on_shutdown, on_startup
 
 from . import channels
 from .agent import agent, settings

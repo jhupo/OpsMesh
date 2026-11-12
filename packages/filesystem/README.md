@@ -1,6 +1,6 @@
 # opsmesh-filesystem
 
-Independent OpsMesh plugin for ordinary per-plugin files and directories. The import module and configuration namespace are `opsmesh_filesystem`.
+Independent OpsMesh plugin for ordinary per-plugin files and directories. The import module and configuration namespace are `opsmesh.plugins.filesystem`.
 
 The configured root contains plugin-owned data, cache and configuration paths. Public operations cover file reads/writes, deletion, validated ZIP extraction, export and publishing a new directory. The plugin does not maintain skill/tool metadata, a database index, installation state or Python loading.
 
@@ -16,14 +16,14 @@ For a Linux executable host, use the separate official plugin runtime archive. C
 
 ```json
 {
-  "module": "opsmesh_filesystem",
+  "module": "opsmesh.plugins.filesystem",
   "required": true,
-  "config_namespace": "opsmesh_filesystem",
+  "config_namespace": "opsmesh.plugins.filesystem",
   "config": {"root": "/var/lib/opsmesh/files"}
 }
 ```
 
-A consumer declares `filesystem = require("opsmesh_filesystem")`. Directory ownership comes from the framework plugin context; incoming requests must not choose another plugin's identity.
+A consumer declares `filesystem = require("filesystem")`. Directory ownership comes from the framework plugin context; incoming requests must not choose another plugin's identity.
 
 ## Behavior
 

@@ -10,10 +10,10 @@ def test_schema_declaration_binds_checks_and_rolls_back_failed_plugin(tmp_path):
     source = """
 from pathlib import Path
 from sqlalchemy import MetaData
-from opsmesh.framework import on_startup, on_plugin_loaded
-from opsmesh.framework.plugins import PluginMetadata, require
+from opsmesh import on_startup, on_plugin_loaded
+from opsmesh.plugins import PluginMetadata, require
 
-database = require("opsmesh_database")
+database = require("opsmesh.plugins.database")
 
 @on_startup
 async def startup():
@@ -46,12 +46,12 @@ def reject(plugin):
     script = """
 import asyncio
 import logging
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Driver
-from opsmesh.framework.plugins import registry
-from opsmesh.framework.plugins.manager import PluginManager
-from opsmesh.framework.plugins.hooks import _bound
+from opsmesh.drivers import base as driver_state
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.hooks import _bound
 
 class TestDriver(Driver):
     @property
@@ -59,17 +59,17 @@ class TestDriver(Driver):
     @property
     def logger(self): return logging.getLogger("test")
 
-runtime.set_driver(TestDriver(Env(), Config()))
+driver_state.set_driver(TestDriver(Env(), Config()))
 manager = PluginManager(["schema_probe", "schema_failure"])
 registry._managers.append(manager)
 plugin = manager.load_plugin("schema_probe")
 assert plugin is not None
-from opsmesh_database import migrations, schema as database_schema
-assert plugin.dependencies == ["opsmesh_database"]
+from opsmesh.plugins.database import migrations, schema as database_schema
+assert plugin.dependencies == ["opsmesh.plugins.database"]
 schema = plugin.metadata.extra["database"]
 assert database_schema.registry.get("schema_probe").head == schema.head
 migrations.validate_migrations("schema_probe")
-startup_entries = runtime.get_driver()._lifespan._startup_funcs
+startup_entries = driver_state.get_driver()._lifespan._startup_funcs
 owned = [item for item in startup_entries if item.plugin is plugin]
 assert len(owned) == 2
 
@@ -95,7 +95,7 @@ assert not any(
 registry.revoke_plugin(plugin)
 assert not database_schema.registry.sources()
 assert not any(item.plugin is plugin for item in startup_entries)
-provider = registry.get_plugin("opsmesh_database")
+provider = registry.get_plugin("database")
 registry.revoke_plugin(provider)
 assert not _bound
 print("schema ownership verified")

@@ -5,12 +5,12 @@ from typing import Annotated
 import anyio
 import pytest
 
-from opsmesh.framework import dispatch
-from opsmesh.framework.dependencies.context import Context
-from opsmesh.framework.dispatch import hooks
-from opsmesh.framework.exceptions import IgnoredException, NoLogException
-from opsmesh.framework.matchers import Matcher, matchers
-from opsmesh.framework.params import Depends
+from opsmesh import dispatch
+from opsmesh.dependencies.context import Context
+from opsmesh.dispatch import hooks
+from opsmesh.exceptions import IgnoredException, NoLogException
+from opsmesh.matchers import Matcher, matchers
+from opsmesh.params import Depends
 
 
 @pytest.mark.anyio
@@ -27,9 +27,9 @@ from opsmesh.framework.params import Depends
     ],
 )
 async def test_dispatch_result_reports_caught_failures(incoming, stage):
-    from opsmesh.framework.permissions import Permission
-    from opsmesh.framework.rules import Rule
-    from opsmesh.framework.utils import flatten_exception_group
+    from opsmesh.permissions import Permission
+    from opsmesh.rules import Rule
+    from opsmesh.utils import flatten_exception_group
 
     async def failing():
         raise ValueError(stage)
@@ -68,7 +68,7 @@ async def test_dispatch_result_reports_caught_failures(incoming, stage):
 async def test_expected_nonexecution_is_not_a_dispatch_failure(
     incoming, outcome
 ):
-    from opsmesh.framework.permissions import Permission
+    from opsmesh.permissions import Permission
 
     async def denied():
         return False
@@ -138,8 +138,8 @@ async def test_dispatch_result_is_returned_after_dependency_cleanup(incoming):
 async def test_context_reaches_rules_permissions_hooks_and_nested_resources(
     conversation,
 ):
-    from opsmesh.framework.permissions import Permission, User
-    from opsmesh.framework.rules import Rule
+    from opsmesh.permissions import Permission, User
+    from opsmesh.rules import Rule
 
     seen = []
     closed = []
@@ -493,7 +493,7 @@ async def test_no_log_event_still_reaches_handlers(incoming, caplog):
 async def test_continuation_keeps_permission_resources_and_event_cache(
     control, conversation
 ):
-    from opsmesh.framework.permissions import Permission
+    from opsmesh.permissions import Permission
 
     channel, event = conversation
     lifecycle = []

@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from opsmesh.framework.plugins import PluginMetadata, require
+from opsmesh.plugins import PluginMetadata, require
 
-channels = require("opsmesh_channels")
-execution = require("opsmesh_execution")
-database = require("opsmesh_database")
+channels = require("channels")
+execution = require("execution")
+database = require("database")
 conversations = require("conversation_support")
 
 # Import declarations only after their dependency plugins are loaded.

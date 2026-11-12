@@ -4,46 +4,84 @@
 
 ## 一个 channels 插件
 
-`api`、`qq`、`dingtalk` 是 channels 内的协议模块，不是独立插件。宿主仅加载 `opsmesh_channels`。
+安装包名称是 `opsmesh-channels`，导入模块是 `opsmesh.plugins.channels`。插件通过标准 entry point 发布短名，业务插件使用 `require("channels")`；宿主的入口和配置条目使用完整模块路径，无默认值覆盖的依赖不必重复列出。`api`、`qq`、`dingtalk` 是同一个插件内的协议模块。
 
 ```text
-packages/channels/src/opsmesh_channels/
-├── __init__.py          # 元数据、协议入口和公共导出
-├── config.py            # 按协议读取配置分区
-├── context.py           # 冻结 UserContext
-├── dependencies.py      # Connection(handle)
-├── lifecycle.py         # API 与机器人传输的启停、回滚、排空
-├── _queue.py            # 有界内存接收缓冲
-├── _dedupe.py           # 进程内回调去重
-├── api/
-│   ├── routing.py       # HTTP 装饰器与请求/响应契约
-│   ├── routes.py        # 所有者、冲突检测和 Matcher 绑定
-│   ├── channel.py       # 入口认证、事件分发和响应
-│   ├── streaming.py     # 流及请求依赖的关闭作用域
-│   ├── auth.py          # 可信身份及操作授权
-│   └── events/messages/adapter/config/errors/responses.py
-├── qq/
-│   ├── adapter.py       # 回调入口、校验和框架派发
-│   ├── client.py        # 出站 HTTP 与 token 刷新
-│   └── connections/channel/events/security/config/errors.py
-└── dingtalk/
-    ├── adapter.py       # 回调入口、校验和框架派发
-    ├── client.py        # 出站 HTTP
-    └── connections/channel/events/security/config/errors.py
+packages/channels/
+├── pyproject.toml              # 独立包与 channels entry point
+├── requirements.txt
+└── src/                       # 构建时映射到 opsmesh.plugins.channels
+    ├── __init__.py            # 元数据与懒加载协议入口
+    ├── config.py              # api/qq/dingtalk 独立配置分区
+    ├── context.py            # UserContext
+    ├── dependencies.py       # Connection(handle)
+    ├── server.py             # Uvicorn 启停；不解析业务或持有适配器
+    ├── requests.py           # 原生请求正文大小限制
+    ├── lifecycle/            # 仅编排生命周期，不创建协议连接
+    ├── api/                  # FastAPI、认证、路由到框架事件的转换
+    │   ├── channel.py        # 自己持有 FastAPI 和监听器
+    │   ├── auth.py           # FastAPI Depends 使用的可信身份校验
+    │   ├── routing.py        # 插件路由装饰器
+    │   ├── routes.py         # 插件归属、Matcher、输入输出契约
+    │   ├── events.py         # HTTPEvent
+    │   ├── streaming.py      # 原生流式响应的依赖关闭作用域
+    │   └── config/messages/responses/errors/adapter.py
+    ├── qq/                   # 自己持有 FastAPI Webhook、签名和回复客户端
+    └── dingtalk/             # 自己持有官方 Stream SDK 连接和回复客户端
 ```
 
-表中合写的文件名表示同目录下的职责文件，不是额外目录。
+删除原先 `http/` 中自建的 Request/Response、ASGI 编解码、路径匹配和 WebSocket 包装。使用 FastAPI/Starlette 原生类型。API 的 `Depends` 先完成认证与权限检查，再转换为框架 Event、Message、UserContext，进入既有 Rule、Permission、Matcher、Dependent 链路。命令仍由框架的 `on_command` 处理，FastAPI 不建立第二套命令系统。
 
-channels 的 `config.api` 存在即启动 API，即使没有业务路由也提供 `/healthz` 和 `/readyz`。缺少必要认证配置时不退回匿名入口。纯机器人部署可省略 API 配置；有 API 路由却没有 API 配置时启动失败。
+连接由所属模块管理：API 自己读取 `config.api` 并创建监听；QQ 自己读取 `config.qq` 并创建 Webhook 监听；钉钉自己建立 Stream 长连接。API 和 QQ 不共享外部注入的服务器，也不依赖彼此的身份配置，只复用 Uvicorn 启停逻辑。API 默认端口 8080，QQ 默认端口 8081，部署时可分别配置。仅使用钉钉时不创建 FastAPI 实例或本地监听。
 
-QQ/钉钉的账号和连接由消费插件通过 `channels.qq.declare_connection(...)` 或 `channels.dingtalk.declare_connection(...)` 声明；协议公共限制来自 channels 配置分区。未声明的机器人不创建网络连接。多个连接共享协议适配器，声明独立归属，加载失败/撤销只移除本插件登记。
+```json
+{
+  "module": "opsmesh.plugins.channels",
+  "required": true,
+  "config_namespace": "opsmesh.plugins.channels",
+  "config": {
+    "api": {
+      "host": "127.0.0.1",
+      "port": 8080,
+      "identities": [{"id": "operator", "token_ref": "OPSMESH_API_TOKEN"}]
+    },
+    "qq": {"host": "127.0.0.1", "port": 8081}
+  }
+}
+```
+
+API 配置存在即准备入口；省略时不启用，有业务路由却没有身份配置时启动失败。`enabled=false` 表示不绑定本地端口，可供嵌入式 ASGI 与测试使用；不会退回匿名认证。未声明 QQ 连接时不会启动 QQ 监听；机器人账号仍由使用它的业务插件声明，建立、重连和关闭由协议模块完成。`config.http` 已删除，不提供兼容解析。
+
+### 钉钉 Stream 配置
+
+钉钉开发者控制台中，将机器人的消息接收模式切换为 **Stream 模式**，发布相应应用配置。保留消费插件提供的 `client_id` 和 `client_secret_ref`；凭据属于该机器人连接，不属于 API 身份配置。服务器需能出站访问钉钉 HTTPS/WSS 地址，无需对公网开放回调端口。
+
+```python
+from opsmesh.plugins import require
+
+channels = require("channels")
+dingtalk = channels.dingtalk
+robot = dingtalk.declare_connection(
+    dingtalk.DingTalkConnectionSettings(
+        client_id="configured-client-id",
+        client_secret_ref="DINGTALK_CLIENT_SECRET",
+    ),
+    name="support",
+)
+```
+
+channels 的 `config.dingtalk` 只放公共限制，例如 `request_timeout`、`reconnect_delay`、`max_pending_events`。删除原有 `path_prefix`、`max_clock_skew` 配置；旧 HTTP 回调和签名接口不再保留。所有消费者就绪后启动 Stream，连接成功才加入 Driver 的在线索引；断线撤出并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
+
+固定使用 [官方 dingtalk-stream 0.24.3](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。消息解析、回调及 ACK 使用 SDK 原生实现。该版本原生启动循环会吞掉取消，握手和回复请求使用无超时的同步 HTTP；因此 `stream.py` 只接管异步握手、连接任务和关闭，复用 SDK 协议逻辑。日志不输出握手 ticket、secret 或完整协议帧。回复继续使用钉钉返回的 session webhook（这是出站回复地址，不是本地 Webhook 接收端点）。
+
+QQ 保留签名 Webhook 接入。[官方 botpy](https://github.com/tencent-connect/botpy) 的接收实现是 WebSocket 客户端，不能直接替换当前 Webhook 入口。本次没有引入 botpy 或切换 QQ 的接收方式。
 
 业务插件使用 `@channels.api.get/post/...` 声明路由，框架按所属插件 ready 状态接单；没有手动 register/activate 协议。撤销一个业务插件不会关闭其他消费者共享的 API。
 
 ## 统一消息与身份
 
 ```text
-HTTP Driver / 已验证机器人回调
+FastAPI 请求 / 已验证 QQ 回调 / 钉钉 Stream 消息
 → 通道认证与协议解析
 → Event + Message + UserContext
 → dispatch_event
@@ -62,13 +100,13 @@ HTTP 路由默认只派发对应 Matcher。消息路由可显式选择同插件�
 
 ## 请求与流生命周期
 
-普通响应完成编码后关闭请求依赖。流式响应把依赖栈与 ResponseStream 一起移交给 Driver；正常耗尽、提前关闭、异常、取消都结束同一作用域。streaming 模块负责源流和依赖各自的关闭期限；源流关闭失败或超时仍必须尝试关闭依赖，保留原异常。
+普通响应完成编码后关闭请求依赖。流式响应通过 Starlette StreamingResponse 子类绑定请求依赖栈；正常耗尽、提前关闭、异常、取消都结束同一作用域。streaming 模块负责源流和依赖各自的关闭期限；源流关闭失败或超时仍必须尝试关闭依赖，保留原异常。
 
 404 表示路由不存在，503 表示通道/插件未就绪，403 表示权限/规则拒绝且没有响应，504 表示取得响应前超时。流开始后的持续时间不等于前置 request timeout。断连取消请求，默认不把工作转成后台任务，也不自动续传。
 
 机器人内存队列用于快速接收与异步消费。队列满/关闭返回失败并撤销该事件去重占位，允许供应商随后重试。队列不是持久任务系统，进程退出可能丢失已确认事件；不会自动重跑可能已产生副作用的模型调用。
 
-停机先停止 HTTP 接单、等待在途请求，然后 channels 的 on_stopping 停止所有入口并排空机器人工作，最后反向关闭消费者和传输资源。模型/MCP/沙箱资源不能在使用者还未排空时提前释放。
+停机时 channels 的 `on_quiescing` 先停止 HTTP 接单、等待在途请求，再停止协议入口并排空机器人工作；之后框架运行消费者的 `on_stopping`，最后反向执行 `on_shutdown` 释放资源。模型/MCP/沙箱资源不能在使用者还未排空时提前释放。
 
 ## execution 的插件接口
 
@@ -76,11 +114,11 @@ HTTP 路由默认只派发对应 Matcher。消息路由可显式选择同插件�
 import logging
 from typing import Annotated
 
-from opsmesh.framework.params import Context
-from opsmesh.framework.plugins import require
+from opsmesh.params import Context
+from opsmesh.plugins import require
 
-channels = require("opsmesh_channels")
-execution = require("opsmesh_execution")
+channels = require("channels")
+execution = require("execution")
 logger = logging.getLogger(__name__)
 
 

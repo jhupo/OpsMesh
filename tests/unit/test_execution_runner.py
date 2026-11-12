@@ -10,10 +10,10 @@ from agents.testing import ScriptedModel
 from agents.testing.model import ModelStep, assistant_message
 from agents.usage import Usage
 
-import opsmesh_execution as execution_module
-from opsmesh_execution import _lifecycle as lifecycle
-from opsmesh_execution._lifecycle import ExecutionRuntime
-from opsmesh_execution.config import Settings
+import opsmesh.plugins.execution as execution_module
+from opsmesh.plugins.execution import _lifecycle as lifecycle
+from opsmesh.plugins.execution._lifecycle import ExecutionRuntime
+from opsmesh.plugins.execution.config import Settings
 
 
 def usage(input_tokens, output_tokens):
@@ -169,7 +169,7 @@ async def test_cancellation_during_terminal_observation_reaches_caller(
 async def test_shutdown_cancels_consumers_and_notifies_observers(
     execution, callback_owner, streaming
 ):
-    from opsmesh_execution.errors import ExecutionClosed
+    from opsmesh.plugins.execution.errors import ExecutionClosed
 
     observations = []
     with callback_owner("cancelled"):
@@ -208,7 +208,7 @@ async def test_declared_dependency_callbacks_participate(
 ):
     from types import SimpleNamespace
 
-    from opsmesh_execution import callbacks
+    from opsmesh.plugins.execution import callbacks
 
     dependencies = {
         "chat": SimpleNamespace(dependencies={"users"}),
@@ -269,7 +269,7 @@ async def test_native_approval_state_is_resumed_without_platform_state(
 
 @pytest.mark.anyio
 async def test_cleanup_timeout_does_not_wait_for_cancellation_suppression():
-    from opsmesh_execution._streaming import _pending_cleanup, _settle
+    from opsmesh.plugins.execution._streaming import _pending_cleanup, _settle
 
     released = asyncio.Event()
 
@@ -298,7 +298,7 @@ async def test_cleanup_timeout_does_not_wait_for_cancellation_suppression():
 async def test_stream_cleanup_finishes_before_consumer_cancellation():
     from types import SimpleNamespace
 
-    from opsmesh_execution._streaming import close_stream
+    from opsmesh.plugins.execution._streaming import close_stream
 
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -327,7 +327,7 @@ def callback_owner():
     from contextlib import contextmanager
     from types import SimpleNamespace
 
-    from opsmesh.framework.plugins import registry
+    from opsmesh.plugins import registry
 
     owners = []
 
@@ -353,7 +353,7 @@ async def test_decorated_hooks_inject_context_and_keep_plugin_scopes(
 ):
     from typing import Annotated
 
-    from opsmesh.framework.params import Context, Depends
+    from opsmesh.params import Context, Depends
 
     events = []
     caller = {"id": "trusted-user"}
@@ -406,7 +406,7 @@ async def test_decorated_hook_failure_closes_dependency_without_replay(
 ):
     from typing import Annotated
 
-    from opsmesh.framework.params import Depends
+    from opsmesh.params import Depends
 
     failures = []
 
@@ -440,7 +440,7 @@ async def test_stream_keeps_callback_dependencies_until_exit(
 ):
     from typing import Annotated
 
-    from opsmesh.framework.params import Depends
+    from opsmesh.params import Depends
 
     lifecycle = []
 
@@ -504,7 +504,7 @@ async def test_callback_cleanup_failure_reaches_caller(
 ):
     from typing import Annotated
 
-    from opsmesh.framework.params import Depends
+    from opsmesh.params import Depends
 
     async def resource():
         yield None
@@ -557,7 +557,7 @@ async def test_callback_cleanup_preserves_original_failure(
 ):
     from typing import Annotated
 
-    from opsmesh.framework.params import Depends
+    from opsmesh.params import Depends
 
     original = (
         asyncio.CancelledError("execution cancelled")

@@ -3,7 +3,7 @@
 from agents import ModelSettings
 from agents.sandbox import SandboxAgent
 
-from opsmesh.framework.plugins.config import get_plugin_config
+from opsmesh.plugins.config import get_plugin_config
 
 from . import channels
 from .config import SandboxSettings

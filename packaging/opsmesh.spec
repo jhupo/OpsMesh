@@ -66,14 +66,7 @@ analysis = Analysis(
     pathex=[source_path],
     binaries=[],
     datas=host_data,
-    hiddenimports=host_modules
-    + standard_library
-    + [
-        "uvicorn.logging",
-        "uvicorn.loops.asyncio",
-        "uvicorn.protocols.http.h11_impl",
-        "uvicorn.lifespan.on",
-    ],
+    hiddenimports=host_modules + standard_library,
     hookspath=[],
     runtime_hooks=[],
     excludes=[
@@ -86,10 +79,11 @@ analysis = Analysis(
         "sqlalchemy",
         "alembic",
         "asyncpg",
-        "opsmesh_channels",
-        "opsmesh_database",
-        "opsmesh_execution",
-        "opsmesh_filesystem",
+        "uvicorn",
+        "opsmesh.plugins.channels",
+        "opsmesh.plugins.database",
+        "opsmesh.plugins.execution",
+        "opsmesh.plugins.filesystem",
     ],
     noarchive=False,
 )

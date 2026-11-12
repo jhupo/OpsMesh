@@ -43,14 +43,14 @@ jobs:
           python -m venv /tmp/opsmesh-core-check
           /tmp/opsmesh-core-check/bin/pip install -c requirements.lock dist/python/opsmesh-*.whl
           cd /tmp
-          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh_channels") is None'
+          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("uvicorn") is None; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh.plugins.channels") is None'
       - name: Install each plugin wheel with its declared dependencies
         run: |
           for plugin in channels database execution filesystem; do
             python -m venv "/tmp/opsmesh-$plugin-check"
             "/tmp/opsmesh-$plugin-check/bin/pip" install -c requirements-dev.lock dist/python/opsmesh-*.whl dist/python/opsmesh_${plugin}-*.whl
             "/tmp/opsmesh-$plugin-check/bin/pip" check
-            (cd /tmp && "/tmp/opsmesh-$plugin-check/bin/python" -I -c "import opsmesh_$plugin")
+            (cd /tmp && "/tmp/opsmesh-$plugin-check/bin/python" -I -c "import opsmesh.plugins.$plugin")
           done
       - name: Upload Python distributions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

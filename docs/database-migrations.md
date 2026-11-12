@@ -9,9 +9,9 @@ from typing import Annotated
 
 from sqlalchemy import text
 
-from opsmesh.framework.plugins import require
+from opsmesh.plugins import require
 
-database = require("opsmesh_database")
+database = require("database")
 
 
 async def count_items(
@@ -25,7 +25,7 @@ async def count_items(
 
 ## 独立迁移历史
 
-发行包拆分后的官方插件 ID 为 `opsmesh_database`、`opsmesh_execution` 等；功能插件如 `example_chat` 的 ID 不变。历史转换清单中的旧 `execution` owner 必须保持原值，不能随着模块重命名改成 `opsmesh_execution`。
+发行包拆分后的官方插件 ID 为 `opsmesh.plugins.database`、`opsmesh.plugins.execution` 等；功能插件如 `example_chat` 的 ID 不变。历史转换清单中的旧 `execution` owner 必须保持原值，不能随着模块重命名改成 `opsmesh.plugins.execution`。
 
 每个插件的版本表为 `opsmesh_version_<stable-owner-sha256-first-40-hex>`，包括 `parent:child` 等框架插件标识。表名安全编码不改变插件身份，部署时不得更改已有插件 ID。
 
@@ -67,16 +67,16 @@ async def count_items(
 ```bash
 export OPSMESH_DATABASE_HISTORY_MANIFEST=/etc/opsmesh/database-history.json
 opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:convert_shared_history
+  --command opsmesh.plugins.database.commands:convert_shared_history
 opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:migrate
+  --command opsmesh.plugins.database.commands:migrate
 ```
 
 清单示例仅展示格式，必须按实际旧数据库提供所有来源。即使插件已停用，也要从旧离线发行包保留完整迁移目录，不能只列当前启用插件。独立 database 插件包携带所需迁移资源；读取旧编译发行历史时支持相邻 `.pyc` 迁移文件。历史跨插件 revision 依赖不能自动拆分，命令会拒绝，须先评审专门的历史转换方案。
 
 转换在同一个事务和 advisory lock 内完成：验证所有来源及 revision 归属 → 确认共享表中每个 revision 均可解析 → 将实际已应用的 revision 写入各插件版本表 → 保存 `opsmesh_migration_cutover` 审计记录。不会执行任何 `upgrade`/`downgrade`，不会修改业务表，不会删除旧 `alembic_version`。缺少来源、归属冲突、目标版本冲突或已经转换都会明确失败。转换前，正常检查和升级遇到共享历史会拒绝执行，防止重复建表。
 
-`builtin:legacy-execution` 对应发行包中的 `opsmesh_database/_legacy_migrations/execution/0001_execution_observations.py`（或相邻字节码）。它是旧迁移的完整归档，仅供显式转换使用，不进入正常 schema 注册。旧 `execution_calls` 和 `execution_usage_observations` 数据原样保留，新的 execution 不再维护它们，删除或归档旧业务表须另行授权。
+`builtin:legacy-execution` 对应发行包中的 `opsmesh/plugins/database/_legacy_migrations/execution/0001_execution_observations.py`（或相邻字节码）。它是旧迁移的完整归档，仅供显式转换使用，不进入正常 schema 注册。旧 `execution_calls` 和 `execution_usage_observations` 数据原样保留，新的 execution 不再维护它们，删除或归档旧业务表须另行授权。
 
 ## 验证范围
 

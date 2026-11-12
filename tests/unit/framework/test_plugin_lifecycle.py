@@ -6,12 +6,12 @@ from types import ModuleType
 
 import pytest
 
-from opsmesh.framework.lifecycle import Lifespan
-from opsmesh.framework.plugins import get_plugin, registry
-from opsmesh.framework.plugins import load as plugin_load
-from opsmesh.framework.plugins import manager as plugin_manager
-from opsmesh.framework.plugins.manager import PluginManager
-from opsmesh.framework.plugins.model import PluginStatus
+from opsmesh.lifecycle import Lifespan
+from opsmesh.plugins import get_plugin, registry
+from opsmesh.plugins import load as plugin_load
+from opsmesh.plugins import manager as plugin_manager
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import PluginStatus
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ lifespan.on_startup(lambda: events.append("a"))
         "lifecycle_test_order_b",
         """
 from lifecycle_test_order_host import lifespan, events
-from opsmesh.framework.plugins import require
+from opsmesh.plugins import require
 require("lifecycle_test_order_a")
 lifespan.on_startup(lambda: events.append("b"))
 """,
@@ -97,7 +97,7 @@ lifespan.on_startup(fail)
         "lifecycle_test_caller",
         """
 from lifecycle_test_isolation_host import lifespan, events
-from opsmesh.framework.plugins import require
+from opsmesh.plugins import require
 require("lifecycle_test_dependency")
 lifespan.on_startup(lambda: events.append("caller"))
 lifespan.on_ready(lambda: events.append("caller-ready"))
@@ -159,21 +159,24 @@ async def test_decorated_callbacks_bind_to_managed_plugin(
 ):
     from types import SimpleNamespace
 
-    from opsmesh.framework import runtime
+    from opsmesh.drivers import base as driver_state
 
     host = _host_module("lifecycle_test_decorators_host")
     driver = SimpleNamespace(
         on_startup=host.lifespan.on_startup,
         on_ready=host.lifespan.on_ready,
+        on_started=host.lifespan.on_started,
+        on_quiescing=host.lifespan.on_quiescing,
         on_stopping=host.lifespan.on_stopping,
         on_shutdown=host.lifespan.on_shutdown,
     )
-    monkeypatch.setattr(runtime, "_driver", driver)
+    monkeypatch.setattr(driver_state, "_driver", driver)
     plugin = _load(
         plugin_path,
         "lifecycle_test_decorated",
         """
-from opsmesh.framework import on_startup, on_ready, on_stopping, on_shutdown
+from opsmesh import on_startup, on_ready, on_stopping, on_shutdown
+from opsmesh import on_started, on_quiescing
 from lifecycle_test_decorators_host import events
 
 @on_startup
@@ -188,6 +191,14 @@ async def ready():
 async def stopping():
     events.append("drain")
 
+@on_started
+async def started():
+    events.append("listen")
+
+@on_quiescing
+async def quiesce():
+    events.append("input-drained")
+
 @on_shutdown
 async def shutdown():
     events.append("stop")
@@ -198,19 +209,26 @@ async def shutdown():
     assert all(entry.plugin is plugin for entry in host.lifespan._startup_funcs)
     async with host.lifespan:
         assert plugin.ready
-        assert host.events == ["start", "ready"]
-    assert host.events == ["start", "ready", "drain", "stop"]
+        assert host.events == ["start", "ready", "listen"]
+    assert host.events == [
+        "start",
+        "ready",
+        "listen",
+        "input-drained",
+        "drain",
+        "stop",
+    ]
 
 
 @pytest.mark.anyio
 async def test_revocation_removes_decorated_callbacks(plugin_path, monkeypatch):
     from types import SimpleNamespace
 
-    from opsmesh.framework import runtime
+    from opsmesh.drivers import base as driver_state
 
     host = _host_module("lifecycle_test_revoke_host")
     monkeypatch.setattr(
-        runtime,
+        driver_state,
         "_driver",
         SimpleNamespace(
             on_startup=host.lifespan.on_startup,
@@ -222,7 +240,7 @@ async def test_revocation_removes_decorated_callbacks(plugin_path, monkeypatch):
         plugin_path,
         "lifecycle_test_revoked",
         """
-from opsmesh.framework import on_startup, on_stopping
+from opsmesh import on_startup, on_stopping
 from lifecycle_test_revoke_host import events
 @on_startup
 async def startup():
@@ -261,3 +279,76 @@ async def test_stopping_failure_still_releases_all_resources():
         "dependency closed",
     ]
     assert not lifespan.started
+
+
+@pytest.mark.anyio
+async def test_input_activation_waits_for_all_readiness_callbacks(plugin_path):
+    host = _host_module("lifecycle_test_barrier_host")
+    plugin = _load(
+        plugin_path,
+        "lifecycle_test_barrier",
+        """
+from lifecycle_test_barrier_host import lifespan, events
+lifespan.on_ready(lambda: events.append("plugin-ready"))
+lifespan.on_started(lambda: events.append("input-open"))
+""",
+    )
+    assert plugin is not None
+    host.lifespan.on_ready(lambda: host.events.append("host-ready"))
+    async with host.lifespan:
+        assert host.events == ["plugin-ready", "host-ready", "input-open"]
+
+
+@pytest.mark.anyio
+async def test_drain_failure_still_stops_consumers_and_releases_resources(
+    plugin_path,
+):
+    lifespan = Lifespan()
+    events = []
+
+    async def fail_drain():
+        events.append("input-drain")
+        raise RuntimeError("drain failed")
+
+    lifespan.on_quiescing(fail_drain)
+    lifespan.on_stopping(lambda: events.append("consumer-stop"))
+    lifespan.on_shutdown(lambda: events.append("resources-close"))
+    await lifespan.startup()
+    with pytest.raises(BaseExceptionGroup, match="Framework lifespan failed"):
+        await lifespan.shutdown()
+    assert events == ["input-drain", "consumer-stop", "resources-close"]
+    assert not lifespan.started
+
+
+@pytest.mark.anyio
+async def test_input_start_failure_blocks_dependents_and_cleans_up(plugin_path):
+    host = _host_module("lifecycle_test_input_host")
+    dependency = _load(
+        plugin_path,
+        "lifecycle_test_input",
+        """
+from lifecycle_test_input_host import lifespan, events
+def fail():
+    events.append("input-failed")
+    raise OSError("cannot listen")
+lifespan.on_started(fail)
+lifespan.on_quiescing(lambda: events.append("input-close"))
+""",
+    )
+    consumer = _load(
+        plugin_path,
+        "lifecycle_test_input_consumer",
+        """
+from lifecycle_test_input_host import lifespan, events
+from opsmesh.plugins import require
+require("lifecycle_test_input")
+lifespan.on_started(lambda: events.append("unexpected"))
+lifespan.on_stopping(lambda: events.append("consumer-stop"))
+""",
+    )
+    assert dependency is not None and consumer is not None
+    async with host.lifespan:
+        assert dependency.status is PluginStatus.FAILED
+        assert consumer.status is PluginStatus.BLOCKED
+        assert host.events == ["input-failed"]
+    assert host.events == ["input-failed", "input-close", "consumer-stop"]

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import anyio
 import pytest
 
-from opsmesh.framework.dispatch import SessionBusyError, SessionGuard
+from opsmesh.dispatch import SessionBusyError, SessionGuard
 
 
 @pytest.fixture
