@@ -5,15 +5,15 @@ from types import ModuleType
 
 import pytest
 
-from opsmesh.framework.plugins import (
+from opsmesh.plugins import (
     clear_plugin_admission,
     registry,
     set_plugin_admission,
 )
-from opsmesh.framework.plugins import load as plugin_load
-from opsmesh.framework.plugins import manager as plugin_manager
-from opsmesh.framework.plugins.errors import PluginLoadDenied, PluginReloadError
-from opsmesh.framework.plugins.manager import PluginManager
+from opsmesh.plugins import load as plugin_load
+from opsmesh.plugins import manager as plugin_manager
+from opsmesh.plugins.errors import PluginLoadDenied, PluginReloadError
+from opsmesh.plugins.manager import PluginManager
 
 
 @pytest.fixture

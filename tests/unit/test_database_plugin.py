@@ -10,12 +10,12 @@ from pydantic import ValidationError
 from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from opsmesh.framework.dependencies import Dependent
-from opsmesh.framework.dependencies.params import DefaultParam, DependParam
-from opsmesh.framework.params import Depends
-import opsmesh_database as database
-from opsmesh_database import connections, migrations, schema
-from opsmesh_database.history import convert_history, read_manifest
+from opsmesh.dependencies import Dependent
+from opsmesh.dependencies.params import DefaultParam, DependParam
+from opsmesh.params import Depends
+import opsmesh.plugins.database as database
+from opsmesh.plugins.database import connections, migrations, schema
+from opsmesh.plugins.database.history import convert_history, read_manifest
 
 
 def source(directory: Path, owner: str, head: str = "initial"):

@@ -10,15 +10,15 @@ import pytest
 from pydantic import ValidationError
 
 from opsmesh import app as host
-from opsmesh.framework import runtime
-from opsmesh.framework.plugins import admission, get_plugin, registry
-from opsmesh.framework.plugins import load as plugin_load
-from opsmesh.framework.plugins import manager as plugin_manager
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import admission, get_plugin, registry
+from opsmesh.plugins import load as plugin_load
+from opsmesh.plugins import manager as plugin_manager
 
 
 @pytest.fixture
 def host_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(runtime, "_driver", None)
+    monkeypatch.setattr(driver_state, "_driver", None)
     monkeypatch.setattr(registry, "_plugins", {})
     managers = []
     monkeypatch.setattr(registry, "_managers", managers)
@@ -46,7 +46,6 @@ def marker_source(name: str, extra: str = "") -> str:
 
 def manifest(*entries, **kwargs):
     return host.HostManifest(
-        http=host.HTTPSettings(enabled=False),
         plugins=tuple(
             entry
             if isinstance(entry, host.PluginEntry)
@@ -55,6 +54,29 @@ def manifest(*entries, **kwargs):
         ),
         **kwargs,
     )
+
+
+def test_host_rejects_transport_settings_owned_by_channels():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        host.HostManifest.model_validate({"http": {"port": 8080}})
+
+
+@pytest.mark.anyio
+async def test_manifest_passes_only_framework_options_to_driver(host_dir):
+    configuration = host.HostManifest.model_validate(
+        {"framework": {"command_start": ["!"], "command_sep": [":"]}}
+    )
+    async with host.load_host(configuration) as driver:
+        assert driver.config.command_start == frozenset({"!"})
+        assert driver.config.command_sep == frozenset({":"})
+        assert not hasattr(driver.config, "plugin_configs")
+
+
+def test_framework_config_rejects_plugin_fields():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        host.HostManifest.model_validate(
+            {"framework": {"plugin_configs": {"channels": {}}}}
+        )
 
 
 async def wait_for(path: Path, timeout: float = 5.0) -> None:
@@ -92,7 +114,6 @@ async def test_disabled_plugin_is_never_imported(host_dir):
     )
     await run_until(
         host.HostManifest(
-            http=host.HTTPSettings(enabled=False),
             plugins=(
                 host.PluginEntry(module="host_test_alpha"),
                 host.PluginEntry(module="host_test_disabled", enabled=False),
@@ -113,8 +134,8 @@ async def test_manifest_keeps_metadata_and_orders_dependencies(host_dir):
         "host_test_meta_dep",
         """
 from pathlib import Path
-from opsmesh.framework import runtime
-from opsmesh.framework.plugins import Plugin, PluginMetadata
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import Plugin, PluginMetadata
 assert isinstance(globals()["__plugin__"], Plugin)
 __plugin_meta__ = PluginMetadata(
     name="Dependency", description="d", usage="u"
@@ -124,7 +145,7 @@ def start():
         "a", encoding="utf-8"
     ) as handle:
         handle.write("dependency\\n")
-runtime.get_driver().on_startup(start)
+driver_state.get_driver().on_startup(start)
 """,
     )
     root = write_plugin(
@@ -132,8 +153,8 @@ runtime.get_driver().on_startup(start)
         "host_test_meta_root",
         """
 from pathlib import Path
-from opsmesh.framework import runtime
-from opsmesh.framework.plugins import (
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import (
     Plugin, PluginMetadata, get_plugin, require,
 )
 assert isinstance(globals()["__plugin__"], Plugin)
@@ -148,17 +169,17 @@ def start():
     Path(__file__).with_name("host_test_meta_root.loaded").write_text(
         "loaded", encoding="utf-8"
     )
-runtime.get_driver().on_startup(start)
+driver_state.get_driver().on_startup(start)
 """,
     )
     await run_until(
         manifest(
-            host.PluginEntry(module="host_test_meta_dep", autoload=False),
             "host_test_meta_root",
         ),
         host_dir,
         root,
     )
+    assert get_plugin("host_test_meta_dep") is None
     assert (host_dir / "order.log").read_text(
         encoding="utf-8"
     ) == "dependency\nroot\n"
@@ -177,7 +198,6 @@ async def test_required_plugin_failure_stops_the_host(host_dir):
     with pytest.raises(host.HostStartupError, match="host_test_broken"):
         await host.run_host(
             host.HostManifest(
-                http=host.HTTPSettings(enabled=False),
                 plugins=(
                     host.PluginEntry(module="host_test_alpha"),
                     host.PluginEntry(module="host_test_broken", required=True),
@@ -199,7 +219,7 @@ async def test_disabled_dependency_cannot_be_loaded_by_require(host_dir):
         host_dir,
         "host_test_root",
         "from pathlib import Path\n"
-        "from opsmesh.framework.plugins import require\n"
+        "from opsmesh.plugins import require\n"
         "try:\n"
         "    require('host_test_dep')\n"
         "except Exception as error:\n"
@@ -208,7 +228,6 @@ async def test_disabled_dependency_cannot_be_loaded_by_require(host_dir):
     )
     await run_until(
         host.HostManifest(
-            http=host.HTTPSettings(enabled=False),
             plugins=(
                 host.PluginEntry(
                     module="host_test_dep", enabled=False, autoload=False
@@ -253,7 +272,6 @@ async def test_expected_origin_mismatch_is_rejected(host_dir):
     with pytest.raises(host.HostStartupError, match="host_test_alpha"):
         await host.run_host(
             host.HostManifest(
-                http=host.HTTPSettings(enabled=False),
                 plugins=(
                     host.PluginEntry(
                         module="host_test_alpha",
@@ -273,14 +291,14 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
         host_dir,
         "host_test_a",
         "from pathlib import Path\n"
-        "from opsmesh.framework.plugins import require\n"
+        "from opsmesh.plugins import require\n"
         "require('host_test_b')\n"
         "Path(__file__).with_name('host_test_a.loaded').write_text('loaded')\n",
     )
     (host_dir / "host_test_b.py").write_text(
         "from pathlib import Path\n"
         "from pydantic import BaseModel\n"
-        "from opsmesh.framework.plugins import get_plugin_config\n"
+        "from opsmesh.plugins import get_plugin_config\n"
         "class Settings(BaseModel):\n"
         "    value: str\n"
         "config = get_plugin_config(Settings, namespace='host.test.b')\n"
@@ -289,7 +307,6 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
     )
     await run_until(
         host.HostManifest(
-            http=host.HTTPSettings(enabled=False),
             plugins=(
                 host.PluginEntry(module="host_test_a"),
                 host.PluginEntry(
@@ -306,13 +323,9 @@ async def test_dependency_uses_its_declared_configuration(host_dir):
     assert (host_dir / "b.config").read_text(encoding="utf-8") == "declared"
 
 
-def test_manifest_rejects_config_without_namespace():
-    with pytest.raises(ValidationError, match="config_namespace"):
-        host.HostManifest(
-            plugins=(
-                host.PluginEntry(module="host_test_alpha", config={"a": 1}),
-            )
-        )
+def test_manifest_accepts_config_in_the_module_namespace():
+    entry = host.PluginEntry(module="host_test_alpha", config={"a": 1})
+    assert entry.config == {"a": 1}
 
 
 def test_manifest_rejects_duplicate_modules_and_conflicting_config():
@@ -363,3 +376,42 @@ def test_load_manifest_resolves_declared_paths(host_dir):
     assert loaded.plugins[0].expected_origin == str(
         (host_dir / "entry.py").resolve()
     )
+
+
+@pytest.mark.anyio
+async def test_automatic_dependency_config_and_cleanup_after_root_failure(
+    host_dir,
+):
+    write_plugin(
+        host_dir,
+        "host_test_config_dep",
+        "from pydantic import BaseModel\n"
+        "from opsmesh.plugins import get_plugin_config\n"
+        "class Settings(BaseModel):\n"
+        "    value: str\n"
+        "settings = get_plugin_config(\n"
+        "    Settings, namespace='host_test_config_dep')\n"
+        "assert settings.value == 'configured'\n",
+    )
+    write_plugin(
+        host_dir,
+        "host_test_failing_root",
+        "from opsmesh import require\n"
+        "require('host_test_config_dep')\n"
+        "raise RuntimeError('root failed after dependency loaded')\n",
+    )
+    with pytest.raises(host.HostStartupError):
+        async with host.load_host(
+            manifest(
+                host.PluginEntry(
+                    module="host_test_failing_root", required=True
+                ),
+                host.PluginEntry(
+                    module="host_test_config_dep",
+                    autoload=False,
+                    config={"value": "configured"},
+                ),
+            )
+        ):
+            pass
+    assert get_plugin("host_test_config_dep") is None

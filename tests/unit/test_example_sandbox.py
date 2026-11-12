@@ -8,32 +8,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 SCRIPT = """
-import logging
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Driver
-from opsmesh.framework.plugins import get_plugin, registry
-from opsmesh.framework.plugins.manager import PluginManager
+from opsmesh.drivers import base as driver_state
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import get_plugin, registry
+from opsmesh.plugins.manager import PluginManager
 
-class SmokeDriver(Driver):
-    @property
-    def type(self):
-        return "smoke"
-    @property
-    def logger(self):
-        return logging.getLogger("smoke")
-
-runtime.set_driver(SmokeDriver(Env(), Config(plugin_configs={
-    "example_sandbox": {"model": "gpt-test"},
-    "opsmesh_channels": {},
-})))
-manager = PluginManager(["example_sandbox"])
-registry._managers.append(manager)
+driver_state.set_driver(Driver(Env(), Config()))
+manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"},
+                        namespace="example_sandbox")
+registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None
-assert get_plugin("opsmesh_channels") is not None
+assert get_plugin("channels") is not None
 assert get_plugin("example_sandbox") is plugin
-from opsmesh_channels.api import get_router
+from opsmesh.plugins.channels.api import get_router
 routes = [route for route in get_router().registrations
           if route.installation_id == plugin.id_]
 assert len(routes) == 8

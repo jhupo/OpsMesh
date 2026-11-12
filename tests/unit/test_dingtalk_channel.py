@@ -1,8 +1,5 @@
-"""Check DingTalk callback verification, event mapping, and replies."""
+"""Check DingTalk Stream admission, event mapping, and replies."""
 
-import base64
-import hashlib
-import hmac
 import json
 import time
 from contextlib import contextmanager
@@ -10,11 +7,11 @@ from contextlib import contextmanager
 import anyio
 import pytest
 
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.dispatch.results import DispatchResult
-from opsmesh.framework.plugins import registry
-from opsmesh_channels.dingtalk import (
+from opsmesh.config import Config, Env
+from opsmesh.dispatch.results import DispatchResult
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
+from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
     DingTalkConfigurationError,
     DingTalkConnectionSettings,
@@ -72,15 +69,14 @@ class FakeHTTP:
         self.closed = True
 
 
-def make_driver() -> HTTPDriver:
-    return HTTPDriver(
-        Env(), Config(driver_options={"http": {"enabled": False}})
-    )
+def make_runtime() -> Driver:
+    driver = Driver(Env(), Config())
+    return driver
 
 
 def make_adapter(client=None, **options) -> DingTalkAdapter:
     return DingTalkAdapter(
-        make_driver(),
+        make_runtime(),
         settings=DingTalkSettings(**options),
         http_client=client,
     )
@@ -99,61 +95,46 @@ def declare(
         return adapter.declare(settings, name=name)
 
 
-def scope(path: str, body: bytes, headers=()):
-    return {
-        "type": "http",
-        "method": "POST",
-        "path": path,
-        "query_string": b"",
-        "headers": list(headers),
-        "scheme": "http",
-        "server": ("testserver", 80),
-    }, [{"type": "http.request", "body": body, "more_body": False}]
+@pytest.fixture(autouse=True)
+def connected_stream(monkeypatch):
+    """Keep transport tests offline while exercising owned Stream tasks."""
+    from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
 
-
-async def call(driver, request):
-    request_scope, queue = request
-    sent = []
-
-    async def receive():
-        if queue:
-            return queue.pop(0)
+    async def receive(stream):
+        stream.adapter.stream_connected(stream.channel)
         await anyio.sleep_forever()
 
-    async def send(message):
-        sent.append(message)
-
-    await driver(request_scope, receive, send)
-    return sent
+    monkeypatch.setattr(DingTalkStream, "_receive", receive)
 
 
-def response_payload(messages):
-    body = b"".join(
-        message.get("body", b"")
-        for message in messages
-        if message["type"] == "http.response.body"
+async def open_streams(adapter):
+    await adapter.start_accepting()
+    with anyio.fail_after(2):
+        while any(c.state == "connecting" for c in adapter.declarations):
+            await anyio.sleep(0)
+
+
+async def callback(adapter, channel, payload):
+    """Route an official SDK frame and capture its wire acknowledgement."""
+    from dingtalk_stream import ChatbotMessage
+
+    replies = []
+
+    class Socket:
+        async def send(self, value):
+            replies.append(json.loads(value))
+
+    stream = adapter._streams[channel]
+    stream.websocket = Socket()
+    await stream.route_message(
+        {
+            "type": "CALLBACK",
+            "headers": {"topic": ChatbotMessage.TOPIC, "messageId": "frame-1"},
+            "data": json.dumps(payload),
+        }
     )
-    return json.loads(body)
-
-
-def signature(secret: str, timestamp: str) -> str:
-    message = f"{timestamp}\n{secret}".encode()
-    return base64.b64encode(
-        hmac.new(secret.encode(), message, hashlib.sha256).digest()
-    ).decode()
-
-
-def signed(path: str, payload: dict, secret: str = SECRET, timestamp=None):
-    body = json.dumps(payload).encode()
-    stamp = str(int(time.time() * 1000) if timestamp is None else timestamp)
-    return scope(
-        path,
-        body,
-        [
-            (b"timestamp", stamp.encode()),
-            (b"sign", signature(secret, stamp).encode()),
-        ],
-    )
+    assert replies[0]["headers"]["messageId"] == "frame-1"
+    return replies[0]
 
 
 def direct_payload(
@@ -184,7 +165,6 @@ def test_declaration_requires_an_owning_plugin():
     plugin = FakePlugin("support")
     channel = declare(adapter, plugin)
     assert channel.self_id == "dingtalk:support:internal"
-    assert channel.path == "/channels/dingtalk/support/internal"
     assert channel.ready is False
 
     with pytest.raises(DingTalkConfigurationError, match="Duplicate"):
@@ -237,13 +217,13 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
 
     async with driver.lifespan():
         await adapter.startup()
+        await open_streams(adapter)
         assert good.ready is True
         assert bad.ready is False
         assert "DINGTALK_MISSING" in (bad.error or "")
         assert good.self_id in driver.channels
         assert bad.self_id not in driver.channels
-        messages = await call(driver, signed(bad.path, direct_payload()))
-        assert messages[0]["status"] == 503
+        assert adapter.accept_callback(bad, direct_payload())[0] == 500
         await adapter.shutdown()
 
     assert good.state == "closed"
@@ -251,7 +231,7 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_signed_callback_dispatches_once(monkeypatch):
+async def test_sdk_callback_dispatches_once(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
     plugin = FakePlugin("support")
@@ -267,15 +247,16 @@ async def test_signed_callback_dispatches_once(monkeypatch):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh_channels.dingtalk.adapter.dispatch_event",
+        "opsmesh.plugins.channels.dingtalk.adapter.dispatch_event",
         fake_dispatch,
     )
     driver = adapter.driver
 
     async with driver.lifespan():
         await adapter.startup()
-        messages = await call(driver, signed(channel.path, direct_payload()))
-        assert response_payload(messages) == {"status": "ok"}
+        await open_streams(adapter)
+        messages = await callback(adapter, channel, direct_payload())
+        assert messages["code"] == 200
         with anyio.fail_after(2):
             await received.wait()
 
@@ -286,57 +267,29 @@ async def test_signed_callback_dispatches_once(monkeypatch):
         assert caller.name == "Tester"
         assert caller.groups == frozenset()
 
-        duplicate = await call(driver, signed(channel.path, direct_payload()))
-        assert response_payload(duplicate) == {"status": "duplicate"}
+        duplicate = await callback(adapter, channel, direct_payload())
+        assert json.loads(duplicate["data"]) == {"response": "duplicate"}
         assert len(dispatched) == 1
         await adapter.shutdown()
 
 
 @pytest.mark.anyio
-async def test_callback_rejects_bad_signatures(monkeypatch):
+async def test_sdk_callback_rejects_invalid_body_and_unready_owner(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    plugin = FakePlugin("support")
-    channel = declare(adapter, plugin)
-    driver = adapter.driver
-
-    async with driver.lifespan():
+    owner = FakePlugin("support")
+    channel = declare(adapter, owner)
+    async with adapter.driver.lifespan():
         await adapter.startup()
-        assert (
-            await call(
-                driver,
-                signed(
-                    channel.path,
-                    direct_payload(),
-                    timestamp=int(time.time() * 1000) - 3600000,
-                ),
-            )
-        )[0]["status"] == 401
-
-        body = json.dumps(direct_payload()).encode()
-        unsigned = scope(channel.path, body)
-        assert (await call(driver, unsigned))[0]["status"] == 401
-
-        stamp = str(int(time.time() * 1000))
-        wrong = scope(
-            channel.path,
-            body,
-            [
-                (b"timestamp", stamp.encode()),
-                (b"sign", b"invalid"),
-            ],
-        )
-        assert (await call(driver, wrong))[0]["status"] == 401
-
-        invalid_json = scope(
-            channel.path,
-            b"not json",
-            [
-                (b"timestamp", stamp.encode()),
-                (b"sign", signature(SECRET, stamp).encode()),
-            ],
-        )
-        assert (await call(driver, invalid_json))[0]["status"] == 400
+        await open_streams(adapter)
+        invalid = await callback(adapter, channel, {"msgtype": "text"})
+        assert invalid["code"] == 400
+        owner.ready = False
+        refused = await callback(adapter, channel, direct_payload())
+        assert refused["code"] == 500
+        owner.ready = True
+        retried = await callback(adapter, channel, direct_payload())
+        assert retried["code"] == 200
         await adapter.shutdown()
 
 
@@ -351,6 +304,7 @@ async def test_reply_uses_session_webhook(monkeypatch):
 
     async with driver.lifespan():
         await adapter.startup()
+        await open_streams(adapter)
         payload = direct_payload()
         event = parse_callback(payload, connection_id=channel.self_id)
         assert event is not None
@@ -375,6 +329,7 @@ async def test_reply_failures_are_explicit(monkeypatch):
 
     async with driver.lifespan():
         await adapter.startup()
+        await open_streams(adapter)
         payload = direct_payload()
         expired_payload = dict(payload)
         expired_payload["sessionWebhookExpiredTime"] = (
@@ -402,24 +357,19 @@ async def test_reply_failures_are_explicit(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_shutdown_removes_callback_routes(monkeypatch):
+async def test_shutdown_closes_streams_and_unregisters_channel(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    plugin = FakePlugin("support")
-    channel = declare(adapter, plugin)
-    driver = adapter.driver
-
-    async with driver.lifespan():
+    channel = declare(adapter, FakePlugin("support"))
+    async with adapter.driver.lifespan():
         await adapter.startup()
-        assert (await call(driver, signed(channel.path, direct_payload())))[0][
-            "status"
-        ] == 200
+        await open_streams(adapter)
+        assert channel.ready
         await adapter.shutdown()
-        missing = await call(driver, signed(channel.path, direct_payload()))
-        assert missing[0]["status"] == 404
-
+        assert adapter._streams == {}
+        assert adapter.accept_callback(channel, direct_payload())[0] == 500
     assert channel.state == "closed"
-    assert channel.ready is False
+    assert adapter.driver.channels == {}
 
 
 @pytest.mark.anyio
@@ -436,27 +386,22 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
 
     async with adapter.driver.lifespan():
         await adapter.startup()
+        await open_streams(adapter)
         monkeypatch.setattr(adapter._queue, "put_nowait", enqueue)
-        first = await call(
-            adapter.driver, signed(channel.path, direct_payload())
-        )
-        retry = await call(
-            adapter.driver, signed(channel.path, direct_payload())
-        )
-        duplicate = await call(
-            adapter.driver, signed(channel.path, direct_payload())
-        )
-        assert first[0]["status"] == 503
-        assert response_payload(retry) == {"status": "ok"}
-        assert response_payload(duplicate) == {"status": "duplicate"}
+        first = await callback(adapter, channel, direct_payload())
+        retry = await callback(adapter, channel, direct_payload())
+        duplicate = await callback(adapter, channel, direct_payload())
+        assert first["code"] == 500
+        assert retry["code"] == 200
+        assert json.loads(duplicate["data"]) == {"response": "duplicate"}
         assert len(accepted) == 2
         await adapter.shutdown()
 
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
-    from opsmesh.framework.dispatch import dispatch_event
-    from opsmesh.framework.matchers import Matcher, MatcherSource
+    from opsmesh.dispatch import dispatch_event
+    from opsmesh.matchers import Matcher, MatcherSource
 
     adapter = make_adapter()
     owner = FakePlugin("support")

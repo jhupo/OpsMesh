@@ -65,7 +65,7 @@ if $rollback; then
     systemd-run --quiet --wait --pipe --collect \
         --property=User=opsmesh --property=Group=opsmesh \
         --property=WorkingDirectory=/var/lib/opsmesh \
-        --property=EnvironmentFile=/etc/opsmesh/opsmesh.env \
+        --property=EnvironmentFile=-/etc/opsmesh/opsmesh.env \
         "$target/opsmesh" --manifest /etc/opsmesh/host.json --check
     systemctl stop opsmesh
     if ! { install -m 0644 "$target/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service &&
@@ -144,7 +144,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "$stage/members"; then
     fail "Invalid archive paths"
 fi
 tar -xzf "$archive" --strip-components=1 --no-same-owner -C "$stage"
-[[ -x $stage/opsmesh && -f $stage/GLIBC_MIN && -f $stage/deploy/host.example.json && -f $stage/deploy/opsmesh.env.example && -f $stage/deploy/systemd/opsmesh.service ]] || fail "Not an OpsMesh framework release"
+[[ -x $stage/opsmesh && -f $stage/GLIBC_MIN && -f $stage/deploy/host.example.json && -f $stage/deploy/systemd/opsmesh.service ]] || fail "Not an OpsMesh framework release"
 minimum=$(cat "$stage/GLIBC_MIN")
 [[ $minimum =~ ^[0-9]+\.[0-9]+$ ]] || fail "Invalid runtime requirements"
 [[ $(printf '%s\n' "$minimum" "$glibc" | sort -V | head -1) == "$minimum" ]] || fail "glibc $minimum or newer is required"
@@ -160,9 +160,6 @@ changed=true
 if [[ -z $manifest && ! -f /etc/opsmesh/host.json ]]; then
     manifest="$release/deploy/host.example.json"
 fi
-if [[ -z $environment && ! -f /etc/opsmesh/opsmesh.env ]]; then
-    environment="$release/deploy/opsmesh.env.example"
-fi
 [[ -z $manifest ]] || install -m 0640 -o root -g opsmesh "$manifest" /etc/opsmesh/host.json
 [[ -z $environment ]] || install -m 0640 -o root -g opsmesh "$environment" /etc/opsmesh/opsmesh.env
 
@@ -170,7 +167,7 @@ check_configuration() {
     systemd-run --quiet --wait --pipe --collect \
         --property=User=opsmesh --property=Group=opsmesh \
         --property=WorkingDirectory=/var/lib/opsmesh \
-        --property=EnvironmentFile=/etc/opsmesh/opsmesh.env \
+        --property=EnvironmentFile=-/etc/opsmesh/opsmesh.env \
         "$release/opsmesh" --manifest /etc/opsmesh/host.json --check
 }
 check_configuration

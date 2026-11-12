@@ -4,8 +4,8 @@ import json
 from typing import Annotated
 from uuid import NAMESPACE_URL, uuid5
 
-from opsmesh.framework.adapters import Channel, Event
-from opsmesh.framework.params import Context
+from opsmesh.adapters import Channel, Event
+from opsmesh.params import Context
 
 from . import channels
 from .agent import ApprovalUnsupported, reply

@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import anyio
 from agents import RunConfig, Runner
 from agents.testing import ModelStep, ScriptedModel, assistant_message
 from alembic.migration import MigrationContext
@@ -17,27 +18,27 @@ from example_chat import lifecycle
 from example_chat.agent import agent
 from example_chat.sessions import ChatConversations, ConversationError
 from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.requests import Request
 
-from opsmesh.framework import runtime
-from opsmesh.framework.dispatch import dispatch_event
-from opsmesh.framework.drivers import Request
-from opsmesh.framework.plugins.model import PluginStatus
-import opsmesh_execution as execution
-from opsmesh_channels import UserContext
-from opsmesh_channels.api import (
+import opsmesh.plugins.execution as execution
+from opsmesh.dispatch import dispatch_event
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins.channels import UserContext
+from opsmesh.plugins.channels.api import (
     APIChannel,
     APIRouter,
     HTTPError,
     Settings,
 )
-from opsmesh_channels.api.adapter import APIAdapter
-from opsmesh_channels.qq.events import QQMessageEvent
+from opsmesh.plugins.channels.api.adapter import APIAdapter
+from opsmesh.plugins.channels.qq.events import QQMessageEvent
+from opsmesh.plugins.model import PluginStatus
 
 
 def run_scenario(plugin, routes, connections):
     """Exercise conversations using real SDK history and framework dispatch."""
     plugin.status = PluginStatus.READY
-    channel = connections._adapter.declarations[0]
+    channel = driver_state.get_driver().get_adapter("qq").declarations[0]
     responses = []
     caller = UserContext(id="verified-user")
 
@@ -96,7 +97,7 @@ def run_scenario(plugin, routes, connections):
         Settings(identities=[{"id": "test", "token_ref": "TEST_TOKEN"}]),
         APIRouter(),
     )
-    api_channel.adapter = APIAdapter(runtime.get_driver())
+    api_channel.adapter = APIAdapter(driver_state.get_driver())
 
     async def invoke(method, path, data=None, session_id=None, owner=None):
         selected = next(
@@ -104,16 +105,34 @@ def run_scenario(plugin, routes, connections):
             for item in routes
             if item.method == method and item.relative_path == path
         )
+        delivered = False
+
+        async def receive():
+            nonlocal delivered
+            if delivered:
+                await anyio.sleep_forever()
+            delivered = True
+            return {
+                "type": "http.request",
+                "more_body": False,
+                "body": json.dumps(data).encode() if data is not None else b"",
+            }
+
         request = Request(
-            method,
-            "http://localhost" + selected.path,
-            content=json.dumps(data).encode() if data is not None else None,
-            path_params={"id": session_id} if session_id else {},
+            {
+                "type": "http",
+                "method": method,
+                "path": selected.path,
+                "headers": [],
+                "query_string": b"",
+                "path_params": {"id": session_id} if session_id else {},
+            },
+            receive,
         )
         result = await api_channel._invoke(
             selected, request, SimpleNamespace(caller=owner or caller)
         )
-        return json.loads(result.content) if result.status_code != 204 else None
+        return json.loads(result.body) if result.status_code != 204 else None
 
     async def expect_error(operation, status):
         try:

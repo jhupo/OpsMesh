@@ -6,8 +6,8 @@ from pathlib import Path
 import anyio
 import pytest
 
-from opsmesh.framework import config
-from opsmesh.framework import lifecycle as _lifespan
+from opsmesh import config
+from opsmesh import lifecycle as _lifespan
 
 
 @pytest.mark.anyio
@@ -39,7 +39,7 @@ def test_explicit_plugins_load_in_fresh_interpreter(tmp_path):
     source_path = Path(config.__file__).resolve().parents[2]
     plugin_path = tmp_path / "isolated_plugin.py"
     plugin_path.write_text(
-        "from opsmesh.framework import on_notice\nnotice = on_notice()\n",
+        "from opsmesh import on_notice\nnotice = on_notice()\n",
         encoding="utf-8",
     )
     environment = dict(
@@ -51,7 +51,7 @@ def test_explicit_plugins_load_in_fresh_interpreter(tmp_path):
             sys.executable,
             "-c",
             """
-from opsmesh import framework
+import opsmesh as framework
 plugin = framework.load_plugin('isolated_plugin')
 assert plugin is not None
 assert plugin.matcher == {plugin.module.notice}
@@ -59,9 +59,9 @@ assert plugin.module.notice.plugin is plugin
 assert framework.get_plugin(plugin.id_) is plugin
 assert framework.get_plugin_by_module_name('isolated_plugin.child') is plugin
 assert plugin in framework.get_loaded_plugins()
-from opsmesh.framework.matchers import matchers
+from opsmesh.matchers import matchers
 assert plugin.module.notice in matchers[plugin.module.notice.priority]
-from opsmesh.framework.dispatch import hooks
+from opsmesh.dispatch import hooks
 assert not hooks._event_preprocessors
 """,
         ],

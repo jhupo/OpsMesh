@@ -1,6 +1,6 @@
 """Bind database and filesystem dependencies after schema validation."""
 
-from opsmesh.framework import on_shutdown, on_startup
+from opsmesh import on_shutdown, on_startup
 
 from . import database
 from .sessions import SandboxConversations

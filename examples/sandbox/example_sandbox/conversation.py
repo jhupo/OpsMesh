@@ -7,8 +7,8 @@ from uuid import NAMESPACE_URL, uuid5
 from agents import RunConfig
 from agents.sandbox import SandboxRunConfig
 
-from opsmesh.framework.adapters import Channel, Event
-from opsmesh.framework.params import Context
+from opsmesh.adapters import Channel, Event
+from opsmesh.params import Context
 
 from . import channels, execution
 from .agent import agent, settings

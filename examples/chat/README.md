@@ -46,8 +46,8 @@ Add `examples/common` and this `chat/` directory to the host's `plugin_paths` an
 }
 ```
 
-The host must allow its `opsmesh_channels`,
-`opsmesh_execution`, `opsmesh_database`, and
+The host must allow its `opsmesh.plugins.channels`,
+`opsmesh.plugins.execution`, `opsmesh.plugins.database`, and
 `conversation_support` dependencies. Configure API authentication under channels' `config.api`.
 The example does not provide a separate launcher or host manifest.
 
@@ -165,7 +165,7 @@ registered migration with its normal manifest and environment, then restart:
 
 ```sh
 opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:migrate
+  --command opsmesh.plugins.database.commands:migrate
 ```
 
 The manifest must load example_chat so its migration is discovered. Startup

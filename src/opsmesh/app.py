@@ -1,7 +1,7 @@
 """Process entry point and plugin startup snapshot for the OpsMesh host.
 
-The host owns the driver, the startup snapshot, and process lifecycle. It
-does not implement protocols, interpret plugin settings, or construct agents.
+The host owns the framework runtime, startup snapshot and process lifecycle.
+It does not implement protocols, interpret plugin settings or construct agents.
 """
 
 from __future__ import annotations
@@ -23,21 +23,25 @@ from pydantic import (
     model_validator,
 )
 
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.plugins import (
+from opsmesh.config import Config, Env
+from opsmesh.drivers import (
+    Driver,
+    is_initialized,
+    set_driver,
+)
+from opsmesh.plugins import (
     PluginAdmission,
     PluginLoadDenied,
     PluginLoadRequest,
     PluginManager,
     PluginReloadError,
     clear_plugin_admission,
+    get_loaded_plugins,
     register_plugin_manager,
     revoke_plugin,
     set_plugin_admission,
 )
-from opsmesh.framework.plugins.model import Plugin
+from opsmesh.plugins.registry import get_plugins_in_dependency_order
 
 logger = logging.getLogger(__name__)
 
@@ -48,19 +52,6 @@ class HostConfigurationError(ValueError):
 
 class HostStartupError(RuntimeError):
     """A required plugin could not be loaded, so the host must stop."""
-
-
-class HTTPSettings(BaseModel):
-    """Transport settings consumed by the concrete HTTP driver."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    host: str = "127.0.0.1"
-    port: int = Field(default=8080, ge=0, le=65535)
-    enabled: bool = True
-    access_log: bool = False
-    max_request_body: int = Field(default=1024 * 1024, ge=0)
-    shutdown_timeout: float = Field(default=10.0, gt=0)
 
 
 class PluginEntry(BaseModel):
@@ -88,14 +79,6 @@ class PluginEntry(BaseModel):
             raise ValueError("Plugin module must be a dotted Python name")
         return value
 
-    @model_validator(mode="after")
-    def _require_namespace_with_config(self) -> PluginEntry:
-        if self.config is not None and not self.config_namespace:
-            raise ValueError(
-                "config_namespace is required when plugin config is supplied"
-            )
-        return self
-
 
 class HostManifest(BaseModel):
     """Explicit startup snapshot supplied to the host."""
@@ -103,7 +86,7 @@ class HostManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     environment: str = Field(default="development", pattern=r"^[a-zA-Z0-9_-]+$")
-    http: HTTPSettings = Field(default_factory=HTTPSettings)
+    framework: Config = Field(default_factory=Config)
     plugin_paths: tuple[str, ...] = ()
     plugins: tuple[PluginEntry, ...] = ()
 
@@ -117,7 +100,7 @@ class HostManifest(BaseModel):
             modules.add(entry.module)
             if entry.config is None:
                 continue
-            namespace = entry.config_namespace or ""
+            namespace = entry.config_namespace or entry.module
             previous = namespaces.get(namespace)
             if previous is not None and previous != entry.config:
                 raise ValueError(
@@ -173,7 +156,9 @@ def _build_admission(
 
     def admission(request: PluginLoadRequest) -> bool:
         entry = by_module.get(request.module_name)
-        if entry is None or not entry.enabled:
+        if entry is None:
+            return True
+        if not entry.enabled:
             return False
         if entry.expected_origin is None:
             return True
@@ -196,9 +181,9 @@ def _build_admission(
 @asynccontextmanager
 async def load_host(
     manifest: HostManifest, *, manifest_dir: str | Path | None = None
-) -> AsyncIterator[HTTPDriver]:
+) -> AsyncIterator[Driver]:
     """Load the controlled plugin snapshot without starting resources."""
-    if runtime.is_initialized():
+    if is_initialized():
         raise HostStartupError("Framework runtime is already initialized")
 
     base_dir = Path(manifest_dir) if manifest_dir is not None else Path.cwd()
@@ -212,29 +197,33 @@ async def load_host(
         if import_path not in sys.path:
             sys.path.insert(0, import_path)
 
-    plugin_configs = {
-        entry.config_namespace: dict(entry.config)
-        for entry in manifest.plugins
-        if entry.config is not None and entry.config_namespace is not None
-    }
-    driver = HTTPDriver(
-        Env(environment=manifest.environment),
-        Config(
-            driver_options={"http": manifest.http.model_dump()},
-            plugin_configs=plugin_configs,
-        ),
+    # Plugin distributions extend these namespaces, including frozen hosts.
+    from pkgutil import extend_path
+
+    import opsmesh
+    import opsmesh.plugins
+
+    opsmesh.__path__ = extend_path(opsmesh.__path__, opsmesh.__name__)
+    opsmesh.plugins.__path__ = extend_path(
+        opsmesh.plugins.__path__, opsmesh.plugins.__name__
     )
-    runtime.set_driver(driver)
+
+    driver = Driver(Env(environment=manifest.environment), manifest.framework)
+    set_driver(driver)
     set_plugin_admission(_build_admission(manifest.plugins, base_dir))
 
-    loaded: list[Plugin] = []
+    existing = get_loaded_plugins()
     try:
         managers: dict[str, PluginManager] = {}
         for entry in manifest.plugins:
             manager = PluginManager(
                 [entry.module],
                 config=entry.config,
-                namespace=entry.config_namespace,
+                namespace=(
+                    entry.config_namespace or entry.module
+                    if entry.config is not None
+                    else None
+                ),
                 required=entry.required,
             )
             register_plugin_manager(manager)
@@ -262,11 +251,16 @@ async def load_host(
                     )
                 logger.error("%s; dependent entries are unavailable", message)
                 continue
-            loaded.append(plugin)
-
         yield driver
     finally:
+        # Dependencies can be loaded by require() without manifest entries.
+        try:
+            loaded = get_plugins_in_dependency_order()
+        except RuntimeError:
+            loaded = list(get_loaded_plugins())
         for plugin in reversed(loaded):
+            if plugin in existing:
+                continue
             try:
                 revoke_plugin(plugin)
             except Exception:

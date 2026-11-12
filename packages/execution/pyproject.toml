@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-execution"
-version = "0.4.0"
+version = "0.5.0"
 description = "OpsMesh execution plugin"
 readme = "README.md"
 license = "MIT"
@@ -21,12 +21,14 @@ classifiers = [
 dependencies = {file = ["requirements-core.txt", "requirements.txt"]}
 optional-dependencies.langfuse = {file = ["requirements-langfuse.txt"]}
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["opsmesh_execution*"]
+[tool.setuptools]
+package-dir = {"opsmesh.plugins.execution" = "src"}
+
+[project.entry-points."opsmesh.plugins"]
+execution = "opsmesh.plugins.execution"
 
 [tool.setuptools.package-data]
-"opsmesh_execution" = ["py.typed"]
+"opsmesh.plugins.execution" = ["py.typed"]
 
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"

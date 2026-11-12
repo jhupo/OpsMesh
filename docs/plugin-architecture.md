@@ -5,30 +5,47 @@
 ## 1. 结构与依赖
 
 ```text
-src/opsmesh/                 # opsmesh 发行包
-├── app.py / cli.py          # 清单加载、程序启动与通用运维命令
-├── framework/              # 插件、依赖、生命周期、事件、消息和分发
-└── drivers/                # 宿主 HTTP/ASGI 传输
-packages/                   # 独立插件发行包
-├── channels/src/opsmesh_channels/
-├── execution/src/opsmesh_execution/
-├── filesystem/src/opsmesh_filesystem/
-└── database/src/opsmesh_database/
+src/opsmesh/                       # 核心发行包，直接就是框架
+├── app.py / cli.py                # 加载宿主清单与启动
+├── drivers/                       # 配置、适配器索引、连接、生命周期
+├── adapters/                      # Channel / Adapter / Event
+├── dependencies/                  # Dependent 与上下文注入
+├── dispatch/、matchers/、messages/
+├── permissions/、rules/
+├── plugins/                       # 加载机制与可扩展插件命名空间
+└── config.py / lifecycle.py
+packages/
+├── channels/src/                  # 安装为 opsmesh.plugins.channels
+├── execution/src/                 # 安装为 opsmesh.plugins.execution
+├── filesystem/src/                # 安装为 opsmesh.plugins.filesystem
+└── database/src/                  # 安装为 opsmesh.plugins.database
 examples/
-├── common/conversation_support/  # 示例共享的会话索引与并发策略
-├── chat/example_chat/            # 普通 Agent、命令、HTTP 和会话接口
-└── sandbox/example_sandbox/       # 原生 SandboxAgent 与工作区管理
+├── common/conversation_support/
+├── chat/example_chat/
+└── sandbox/example_sandbox/
 ```
 
 | 部分 | 负责 | 不负责 |
 |---|---|---|
 | Framework | 加载和依赖关系、注册归属、生命周期、Event/Message、Matcher、Rule、Permission、Dependent、Context | SDK 执行、数据库表、模型配置、业务身份系统 |
-| Driver | HTTP 监听、请求大小、连接断开、响应发送和关闭 | 业务路由、Agent 或会话选择 |
-| channels | 认证、协议解析、用户上下文、路由声明、消息转换与回复 | 智能体构造、会话 CRUD、模型调用 |
+| Framework Driver | 基础配置、任务组、适配器注册、逻辑连接、生命周期及连接回调 | 网络实例、路由、ASGI、HTTP 客户端 |
+| channels | 协议自有监听与连接、请求与流收发、认证、协议解析、用户上下文、路由声明、消息转换与回复 | 智能体构造、会话 CRUD、模型调用 |
 | execution | 已构造 Agent 的原生执行、完整流作用域、回调、Trace 导出 | Agent 注册中心、持久调用表、Usage 账本、业务状态机、会话索引 |
 | filesystem | 普通目录、读写、受限路径、ZIP 校验与解压、导出和新目录发布 | SQLite、安装记录、技能/工具模型、元数据数据库、Python 加载 |
 | database | PostgreSQL engine、session factory、显式事务、独立迁移 | 执行历史、会话模型和任何业务表定义 |
 | 功能插件 | 构造 Agent/工具/MCP/技能，公开入口，持有会话和资源 | 改写 Framework/SDK 的基础机制 |
+
+宿主创建通用 `Driver`，当前实例的绑定和获取集中在 `opsmesh/drivers/base.py`，通过 `opsmesh.drivers` 导出 `set_driver/get_driver/is_initialized`。删除独立的 `access.py`、`runtime.py`，不保留兼容入口。`register_adapter`、`get_adapter`、`get_channel` 和生命周期回调都属于 Driver。
+
+Driver 是框架容器；Adapter 是协议实现；Channel 是插件声明的具体账号或逻辑连接。Driver 保存唯一的适配器注册表和已连接通道索引，Adapter.channels 是按所属适配器过滤的只读快照。查询通道必须提供连接 ID，不隐式选择第一条连接。`send/call` 留在 Channel/Adapter，不再加一层 Driver 转发。
+
+框架不持有网络服务。API 和 QQ 分别持有自己的 FastAPI 实例与监听器，钉钉持有官方 Stream SDK 连接；channels 的生命周期协调器只调用协议模块的启停方法，不分配、注入或保存网络实例。
+
+通用启动顺序为 `on_startup → on_ready → on_started`；channels 在 `on_startup` 准备适配器和路由，在所有插件就绪后通过 `on_started` 开放监听。关闭顺序为 `on_quiescing → on_stopping → on_shutdown`，各关闭阶段内部逆序执行；channels 在第一阶段关闭监听、排空 HTTP 与机器人消息，消费者随后停止，最后释放资源。框架只执行阶段回调，不判断网络协议。
+
+删除 `HostDriver`、`get_app/get_asgi`、`driver.http` 和网络 Mixin；无兼容别名。插件通过生命周期装饰器获取通用启动能力，HTTP 类型直接使用 FastAPI/Starlette；删除独立的 `http/` 实现。框架 `Adapter` 只保留逻辑连接、调用和运行上下文，不再代理 HTTP/WebSocket 注册或出站请求。
+
+`framework/` 已删除，公共入口直接是 `opsmesh`。核心的 `opsmesh.plugins` 保存加载机制；官方插件在独立发行包中扩展它的子模块，核心包不包含这些实现。源码使用扁平的 `packages/<name>/src/`，setuptools 将其映射到安装模块路径。标准 `opsmesh.plugins` entry point 提供短名，因此使用 `require("channels")`、`require("execution")` 即可；宿主清单和配置命名空间使用完整路径。加载器先匹配宿主声明，未声明的模块仍受准入策略限制。短名冲突会明确报错，不猜测选择哪个包。
 
 核心与四个插件分别构建 wheel 和源码包，同一个版本 tag 的 Release 一并发布。Linux 宿主包只包含核心及其运行环境，插件作为独立附件按需部署。默认宿主清单不启用任何插件，安装器不执行插件迁移或安装模型依赖。
 
@@ -36,11 +53,15 @@ examples/
 
 ## 2. 插件加载与配置
 
-宿主读取清单中的模块、插件路径、是否启用、是否必要及配置。Framework 按依赖顺序加载、启动，消费者不可在依赖失败时接单。声明通过框架登记归属，加载失败或撤销时移除；启动资源通过生命周期回调释放。
+宿主读取入口模块、插件路径、启停状态及插件配置，配置由所属插件校验。`require("channels")` 等声明并加载依赖，不要求在清单中重复列出默认配置的依赖。需要覆盖配置的依赖可以使用 `autoload: false` 条目；`config_namespace` 缺省为模块名。显式禁用及来源校验仍生效。宿主不扫描加载所有已安装插件，也不把清单当作依赖白名单。Framework 按依赖顺序加载、启动，消费者不可在依赖失败时接单。声明通过框架登记归属，加载失败或撤销时移除；启动资源通过生命周期回调释放。
 
-插件通过 `execution = require("opsmesh_execution")` 等句柄调用接口或声明回调。`require` 确定加载依赖；`Depends` 决定一次调用的参数和资源作用域，两者不能互相替代。类型及原生 SDK 导入仍是正常 Python 导入，不要求把每个类型都包装成依赖函数。
+宿主清单的 `framework` 字段使用框架 Config 校验，只包含命令前缀、分隔符、交互等待超时等基础行为。每个 `plugins[].config` 由对应插件的配置类定义和校验，配置快照通过插件管理器归属到 Plugin。框架 Config 不再保存 `plugin_configs`，配置访问也不再回退到全局配置。
 
-官方插件导入模块、配置命名空间与运行 ID 使用 `opsmesh_channels`、`opsmesh_execution`、`opsmesh_filesystem`、`opsmesh_database`；展示名称可以简写，不能把展示名称当作加载地址。业务插件 ID 及已有数据库历史归属不因发行包拆分自动改名。
+`/etc/opsmesh/host.json` 是宿主启动配置；`/etc/opsmesh/opsmesh.env` 仅是可选的 systemd 环境变量来源。框架不读取环境文件，也不定义模型、数据库或通道凭据。没有插件环境变量时不需要这个文件，安装器不会默认创建它。
+
+插件通过 `execution = require("execution")` 等句柄调用接口或声明回调。`require` 确定加载依赖；`Depends` 决定一次调用的参数和资源作用域，两者不能互相替代。类型及原生 SDK 导入仍是正常 Python 导入，不要求把每个类型都包装成依赖函数。
+
+官方插件导入模块、配置命名空间与运行 ID 使用 `opsmesh.plugins.channels`、`opsmesh.plugins.execution`、`opsmesh.plugins.filesystem`、`opsmesh.plugins.database`；展示名称可以简写，不能把展示名称当作加载地址。业务插件 ID 及已有数据库历史归属不因发行包拆分自动改名。
 
 配置由所属插件读取与校验。宿主不识别 QQ、钉钉、模型或数据库业务字段。channels 只有一个插件入口；API 配置存在即开启，机器人连接由消费插件声明。不要再登记三个通道子插件，不提供手动 route activation 流程。
 
@@ -50,7 +71,7 @@ examples/
 
 ```text
 API / QQ / 钉钉
-→ 验证凭据或供应商签名
+→ 验证 API 凭据、QQ 签名或钉钉 Stream 连接身份
 → Event + Message + UserContext
 → Framework Permission / Rule / Matcher / Dependent
 → 功能插件处理函数
@@ -63,7 +84,7 @@ API / QQ / 钉钉
 
 运行 ID、会话 ID、数据库句柄、MCP 连接不塞进 UserContext。Framework 的 `permissions.User` 是权限匹配器，不重定义为用户资料类。会话 ID 属于功能插件的接口参数；传给 Langfuse 的用户/会话关联使用单独的 TraceContext。
 
-API 将请求转换成框架 HTTPEvent 和 Message，不定义 HTTPBody 依赖。路由处理函数声明参数和返回类型，业务插件控制返回内容；通道控制 HTTP 状态编码和发送。路由只匹配声明的 Matcher，消息路由可选择自己的命令 Matcher，仍只分发一次。
+API 将请求转换成通道定义的 HTTPEvent（继承框架 Event）和 Message，不定义 HTTPBody 依赖。路由处理函数声明参数和返回类型，业务插件控制返回内容；通道控制 HTTP 状态编码和发送。路由只匹配声明的 Matcher，消息路由可选择自己的命令 Matcher，仍只分发一次。
 
 ## 4. execution
 

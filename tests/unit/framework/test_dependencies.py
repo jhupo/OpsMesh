@@ -3,9 +3,9 @@ from contextlib import AsyncExitStack
 import anyio
 import pytest
 
-from opsmesh.framework import dependencies, params
-from opsmesh.framework.dependencies import params as internal_params
-from opsmesh.framework.utils import run_sync_ctx_manager
+from opsmesh import dependencies, params
+from opsmesh.dependencies import params as internal_params
+from opsmesh.utils import run_sync_ctx_manager
 
 
 @pytest.mark.anyio
@@ -79,13 +79,13 @@ async def test_sync_context_cleanup_receives_cancellation():
 
 @pytest.mark.anyio
 async def test_disconnect_waits_for_generator_dependency_cleanup(
-    monkeypatch, driver_type
+    monkeypatch, runtime_type
 ):
     from types import SimpleNamespace
 
-    from opsmesh.framework.config import Config, Env
+    from opsmesh.config import Config, Env
 
-    Driver = driver_type
+    Driver = runtime_type
 
     monkeypatch.setattr(Driver, "_disconnection_hook", set())
     driver = Driver(Env(), Config())
@@ -108,16 +108,18 @@ async def test_disconnect_waits_for_generator_dependency_cleanup(
         finished.set()
 
     async with driver.lifespan():
-        driver.disconnect(SimpleNamespace(self_id="connection"))
+        channel = SimpleNamespace(self_id="connection")
+        driver.connect(channel)
+        driver.disconnect(channel)
         await finished.wait()
     assert events == ["enter", "value", "exit"]
 
 
 @pytest.mark.anyio
-async def test_driver_public_lifespan_exposes_hooks_and_state(driver_type):
-    from opsmesh.framework.config import Config, Env
+async def test_driver_public_lifespan_exposes_hooks_and_state(runtime_type):
+    from opsmesh.config import Config, Env
 
-    Driver = driver_type
+    Driver = runtime_type
 
     driver = Driver(Env(), Config())
     events = []

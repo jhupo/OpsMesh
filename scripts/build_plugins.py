@@ -59,8 +59,14 @@ def remove_host_dependencies(site: Path, dependencies: list[dict]) -> None:
     for directory in sorted(site.rglob("*"), reverse=True):
         if directory.is_dir() and not any(directory.iterdir()):
             directory.rmdir()
-    if (site / "opsmesh").exists():
-        raise ValueError("Plugin runtime must not shadow the framework package")
+    for path in (site / "opsmesh").rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(site).as_posix()
+        if not any(
+            relative.startswith(f"opsmesh/plugins/{name}/") for name in PLUGINS
+        ):
+            raise ValueError("Plugin runtime contains framework-owned files")
 
 
 def main() -> None:
@@ -125,7 +131,7 @@ def main() -> None:
         "architecture": host["architecture"],
         "glibc": host["glibc"],
         "plugin_path": "site",
-        "modules": [f"opsmesh_{name}" for name in PLUGINS],
+        "modules": [f"opsmesh.plugins.{name}" for name in PLUGINS],
         "dependencies": inventory,
     }
     (bundle / "BUILD.json").write_text(

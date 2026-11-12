@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import MetaData
 
-from opsmesh_database import migrations, schema
+from opsmesh.plugins.database import migrations, schema
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,7 +25,7 @@ def test_conversion_history_belongs_to_database_plugin():
 
     assert migrations.revision_graph(source).get_heads() == [source.head]
     assert list(directory.glob("*.py"))
-    assert "opsmesh_database" in directory.parts
+    assert directory.parent.parent == Path(schema.__file__).parent
 
 
 def test_runtime_bundle_removes_only_host_owned_files(tmp_path, monkeypatch):
@@ -139,8 +139,8 @@ def test_smoke_manifest_keeps_execution_without_database(
     manifest = json.loads((tmp_path / "host.json").read_text())
     modules = {plugin["module"] for plugin in manifest["plugins"]}
 
-    assert "opsmesh_execution" in modules
-    assert ("opsmesh_database" in modules) == with_database
+    assert "opsmesh.plugins.execution" in modules
+    assert ("opsmesh.plugins.database" in modules) == with_database
     assert any("release_probe:verify" in command for command in commands)
     assert str(plugin_path) in manifest["plugin_paths"]
 
@@ -153,22 +153,23 @@ def test_release_execution_probe_needs_no_database(tmp_path):
     script = """
 import asyncio
 import sys
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.plugins import registry
-from opsmesh.framework.plugins.manager import PluginManager
-from opsmesh.drivers.http import HTTPDriver
+from opsmesh.drivers import base as driver_state
+from opsmesh.config import Config, Env
+from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.drivers import Driver
 
-driver = HTTPDriver(Env(), Config(
-    driver_options={"http": {"enabled": False}},
-    plugin_configs={
-        "opsmesh_filesystem": {"root": sys.argv[1]},
-        "opsmesh_channels": {"api": {"identities": [
-            {"id": "smoke", "token_ref": "OPSMESH_SMOKE_TOKEN"}
-        ]}},
-    },
-))
-runtime.set_driver(driver)
+driver = Driver(Env(), Config())
+driver_state.set_driver(driver)
+for module, values in {
+    "opsmesh.plugins.filesystem": {"root": sys.argv[1]},
+    "opsmesh.plugins.channels": {"api": {"enabled": False, "identities": [
+        {"id": "smoke", "token_ref": "OPSMESH_SMOKE_TOKEN"}
+    ]}},
+}.items():
+    registry.register_plugin_manager(
+        PluginManager([module], config=values, namespace=module)
+    )
 manager = PluginManager(["release_probe"])
 registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("release_probe")
@@ -177,7 +178,7 @@ assert plugin is not None
 async def main():
     async with driver.lifespan():
         assert await plugin.module.probe() == "ok"
-        assert "opsmesh_database" not in sys.modules
+        assert "opsmesh.plugins.database" not in sys.modules
 
 asyncio.run(main())
 """
@@ -215,7 +216,7 @@ def test_plugin_command_loads_resources_without_startup(tmp_path, bytecode):
     package.mkdir()
     source = package / "__init__.py"
     source.write_text("""from importlib.resources import files
-from opsmesh.framework import on_startup
+from opsmesh import on_startup
 
 @on_startup
 def startup():
@@ -234,7 +235,6 @@ async def check():
     manifest.write_text(
         json.dumps(
             {
-                "http": {"enabled": False},
                 "plugin_paths": [str(tmp_path)],
                 "plugins": [{"module": "release_test", "required": True}],
             }
@@ -267,7 +267,6 @@ def test_command_cannot_import_an_undeclared_plugin(tmp_path):
     manifest.write_text(
         json.dumps(
             {
-                "http": {"enabled": False},
                 "plugin_paths": [str(tmp_path)],
             }
         )

@@ -10,9 +10,9 @@ and `SandboxRunConfig` directly to `execution.run`.
 Install the independent channels, execution, database and filesystem packages first. A frozen Linux host loads them from the matching official plugin runtime archive's `site/` directory, which must also appear in `plugin_paths`. The framework installer does not install them.
 
 Add `examples/common` and `examples/sandbox` to the host's `plugin_paths`.
-Allow `conversation_support`, `opsmesh_channels`,
-`opsmesh_execution`, `opsmesh_database` and
-`opsmesh_filesystem` in the host manifest. Load `example_sandbox`
+Allow `conversation_support`, `opsmesh.plugins.channels`,
+`opsmesh.plugins.execution`, `opsmesh.plugins.database` and
+`opsmesh.plugins.filesystem` in the host manifest. Load `example_sandbox`
 with its own configuration namespace:
 
 ```json
@@ -36,7 +36,7 @@ Before starting the host, apply migrations using its existing manifest:
 
 ```sh
 opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh_database.commands:migrate
+  --command opsmesh.plugins.database.commands:migrate
 ```
 
 `DatabaseSchema` in plugin metadata declares the ORM index and migration

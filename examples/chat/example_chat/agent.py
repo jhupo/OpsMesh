@@ -3,7 +3,7 @@
 from agents import Agent, ModelSettings
 from agents.extensions.memory import SQLAlchemySession
 
-from opsmesh.framework.plugins.config import get_plugin_config
+from opsmesh.plugins.config import get_plugin_config
 
 from . import channels, execution
 from .config import ChatSettings

@@ -10,11 +10,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
 )
 
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.dispatch.results import DispatchResult
-from opsmesh.framework.plugins import registry
-from opsmesh_channels.qq import (
+from opsmesh.config import Config, Env
+from opsmesh.dispatch.results import DispatchResult
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
+from opsmesh.plugins.channels.qq import (
     READY,
     QQAdapter,
     QQConfigurationError,
@@ -76,7 +76,7 @@ class FakeHTTP:
 
 @pytest.mark.anyio
 async def test_parallel_sends_share_token_refresh():
-    from opsmesh_channels.qq.client import QQClient
+    from opsmesh.plugins.channels.qq.client import QQClient
 
     class YieldingHTTP(FakeHTTP):
         async def post(self, *args, **kwargs):
@@ -100,15 +100,14 @@ async def test_parallel_sends_share_token_refresh():
     assert len(http.calls) == 1
 
 
-def make_driver() -> HTTPDriver:
-    return HTTPDriver(
-        Env(), Config(driver_options={"http": {"enabled": False}})
-    )
+def make_runtime() -> Driver:
+    driver = Driver(Env(), Config())
+    return driver
 
 
 def make_adapter(client=None, **options) -> QQAdapter:
     return QQAdapter(
-        make_driver(),
+        make_runtime(),
         settings=QQSettings(**options),
         http_client=client,
     )
@@ -132,7 +131,7 @@ def scope(path: str, body: bytes, headers=()):
     }, [{"type": "http.request", "body": body, "more_body": False}]
 
 
-async def call(driver, request):
+async def call(server, request):
     request_scope, queue = request
     sent = []
 
@@ -144,7 +143,7 @@ async def call(driver, request):
     async def send(message):
         sent.append(message)
 
-    await driver(request_scope, receive, send)
+    await server.app(request_scope, receive, send)
     return sent
 
 
@@ -266,7 +265,7 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
         assert good.self_id in driver.channels
         assert bad.self_id not in driver.channels
 
-        messages = await call(driver, signed(bad.path, c2c_payload()))
+        messages = await call(adapter.server, signed(bad.path, c2c_payload()))
         assert messages[0]["status"] == 503
 
         await adapter.shutdown()
@@ -292,13 +291,15 @@ async def test_signed_callback_dispatches_once(monkeypatch):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh_channels.qq.adapter.dispatch_event", fake_dispatch
+        "opsmesh.plugins.channels.qq.adapter.dispatch_event", fake_dispatch
     )
 
     driver = adapter.driver
     async with driver.lifespan():
         await adapter.startup()
-        messages = await call(driver, signed(channel.path, c2c_payload()))
+        messages = await call(
+            adapter.server, signed(channel.path, c2c_payload())
+        )
         assert response_payload(messages) == {"status": "ok"}
         with anyio.fail_after(2):
             await received.wait()
@@ -310,7 +311,9 @@ async def test_signed_callback_dispatches_once(monkeypatch):
         assert caller.groups == frozenset()
         assert caller.roles == frozenset()
 
-        duplicate = await call(driver, signed(channel.path, c2c_payload()))
+        duplicate = await call(
+            adapter.server, signed(channel.path, c2c_payload())
+        )
         assert response_payload(duplicate) == {"status": "duplicate"}
         assert len(dispatched) == 1
         await adapter.shutdown()
@@ -333,13 +336,13 @@ async def test_group_callback_passes_group_context(monkeypatch):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh_channels.qq.adapter.dispatch_event", fake_dispatch
+        "opsmesh.plugins.channels.qq.adapter.dispatch_event", fake_dispatch
     )
 
     driver = adapter.driver
     async with driver.lifespan():
         await adapter.startup()
-        await call(driver, signed(channel.path, group_payload()))
+        await call(adapter.server, signed(channel.path, group_payload()))
         with anyio.fail_after(2):
             await received.wait()
         assert dispatched[0].id == "qq:support:primary:member-1"
@@ -360,7 +363,7 @@ async def test_callback_rejects_bad_signatures_and_payloads(monkeypatch):
     async with driver.lifespan():
         await adapter.startup()
         stale = await call(
-            driver,
+            adapter.server,
             signed(
                 channel.path,
                 c2c_payload(),
@@ -371,7 +374,7 @@ async def test_callback_rejects_bad_signatures_and_payloads(monkeypatch):
 
         body = json.dumps(c2c_payload()).encode()
         unsigned = scope(channel.path, body)
-        assert (await call(driver, unsigned))[0]["status"] == 401
+        assert (await call(adapter.server, unsigned))[0]["status"] == 401
 
         stamp = str(int(time.time()))
         bad_header = scope(
@@ -382,7 +385,7 @@ async def test_callback_rejects_bad_signatures_and_payloads(monkeypatch):
                 (b"x-signature-timestamp", stamp.encode()),
             ],
         )
-        assert (await call(driver, bad_header))[0]["status"] == 401
+        assert (await call(adapter.server, bad_header))[0]["status"] == 401
 
         invalid_json = signed(channel.path, {})
         invalid_json[1][0]["body"] = b"not json"
@@ -393,7 +396,7 @@ async def test_callback_rejects_bad_signatures_and_payloads(monkeypatch):
             (b"x-signature-ed25519", signature.encode()),
             (b"x-signature-timestamp", stamp.encode()),
         ]
-        assert (await call(driver, invalid_json))[0]["status"] == 400
+        assert (await call(adapter.server, invalid_json))[0]["status"] == 400
         await adapter.shutdown()
 
 
@@ -413,7 +416,7 @@ async def test_handshake_signs_the_challenge(monkeypatch):
             "d": {"plain_token": "token-1", "event_ts": stamp},
         }
         request = scope(channel.path, json.dumps(payload).encode())
-        messages = await call(driver, request)
+        messages = await call(adapter.server, request)
         result = response_payload(messages)
         assert result["plain_token"] == "token-1"
         public = Ed25519PrivateKey.from_private_bytes(
@@ -432,7 +435,7 @@ async def test_handshake_signs_the_challenge(monkeypatch):
             },
         }
         rejected = await call(
-            driver, scope(channel.path, json.dumps(stale).encode())
+            adapter.server, scope(channel.path, json.dumps(stale).encode())
         )
         assert rejected[0]["status"] == 400
         await adapter.shutdown()
@@ -530,11 +533,13 @@ async def test_shutdown_removes_callback_routes(monkeypatch):
 
     async with driver.lifespan():
         await adapter.startup()
-        assert (await call(driver, signed(channel.path, c2c_payload())))[0][
-            "status"
-        ] == 200
+        assert (
+            await call(adapter.server, signed(channel.path, c2c_payload()))
+        )[0]["status"] == 200
         await adapter.shutdown()
-        missing = await call(driver, signed(channel.path, c2c_payload()))
+        missing = await call(
+            adapter.server, signed(channel.path, c2c_payload())
+        )
         assert missing[0]["status"] == 404
 
     assert channel.state == "closed"
@@ -557,10 +562,10 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
     async with adapter.driver.lifespan():
         await adapter.startup()
         monkeypatch.setattr(adapter._queue, "put_nowait", enqueue)
-        first = await call(adapter.driver, signed(channel.path, c2c_payload()))
-        retry = await call(adapter.driver, signed(channel.path, c2c_payload()))
+        first = await call(adapter.server, signed(channel.path, c2c_payload()))
+        retry = await call(adapter.server, signed(channel.path, c2c_payload()))
         duplicate = await call(
-            adapter.driver, signed(channel.path, c2c_payload())
+            adapter.server, signed(channel.path, c2c_payload())
         )
         assert first[0]["status"] == 503
         assert response_payload(retry) == {"status": "ok"}
@@ -571,8 +576,8 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
-    from opsmesh.framework.dispatch import dispatch_event
-    from opsmesh.framework.matchers import Matcher, MatcherSource
+    from opsmesh.dispatch import dispatch_event
+    from opsmesh.matchers import Matcher, MatcherSource
 
     adapter = make_adapter()
     owner = FakePlugin("support")

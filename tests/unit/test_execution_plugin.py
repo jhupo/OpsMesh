@@ -1,39 +1,21 @@
 """Check the execution plugin's framework lifecycle integration."""
 
 import asyncio
-import logging
 
 import pytest
 
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.framework.drivers import Driver as BaseDriver
-import opsmesh_execution as plugin
-from opsmesh_execution import _lifecycle as lifecycle
-
-
-class LifecycleDriver(BaseDriver):
-    @property
-    def type(self):
-        return "test"
-
-    @property
-    def logger(self):
-        return logging.getLogger(__name__)
+import opsmesh.plugins.execution as plugin
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins.execution import _lifecycle as lifecycle
 
 
 @pytest.mark.anyio
 async def test_lifecycle_starts_and_stops_execution(tmp_path, monkeypatch):
-    monkeypatch.setattr(runtime, "_driver", None)
-    driver = LifecycleDriver(
-        Env(),
-        Config(
-            plugin_configs={
-                "opsmesh_execution": {},
-            }
-        ),
-    )
-    runtime.set_driver(driver)
+    monkeypatch.setattr(driver_state, "_driver", None)
+    driver = Driver(Env(), Config())
+    driver_state.set_driver(driver)
     monkeypatch.setattr(lifecycle, "_runtime", None)
     driver.on_startup(lifecycle.startup)
     driver.on_shutdown(lifecycle.shutdown)
@@ -56,10 +38,10 @@ def test_unstarted_execution_rejects_access():
 
 @pytest.mark.anyio
 async def test_execution_drains_before_consumers_release_resources(monkeypatch):
-    monkeypatch.setattr(runtime, "_driver", None)
+    monkeypatch.setattr(driver_state, "_driver", None)
     monkeypatch.setattr(lifecycle, "_runtime", None)
-    driver = LifecycleDriver(Env(), Config())
-    runtime.set_driver(driver)
+    driver = Driver(Env(), Config())
+    driver_state.set_driver(driver)
     driver.on_startup(lifecycle.startup)
     driver.on_stopping(lifecycle.stopping)
     driver.on_shutdown(lifecycle.shutdown)

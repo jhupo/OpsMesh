@@ -17,7 +17,7 @@ from pathlib import Path
 import anyio
 
 from opsmesh.app import load_host, load_manifest
-from opsmesh.framework.plugins import (
+from opsmesh.plugins import (
     get_loaded_plugins,
     get_plugin_by_module_name,
 )

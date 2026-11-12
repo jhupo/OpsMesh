@@ -18,12 +18,12 @@ from agents import Agent, RunConfig
 from agents.testing import ScriptedModel, ModelStep, assistant_message
 from agents.usage import Usage
 from pydantic import BaseModel
-from opsmesh.framework.plugins import require
+from opsmesh.plugins import require
 
-channels = require("opsmesh_channels")
+channels = require("channels")
 api = channels.api
-filesystem = require("opsmesh_filesystem")
-execution = require("opsmesh_execution")
+filesystem = require("filesystem")
+execution = require("execution")
 
 class ProbeRequest(BaseModel):
     value: str
@@ -71,9 +71,9 @@ async def validated() -> dict[str, str]:
 
 DATABASE_PLUGIN = """from pathlib import Path
 from sqlalchemy import MetaData
-from opsmesh.framework.plugins import PluginMetadata, require
+from opsmesh.plugins import PluginMetadata, require
 
-database = require("opsmesh_database")
+database = require("database")
 __plugin_meta__ = PluginMetadata(
     name=__name__,
     description="Independent migration smoke probe",
@@ -103,7 +103,7 @@ def downgrade():
 
 def database_plugins(directory: Path, dsn: str) -> list[dict]:
     """Declare two bytecode-only histories sharing the same revision name."""
-    plugins = [plugin_entry("opsmesh_database", {"dsn": dsn})]
+    plugins = [plugin_entry("opsmesh.plugins.database", {"dsn": dsn})]
     for name in ("release_database_first", "release_database_second"):
         package = directory / name
         revisions = package / "migrations"
@@ -132,7 +132,7 @@ def plugin_entry(module: str, config: dict) -> dict:
 def exercise_core(executable: Path, directory: Path) -> None:
     """Prove the host starts without plugins or their dependencies."""
     manifest = directory / "core.json"
-    manifest.write_text(json.dumps({"http": {"enabled": False}}))
+    manifest.write_text(json.dumps({}))
     subprocess.run(
         [str(executable), "--manifest", str(manifest), "--check"],
         check=True,
@@ -142,15 +142,16 @@ def exercise_core(executable: Path, directory: Path) -> None:
     (directory / "core_probe.py").write_text(
         "from importlib.util import find_spec\n"
         "def verify():\n"
-        "    for name in ('agents', 'sqlalchemy', 'alembic', 'langfuse', "
-        "'opsmesh_channels', 'opsmesh_execution', 'opsmesh_database', "
-        "'opsmesh_filesystem'):\n"
+        "    for name in ('uvicorn', 'agents', 'sqlalchemy', "
+        "'alembic', 'langfuse', "
+        "'opsmesh.plugins.channels', 'opsmesh.plugins.execution', "
+        "'opsmesh.plugins.database', "
+        "'opsmesh.plugins.filesystem'):\n"
         "        assert find_spec(name) is None, name\n"
     )
     manifest.write_text(
         json.dumps(
             {
-                "http": {"enabled": False},
                 "plugin_paths": [str(directory)],
                 "plugins": [{"module": "core_probe", "required": True}],
             }
@@ -186,18 +187,22 @@ def exercise(
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
     plugins = [
-        plugin_entry("opsmesh_filesystem", {"root": str(directory / "data")}),
         plugin_entry(
-            "opsmesh_channels",
+            "opsmesh.plugins.filesystem", {"root": str(directory / "data")}
+        ),
+        plugin_entry(
+            "opsmesh.plugins.channels",
             {
                 "api": {
+                    "host": "127.0.0.1",
+                    "port": port,
                     "identities": [
                         {"id": "probe", "token_ref": "OPSMESH_SMOKE_TOKEN"}
-                    ]
-                }
+                    ],
+                },
             },
         ),
-        plugin_entry("opsmesh_execution", {}),
+        plugin_entry("opsmesh.plugins.execution", {}),
     ]
     dsn = os.environ.get("OPSMESH_TEST_DSN")
     if dsn:
@@ -207,7 +212,6 @@ def exercise(
     manifest.write_text(
         json.dumps(
             {
-                "http": {"host": "127.0.0.1", "port": port},
                 "plugin_paths": [str(plugin_path), str(directory)],
                 "plugins": plugins,
             }
@@ -238,7 +242,7 @@ def exercise(
             [
                 *command,
                 "--command",
-                "opsmesh_database.commands:migrate",
+                "opsmesh.plugins.database.commands:migrate",
             ],
             env=environment,
             check=True,

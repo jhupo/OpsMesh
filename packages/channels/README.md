@@ -1,38 +1,36 @@
 # opsmesh-channels
 
-Independent OpsMesh plugin for HTTP API, QQ and DingTalk channels. The import module and host configuration namespace are `opsmesh_channels`.
-
-The plugin translates authenticated external requests into framework events, messages and `UserContext`. Business plugins declare routes, commands and bot connections. Channels does not select agents or manage conversations.
-
-## Installation
-
-In a regular Python environment, install the matching `opsmesh` and `opsmesh-channels` wheels from the same release. For local development:
-
-```bash
-python -m pip install -e . -e packages/channels
-```
-
-Run this command from the repository root. A frozen Linux host instead uses the separate official plugin runtime archive; the framework installer does not install this plugin.
-
-## Use in a plugin
+Independent OpsMesh plugin for API, QQ and DingTalk. Install the matching core
+and plugin distributions from the same release. The installed module is
+`opsmesh.plugins.channels`; its entry point is `channels`.
 
 ```python
-from opsmesh.framework.plugins import require
+from opsmesh.plugins import require
 
-channels = require("opsmesh_channels")
-
+channels = require("channels")
 
 @channels.api.get("/status")
 async def status() -> dict[str, str]:
     return {"status": "ready"}
 ```
 
-The host manifest must allow `opsmesh_channels` and the consumer module. API configuration belongs to channels and must provide authenticated identities. QQ and DingTalk connections are declared by the consuming plugin; protocol settings remain in the channels configuration.
+The host allowlist uses `opsmesh.plugins.channels`. The source lives directly in
+`packages/channels/src/`; setuptools maps it to the installed namespace.
 
-The channels runtime ID is `opsmesh_channels`. Old `opsmesh.plugins.channels` imports and configuration namespaces are not aliases.
+API owns its FastAPI application, token authentication and listener, configured
+under `config.api`. FastAPI Depends authenticates requests; handlers run through
+framework Events, Messages, UserContext, Matchers and Dependent. Native Starlette
+responses are used, with managed cleanup for streamed dependency resources.
 
-See the repository's `docs/channels-and-callbacks.md` for message handling, response ownership, streaming cleanup and the in-memory bot queue boundary. API, QQ and DingTalk are protocol modules within this single distribution, not three separately loaded plugins.
+QQ owns a separate FastAPI Webhook listener under `config.qq`. Consumer plugins
+declare accounts; the QQ module opens connections and validates signatures.
+DingTalk owns its official Stream SDK connection and needs no local listener.
+Only the Uvicorn lifecycle implementation is shared. There is no `http` module
+or `config.http` compatibility setting.
 
-## License
+Inputs open after consumer readiness and drain before consumers shut down.
+DingTalk's console must use Stream mode. The channel adds cancellable lifecycle
+ownership around the SDK's native parsing and acknowledgement behavior.
+See the repository's `docs/channels-and-callbacks.md` for configuration details.
 
-MIT; see the package's included license files and third-party notices.
+MIT; see LICENSE.

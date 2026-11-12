@@ -6,10 +6,10 @@ from types import ModuleType
 
 import pytest
 
-from opsmesh.framework.plugins import load as plugin_load
-from opsmesh.framework.plugins import manager as plugin_manager
-from opsmesh.framework.plugins import registry
-from opsmesh.framework.plugins.manager import PluginManager
+from opsmesh.plugins import load as plugin_load
+from opsmesh.plugins import manager as plugin_manager
+from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def test_loader_preserves_native_metadata_without_calling_values(plugin_path):
         plugin_path,
         "metadata_test_native",
         """
-from opsmesh.framework.plugins import PluginMetadata
+from opsmesh.plugins import PluginMetadata
 def deferred():
     raise AssertionError("Must not execute while loading")
 __plugin_meta__ = PluginMetadata(
@@ -60,7 +60,7 @@ def test_plugin_without_metadata_still_loads(plugin_path):
 
 def test_plugin_cannot_overwrite_injected_plugin(plugin_path):
     source = """
-from opsmesh.framework.plugins import PluginMetadata
+from opsmesh.plugins import PluginMetadata
 __plugin__ = PluginMetadata(name="x", description="x", usage="x")
 """
     assert load_source(plugin_path, "metadata_test_injected", source) is None
@@ -69,7 +69,7 @@ __plugin__ = PluginMetadata(name="x", description="x", usage="x")
 
 def test_same_metadata_key_in_different_plugins_is_independent(plugin_path):
     source = """
-from opsmesh.framework.plugins import PluginMetadata
+from opsmesh.plugins import PluginMetadata
 __plugin_meta__ = PluginMetadata(
     name="Example", description="Example", usage="Example",
     extra={"entry": object()},
@@ -85,11 +85,11 @@ __plugin_meta__ = PluginMetadata(
     ['__plugin_meta__ = "invalid"', 'raise RuntimeError("Import failed")'],
 )
 def test_failed_loading_removes_plugin_and_matchers(plugin_path, failure):
-    from opsmesh.framework.matchers.registry import matchers
+    from opsmesh.matchers.registry import matchers
 
     previous = {item for group in matchers.values() for item in group}
     source = (
-        "from opsmesh.framework.plugins import on_message\n"
+        "from opsmesh.plugins import on_message\n"
         "handler = on_message(priority=374)\n" + failure + "\n"
     )
     assert load_source(plugin_path, "metadata_test_rollback", source) is None
@@ -101,10 +101,10 @@ def test_failed_loading_removes_plugin_and_matchers(plugin_path, failure):
 async def test_failed_plugin_removes_hooks_and_lifecycle_without_touching_host(
     plugin_path,
 ):
-    from opsmesh.framework.adapters import Channel
-    from opsmesh.framework.dispatch import hooks
-    from opsmesh.framework.drivers import Driver
-    from opsmesh.framework.lifecycle import Lifespan
+    from opsmesh.adapters import Channel
+    from opsmesh.dispatch import hooks
+    from opsmesh.drivers import Driver
+    from opsmesh.lifecycle import Lifespan
 
     module = ModuleType("metadata_test_resources")
     module.lifespan = Lifespan()
@@ -124,12 +124,12 @@ async def test_failed_plugin_removes_hooks_and_lifecycle_without_touching_host(
     before = [set(group) for group in processors]
     source = """
 from metadata_test_resources import lifespan, events
-from opsmesh.framework.dispatch import (
+from opsmesh.dispatch import (
     event_preprocessor, event_postprocessor, run_preprocessor, run_postprocessor
 )
-from opsmesh.framework.plugins import on_message
-from opsmesh.framework.drivers import Driver
-from opsmesh.framework.adapters import Channel
+from opsmesh.plugins import on_message
+from opsmesh.drivers import Driver
+from opsmesh.adapters import Channel
 @Driver.on_connect
 @Driver.on_disconnect
 async def connection(channel):
@@ -165,9 +165,9 @@ raise ValueError("broken import")
 async def test_revoke_preserves_other_owners_and_cleans_in_reverse_order(
     plugin_path,
 ):
-    from opsmesh.framework.dispatch import hooks
-    from opsmesh.framework.lifecycle import Lifespan
-    from opsmesh.framework.plugins import revoke_plugin
+    from opsmesh.dispatch import hooks
+    from opsmesh.lifecycle import Lifespan
+    from opsmesh.plugins import revoke_plugin
 
     module = ModuleType("metadata_test_shared")
     module.lifespan = Lifespan()
@@ -180,8 +180,8 @@ async def test_revoke_preserves_other_owners_and_cleans_in_reverse_order(
     sys.modules[module.__name__] = module
     source = """
 from metadata_test_shared import observer, callback, lifespan, events
-from opsmesh.framework.dispatch import event_preprocessor
-from opsmesh.framework.plugins.registry import track_registration
+from opsmesh.dispatch import event_preprocessor
+from opsmesh.plugins.registry import track_registration
 event_preprocessor(observer)
 lifespan.on_startup(callback)
 track_registration(lambda: events.append("first"))
@@ -204,13 +204,13 @@ track_registration(lambda: events.append("second"))
 
 
 def test_installation_config_is_owned_and_available_after_import(plugin_path):
-    from opsmesh.framework.plugins import load_plugin, revoke_plugin
+    from opsmesh.plugins import load_plugin, revoke_plugin
 
     name = "metadata_test_configured"
     (plugin_path / f"{name}.py").write_text(
         """
 from pydantic import BaseModel
-from opsmesh.framework.plugins import get_plugin_config
+from opsmesh.plugins import get_plugin_config
 class Settings(BaseModel):
     choices: list[str]
 def settings():

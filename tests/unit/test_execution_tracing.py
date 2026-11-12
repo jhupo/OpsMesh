@@ -9,17 +9,17 @@ import pytest
 from agents import RunConfig
 from agents.tracing import custom_span, get_current_trace
 
-import opsmesh_execution._tracing.support as tracing_module
-from opsmesh_execution._tracing import TraceContext, TracingSupport
-from opsmesh_execution._tracing.langfuse import LangfuseBridge
-from opsmesh_execution._tracing.local import (
+import opsmesh.plugins.execution._tracing.support as tracing_module
+from opsmesh.plugins.execution._tracing import TraceContext, TracingSupport
+from opsmesh.plugins.execution._tracing.langfuse import LangfuseBridge
+from opsmesh.plugins.execution._tracing.local import (
     LocalTraceProcessor,
 )
-from opsmesh_execution.config import (
+from opsmesh.plugins.execution.config import (
     LangfuseSettings,
     TracingSettings,
 )
-from opsmesh_execution.errors import TracingConfigurationError
+from opsmesh.plugins.execution.errors import TracingConfigurationError
 
 
 def test_disabled_tracing_clears_processors(monkeypatch):

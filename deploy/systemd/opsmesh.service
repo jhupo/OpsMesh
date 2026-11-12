@@ -12,7 +12,7 @@ TimeoutStartSec=60
 User=opsmesh
 Group=opsmesh
 WorkingDirectory=/var/lib/opsmesh
-EnvironmentFile=/etc/opsmesh/opsmesh.env
+EnvironmentFile=-/etc/opsmesh/opsmesh.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json
 Restart=on-failure

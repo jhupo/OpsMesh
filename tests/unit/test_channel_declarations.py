@@ -10,29 +10,33 @@ import pytest
 BOOTSTRAP = """
 import asyncio
 import sys
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config, Env
-from opsmesh.drivers.http import HTTPDriver
-from opsmesh.framework.plugins import registry
-from opsmesh.framework.plugins.manager import PluginManager
+from opsmesh.drivers import base as driver_state
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
 
 settings = {
-    "api": {"identities": [{"id": "test", "token_ref": "API_TEST_TOKEN"}]},
+    "api": {"enabled": False, "identities": [
+        {"id": "test", "token_ref": "API_TEST_TOKEN"}]},
     "qq": {"concurrency": "invalid-unused-setting"},
     "dingtalk": "invalid-unused-section",
 }
-driver = HTTPDriver(Env(), Config(
-    driver_options={"http": {"enabled": False}},
-    plugin_configs={"opsmesh_channels": settings},
-))
-runtime.set_driver(driver)
-manager = PluginManager(["opsmesh_channels", "consumer", "failed"])
+driver = Driver(Env(), Config())
+driver_state.set_driver(driver)
+manager = PluginManager(
+    ["opsmesh.plugins.channels"], config=settings,
+    namespace="opsmesh.plugins.channels"
+)
 registry.register_plugin_manager(manager)
-channels = manager.load_plugin("opsmesh_channels")
+channels = manager.load_plugin("opsmesh.plugins.channels")
 assert channels is not None
-assert all("opsmesh_channels." + name not in sys.modules
+manager = PluginManager(["consumer", "failed"])
+registry.register_plugin_manager(manager)
+assert all("opsmesh.plugins.channels." + name not in sys.modules
            for name in ("api", "qq", "dingtalk"))
-from opsmesh_channels.lifecycle import transports
+from opsmesh.plugins.channels.lifecycle.coordinator import channel_lifecycle
+transports = channel_lifecycle.transports
 """
 
 
@@ -66,7 +70,7 @@ async def main():
         assert entrance.started
         assert ("GET", "/healthz") in entrance._mounted
         assert not entrance._router.registrations
-        assert not driver.channels
+        assert driver.get_channel("api") is entrance
     assert not entrance.started
     assert not entrance._mounted
 asyncio.run(main())
@@ -79,10 +83,12 @@ def test_no_config_or_declarations_starts_no_transports(tmp_path):
         tmp_path,
         """
 settings.pop("api")
-driver.config.plugin_configs["opsmesh_channels"] = settings
+channels.config_values = settings
 async def main():
     async with driver.lifespan():
         assert not transports._started
+        assert not hasattr(channel_lifecycle, "http")
+        assert "uvicorn" not in sys.modules
 asyncio.run(main())
 """,
     )
@@ -90,8 +96,8 @@ asyncio.run(main())
 
 def test_api_declaration_ignores_unused_settings_and_rolls_back(tmp_path):
     source = """
-from opsmesh.framework.plugins import require
-channels = require("opsmesh_channels")
+from opsmesh.plugins import require
+channels = require("opsmesh.plugins.channels")
 @channels.api.get("/hello")
 async def hello() -> str:
     return "hello"
@@ -107,9 +113,9 @@ consumer = manager.load_plugin("consumer")
 assert consumer is not None
 assert manager.load_plugin("failed") is None
 assert not transports._declared
-assert "opsmesh_channels.qq" not in sys.modules
-assert "opsmesh_channels.dingtalk" not in sys.modules
-from opsmesh_channels.api import get_router
+assert "opsmesh.plugins.channels.qq" not in sys.modules
+assert "opsmesh.plugins.channels.dingtalk" not in sys.modules
+from opsmesh.plugins.channels.api import get_router
 assert len(get_router().registrations) == 1
 async def main():
     async with driver.lifespan():
@@ -128,8 +134,8 @@ assert not get_router().registrations
 
 def test_qq_declaration_needs_no_api_or_dingtalk_configuration(tmp_path):
     (tmp_path / "consumer.py").write_text("""
-from opsmesh.framework.plugins import require
-channels = require("opsmesh_channels")
+from opsmesh.plugins import require
+channels = require("opsmesh.plugins.channels")
 qq = channels.qq
 connection = qq.declare_connection(
     qq.QQConnectionSettings(app_id="12345", secret_ref="QQ_SECRET"),
@@ -139,18 +145,20 @@ connection = qq.declare_connection(
     run_script(
         tmp_path,
         """
-settings["qq"] = {"concurrency": 2}
+settings["qq"] = {"concurrency": 2, "host": "127.0.0.1", "port": 0}
 settings.pop("api")
-driver.config.plugin_configs["opsmesh_channels"] = settings
+channels.config_values = settings
 consumer = manager.load_plugin("consumer")
 assert consumer is not None
-assert "opsmesh_channels.api" not in sys.modules
-assert "opsmesh_channels.dingtalk" not in sys.modules
+assert "opsmesh.plugins.channels.api" not in sys.modules
+assert "opsmesh.plugins.channels.dingtalk" not in sys.modules
 async def main():
     async with driver.lifespan():
         assert consumer.module.connection.ready
         assert len(transports._started) == 1
+        assert driver.get_adapter("qq").server.bound_port > 0
     assert not consumer.module.connection.ready
+    assert not hasattr(channel_lifecycle, "http")
 asyncio.run(main())
 registry.revoke_plugin(consumer)
 assert not transports._declared
@@ -161,8 +169,8 @@ assert not transports._declared
 @pytest.mark.parametrize("section", [None, {"identities": []}])
 def test_declared_api_requires_valid_authentication(tmp_path, section):
     (tmp_path / "consumer.py").write_text("""
-from opsmesh.framework.plugins import require
-channels = require("opsmesh_channels")
+from opsmesh.plugins import require
+channels = require("opsmesh.plugins.channels")
 @channels.api.get("/hello")
 async def hello() -> str:
     return "hello"
@@ -171,10 +179,10 @@ async def hello() -> str:
         tmp_path,
         f"""
 settings["api"] = {section!r}
-driver.config.plugin_configs["opsmesh_channels"] = settings
+channels.config_values = settings
 channels.required = True
 assert manager.load_plugin("consumer") is not None
-from opsmesh_channels.api.errors import APIConfigurationError
+from opsmesh.plugins.channels.api.errors import APIConfigurationError
 async def main():
     try:
         async with driver.lifespan():
@@ -182,6 +190,52 @@ async def main():
     except (ValueError, APIConfigurationError):
         pass
     assert not transports._started
+asyncio.run(main())
+""",
+    )
+
+
+def test_dingtalk_stream_needs_no_http_or_api(tmp_path):
+    (tmp_path / "consumer.py").write_text("""
+from opsmesh.plugins import require
+channels = require("opsmesh.plugins.channels")
+dingtalk = channels.dingtalk
+connection = dingtalk.declare_connection(
+    dingtalk.DingTalkConnectionSettings(
+        client_id="test", client_secret_ref="DINGTALK_SECRET"
+    ),
+    name="primary",
+)
+""")
+    run_script(
+        tmp_path,
+        """
+import os
+os.environ["DINGTALK_SECRET"] = "test-secret"
+settings.clear()
+
+channels.config_values = settings
+consumer = manager.load_plugin("consumer")
+assert consumer is not None
+from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
+async def receive(stream):
+    assert consumer.ready
+    stream.adapter.stream_connected(stream.channel)
+    await asyncio.Event().wait()
+DingTalkStream._receive = receive
+async def main():
+    async with driver.lifespan():
+        for _ in range(100):
+            if consumer.module.connection.ready:
+                break
+            await asyncio.sleep(0)
+        assert consumer.module.connection.ready
+        assert not hasattr(channel_lifecycle, "http")
+        assert "uvicorn" not in sys.modules
+        from inspect import getattr_static
+        assert getattr_static(consumer.module.connection, "path", None) is None
+    assert consumer.module.connection.state == "closed"
+    assert not driver.channels
 asyncio.run(main())
 """,
     )

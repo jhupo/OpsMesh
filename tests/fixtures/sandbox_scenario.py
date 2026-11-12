@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import anyio
 from agents import Runner
 from agents.sandbox.session.sandbox_session_state import SandboxSessionState
 from agents.testing import (
@@ -25,20 +26,19 @@ from example_sandbox.agent import agent
 from example_sandbox.sessions import SandboxConversations
 from example_sandbox.workspace import SandboxWorkspaces
 from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.requests import Request
 
-from opsmesh.framework import runtime
-from opsmesh.framework.config import Config
-from opsmesh.framework.drivers import Request
-from opsmesh.framework.plugins.model import PluginStatus
-from opsmesh_channels import UserContext
-from opsmesh_channels.api import (
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins.channels import UserContext
+from opsmesh.plugins.channels.api import (
     APIChannel,
     APIRouter,
     HTTPError,
     Settings,
 )
-from opsmesh_channels.api.adapter import APIAdapter
-from opsmesh_filesystem import files
+from opsmesh.plugins.channels.api.adapter import APIAdapter
+from opsmesh.plugins.filesystem import files
+from opsmesh.plugins.model import PluginStatus
 
 
 class ScriptedClient:
@@ -79,9 +79,10 @@ def run_scenario(plugin, routes):
     plugin.status = PluginStatus.READY
     caller = UserContext(id="sandbox-user")
     api = APIChannel(
-        Settings(identities=[{"id": "test", "token_ref": "TOKEN"}]), APIRouter()
+        Settings(identities=[{"id": "test", "token_ref": "TOKEN"}]),
+        APIRouter(),
     )
-    api.adapter = APIAdapter(runtime.get_driver())
+    api.adapter = APIAdapter(driver_state.get_driver())
     model = ScriptedModel(
         [
             ModelStep(output=[assistant_message(text)])
@@ -106,17 +107,34 @@ def run_scenario(plugin, routes):
             for item in routes
             if item.method == method and item.relative_path == path
         )
-        result = await api._invoke(
-            selected,
-            Request(
-                method,
-                "http://localhost" + selected.path,
-                content=json.dumps(data).encode() if data is not None else None,
-                path_params={"id": session_id} if session_id else {},
-            ),
-            SimpleNamespace(caller=owner or caller),
+        delivered = False
+
+        async def receive():
+            nonlocal delivered
+            if delivered:
+                await anyio.sleep_forever()
+            delivered = True
+            return {
+                "type": "http.request",
+                "more_body": False,
+                "body": json.dumps(data).encode() if data is not None else b"",
+            }
+
+        request = Request(
+            {
+                "type": "http",
+                "method": method,
+                "path": selected.path,
+                "headers": [],
+                "query_string": b"",
+                "path_params": {"id": session_id} if session_id else {},
+            },
+            receive,
         )
-        return json.loads(result.content) if result.status_code != 204 else None
+        result = await api._invoke(
+            selected, request, SimpleNamespace(caller=owner or caller)
+        )
+        return json.loads(result.body) if result.status_code != 204 else None
 
     async def denied(operation, status):
         try:
@@ -275,12 +293,11 @@ def run_scenario(plugin, routes):
 
     async def main():
         with tempfile.TemporaryDirectory() as temporary:
-            driver = runtime.get_driver()
-            driver.config = Config(
-                plugin_configs={
-                    "opsmesh_filesystem": {"root": temporary + "/files"}
-                }
-            )
+            from opsmesh.plugins import get_plugin
+
+            storage = get_plugin("filesystem")
+            storage.config_namespace = "opsmesh.plugins.filesystem"
+            storage.config_values = {"root": temporary + "/files"}
             await files._startup()
             engine = create_async_engine(
                 os.environ.get("OPSMESH_TEST_DATABASE_URL")
