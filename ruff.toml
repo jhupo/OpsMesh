@@ -1,0 +1,27 @@
+target-version = "py311"
+line-length = 80
+extend-exclude = ["backup", ".venv-linux", "dist-linux"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+# Embedded framework protocols document constructors on their classes.
+"src/opsmesh/framework/**/*.py" = ["D105", "D107"]
+
+[lint.flake8-bugbear]
+# These factories build immutable injection descriptors at definition time.
+extend-immutable-calls = [
+    "opsmesh.framework.params.CommandArg",
+    "opsmesh_database.DatabaseAccess",
+]
+
+[lint.isort]
+known-first-party = ["opsmesh", "opsmesh_channels", "opsmesh_database", "opsmesh_execution", "opsmesh_filesystem"]
+
+[format]
+docstring-code-format = true

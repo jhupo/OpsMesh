@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opsmesh-execution"
+version = "0.4.0"
+description = "OpsMesh execution plugin"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dynamic = ["dependencies", "optional-dependencies"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements-core.txt", "requirements.txt"]}
+optional-dependencies.langfuse = {file = ["requirements-langfuse.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opsmesh_execution*"]
+
+[tool.setuptools.package-data]
+"opsmesh_execution" = ["py.typed"]
+
+[project.urls]
+Repository = "https://github.com/jhupo/OpsMesh"
+Issues = "https://github.com/jhupo/OpsMesh/issues"
+Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"

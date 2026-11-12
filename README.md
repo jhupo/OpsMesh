@@ -1,116 +1,86 @@
-# opsmesh
+# OpsMesh
 
-异步事件驱动、插件可扩展的 Agent 与机器人平台。以 OpenAI Agents SDK 为首个执行后端，通过独立的 AgentBackend 接口保留接入其他 SDK 的边界。
+OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、Matcher、规则、权限、依赖注入和插件生命周期；插件负责通道接入、智能体执行或存储。智能体插件直接使用 OpenAI Agents SDK 的原生 Agent、工具、MCP 和 Session。
 
-[English](README.en.md) · [v0.3.2 发布说明](docs/releases/v0.3.2.md) · [设计与实现状态](docs/README.md) · [HTTP 使用](docs/runtime-api.md) · [贡献指南](CONTRIBUTING.md) · [MIT](LICENSE)
+项目处于早期开发阶段，公开接口尚未承诺向后兼容。生产部署支持 Linux x86_64 和 ARM64，默认使用 systemd；Docker 为可选方式。
 
-## 当前功能
+## 包与职责
 
-`0.3.2` 是供开发者试用的早期版本，已实现可运行的 Python 框架与平台后端：
+| 发行包 | 导入模块 | 内容 |
+|---|---|---|
+| `opsmesh` | `opsmesh` | 框架、HTTP Driver、宿主和命令行 |
+| [opsmesh-channels](packages/channels/README.md) | `opsmesh_channels` | API、QQ、钉钉通道与统一用户上下文 |
+| [opsmesh-execution](packages/execution/README.md) | `opsmesh_execution` | 原生 Runner、流清理、插件回调与可选 Langfuse 追踪 |
+| [opsmesh-filesystem](packages/filesystem/README.md) | `opsmesh_filesystem` | 插件目录、文件操作与 ZIP 导入导出 |
+| [opsmesh-database](packages/database/README.md) | `opsmesh_database` | PostgreSQL 连接、事务和插件独立迁移 |
 
-- NoneBot2 风格的 Driver、Adapter、Bot、Event、Message、Matcher、插件元数据、Depends 和上下文。
-- 本地用户、部门、角色权限、Agent 草稿/不可变版本、模型配置与代码工厂。
-- OpenAI Agents SDK 执行、Responses HTTP/WebSocket、类型化输出、handoff/Agent-as-tool、四阶段护栏、钩子、审批恢复和会话压缩；Hosted MCP 与原生 Shell/ApplyPatch/Computer 扩展。
-- 固定 Git commit 的 Skill、隔离脚本工具、MCP stdio/HTTP/SSE、向量/词法混合检索、授权工具网关、工作区与快照；独立子沙箱、原生和平台两阶段记忆、实时记忆更新与保留清理。
-- HTTP 管理/运行入口、SSE、Run 单次工作区/模型设置覆盖；统一机器人适配器、钉钉 Stream、QQ 官方 Webhook、持久定时任务。见[机器人接入](docs/design/bot-adapters.md)。
-- PostgreSQL/SQLite、版本迁移、事务 Outbox、Redis 限流/租约；本地/S3内容存储和完整备份/验证/恢复CLI；审计、日志、指标、W3C/OTLP 追踪，Token/资源计量、版本价格、汇率、补价、预算和供应商账单对账。
-- inline、独立 Python 子进程、Docker、逐 Run Kubernetes Job 四种 Run Worker 方式。原生 SDK 沙箱与整个 Run Worker 的隔离分别配置。
+四个插件拥有独立包定义与依赖，不包含在框架包中。宿主默认不加载插件，也不要求 PostgreSQL、模型密钥或 Langfuse。功能插件通过 `require("opsmesh_execution")` 等声明实际依赖，并由宿主清单允许加载。
 
-Web 门户和控制台仅预留目录；Claude 后端为后续适配。已在独立 Linux 环境验证 PostgreSQL、Redis、S3 工作区快照与完整备份恢复、Docker 资源限制/取消、SDK Memory、远程 Docker mTLS、真实模型审批重启/流式输出，以及 K3s 逐 Run Job。默认测试使用受控模型，付费模型测试显式启用。生产多节点故障转移和真实机器人账号仍需部署验收。逐项证据见[覆盖表](docs/design/sdk-coverage.md)。
+## 安装框架服务
 
-## 快速开始
+从同一个 GitHub Release 下载对应架构的框架包、`SHA256SUMS` 与 `install.sh`：
 
-本版本替换了仓库原 `0.2.x` 及更早版本的架构。旧数据库、配置、插件及检查点不能直接沿用；请先备份旧部署，在新目录和独立数据库中安装，按[发布说明](docs/releases/v0.3.0.md)重新配置。
-
-### Linux 服务安装
-
-从 [v0.3.2 发布页面](https://github.com/jhupo/OpsMesh/releases/tag/v0.3.2)下载 `opsmesh-0.3.2-linux.tar.gz` 及对应 `.sha256` 文件，校验、解压后默认安装本地 systemd 服务：
-
-```sh
-sha256sum --check opsmesh-0.3.2-linux.tar.gz.sha256
-tar -xzf opsmesh-0.3.2-linux.tar.gz
-cd opsmesh-0.3.2-linux
-sudo bash install.sh
-sudo systemctl status opsmesh.service --no-pager
-sudo journalctl -u opsmesh.service -f
+```bash
+sudo bash install.sh \
+  --archive opsmesh-0.4.0-linux-x86_64.tar.gz \
+  --checksums SHA256SUMS
+journalctl -u opsmesh -f
 ```
 
-安装包包含 wheel、带哈希的运行依赖清单和部署文件，不携带 Python、`.venv` 或整套源码仓库。安装时优先复用服务用户可访问的本机 Python 3.11–3.14；没有适用解释器时在线获取 Python 3.13，再创建虚拟环境并安装锁定依赖。依赖安装需要联网。
+安装器只部署框架服务及其自带 Python 运行环境。首次安装生成空插件清单；升级保留现有配置、插件与数据。安装器不安装插件、不连接数据库、不执行数据库迁移。空宿主没有聊天路由或机器人功能。
 
-默认使用本地 SQLite，配置保存在 `/etc/opsmesh/opsmesh.env`，数据保存在 `/var/lib/opsmesh`。首次输入管理员密码后即可访问 `http://127.0.0.1:8000/docs`，无需 Docker 或 Kubernetes。需要 Docker 部署时显式执行 `sudo bash install.sh --mode docker`。两种模式的启停、升级、多实例及备份操作见 [Linux 安装指南](deploy/linux.md)。原 `v0.3.0` 历史发布没有该 Linux 安装包；开发者可用 `uv run python scripts/build_linux_release.py --output-dir dist/linux` 从当前源码构建。
+需要插件时，另行部署同版本、同架构的插件运行包，配置 `plugin_paths` 和 `plugins` 后重启。插件运行包携带插件源码、资源和额外 Python 依赖，服务器无需 pip。完整步骤见 [Linux 部署](docs/linux-deployment.md)。
 
-### 手动安装发行包
+## 开发
 
-支持范围以测试记录为准，项目要求 Python 3.11+。推荐在独立虚拟环境中安装。下面的发行包命令直接使用 GitHub Release，不要求 PyPI 上存在同名包。
+要求 Python 3.11 或以上。在虚拟环境中安装锁定的开发依赖和需要修改的本地包：
 
-```sh
+```bash
 python -m venv .venv
+# Activate the virtual environment for your shell.
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-deps -e . -e packages/channels \
+  -e packages/filesystem -e packages/database -e packages/execution
 ```
 
-Linux/macOS 执行 `. .venv/bin/activate`，Windows PowerShell 执行 `.venv\Scripts\Activate.ps1`，然后安装并启动：
+只安装框架包时使用 `python -m pip install -e .`。上面的开发锁用于整个仓库验证，包含插件测试需要的依赖，不是框架的运行依赖。仅运行受改动影响的测试，例如：
 
-```sh
-python -m pip install "opsmesh[openai] @ https://github.com/jhupo/OpsMesh/releases/download/v0.3.2/opsmesh-0.3.2-py3-none-any.whl"
-opsmesh --version
-opsmesh init
-opsmesh check
-opsmesh serve
+```bash
+python -m pytest tests/unit/test_execution_runner.py tests/unit/test_execution_tracing.py -q
 ```
 
-`openai` extra 安装 OpenAI Agents SDK 后端及其追踪依赖；省略它可以安装不包含该 SDK 的框架和平台核心。需要 S3 内容存储时安装 `[openai,s3]`。默认使用本机 SQLite 和 `.opsmesh/` 数据目录，无须先部署数据库。
+Langfuse 定向测试需要 execution 的可选追踪依赖，见其包说明。Linux 文件系统发布操作依赖相应系统调用；Windows 开发环境不能替代 Linux 发布验收。贡献与验证约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-从源码开发需要 uv 0.13.5。在本版本源码目录执行：
-
-```sh
-uv sync --locked --dev --extra openai
-uv run --extra openai opsmesh init
-uv run --extra openai opsmesh serve
-```
-
-`init` 提示输入本地管理员密码（至少 12 字符）。启动后访问 `http://127.0.0.1:8000/docs`，按 [HTTP 使用说明](docs/runtime-api.md)登录、配置模型、发布 Agent、创建会话并提交 Run。仅提交真实模型任务时才需要提供商凭据。
-
-配置通过 `OPSMESH_*` 环境变量读取；`.env` 不自动加载。源码方式可使用 `uv run --env-file .env ...`，发行包方式应先设置进程环境变量。可选部署示例见 [deploy](deploy/README.md)。`opsmesh migrate` 管理本架构登记的 schema，不能升级原 `0.2.x` 数据库；`serve` 只校验 schema。
-
-```sh
-uv run opsmesh check
-uv run opsmesh --version
-uv run --extra openai opsmesh worker
-```
-
-独立部署 Worker 时，Gateway 设置 `OPSMESH_WORKER_ENABLED=false`，Worker 设置为 `true`；两者使用相同数据库、存储和插件代码版本。不要在已有同配置 Worker 的环境无意启动重复消费者。持久队列支持多消费者，通知与外部副作用按稳定 ID 幂等。
-
-## 插件与目录
-
-[可运行插件示例](examples/custom_plugin/README.md)展示声明式注册、事件响应、Depends 资源释放与 Agent 工厂。插件可注册代码工具、动态指令、护栏、钩子和后端；HTTP 入口只引用已部署的代码能力。
+## 目录
 
 ```text
-src/opsmesh/
-├── bootstrap/       # 部署配置、启动和服务组装
-├── application/     # 跨模块运行流程、队列协调、资源/记忆桥接
-├── entrypoints/     # CLI、HTTP 各域路由、单 Run Worker入口
-├── framework/       # NoneBot 风格插件机制与中立 Agent 合同
-├── modules/         # 17 个业务域，api.py 公开合同，internal/ 私有实现
-├── infrastructure/  # bots、run_workers、数据库/消息/存储/协调/观测
-├── maintenance/     # 离线整站备份、验证和恢复
-├── dependencies.py  # 插件通过 Depends 获取平台公开服务
+src/opsmesh/        # 独立框架发行包
+packages/          # channels、execution、filesystem、database 插件发行包
+examples/          # 普通对话、沙箱对话与客户端示例
+tests/             # 框架及插件的行为验证
+deploy/            # 仅部署框架的安装器、systemd 与可选 Docker
+packaging/         # 可执行包构建定义与依赖锁
+scripts/           # 构建、产物检查及安装验收
+.github/workflows/ # CI、Linux 构建及 tag Release
+docs/              # 当前架构、部署和插件契约
+licenses/          # 上游许可文本
 ```
 
-详细职责、目标文件树和不兼容边界见[架构设计](docs/design/architecture.md)。OpenAI SDK 的构建、工具、模型、流、状态、沙箱、追踪、错误映射分文件维护，原生 SDK 类型不进入业务合同。
+## 发布与文档
 
-## 开发检查
+`v<version>` tag 触发工作流；版本必须匹配核心和四个插件。验证成功后，Release 同时附带五个包的 wheel／源码包、两种架构的框架可执行包、独立插件运行包和校验文件。当前工作流发布 GitHub Release 附件，不代表包名已注册或已发布到 PyPI。见 [发布说明](docs/releases.md)。
 
-```sh
-uv run --extra openai ruff check .
-uv run --extra openai ruff format --check .
-uv run --extra openai mypy
-uv run --extra openai pytest
-uv run python scripts/check_repository.py
-uv run --extra openai python scripts/check_sdk_surface.py
-uv build
-uv run python scripts/check_sdist.py
-```
+- [架构与职责](docs/plugin-architecture.md)
+- [通道和执行回调](docs/channels-and-callbacks.md)
+- [Langfuse 追踪与兼容边界](docs/langfuse-tracing.md)
+- [数据库迁移](docs/database-migrations.md)
+- [SDK 与框架边界](docs/sdk-and-plugin-boundaries.md)
+- [开源就绪审查](docs/open-source-review.md)
+- [安全策略](SECURITY.md) · [变更记录](CHANGELOG.md)
+- [普通对话示例](examples/chat/README.md) · [沙箱示例](examples/sandbox/README.md)
 
-CI 在 Linux 上验证 Python 3.11-3.14，并验收本机 systemd 和 Docker 安装；Windows 不在发布支持范围。以[对应提交的实际运行结果](https://github.com/jhupo/OpsMesh/actions)为准。版本包在 [GitHub Releases](https://github.com/jhupo/OpsMesh/releases)发布；本项目不提供托管服务，GitHub Release 不等于已发布到 PyPI。
+源码插件是受信任的进程内 Python 代码，具有宿主进程的权限。框架的加载白名单与文件目录校验不构成恶意代码沙箱。MCP、模型供应商、数据库和观测服务的部署由使用者按实际插件配置负责。
 
+## 许可证
 
-平台管理与本轮补齐范围见[平台补齐记录](docs/platform-completion.md)：持久计划、事件触发、通知、审批、账号/Bot/资源治理和运维入口均属于平台核心；业务插件使用受保护Provider扩展。
+项目采用 [MIT License](LICENSE)。上游来源与随附许可见 [licenses](licenses)。插件携带的外部资源仍须遵守各自许可。

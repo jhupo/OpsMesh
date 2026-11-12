@@ -1,37 +1,60 @@
-"""Signature inspection without a provider registry."""
-
-from __future__ import annotations
+"""Resolve callable annotations and validate dependency values."""
 
 import inspect
+import logging
 from collections.abc import Callable
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Any, ForwardRef, cast
 
-from opsmesh.framework.exception import DependencyError
+from typing_extensions import TypeAliasType
+
+from opsmesh.framework.compat import ModelField
+from opsmesh.framework.exceptions import TypeMisMatch
+from opsmesh.framework.typing import evaluate_forwardref, is_type_alias_type
+
+logger = logging.getLogger(__name__)
 
 
-def typed_signature(call: Callable[..., Any]) -> inspect.Signature:
-    target: Any = call
-    if not inspect.isfunction(call) and not inspect.isclass(call):
-        target = type(call).__call__
-    try:
-        hints = get_type_hints(target, include_extras=True)
-    except (NameError, TypeError) as exc:
-        raise DependencyError(f"Cannot resolve annotations for {call}: {exc}") from exc
+def get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:
+    """Return a callable signature with resolved type annotations."""
     signature = inspect.signature(call)
-    parameters = []
-    for parameter in signature.parameters.values():
-        if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
-            continue
-        if parameter.kind == parameter.POSITIONAL_ONLY:
-            raise DependencyError("Injected callables cannot use positional-only parameters")
-        parameters.append(
-            parameter.replace(annotation=hints.get(parameter.name, parameter.annotation))
+    globalns = getattr(call, "__globals__", {})
+    typed_params = [
+        inspect.Parameter(
+            name=param.name,
+            kind=param.kind,
+            default=param.default,
+            annotation=get_typed_annotation(param, globalns),
         )
-    return signature.replace(parameters=parameters)
+        for param in signature.parameters.values()
+    ]
+    return inspect.Signature(typed_params)
 
 
-def unwrap(annotation: Any) -> tuple[Any, tuple[Any, ...]]:
-    if get_origin(annotation) is Annotated:
-        args = get_args(annotation)
-        return args[0], args[1:]
-    return annotation, ()
+def get_typed_annotation(
+    param: inspect.Parameter, globalns: dict[str, Any]
+) -> Any:
+    """Resolve a parameter's type annotation."""
+    annotation = param.annotation
+    if isinstance(annotation, str):
+        annotation = ForwardRef(annotation)
+        try:
+            annotation = evaluate_forwardref(annotation, globalns, globalns)
+        except Exception as e:
+            logger.warning(
+                "Cannot resolve annotation for parameter %s",
+                param.name,
+                exc_info=(type(e), e, e.__traceback__),
+            )
+            return inspect.Parameter.empty
+    if is_type_alias_type(annotation):
+        # Python 3.12+ supports PEP 695 TypeAliasType
+        annotation = cast(TypeAliasType, annotation).__value__
+    return annotation
+
+
+def check_field_type(field: ModelField, value: Any) -> Any:
+    """Validate a value against its field annotation."""
+    try:
+        return field.validate_value(value)
+    except ValueError as error:
+        raise TypeMisMatch(field, value) from error

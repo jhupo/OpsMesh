@@ -1,112 +1,39 @@
 [build-system]
-requires = ["hatchling>=1.27,<2"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh"
-dynamic = ["version"]
-description = "An event-driven, plugin-extensible agent platform."
+version = "0.4.0"
+description = "Embedded event framework for plugin-based agent applications"
 readme = "README.md"
-requires-python = ">=3.11"
 license = "MIT"
-license-files = ["LICENSE"]
-authors = [{ name = "opsmesh contributors" }]
-keywords = ["agents", "bots", "plugins", "automation", "asyncio"]
+license-files = ["LICENSE", "licenses/*"]
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Environment :: Console",
-  "Intended Audience :: Developers",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Typing :: Typed",
-]
-dependencies = [
-  "pydantic>=2.12,<3",
-  "sqlalchemy[asyncio]>=2.0,<3",
-  "aiosqlite>=0.21,<1",
-  "asyncpg>=0.30,<1",
-  "fastapi>=0.115,<1",
-  "uvicorn>=0.30,<1",
-  "httpx>=0.28,<1",
-  "websockets>=15,<17",
-  "redis>=6,<9",
-  "argon2-cffi>=23,<26",
-  "jsonschema>=4,<5",
-  "tzdata>=2025.2,<2028",
-  "cryptography>=46,<51",
-  "pyyaml>=6,<7",
-  "packaging>=24,<27",
-]
-
-[project.optional-dependencies]
-openai = [
-    "openai-agents[docker]==0.24.0",
-    "opentelemetry-api>=1.37,<2",
-    "opentelemetry-exporter-otlp-proto-http>=1.37,<2",
-    "opentelemetry-sdk>=1.37,<2",
-]
-s3 = [
-    "boto3>=1.40,<2",
+    "Development Status :: 3 - Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
 ]
 
 [project.scripts]
-opsmesh = "opsmesh.entrypoints.cli:main"
+opsmesh = "opsmesh.cli:main"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opsmesh*"]
+
+[tool.setuptools.package-data]
+"opsmesh.framework" = ["py.typed", "**/*.pyi"]
 
 [project.urls]
-Homepage = "https://github.com/jhupo/OpsMesh"
 Repository = "https://github.com/jhupo/OpsMesh"
-Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
 Issues = "https://github.com/jhupo/OpsMesh/issues"
-Changelog = "https://github.com/jhupo/OpsMesh/blob/master/CHANGELOG.md"
-
-[dependency-groups]
-dev = [
-  "mypy>=1.15,<2",
-  "pre-commit>=4,<5",
-  "pytest>=8,<10",
-  "pytest-asyncio>=1,<2",
-  "types-jsonschema>=4,<5",
-  "types-pyyaml>=6,<7",
-  "ruff>=0.15,<0.16",
-]
-
-[tool.hatch.version]
-path = "src/opsmesh/_version.py"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/opsmesh"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-  "/src", "/tests", "/scripts", "/docs", "/deploy", "/examples",
-  "/migrations", "/web", "/.github", "/*.md", "/LICENSE", "/pyproject.toml", "/uv.lock",
-  "/.python-version", "/.editorconfig", "/.env.example", "/.gitattributes", "/.gitignore",
-  "/.pre-commit-config.yaml", "/.dockerignore",
-]
-
-[tool.uv]
-required-version = ">=0.13.5,<0.14"
-
-[tool.ruff]
-target-version = "py311"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-
-[tool.mypy]
-python_version = "3.11"
-strict = true
-files = ["src/opsmesh"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "--import-mode=importlib -ra"
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-markers = ["integration: explicit external service integration tests (disabled by default)"]
+Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"

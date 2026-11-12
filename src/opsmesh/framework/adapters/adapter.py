@@ -1,66 +1,110 @@
-"""Public adapter base; protocol resources use the driver lifecycle."""
+"""Adapter registration and transport delegation."""
 
-from __future__ import annotations
+import abc
+from typing import Any
 
-from typing import TYPE_CHECKING
+from opsmesh.framework.config import Config
+from opsmesh.framework.drivers import (
+    ASGIMixin,
+    Driver,
+    HTTPClientMixin,
+    HTTPServerSetup,
+    Request,
+    Response,
+    WebSocketServerSetup,
+)
+from opsmesh.framework.lifecycle import LIFESPAN_FUNC
 
-from opsmesh.framework.errors import OpsMeshError
-
-from .bot import OpsMeshBot
-from .event import OpsMeshEvent
-
-if TYPE_CHECKING:
-    from opsmesh.framework.drivers import OpsMeshDriver
-    from opsmesh.framework.message import DispatchResult
-    from opsmesh.framework.plugin import OpsMeshPlugin
+from .channel import Channel
 
 
-class OpsMeshAdapter:
-    name = "adapter"
-    required_capabilities: frozenset[str] = frozenset()
+class Adapter(abc.ABC):
+    """Base interface for protocol adapters.
 
-    def __init__(self, driver: OpsMeshDriver) -> None:
-        self.driver = driver
-        self.bots: dict[str, OpsMeshBot] = {}
-        self._plugin_owner: OpsMeshPlugin | None = None
-        self._registration_removed = False
+    Adapters establish connections and translate incoming and outgoing data.
+
+    Args:
+        driver: The framework driver instance.
+        kwargs: Extra arguments supplied by Driver.register_adapter.
+    """
+
+    def __init__(self, driver: Driver, **kwargs: Any):
+        self.driver: Driver = driver
+        """The framework driver instance."""
+        self.channels: dict[str, Channel] = {}
+        """Connected channel instances managed by this adapter."""
+
+    def __repr__(self) -> str:
+        return f"Adapter(name={self.get_name()!r})"
+
+    @classmethod
+    @abc.abstractmethod
+    def get_name(cls) -> str:
+        """The protocol adapter name."""
+        raise NotImplementedError
 
     @property
-    def enabled(self) -> bool:
-        return not self._registration_removed and (
-            self._plugin_owner is None or self._plugin_owner.enabled
-        )
+    def config(self) -> Config:
+        """The global framework configuration."""
+        return self.driver.config
 
-    def ensure_enabled(self) -> None:
-        if self._registration_removed:
-            raise OpsMeshError("BOT_ADAPTER_UNAVAILABLE", "Bot adapter registration was removed")
-        if not self.enabled:
-            raise OpsMeshError("PLUGIN_DISABLED", "The bot adapter's owning plugin is disabled")
+    def connect(self, channel: Channel) -> None:
+        """Register a newly connected channel with the framework.
 
-    def _bind_registration(self, owner: OpsMeshPlugin | None) -> None:
-        self._plugin_owner = owner
-        self._registration_removed = False
+        Call this after establishing a channel connection successfully.
 
-    def _remove_registration(self) -> None:
-        self._plugin_owner = None
-        self._registration_removed = True
+        Args:
+            channel: The channel instance.
+        """
+        self.driver.connect(channel)
+        self.channels[channel.self_id] = channel
 
-    def connect(self, bot: OpsMeshBot) -> None:
-        self.ensure_enabled()
-        if bot.adapter is not self:
-            raise ValueError("OpsMeshBot belongs to another adapter")
-        if bot.ref.bot_id in self.bots:
-            raise ValueError(f"OpsMeshBot already connected: {bot.ref.bot_id}")
-        self.bots[bot.ref.bot_id] = bot
+    def disconnect(self, channel: Channel) -> None:
+        """Unregister a disconnected channel from the framework.
 
-    def disconnect(self, bot_id: str) -> OpsMeshBot:
-        return self.bots.pop(bot_id)
+        Call this after closing the channel connection.
 
-    async def dispatch(self, event: OpsMeshEvent, bot: OpsMeshBot | None = None) -> DispatchResult:
-        from opsmesh.framework.events import DispatchContext
-        from opsmesh.framework.message import handle_event
+        Args:
+            channel: The channel instance.
+        """
+        if self.channels.pop(channel.self_id, None) is None:
+            raise RuntimeError(
+                f"{channel} not found in adapter {self.get_name()}"
+            )
+        self.driver.disconnect(channel)
 
-        self.ensure_enabled()
-        if bot is not None and self.bots.get(bot.ref.bot_id) is not bot:
-            raise ValueError("OpsMeshBot is not connected to this adapter")
-        return await handle_event(DispatchContext(event=event, bot=bot))
+    def setup_http_server(self, setup: HTTPServerSetup):
+        """Register an HTTP server route."""
+        if not isinstance(self.driver, ASGIMixin):
+            raise TypeError("Current driver does not support http server")
+        self.driver.setup_http_server(setup)
+
+    def setup_websocket_server(self, setup: WebSocketServerSetup):
+        """Register a WebSocket server route."""
+        if not isinstance(self.driver, ASGIMixin):
+            raise TypeError("Current driver does not support websocket server")
+        self.driver.setup_websocket_server(setup)
+
+    async def request(self, setup: Request) -> Response:
+        """Send an HTTP client request."""
+        if not isinstance(self.driver, HTTPClientMixin):
+            raise TypeError("Current driver does not support http client")
+        return await self.driver.request(setup)
+
+    def on_ready(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
+        """Register a callback for the driver readiness phase."""
+        return self.driver.on_ready(func)
+
+    @abc.abstractmethod
+    async def _call(self, channel: Channel, operation: str, **data: Any) -> Any:
+        """Implement the protocol-specific operation call.
+
+        Args:
+            channel: The channel issuing the operation.
+            operation: The operation name.
+            data: Operation arguments.
+        """
+        raise NotImplementedError
+
+
+__autodoc__ = {"Adapter._call": True}

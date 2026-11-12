@@ -1,254 +1,407 @@
-"""Async process lifecycle, supervised tasks and optional network capabilities."""
+"""Driver lifecycle, channel tracking, and transport interfaces."""
 
-from __future__ import annotations
+import abc
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import AsyncExitStack, asynccontextmanager
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-import asyncio
-import contextvars
-from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable, Coroutine
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from enum import StrEnum
-from typing import TYPE_CHECKING, Any, TypeVar
+from anyio import CancelScope, create_task_group
+from anyio.abc import TaskGroup
 
-from opsmesh.framework.dependencies import CallableDependency, DependencyScope
-from opsmesh.framework.drivers.models import (
-    HTTPRequest,
-    HTTPResponse,
+from opsmesh.framework.config import Config, Env
+from opsmesh.framework.dependencies import Dependent
+from opsmesh.framework.dependencies.params import (
+    ChannelParam,
+    DefaultParam,
+    DependParam,
+)
+from opsmesh.framework.exceptions import SkippedException
+from opsmesh.framework.lifecycle import LIFESPAN_FUNC, Lifespan
+from opsmesh.framework.typing import (
+    T_ConnectionHook,
+    T_DependencyCache,
+    T_DisconnectionHook,
+)
+from opsmesh.framework.utils import (
+    UNSET,
+    UnsetType,
+    flatten_exception_group,
+    run_coro_with_catch,
+)
+
+from .models import (
+    CookieTypes,
+    HeaderTypes,
     HTTPServerSetup,
+    HTTPVersion,
+    QueryTypes,
+    Request,
+    Response,
+    TimeoutTypes,
     WebSocketServerSetup,
 )
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
-    from opsmesh.framework.adapters import OpsMeshAdapter
-    from opsmesh.framework.plugin import OpsMeshPlugin
-
-T = TypeVar("T")
+    from opsmesh.framework.adapters import Adapter, Channel
 
 
-class DriverState(StrEnum):
-    NEW = "new"
-    STARTING = "starting"
-    RUNNING = "running"
-    STOPPING = "stopping"
-    STOPPED = "stopped"
+CONNECTION_HOOK_PARAMS = [DependParam, ChannelParam, DefaultParam]
 
 
-class OpsMeshDriver:
-    capabilities: frozenset[str] = frozenset()
+class Driver(abc.ABC):
+    """Base interface for framework drivers.
 
-    def __init__(self) -> None:
-        self.state = DriverState.NEW
-        self.adapters: dict[str, OpsMeshAdapter] = {}
-        self._startup: list[CallableDependency] = []
-        self._shutdown: list[CallableDependency] = []
-        self._hook_enabled: dict[int, Callable[[], bool]] = {}
-        self._hook_plugins: dict[int, OpsMeshPlugin] = {}
-        self._shutdown_allowed: set[int] = set()
-        self._tasks: set[asyncio.Task[Any]] = set()
-        self.task_errors: list[BaseException] = []
+    Drivers manage startup, shutdown, adapters, and channel lifecycles.
 
-    def _hook(self, fn: Callable[..., Any], target: list[CallableDependency]) -> Callable[..., Any]:
-        from opsmesh.framework.plugin import get_current_plugin
+    Args:
+        env: Runtime environment settings.
+        config: Framework configuration.
+    """
 
-        if self.state != DriverState.NEW:
-            raise RuntimeError("Lifecycle hooks must be registered before startup")
-        dependent = CallableDependency.parse(fn)
-        target.append(dependent)
-        if plugin := get_current_plugin():
-            self._hook_enabled[id(dependent)] = lambda: plugin.enabled
-            self._hook_plugins[id(dependent)] = plugin
+    _connection_hook: ClassVar[set[Dependent[Any]]] = set()
+    """Hooks invoked when a channel connects."""
+    _disconnection_hook: ClassVar[set[Dependent[Any]]] = set()
+    """Hooks invoked when a channel disconnects."""
 
-            def remove_hook() -> None:
-                if dependent in target:
-                    target.remove(dependent)
-                self._hook_enabled.pop(id(dependent), None)
-                self._hook_plugins.pop(id(dependent), None)
+    def __init__(self, env: Env, config: Config):
+        self.env: str = env.environment
+        """The runtime environment name."""
+        self.config: Config = config.model_copy(deep=True)
+        """The driver-owned deployment configuration snapshot."""
+        self._adapters: dict[str, Adapter] = {}
+        self._channels: dict[str, Channel] = {}
+        self._lifespan = Lifespan()
 
-            plugin.own(remove_hook)
-        return fn
+    def __repr__(self) -> str:
+        return (
+            f"Driver(type={self.type!r}, "
+            f"adapters={len(self._adapters)}, channels={len(self._channels)})"
+        )
 
-    async def _invoke_hook(self, scope: DependencyScope, hook: CallableDependency) -> None:
-        from opsmesh.framework.plugin.manager import _current_plugin
+    @property
+    def adapters(self) -> dict[str, "Adapter"]:
+        """A copy of the adapters owned by this driver instance."""
+        return self._adapters.copy()
 
-        token = _current_plugin.set(self._hook_plugins.get(id(hook)))
-        try:
-            await scope.invoke(hook)
-        finally:
-            _current_plugin.reset(token)
+    @property
+    def channels(self) -> dict[str, "Channel"]:
+        """A read-only snapshot of the currently connected channels."""
+        return self._channels.copy()
 
-    def on_startup(self, fn: Callable[..., Any]) -> Callable[..., Any]:
-        return self._hook(fn, self._startup)
+    @property
+    def task_group(self) -> TaskGroup:
+        """The task group active during the driver lifespan."""
+        return self._lifespan.task_group
 
-    def on_shutdown(self, fn: Callable[..., Any]) -> Callable[..., Any]:
-        return self._hook(fn, self._shutdown)
+    def register_adapter(self, adapter: type["Adapter"], **kwargs) -> None:
+        """Register a protocol adapter.
 
-    def register_adapter(
-        self, adapter_type: type[OpsMeshAdapter] | OpsMeshAdapter
-    ) -> OpsMeshAdapter:
-        from opsmesh.framework.adapters import OpsMeshAdapter
-        from opsmesh.framework.plugin import get_current_plugin
-
-        if self.state != DriverState.NEW:
-            raise RuntimeError("Adapters must be registered before startup")
-        missing = adapter_type.required_capabilities - self.capabilities
-        if missing:
-            raise ValueError(f"OpsMeshDriver lacks adapter capabilities: {sorted(missing)}")
-        adapter = adapter_type if isinstance(adapter_type, OpsMeshAdapter) else adapter_type(self)
-        if adapter.driver is not self:
-            raise ValueError("OpsMeshAdapter belongs to another driver")
-        if adapter.name in self.adapters:
-            raise ValueError(f"OpsMeshAdapter already registered: {adapter.name}")
-        owner = get_current_plugin()
-        adapter._bind_registration(owner)
-        self.adapters[adapter.name] = adapter
-        if owner is not None:
-
-            def remove_adapter() -> None:
-                if self.adapters.get(adapter.name) is adapter:
-                    self.adapters.pop(adapter.name)
-                adapter._remove_registration()
-
-            owner.own(remove_adapter)
-        return adapter
-
-    async def start(self) -> None:
-        if self.state != DriverState.NEW:
-            raise RuntimeError(f"Cannot start driver in state {self.state}")
-        self.state = DriverState.STARTING
-        self._shutdown_allowed = {
-            id(hook) for hook in self._shutdown if self._hook_enabled.get(id(hook), lambda: True)()
-        }
-        try:
-            async with DependencyScope({"driver": self}) as scope:
-                for hook in tuple(self._startup):
-                    if self._hook_enabled.get(id(hook), lambda: True)():
-                        await self._invoke_hook(scope, hook)
-        except BaseException:
-            await self.stop()
-            raise
-        self.state = DriverState.RUNNING
-
-    def create_task(
-        self,
-        coroutine: Coroutine[Any, Any, T],
-        *,
-        name: str | None = None,
-        inherit_context: bool = False,
-    ) -> asyncio.Task[T]:
-        if self.state not in (DriverState.STARTING, DriverState.RUNNING):
-            coroutine.close()
-            raise RuntimeError("OpsMeshDriver is not accepting background work")
-        context = contextvars.copy_context() if inherit_context else contextvars.Context()
-        task = asyncio.create_task(coroutine, name=name, context=context)
-        self._tasks.add(task)
-
-        def done(completed: asyncio.Task[Any]) -> None:
-            self._tasks.discard(completed)
-            if not completed.cancelled() and (error := completed.exception()) is not None:
-                self.task_errors.append(error)
-                del self.task_errors[:-100]
-
-        task.add_done_callback(done)
-        return task
-
-    async def stop(self) -> None:
-        if self.state in (DriverState.NEW, DriverState.STOPPED):
-            self.state = DriverState.STOPPED
+        Args:
+            adapter: The adapter class.
+            kwargs: Additional arguments passed to the adapter constructor.
+        """
+        name = adapter.get_name()
+        if name in self._adapters:
+            logger.debug(f'Adapter "{name}" already exists')
             return
-        if self.state == DriverState.STOPPING:
-            return
-        self.state = DriverState.STOPPING
-        errors: list[Exception] = []
-        tasks = tuple(self._tasks)
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        try:
-            async with DependencyScope({"driver": self}) as scope:
-                for hook in reversed(self._shutdown):
-                    if id(hook) not in self._shutdown_allowed:
-                        continue
-                    try:
-                        await self._invoke_hook(scope, hook)
-                    except Exception as exc:
-                        errors.append(exc)
-        finally:
-            self.state = DriverState.STOPPED
-        if errors:
-            raise ExceptionGroup("OpsMeshDriver shutdown failed", errors)
+        self._adapters[name] = adapter(self, **kwargs)
+        logger.debug(f'Succeeded to load adapter "{name}"')
+
+    @property
+    @abc.abstractmethod
+    def type(self) -> str:
+        """The driver type name."""
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def logger(self):
+        """The driver-specific logger."""
+        raise NotImplementedError
+
+    @property
+    def started(self) -> bool:
+        """Whether the driver owns an active lifecycle task group."""
+        return self._lifespan.started
+
+    async def startup(self) -> None:
+        """Start callbacks and background work in the owning host task."""
+        await self._lifespan.startup()
+
+    async def shutdown(self) -> None:
+        """Drain driver work before closing host-owned resources."""
+        await self._lifespan.shutdown()
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[OpsMeshDriver]:
-        await self.start()
+    async def lifespan(self) -> AsyncGenerator[None, None]:
+        """Own startup and shutdown within the same host task."""
+        await self.startup()
         try:
-            yield self
+            yield
         finally:
-            await self.stop()
+            await self.shutdown()
+
+    def on_ready(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
+        """Register a callback after startup callbacks have completed."""
+        return self._lifespan.on_ready(func)
+
+    def on_startup(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
+        """Register a startup callback."""
+        return self._lifespan.on_startup(func)
+
+    def on_shutdown(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
+        """Register a shutdown callback."""
+        return self._lifespan.on_shutdown(func)
+
+    def on_stopping(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
+        """Register work to drain before plugin resources are closed."""
+        return self._lifespan.on_stopping(func)
+
+    @classmethod
+    def on_connect(cls, func: T_ConnectionHook) -> T_ConnectionHook:
+        """Register a callback for successful channel connections.
+
+        Hook arguments:
+
+        channel: The connected channel instance.
+        """
+        from opsmesh.framework.plugins.registry import register_hook
+
+        return register_hook(cls._connection_hook, func, CONNECTION_HOOK_PARAMS)
+
+    @classmethod
+    def on_disconnect(cls, func: T_DisconnectionHook) -> T_DisconnectionHook:
+        """Register a callback for channel disconnections.
+
+        Hook arguments:
+
+        channel: The connected channel instance.
+        """
+        from opsmesh.framework.plugins.registry import register_hook
+
+        return register_hook(
+            cls._disconnection_hook, func, CONNECTION_HOOK_PARAMS
+        )
+
+    def connect(self, channel: "Channel") -> None:
+        """Register a channel after its connection succeeds."""
+        if channel.self_id in self._channels:
+            raise RuntimeError(
+                f"Duplicate channel connection with id {channel.self_id}"
+            )
+        self._channels[channel.self_id] = channel
+
+        if not self._connection_hook:
+            return
+
+        async def _run_hook(channel: "Channel") -> None:
+            dependency_cache: T_DependencyCache = {}
+            with CancelScope(shield=True):
+                try:
+                    async with (
+                        AsyncExitStack() as stack,
+                        create_task_group() as tg,
+                    ):
+                        for hook in self._connection_hook:
+                            tg.start_soon(
+                                run_coro_with_catch,
+                                hook(
+                                    channel=channel,
+                                    stack=stack,
+                                    dependency_cache=dependency_cache,
+                                ),
+                                (SkippedException,),
+                            )
+                except* Exception as exc_group:
+                    for exc in flatten_exception_group(exc_group):
+                        logger.error(
+                            "Error when running Channel connection hook:",
+                            exc_info=(type(exc), exc, exc.__traceback__),
+                        )
+
+        self.task_group.start_soon(_run_hook, channel)
+
+    def disconnect(self, channel: "Channel") -> None:
+        """Unregister a channel after its connection closes."""
+        if channel.self_id in self._channels:
+            del self._channels[channel.self_id]
+
+        if not self._disconnection_hook:
+            return
+
+        async def _run_hook(channel: "Channel") -> None:
+            dependency_cache: T_DependencyCache = {}
+            # shield cancellation to ensure channel disconnect hooks are always
+            # run
+            with CancelScope(shield=True):
+                try:
+                    async with (
+                        AsyncExitStack() as stack,
+                        create_task_group() as tg,
+                    ):
+                        for hook in self._disconnection_hook:
+                            tg.start_soon(
+                                run_coro_with_catch,
+                                hook(
+                                    channel=channel,
+                                    stack=stack,
+                                    dependency_cache=dependency_cache,
+                                ),
+                                (SkippedException,),
+                            )
+                except* Exception as exc_group:
+                    for exc in flatten_exception_group(exc_group):
+                        logger.error(
+                            "Error when running Channel disconnection hook:",
+                            exc_info=(type(exc), exc, exc.__traceback__),
+                        )
+
+        self.task_group.start_soon(_run_hook, channel)
 
 
-class HTTPClient(ABC):
-    @abstractmethod
-    async def request(self, request: HTTPRequest) -> HTTPResponse:
-        """Execute an HTTP request."""
+class Mixin(abc.ABC):
+    """Base interface for composable driver mixins."""
+
+    @property
+    @abc.abstractmethod
+    def type(self) -> str:
+        """The mixin type name."""
+        raise NotImplementedError
 
 
-class WebSocket(ABC):
-    @abstractmethod
-    async def send(self, data: str | bytes) -> None:
-        """Send a frame."""
-
-    @abstractmethod
-    async def receive(self) -> str | bytes:
-        """Receive a frame, raising on disconnection."""
-
-    @abstractmethod
-    async def close(self, code: int = 1000) -> None:
-        """Close the connection."""
+class ForwardMixin(Mixin):
+    """Base interface for outbound transport mixins."""
 
 
-class WebSocketClient(ABC):
-    @abstractmethod
-    def websocket(
+class ReverseMixin(Mixin):
+    """Base interface for inbound transport mixins."""
+
+
+class HTTPClientSession(abc.ABC):
+    """Base interface for HTTP client sessions."""
+
+    @abc.abstractmethod
+    def __init__(
         self,
-        url: str,
+        params: QueryTypes = None,
+        headers: HeaderTypes = None,
+        cookies: CookieTypes = None,
+        version: str | HTTPVersion = HTTPVersion.H11,
+        timeout: TimeoutTypes | UnsetType = UNSET,
+        proxy: str | None = None,
+    ):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def request(self, setup: Request) -> Response:
+        """Send an HTTP request."""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def stream_request(
+        self,
+        setup: Request,
         *,
-        headers: dict[str, str] | None = None,
-    ) -> AbstractAsyncContextManager[WebSocket]:
-        """Connect to a websocket with explicit resource ownership."""
+        chunk_size: int = 1024,
+    ) -> AsyncGenerator[Response, None]:
+        """Send an HTTP request with a streamed response."""
+        raise NotImplementedError
+        yield  # used for static type checking's generator detection
+
+    @abc.abstractmethod
+    async def setup(self) -> None:
+        """Initialize the client session."""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def close(self) -> None:
+        """Close the client session."""
+        raise NotImplementedError
+
+    async def __aenter__(self) -> Self:
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()
 
 
-class WebSocketServerConnection(WebSocket):
-    @abstractmethod
-    async def accept(self, subprotocol: str | None = None) -> None:
-        """Accept an incoming connection after the handler authenticates its request."""
+class HTTPClientMixin(ForwardMixin):
+    """Base interface for HTTP client mixins."""
+
+    @abc.abstractmethod
+    async def request(self, setup: Request) -> Response:
+        """Send an HTTP request."""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def stream_request(
+        self,
+        setup: Request,
+        *,
+        chunk_size: int = 1024,
+    ) -> AsyncGenerator[Response, None]:
+        """Send an HTTP request with a streamed response."""
+        raise NotImplementedError
+        yield  # used for static type checking's generator detection
+
+    @abc.abstractmethod
+    def get_session(
+        self,
+        params: QueryTypes = None,
+        headers: HeaderTypes = None,
+        cookies: CookieTypes = None,
+        version: str | HTTPVersion = HTTPVersion.H11,
+        timeout: TimeoutTypes | UnsetType = UNSET,
+        proxy: str | None = None,
+    ) -> HTTPClientSession:
+        """Create an HTTP client session."""
+        raise NotImplementedError
 
 
-class HTTPServer(ABC):
-    @abstractmethod
-    def setup_http_server(self, setup: HTTPServerSetup) -> None:
-        """Register an inbound HTTP handler before the server route table is frozen."""
+class ASGIMixin(ReverseMixin):
+    """Base interface for ASGI servers.
+
+    Wrap a backend web framework for use by protocol adapters.
+    """
 
     @property
-    @abstractmethod
-    def http_server_setups(self) -> tuple[HTTPServerSetup, ...]:
-        """Snapshot of registered, ownership-checked HTTP handlers."""
-
-    @abstractmethod
-    def freeze_server_routes(self) -> None:
-        """Prevent registrations after ASGI routes have been mounted."""
-
-
-class WebSocketServer(ABC):
-    @abstractmethod
-    def setup_websocket_server(self, setup: WebSocketServerSetup) -> None:
-        """Register an inbound WebSocket handler before mounting."""
+    @abc.abstractmethod
+    def server_app(self) -> Any:
+        """The driver application object."""
+        raise NotImplementedError
 
     @property
-    @abstractmethod
-    def websocket_server_setups(self) -> tuple[WebSocketServerSetup, ...]:
-        """Snapshot of registered, ownership-checked WebSocket handlers."""
+    @abc.abstractmethod
+    def asgi(self) -> Any:
+        """The driver's ASGI application."""
+        raise NotImplementedError
 
-    @abstractmethod
-    def freeze_server_routes(self) -> None:
-        """Prevent registrations after ASGI routes have been mounted."""
+    @abc.abstractmethod
+    def setup_http_server(self, setup: "HTTPServerSetup") -> None:
+        """Register an HTTP server route."""
+        raise NotImplementedError
+
+    def remove_http_server(self, method: str, path: str) -> bool:
+        """Remove a route previously registered by setup_http_server.
+
+        Returns:
+            Whether a matching route was removed.
+        """
+        raise NotImplementedError(
+            "This driver cannot remove HTTP server routes"
+        )
+
+    @abc.abstractmethod
+    def setup_websocket_server(self, setup: "WebSocketServerSetup") -> None:
+        """Register a WebSocket server route."""
+        raise NotImplementedError

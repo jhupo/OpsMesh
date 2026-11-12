@@ -1,0 +1,18 @@
+services:
+  opsmesh:
+    image: ${OPSMESH_IMAGE:?Set OPSMESH_IMAGE to your binary-based image}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    env_file: ../opsmesh.env
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - ../host.json:/etc/opsmesh/host.json:ro
+      - opsmesh-data:/var/lib/opsmesh
+    tmpfs: [/tmp]
+
+volumes:
+  opsmesh-data:

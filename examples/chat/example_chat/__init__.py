@@ -1,0 +1,30 @@
+"""Load the chat plugin's dependencies and declare its entrances."""
+
+from pathlib import Path
+
+from opsmesh.framework.plugins import PluginMetadata, require
+
+channels = require("opsmesh_channels")
+execution = require("opsmesh_execution")
+database = require("opsmesh_database")
+conversations = require("conversation_support")
+
+# Import declarations only after their dependency plugins are loaded.
+from . import callbacks, commands, connections, http  # noqa: E402, F401
+from .config import ChatSettings  # noqa: E402
+from .models import ChatBase  # noqa: E402
+
+__plugin_meta__ = PluginMetadata(
+    name="OpsMesh Chat Agent",
+    description="A native SDK agent with HTTP and bot command entrances",
+    usage="POST /plugins/example_chat/chat; persistent sessions and commands.",
+    type="agent",
+    config=ChatSettings,
+    extra={
+        "database": database.DatabaseSchema(
+            ChatBase.metadata,
+            Path(__file__).with_name("migrations"),
+            "0001_example_chat",
+        )
+    },
+)
