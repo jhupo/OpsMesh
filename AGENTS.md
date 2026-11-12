@@ -1,15 +1,11 @@
-# Working on opsmesh
+# Agents SDK 技能
 
-Read `docs/README.md`, `docs/design/architecture.md` and `docs/roadmap.md` before implementing a feature. The repository contains a working development implementation. Check the coverage matrix and tests; do not treat every target design item as validated.
+按当前任务读取对应 SKILL.md；目标插件设计见 docs/plugin-architecture.md，不能把设计当作已实现代码。
 
-- Use Python src layout and the existing uv lockfile. Bootstrap is the composition root.
-- Read `docs/design/source-layout.md` for file ownership. Concrete bot protocols and Run worker transports belong in `infrastructure/bots` and `infrastructure/run_workers`; bootstrap supplies their deployment configuration. Application use cases and background coordination belong in `application` and receive public service ports from bootstrap. Framework abstractions must not import platform infrastructure or application assembly. CLI implementations belong in `entrypoints/cli`.
-- Modules own their data and expose `api.py`/`events.py`; do not import another module's internal code. Framework code must not depend on platform business modules.
-- Platform-owned state, authorization and core use cases must work without business plugins. Core modules and entrypoints must not import `opsmesh.plugins`; optional plugins consume public module services through dependency providers. Bot-to-Agent bindings belong to bots; durable schedules belong to scheduling.
-- SDK-specific types and imports belong to their backend package. Plugin target APIs follow the NoneBot-style design; do not add a competing plugin registrar without an ADR.
-- Keep Session history, Run checkpoints, sandbox session state, workspace snapshots and learned memory distinct.
-- Preserve local user/department/role authentication scope. External OIDC/SSO and Web UI implementation are outside the current scope.
-- Add meaningful tests for actual behavior, update implementation status, and do not create successful no-op service stubs.
-- Run `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run pytest`, `uv run python scripts/check_repository.py` and `uv build` for relevant implementation work.
-- Model/network integration tests must be explicit and must not run by default in CI. SDK surface checks must not call paid APIs.
-- Never commit credentials, runtime state, generated workspaces or model conversation data.
+| 技能 | 说明 | 何时使用 |
+|---|---|---|
+| [opsmesh-agents-integration](.agents/skills/opsmesh-agents-integration/SKILL.md) | 原生 Agent、插件边界与上下文 | 设计或修改智能体插件、模型接入及 SDK 依赖时 |
+| [opsmesh-agents-runtime](.agents/skills/opsmesh-agents-runtime/SKILL.md) | Runner、流式、Session 和原生审批状态 | 设计或修改 execution 接入及调用生命周期时 |
+| [opsmesh-agents-tools](.agents/skills/opsmesh-agents-tools/SKILL.md) | 原生工具、技能引用、Guardrails 和 MCP | 编写工具插件、接入技能或 MCP 时 |
+| [opsmesh-agents-sandbox](.agents/skills/opsmesh-agents-sandbox/SKILL.md) | SandboxAgent、文件来源和资源生命周期 | 设计或修改沙箱与技能挂载时 |
+| [opsmesh-agents-verification](.agents/skills/opsmesh-agents-verification/SKILL.md) | Usage、Trace 与受影响测试 | 修改观测、统计或 SDK 兼容性时 |

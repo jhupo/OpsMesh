@@ -1,31 +1,26 @@
-# Local configuration and secrets
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-# Python and tools
+.venv/
+.venv-linux/
+dist-linux/
 __pycache__/
 *.py[cod]
 *.egg-info/
-.venv/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
 .coverage
-.coverage.*
 htmlcov/
-dist/
 build/
-# Local runtime data
-.opsmesh/
-var/
-*.sqlite
-*.sqlite3
-*.log
-coverage.xml
-# Editors and OS
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
+dist/
+.data/
+.env
+.env.*
+*.pem
+*.key
+!.env.example
+!deploy/test.env.example
+.ruff-infra-report.txt
+
+backup/
+data/
+/deploy/host.json
+/deploy/opsmesh.env
+/.build-venv/

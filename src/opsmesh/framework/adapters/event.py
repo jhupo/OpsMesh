@@ -1,83 +1,76 @@
-"""Protocol event contracts; bot, message, user and session are optional."""
+"""Event contracts for adapter implementations."""
 
-from __future__ import annotations
+import abc
+from typing import TypeVar
 
-from datetime import UTC, datetime
-from typing import Literal
-from uuid import uuid4
+from pydantic import BaseModel, ConfigDict
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from opsmesh.framework.messages.message import Message
 
-from opsmesh.framework.exception import ContextUnavailableError
-
-from .message import OpsMeshMessage
+E = TypeVar("E", bound="Event")
 
 
-class OpsMeshEvent(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    type: str
-    id: str = Field(default_factory=lambda: uuid4().hex)
-    source: str = "local"
-    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    payload: dict[str, JsonValue] = Field(default_factory=dict)
+class Event(abc.ABC, BaseModel):
+    """Base event interface exposing common event information."""
 
-    @field_validator("occurred_at")
-    @classmethod
-    def aware_timestamp(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            raise ValueError("Event timestamps must include a timezone")
-        return value.astimezone(UTC)
+    model_config = ConfigDict(extra="allow")
 
-    @property
-    def event_id(self) -> str:
-        return self.id
-
+    @abc.abstractmethod
     def get_type(self) -> str:
-        return self.type
+        """Return the event type, usually one of the four built-in types."""
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def get_event_name(self) -> str:
-        return self.type
+        """Return the event name."""
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def get_event_description(self) -> str:
-        return f"{self.type} ({self.id})"
+        """Return a human-readable description of the event."""
+        raise NotImplementedError
 
-    def get_message(self) -> OpsMeshMessage:
-        raise ContextUnavailableError(f"{self.type} has no message")
+    def __str__(self) -> str:
+        return f"[{self.get_event_name()}]: {self.get_event_description()}"
+
+    def get_log_string(self) -> str:
+        """Return the event's log representation.
+
+        The default implementation is usually sufficient. Raise
+        NoLogException
+        to suppress the normal event log.
+
+        Raises:
+            NoLogException: The event should not produce a normal event log.
+        """
+        return f"[{self.get_event_name()}]: {self.get_event_description()}"
+
+    @abc.abstractmethod
+    def get_user_id(self) -> str:
+        """Return the subject identifier, usually the user ID."""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_session_id(self) -> str:
+        """Return the conversation identifier used to group related events.
+
+        It is typically derived from user and group identifiers.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_message(self) -> "Message":
+        """Return the event's message content."""
+        raise NotImplementedError
 
     def get_plaintext(self) -> str:
+        """Return the plain-text content of the event.
+
+        By default this delegates to get_message().extract_plain_text().
+        """
         return self.get_message().extract_plain_text()
 
-    def get_user_id(self) -> str:
-        raise ContextUnavailableError(f"{self.type} has no user")
-
-    def get_session_id(self) -> str:
-        raise ContextUnavailableError(f"{self.type} has no session")
-
+    @abc.abstractmethod
     def is_tome(self) -> bool:
-        return False
-
-
-class MessageEvent(OpsMeshEvent):
-    type: str = "message"
-    message: OpsMeshMessage
-    user_id: str
-    session_id: str
-    to_me: bool = False
-
-    def get_message(self) -> OpsMeshMessage:
-        return self.message
-
-    def get_user_id(self) -> str:
-        return self.user_id
-
-    def get_session_id(self) -> str:
-        return self.session_id
-
-    def is_tome(self) -> bool:
-        return self.to_me
-
-
-class TimerEvent(OpsMeshEvent):
-    type: Literal["timer.fired"] = "timer.fired"
-    job_id: str
-    scheduled_at: datetime
+        """Return whether this event is directed to the current channel."""
+        raise NotImplementedError
