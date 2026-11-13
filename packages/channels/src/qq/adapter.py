@@ -7,10 +7,10 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import partial
 from types import ModuleType
 from typing import Any
-from urllib.parse import quote
 
 import anyio
 import httpx
@@ -23,15 +23,19 @@ from opsmesh.drivers import Driver
 from opsmesh.plugins.channels._queue import EventQueue
 from opsmesh.plugins.channels._validation import connection_segment
 from opsmesh.plugins.channels.context import UserContext
+from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import (
     _current_plugin,
     get_plugin_by_module_name,
     track_registration,
 )
 
+from ..attachments import AttachmentCollection, AttachmentError
+from ..operations import UnsupportedOperation
 from ..requests import read_body
 from ..server import Server
-from .channel import QQChannel, outgoing_text
+from .attachments import read as read_attachment
+from .channel import QQChannel
 from .client import QQClient
 from .config import QQConnectionSettings, QQSettings
 from .errors import (
@@ -40,8 +44,10 @@ from .errors import (
     QQProtocolError,
     QQSendError,
 )
-from .events import QQMessageEvent, parse_callback
+from .events import QQMessageEvent, QQNoticeEvent, parse_callback
+from .groups import QQGroups
 from .security import QQSigner
+from .sending import QQSender
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +59,17 @@ class _WorkItem:
     """One verified event waiting for framework dispatch."""
 
     channel: QQChannel
-    event: QQMessageEvent
-    caller: UserContext
+    event: QQMessageEvent | QQNoticeEvent
+    caller: UserContext | None
+    generation: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        owner = self.channel._owner
+        object.__setattr__(
+            self,
+            "generation",
+            owner.generation if isinstance(owner, Plugin) else 0,
+        )
 
 
 def _json_response(
@@ -160,6 +175,11 @@ class QQAdapter(Adapter):
         )
         self._declared[self_id] = channel
         track_registration(lambda: self._remove(channel), owner)
+        if isinstance(plugin, Plugin):
+            self.driver.on_ready(
+                lambda: self._activate(channel) if self._started else None
+            )
+            self.driver.on_shutdown(lambda: self._deactivate(channel))
         if self._started:
             self._activate(channel)
         return channel
@@ -168,6 +188,13 @@ class QQAdapter(Adapter):
         """Open shared resources and activate declared connections."""
         if self._started:
             return
+        if get_plugin_by_module_name(__name__) is not None:
+            from .config import get_settings
+
+            if self.settings != get_settings():
+                raise QQConfigurationError(
+                    "Shared QQ protocol settings changed; restart the host"
+                )
         if not self.driver.started:
             raise QQConfigurationError(
                 "The QQ channel requires a running runtime lifespan"
@@ -208,7 +235,6 @@ class QQAdapter(Adapter):
             return
         self.stop_accepting()
         await self.drain()
-        self._started = False
         for channel in list(self._declared.values()):
             if channel.self_id in self.channels:
                 try:
@@ -222,6 +248,7 @@ class QQAdapter(Adapter):
         self._signers.clear()
         self._secrets.clear()
         await self._client.close()
+        self._started = False
 
     async def _call(
         self, channel: QQChannel, operation: str, **data: Any
@@ -232,7 +259,21 @@ class QQAdapter(Adapter):
             return await self._send_message(
                 channel, data.get("event"), data.get("message")
             )
-        raise QQError(f"Unsupported QQ channel operation: {operation}")
+        if operation in QQGroups.operations:
+            from opsmesh.plugins.registry import get_current_plugin
+
+            if (
+                isinstance(channel._owner, Plugin)
+                and get_current_plugin() is not channel._owner
+            ):
+                raise PermissionError("QQ connection belongs to another plugin")
+            if not channel.ready:
+                raise QQSendError("QQ connection is not ready")
+            groups = QQGroups(self._client, channel, self._read_secret(channel))
+            return await getattr(groups, operation)(**data)
+        raise UnsupportedOperation(
+            f"Unsupported QQ channel operation: {operation}"
+        )
 
     def _resolve_owner(self, owner: Any):
         plugin = _current_plugin.get()
@@ -250,6 +291,14 @@ class QQAdapter(Adapter):
         return plugin
 
     def _activate(self, channel: QQChannel) -> None:
+        if channel.self_id in self.channels:
+            return
+        owner = channel._owner
+        if isinstance(owner, Plugin) and owner.status not in (
+            PluginStatus.STARTING,
+            PluginStatus.READY,
+        ):
+            return
         self._register_route(channel)
         try:
             secret = self._read_secret(channel)
@@ -269,6 +318,9 @@ class QQAdapter(Adapter):
 
     def _remove(self, channel: QQChannel) -> None:
         self._declared.pop(channel.self_id, None)
+        self._deactivate(channel)
+
+    def _deactivate(self, channel: QQChannel) -> None:
         self._signers.pop(channel.self_id, None)
         self._secrets.pop(channel.self_id, None)
         self._client.forget(channel.self_id)
@@ -337,8 +389,15 @@ class QQAdapter(Adapter):
         if payload.get("op") != 0:
             return _json_response(200, {"status": "ignored"})
         try:
-            event = parse_callback(payload, connection_id=channel.self_id)
-        except QQProtocolError:
+            event = parse_callback(
+                payload,
+                connection_id=channel.self_id,
+                attachments=AttachmentCollection(self.settings.attachments),
+                reader=partial(
+                    read_attachment, settings=self.settings.attachments
+                ),
+            )
+        except (QQProtocolError, AttachmentError):
             return _json_response(400, {"error": "invalid payload"})
         if event is None:
             return _json_response(200, {"status": "ignored"})
@@ -347,10 +406,14 @@ class QQAdapter(Adapter):
         if not channel.first_delivery(event.event_id):
             return _json_response(200, {"status": "duplicate"})
 
-        caller = UserContext(
-            id=event.get_user_id(),
-            name=event.user_name or event.get_user_id(),
-            groups=event.group_ids,
+        caller = (
+            UserContext(
+                id=event.get_user_id(),
+                name=event.user_name or event.get_user_id(),
+                groups=event.group_ids,
+            )
+            if isinstance(event, QQMessageEvent)
+            else None
         )
         accepted = self._queue.put_nowait(_WorkItem(channel, event, caller))
         if not accepted:
@@ -401,6 +464,16 @@ class QQAdapter(Adapter):
         )
 
     async def _dispatch(self, item: _WorkItem) -> None:
+        owner = item.channel._owner
+        expired = (
+            isinstance(owner, Plugin) and owner.generation != item.generation
+        )
+        if expired or not item.channel.owner_ready or not item.channel.ready:
+            logger.info(
+                "Cancelled queued QQ event %s: owner stopped",
+                item.event.message_id,
+            )
+            return
         try:
             result = await dispatch_event(
                 item.channel,
@@ -425,31 +498,8 @@ class QQAdapter(Adapter):
             raise QQSendError(f"QQ connection {channel.self_id} is not ready")
         if not isinstance(event, QQMessageEvent):
             raise QQSendError("QQ replies require a QQMessageEvent")
-        text = outgoing_text(message, channel.settings.max_message_length)
-        token = await self._client.access_token(
-            channel.self_id,
-            channel.settings.app_id,
-            self._secrets[channel.self_id],
-        )
-        base = (
-            self.settings.sandbox_api_base
-            if channel.settings.sandbox
-            else self.settings.api_base
-        )
-        sequence = channel.next_sequence(event.message_id)
-        if event.group_id is not None:
-            target = (
-                f"{base}/v2/groups/{quote(event.group_id, safe='')}/messages"
-            )
-        else:
-            target = f"{base}/v2/users/{quote(event.user_id, safe='')}/messages"
-        return await self._client.post_json(
-            target,
-            {
-                "content": text,
-                "msg_type": 0,
-                "msg_id": event.message_id,
-                "msg_seq": sequence,
-            },
-            headers={"Authorization": f"QQBot {token}"},
-        )
+        if event.connection_id != channel.self_id:
+            raise QQSendError("QQ reply event belongs to another connection")
+        return await QQSender(
+            self._client, channel, self._secrets[channel.self_id]
+        ).send(event, message)

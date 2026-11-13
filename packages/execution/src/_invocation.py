@@ -13,9 +13,11 @@ from agents import (
     RunState,
 )
 
+from opsmesh.plugins.invocation import plugin_call
+
 from ._hooks import ExecutionHooks
 from ._lifecycle import get_runtime
-from ._streaming import close_stream, was_cancelled
+from ._streaming import close_stream, settle_stream, was_cancelled
 from ._tracing import TraceContext
 from .callbacks import ExecutionCallbacks
 
@@ -50,10 +52,12 @@ class Invocation:
         self.result: RunResult | RunResultStreaming | None = None
         self.trace_id: str | None = None
         self._trace_entered = False
-        self._active = None
+        self._call = plugin_call(self.callbacks.plugin_id)
+        self._call_entered = False
 
     async def __aenter__(self):
-        self._active = self.runtime.calls.begin()
+        call = await self._call.__aenter__()
+        self._call_entered = True
         try:
             self.trace_id = self._trace.__enter__()
             self._trace_entered = True
@@ -65,6 +69,7 @@ class Invocation:
                     "trace_id": self.trace_id,
                 },
                 self.context,
+                call=call,
             )
         except BaseException as error:
             await self.__aexit__(type(error), error, error.__traceback__)
@@ -98,6 +103,12 @@ class Invocation:
                     except BaseException as cleanup_error:
                         failure = self._combine(failure, cleanup_error)
                         notification_error = failure
+                    finally:
+                        try:
+                            await settle_stream(self.result)
+                        except BaseException as cleanup_error:
+                            failure = self._combine(failure, cleanup_error)
+                            notification_error = failure
                 try:
                     with anyio.fail_after(timeout, shield=True):
                         await self.callbacks.close(failure)
@@ -125,7 +136,13 @@ class Invocation:
                         failure.__traceback__ if failure else None,
                     )
             finally:
-                self.runtime.calls.end(self._active)
+                if self._call_entered:
+                    self._call_entered = False
+                    await self._call.__aexit__(
+                        type(failure) if failure else None,
+                        failure,
+                        failure.__traceback__ if failure else None,
+                    )
         if error is None and failure is not None:
             raise failure
         return False

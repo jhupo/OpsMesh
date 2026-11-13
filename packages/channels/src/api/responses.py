@@ -68,10 +68,20 @@ def encode_response(
 ) -> tuple[Response, bool]:
     """Encode the declared return contract or transfer a native response."""
     if isinstance(result, Response):
-        if not registration.allow_response:
+        if not registration.allow_response or not isinstance(
+            result, registration.response_types
+        ):
             raise TypeError("The route does not declare a native Response")
         return result, isinstance(result, StreamingResponse)
     adapter = registration.response_adapter
+    if registration.message_handlers:
+        from pydantic import BaseModel
+
+        return json_response(
+            result.model_dump(mode="json")
+            if isinstance(result, BaseModel)
+            else result
+        ), False
     if adapter is None:
         raise TypeError("The route must return a native Response")
     value = adapter.validate_python(result)

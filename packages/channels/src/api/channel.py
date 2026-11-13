@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, contextmanager
+from functools import partial
 from typing import Any
 
 import anyio
@@ -18,19 +19,23 @@ from starlette.routing import BaseRoute
 from opsmesh.adapters import Channel
 from opsmesh.dispatch import dispatch_event
 from opsmesh.drivers import get_driver
+from opsmesh.plugins.invocation import PluginUnavailable
 from opsmesh.utils import flatten_exception_group
 
+from ..attachments import AttachmentCollection, AttachmentError
 from ..requests import read_body
 from ..server import Server
 from .adapter import APIAdapter
+from .attachments import AttachmentUploads
+from .attachments import mount as mount_attachments
 from .auth import Authenticator, Principal
 from .config import Settings
 from .errors import (
     APIConfigurationError,
     HTTPError,
 )
-from .events import HTTPEvent
-from .messages import APIMessage
+from .events import APIMessageEvent, HTTPEvent
+from .messages import from_request
 from .responses import (
     encode_response,
     error_response,
@@ -49,10 +54,14 @@ _JSON_CONTENT_TYPES = frozenset({"application/json"})
 class APIChannel(Channel):
     """Mount plugin routes on the shared HTTP transport and invoke them."""
 
+    receive_types = frozenset({"text", "image", "file", "audio", "video"})
+    send_types = receive_types
+
     def __init__(self, settings: Settings, router: APIRouter) -> None:
         """Create a stopped service bound to a route registry."""
         self.self_id = "api"
         self.settings = settings
+        self.uploads = AttachmentUploads(settings.attachments)
         self._router = router
         self.app = FastAPI(
             docs_url=None,
@@ -103,6 +112,7 @@ class APIChannel(Channel):
         self._started = True
         try:
             self._mount_internal_routes()
+            mount_attachments(self)
             for registration in self._router.registrations:
                 self.mount_route(registration)
             self.adapter.connect(self)
@@ -132,6 +142,7 @@ class APIChannel(Channel):
         await self.drain()
         self._unmount_all()
         self._authenticator = None
+        self.uploads.clear()
         if self._connected:
             self.adapter.disconnect(self)
             self._connected = False
@@ -232,13 +243,19 @@ class APIChannel(Channel):
         try:
             token = stream_error_scope(self.settings.stream_error_message)
             try:
-                return await self._invoke(registration, request, principal)
+                return await self._invoke_request(
+                    registration, request, principal
+                )
             finally:
                 reset_stream_error_scope(token)
         except (HTTPException, ClientDisconnect):
             raise
+        except (AttachmentError, ValidationError):
+            return error_response(HTTPError(422, "Invalid message attachments"))
         except HTTPError as error:
             return error_response(error)
+        except PluginUnavailable:
+            return error_response(HTTPError(503, "route is not ready"))
         except TimeoutError:
             return error_response(HTTPError(504, "request timed out"))
         except anyio.get_cancelled_exc_class():
@@ -247,27 +264,45 @@ class APIChannel(Channel):
             logger.exception('API route "%s" failed', registration.name)
             return error_response(HTTPError(500, "internal server error"))
 
-    async def _invoke(
+    async def _invoke_request(
         self,
         registration: RouteRegistration,
         request: Request,
         principal: Principal,
     ) -> Response:
-        body = await self._parse_body(registration, request)
-        event = HTTPEvent(
-            request=request,
-            payload=body,
-            message=APIMessage.from_payload(body),
-            route_name=registration.name,
-            user_id=principal.caller.id,
-        )
         stack = AsyncExitStack()
         await stack.__aenter__()
         resources = StreamLease(stack)
+        event = None
         try:
+            from opsmesh.plugins.invocation import hold_plugin
+
+            admitted_call = hold_plugin(registration.owner, stack)
+            body = await self._parse_body(registration, request)
+            files = AttachmentCollection(self.settings.attachments)
+            values = dict(
+                request=request,
+                payload=body,
+                attachments=files,
+                route_name=registration.name,
+                installation_id=registration.installation_id,
+                user_id=principal.caller.id,
+            )
+            if registration.message_handlers:
+                message = from_request(
+                    body,
+                    files,
+                    partial(
+                        self.uploads.resolve,
+                        (registration.installation_id, principal.caller.id),
+                    ),
+                )
+                event = APIMessageEvent(message=message, **values)
+            else:
+                event = HTTPEvent(**values)
             with anyio.fail_after(self.settings.request_timeout_seconds):
                 outcome = await self._dispatch(
-                    registration, event, principal, stack
+                    registration, event, principal, stack, admitted_call
                 )
             if outcome.errors:
                 error = outcome.errors[0]
@@ -277,18 +312,34 @@ class APIChannel(Channel):
                         raise leaves[0]
                 raise error
             if not event.replied:
-                raise HTTPError(403, "request was not handled")
+                await resources.close()
+                return Response(status_code=204)
             result = event.result
             response, streamed = encode_response(registration, result)
         except BaseException as error:
-            await resources.release(event.result, error)
+            await resources.release(
+                event.result if event is not None else None, error
+            )
             raise
         if streamed:
-            return resources.transfer(response)
+            from opsmesh.plugins.invocation import invocation_scope
+            from opsmesh.plugins.registry import plugin_scope
+
+            @contextmanager
+            def execution_scope():
+                with (
+                    plugin_scope(registration.owner),
+                    invocation_scope(admitted_call),
+                ):
+                    yield
+
+            return resources.transfer(response, execution_scope=execution_scope)
         await resources.close()
         return response
 
-    async def _dispatch(self, registration, event, principal, stack):
+    async def _dispatch(
+        self, registration, event, principal, stack, admitted_call
+    ):
         """Cancel in-flight framework work when the HTTP peer disconnects."""
         disconnected = False
         outcome = None
@@ -310,6 +361,7 @@ class APIChannel(Channel):
                 invocation_context=principal.caller,
                 stack=stack,
                 matcher_filter=registration.accepts_matcher,
+                admitted_call=admitted_call,
             )
             tasks.cancel_scope.cancel()
         if disconnected:
@@ -342,7 +394,7 @@ class APIChannel(Channel):
         if model is None:
             return payload
         try:
-            return model.model_validate(payload).model_dump(mode="json")
+            return model.model_validate(payload)
         except ValidationError:
             raise HTTPError(
                 422, "request body does not match the contract"

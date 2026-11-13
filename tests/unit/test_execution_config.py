@@ -15,7 +15,6 @@ def test_defaults_keep_tracing_disabled():
     assert settings.tracing.destination == "disabled"
     assert settings.tracing.include_sensitive_data is False
     assert settings.cleanup_timeout_seconds == 10.0
-    assert settings.shutdown_timeout_seconds == 10.0
 
 
 def test_removed_statistics_configuration_is_rejected():

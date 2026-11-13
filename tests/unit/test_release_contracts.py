@@ -10,22 +10,22 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import MetaData
 
 from opsmesh.plugins.database import migrations, schema
+from opsmesh.plugins.storage import PluginRecord, PluginStorage
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_conversion_history_belongs_to_database_plugin():
-    directory = Path(schema.__file__).parent / "_legacy_migrations/execution"
+def test_conversion_history_belongs_to_maintenance_tool():
+    directory = ROOT / "tools/database_history/migrations/execution"
     source = schema.MigrationSource(
         "execution", directory, "0001_execution_observations"
     )
 
     assert migrations.revision_graph(source).get_heads() == [source.head]
     assert list(directory.glob("*.py"))
-    assert directory.parent.parent == Path(schema.__file__).parent
+    assert directory.parent.parent == ROOT / "tools/database_history"
 
 
 def test_runtime_bundle_removes_only_host_owned_files(tmp_path, monkeypatch):
@@ -105,7 +105,7 @@ def test_smoke_declares_independent_bytecode_migrations(tmp_path, monkeypatch):
         name = plugin["module"]
         directory = tmp_path / name / "migrations"
         schema.registry.add(
-            name, schema.DatabaseSchema(MetaData(), directory, "initial")
+            name, schema.DatabaseSchema(directory, "initial")
         )
 
     migrations.validate_migrations()
@@ -137,12 +137,15 @@ def test_smoke_manifest_keeps_execution_without_database(
         maintenance_only=True,
     )
     manifest = json.loads((tmp_path / "host.json").read_text())
-    modules = {plugin["module"] for plugin in manifest["plugins"]}
+    with PluginStorage(Path(manifest["data_dir"])) as storage:
+        records = storage.list()
+    modules = {record.module for record in records}
 
     assert "opsmesh.plugins.execution" in modules
     assert ("opsmesh.plugins.database" in modules) == with_database
     assert any("release_probe:verify" in command for command in commands)
-    assert str(plugin_path) in manifest["plugin_paths"]
+    assert str(plugin_path) in {record.directory for record in records}
+    assert "plugins" not in manifest
 
 
 def test_release_execution_probe_needs_no_database(tmp_path):
@@ -205,7 +208,7 @@ def test_migrations_accept_bytecode_without_source(tmp_path, monkeypatch):
     )
     revision.unlink()
     schema.registry.add(
-        "test", schema.DatabaseSchema(MetaData(), tmp_path, "initial")
+        "test", schema.DatabaseSchema(tmp_path, "initial")
     )
     migrations.validate_migrations()
 
@@ -232,14 +235,17 @@ async def check():
         )
         source.unlink()
     manifest = tmp_path / "host.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plugin_paths": [str(tmp_path)],
-                "plugins": [{"module": "release_test", "required": True}],
-            }
+    manifest.write_text(json.dumps({"data_dir": str(tmp_path / "data")}))
+    with PluginStorage(tmp_path / "data") as storage:
+        storage.save(
+            PluginRecord(
+                module="release_test",
+                directory=str(tmp_path),
+                enabled=True,
+                autoload=True,
+                required=True,
+            )
         )
-    )
     result = subprocess.run(
         [
             sys.executable,
@@ -264,13 +270,7 @@ def test_command_cannot_import_an_undeclared_plugin(tmp_path):
         f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
     )
     manifest = tmp_path / "host.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plugin_paths": [str(tmp_path)],
-            }
-        )
-    )
+    manifest.write_text(json.dumps({"data_dir": str(tmp_path / "data")}))
     result = subprocess.run(
         [
             sys.executable,

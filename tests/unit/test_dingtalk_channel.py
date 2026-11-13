@@ -15,12 +15,13 @@ from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
     DingTalkConfigurationError,
     DingTalkConnectionSettings,
-    DingTalkMessage,
     DingTalkProtocolError,
     DingTalkSendError,
     DingTalkSettings,
     parse_callback,
 )
+from opsmesh.plugins.channels.messages import Message
+from opsmesh.plugins.model import PluginStatus
 
 SECRET = "dingtalk-test-secret"
 
@@ -32,6 +33,7 @@ class FakePlugin:
         self.ready = True
         self.id_ = id_
         self.cleanups = []
+        self.status = PluginStatus.LOADED
 
 
 @contextmanager
@@ -59,7 +61,15 @@ class FakeHTTP:
         self.calls = []
         self.closed = False
 
-    async def post(self, url, *, json=None, headers=None, timeout=None):
+    async def post(
+        self,
+        url,
+        *,
+        json=None,
+        headers=None,
+        timeout=None,
+        follow_redirects=False,
+    ):
         self.calls.append({"url": url, "json": json, "headers": headers or {}})
         if not self.responses:
             raise AssertionError("unexpected vendor request")
@@ -202,7 +212,7 @@ def test_event_mapping_namespaces_callers_and_sessions():
 
 
 def test_message_construction():
-    message = DingTalkMessage("hello")
+    message = Message("hello")
     assert message.extract_plain_text() == "hello"
 
 
@@ -315,7 +325,50 @@ async def test_reply_uses_session_webhook(monkeypatch):
             "msgtype": "text",
             "text": {"content": "reply"},
         }
+        foreign = event.model_copy(update={"connection_id": "other-bot"})
+        with pytest.raises(DingTalkSendError, match="another connection"):
+            await channel.send(foreign, "reply")
         await adapter.shutdown()
+
+
+@pytest.mark.anyio
+async def test_channel_send_dispatches_attachment_to_media_sender(monkeypatch):
+    import httpx
+
+    from opsmesh.plugins.channels import Attachment, MessageSegment
+
+    monkeypatch.setenv("DINGTALK_SECRET", SECRET)
+    calls = []
+
+    def respond(request):
+        calls.append(request.url.path)
+        if request.url.path.endswith("accessToken"):
+            return httpx.Response(200, json={"accessToken": "token"})
+        if request.url.path.endswith("/media/upload"):
+            return httpx.Response(200, json={"media_id": "@media"})
+        assert json.loads(request.content)["msgKey"] == "sampleFile"
+        return httpx.Response(200, json={"processQueryKey": "sent-file"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        adapter = make_adapter(http)
+        channel = declare(adapter, FakePlugin("support"))
+        async with adapter.driver.lifespan():
+            await adapter.startup()
+            await open_streams(adapter)
+            payload = direct_payload()
+            payload["senderStaffId"] = "staff"
+            event = parse_callback(payload, connection_id=channel.self_id)
+            attachment = event.attachments.add_bytes(
+                Attachment.create("report.txt", "text/plain"), b"report"
+            )
+            result = await channel.send(
+                event, MessageSegment.attachment(attachment)
+            )
+            assert result == {"processQueryKey": "sent-file"}
+            assert len(calls) == 3
+            await adapter.shutdown()
 
 
 @pytest.mark.anyio
@@ -400,11 +453,25 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
+    from types import ModuleType
+
     from opsmesh.dispatch import dispatch_event
     from opsmesh.matchers import Matcher, MatcherSource
+    from opsmesh.plugins.model import Plugin
 
     adapter = make_adapter()
-    owner = FakePlugin("support")
+    owner = Plugin(
+        name="support",
+        module=ModuleType("support"),
+        module_name="support",
+        manager=None,
+        status=PluginStatus.READY,
+    )
+    monkeypatch.setattr(
+        registry,
+        "get_plugin",
+        lambda name: owner if name == "support" else None,
+    )
     channel = declare(adapter, owner)
     event = parse_callback(direct_payload(), connection_id=channel.self_id)
     calls = []
@@ -430,7 +497,7 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
             channel, event, matcher_filter=channel.accepts_matcher
         )
         result.raise_for_errors()
-        owner.ready = False
+        owner.status = PluginStatus.STOPPING
         result = await dispatch_event(
             channel, event, matcher_filter=channel.accepts_matcher
         )

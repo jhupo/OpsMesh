@@ -8,7 +8,9 @@ from typing import Any
 
 import anyio
 import httpx
+from pydantic import JsonValue
 
+from ..operations import OperationError, operation_response
 from .config import QQSettings
 from .errors import QQSendError
 
@@ -96,10 +98,11 @@ class QQClient:
                 json=payload,
                 headers=headers or {},
                 timeout=self.settings.request_timeout,
+                follow_redirects=False,
             )
         except httpx.HTTPError as error:
             raise QQSendError("QQ vendor request failed") from error
-        if response.status_code >= 400:
+        if not 200 <= response.status_code < 300:
             raise QQSendError(
                 f"QQ vendor request failed with status {response.status_code}"
             )
@@ -111,4 +114,32 @@ class QQClient:
             raise QQSendError("QQ vendor response is not JSON") from error
         if not isinstance(data, dict):
             raise QQSendError("QQ vendor response is invalid")
+        if data.get("code") not in (None, 0, "0"):
+            raise QQSendError("QQ rejected the request")
         return data
+
+    async def request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        token: str,
+        body: dict[str, JsonValue] | None = None,
+        params: dict[str, str | int] | None = None,
+    ) -> JsonValue:
+        """Borrow the existing transport for a fixed platform operation."""
+        if self._http is None:
+            raise QQSendError("The QQ HTTP client is not open")
+        try:
+            response = await self._http.request(
+                method,
+                url,
+                json=body,
+                params=params,
+                headers={"Authorization": f"QQBot {token}"},
+                timeout=self.settings.request_timeout,
+                follow_redirects=False,
+            )
+        except httpx.HTTPError:
+            raise OperationError(0, "transport_error") from None
+        return operation_response(response)

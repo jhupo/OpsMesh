@@ -10,9 +10,14 @@ database = require("database")
 conversations = require("conversation_support")
 
 # Import declarations only after their dependency plugins are loaded.
-from . import callbacks, commands, connections, http  # noqa: E402, F401
+from . import (  # noqa: E402, F401
+    callbacks,
+    commands,
+    connections,
+    http,
+    messages,
+)
 from .config import ChatSettings  # noqa: E402
-from .models import ChatBase  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="OpsMesh Chat Agent",
@@ -22,7 +27,6 @@ __plugin_meta__ = PluginMetadata(
     config=ChatSettings,
     extra={
         "database": database.DatabaseSchema(
-            ChatBase.metadata,
             Path(__file__).with_name("migrations"),
             "0001_example_chat",
         )

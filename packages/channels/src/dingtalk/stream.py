@@ -13,6 +13,8 @@ from dingtalk_stream import (
     ChatbotMessage,
     Credential,
     DingTalkStreamClient,
+    EventHandler,
+    EventMessage,
 )
 from dingtalk_stream.version import VERSION_STRING
 from websockets.asyncio.client import connect
@@ -44,6 +46,19 @@ class RobotCallback(CallbackHandler):
         return self.channel.adapter.accept_callback(self.channel, message.data)
 
 
+class PlatformEvents(EventHandler):
+    """Forward subscribed native platform events without inventing actors."""
+
+    def __init__(self, channel: DingTalkChannel) -> None:
+        """Bind notifications to their authenticated account connection."""
+        super().__init__()
+        self.channel = channel
+
+    async def process(self, event: EventMessage) -> tuple[int, str]:
+        """Acknowledge local queue admission using the native SDK contract."""
+        return self.channel.adapter.accept_notice(self.channel, event)
+
+
 class DingTalkStream(DingTalkStreamClient):
     """Own a cancellable connection while retaining SDK parsing and ACKs.
 
@@ -66,6 +81,7 @@ class DingTalkStream(DingTalkStreamClient):
         self.register_callback_handler(
             ChatbotMessage.TOPIC, RobotCallback(channel)
         )
+        self.register_all_event_handler(PlatformEvents(channel))
 
     def stop(self) -> None:
         """Stop receiving without closing the channel's reply client."""

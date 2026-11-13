@@ -4,50 +4,75 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from opsmesh.adapters import Event
-from opsmesh.messages import Message, MessageSegment
 
+from ..attachments import AttachmentCollection, AttachmentError
+from ..attachments.transfer import AttachmentReader
+from ..messages import Message
+from .attachments import parse_message
 from .errors import DingTalkProtocolError
 
 
-class DingTalkMessageSegment(MessageSegment["DingTalkMessage"]):
-    """One DingTalk text segment."""
+class DingTalkNoticeEvent(Event):
+    """An official Stream EVENT, independent of chatbot CALLBACK messages."""
 
-    @classmethod
-    def get_message_class(cls) -> type[DingTalkMessage]:
-        """Return the DingTalk message sequence type."""
-        return DingTalkMessage
+    connection_id: str
+    event_id: str
+    event_type: str
+    open_conversation_id: str | None = None
+    chat_id: str | None = None
+    operator_id: str | None = None
+    raw: dict[str, Any]
 
-    def __str__(self) -> str:
-        """Return the segment text used for command matching."""
-        return str(self.data.get("text", ""))
+    @property
+    def message_id(self) -> str:
+        """Use the delivery ID for the shared queue's diagnostics."""
+        return self.event_id
 
-    def is_text(self) -> bool:
-        """Whether this segment carries plain text."""
-        return self.type == "text"
+    def get_type(self) -> str:
+        """Select framework notice matchers."""
+        return "notice"
 
+    def get_event_name(self) -> str:
+        """Preserve the native Stream event type."""
+        return f"dingtalk.notice.{self.event_type}"
 
-class DingTalkMessage(Message[DingTalkMessageSegment]):
-    """A sequence of DingTalk text segments."""
+    def get_event_description(self) -> str:
+        """Describe delivery without exposing the native event body."""
+        return f"notice {self.event_id} ({self.event_type})"
 
-    @classmethod
-    def get_segment_class(cls) -> type[DingTalkMessageSegment]:
-        """Return the DingTalk segment type."""
-        return DingTalkMessageSegment
+    def get_user_id(self) -> str:
+        """Expose an actor only if one was supplied by the platform."""
+        if self.operator_id is None:
+            raise ValueError("This notice does not identify an actor")
+        return f"{self.connection_id}:{self.operator_id}"
 
-    @staticmethod
-    def _construct(msg: str) -> list[DingTalkMessageSegment]:
-        if not msg:
-            return []
-        return [DingTalkMessageSegment("text", {"text": msg})]
+    def get_session_id(self) -> str:
+        """Return a conversation only for events that identify one."""
+        if self.open_conversation_id is not None:
+            return (
+                f"{self.connection_id}:open_conversation:"
+                f"{self.open_conversation_id}"
+            )
+        if self.chat_id is not None:
+            return f"{self.connection_id}:chat:{self.chat_id}"
+        raise ValueError("This notice has no conversation")
+
+    def get_message(self) -> Message:
+        """Reject message-only dependencies for notice events."""
+        raise ValueError("Notices do not contain framework messages")
+
+    def is_tome(self) -> bool:
+        """The authenticated Stream subscription targets this application."""
+        return True
 
 
 class DingTalkMessageEvent(Event):
     """A DingTalk robot message callback."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     connection_id: str
     user_id: str
@@ -60,6 +85,10 @@ class DingTalkMessageEvent(Event):
     session_webhook: str | None = None
     session_webhook_expires_at: int | None = None
     to_me: bool = True
+    message: Message | None = None
+    attachments: AttachmentCollection = Field(
+        default_factory=AttachmentCollection, exclude=True
+    )
     raw: dict[str, Any]
 
     def get_type(self) -> str:
@@ -82,9 +111,11 @@ class DingTalkMessageEvent(Event):
         """Return the conversation identifier scoped by connection."""
         return f"{self.connection_id}:conversation:{self.conversation_id}"
 
-    def get_message(self) -> DingTalkMessage:
+    def get_message(self) -> Message:
         """Return the message content as DingTalk segments."""
-        return DingTalkMessage(self.content)
+        return (
+            self.message if self.message is not None else Message(self.content)
+        )
 
     def is_tome(self) -> bool:
         """Whether the robot was addressed in this group or direct chat."""
@@ -98,31 +129,20 @@ class DingTalkMessageEvent(Event):
         return (f"{self.connection_id}:conversation:{self.conversation_id}",)
 
 
-def _text_content(payload: dict[str, Any]) -> str | None:
-    msgtype = payload.get("msgtype")
-    if msgtype == "text":
-        body = payload.get("text")
-        content = body.get("content") if isinstance(body, dict) else None
-    elif msgtype == "markdown":
-        body = payload.get("markdown")
-        content = body.get("text") if isinstance(body, dict) else None
-    else:
-        return None
-    if not isinstance(content, str):
-        raise DingTalkProtocolError(
-            "DingTalk message event has no text content"
-        )
-    return content
-
-
 def parse_callback(
-    payload: dict[str, Any], *, connection_id: str
+    payload: dict[str, Any],
+    *,
+    connection_id: str,
+    attachments: AttachmentCollection | None = None,
+    reader: AttachmentReader | None = None,
 ) -> DingTalkMessageEvent | None:
     """Convert one verified DingTalk callback into a framework event.
 
     Args:
         payload: The verified callback body.
         connection_id: The owning connection identifier.
+        attachments: Bounded collection belonging to this incoming event.
+        reader: Authenticated protocol media reader, called only on demand.
 
     Returns:
         A message event, or ``None`` for message types this plugin ignores.
@@ -130,9 +150,14 @@ def parse_callback(
     Raises:
         DingTalkProtocolError: Required message fields are missing.
     """
-    content = _text_content(payload)
-    if content is None:
+    attachments = attachments or AttachmentCollection()
+    try:
+        message = parse_message(payload, attachments, reader)
+    except AttachmentError as error:
+        raise DingTalkProtocolError(str(error)) from None
+    if message is None:
         return None
+    content = message.extract_plain_text()
     conversation_id = payload.get("conversationId")
     message_id = payload.get("msgId")
     user_id = payload.get("senderStaffId") or payload.get("senderId")
@@ -161,6 +186,8 @@ def parse_callback(
         ),
         message_id=message_id,
         content=content,
+        message=message,
+        attachments=attachments,
         session_webhook=(
             session_webhook if isinstance(session_webhook, str) else None
         ),

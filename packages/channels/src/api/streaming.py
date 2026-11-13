@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
+from contextlib import AbstractContextManager, AsyncExitStack, nullcontext
 
 import anyio
 from starlette.responses import Response, StreamingResponse
@@ -11,6 +11,7 @@ from starlette.types import Receive, Scope, Send
 logger = logging.getLogger(__name__)
 
 _CLEANUP_TIMEOUT_SECONDS = 10
+_ExecutionScope = Callable[[], AbstractContextManager[None]]
 
 
 class StreamLease:
@@ -61,7 +62,12 @@ class StreamLease:
         finally:
             await self.close(failure)
 
-    def transfer(self, response: Response) -> Response:
+    def transfer(
+        self,
+        response: Response,
+        *,
+        execution_scope: _ExecutionScope = nullcontext,
+    ) -> Response:
         """Transfer ownership to the driver until the response is closed."""
         if not isinstance(response, StreamingResponse):
             raise TypeError("A streaming response is required")
@@ -75,6 +81,7 @@ class StreamLease:
             headers=dict(response.headers),
             background=response.background,
             on_close=close,
+            execution_scope=execution_scope,
         )
 
 
@@ -86,11 +93,13 @@ class ManagedStreamingResponse(StreamingResponse):
         content,
         *,
         on_close: Callable[[BaseException | None], Awaitable[None]],
+        execution_scope: _ExecutionScope = nullcontext,
         **kwargs,
     ) -> None:
         """Associate response ownership with its ASGI send lifetime."""
         super().__init__(content, **kwargs)
         self._on_close = on_close
+        self._execution_scope = execution_scope
         self._closed = False
         self.failure: BaseException | None = None
 
@@ -105,23 +114,32 @@ class ManagedStreamingResponse(StreamingResponse):
             return
         self._closed = True
         self.failure = error or self.failure
-        with anyio.fail_after(_CLEANUP_TIMEOUT_SECONDS, shield=True):
+        with (
+            self._execution_scope(),
+            anyio.fail_after(_CLEANUP_TIMEOUT_SECONDS, shield=True),
+        ):
             await self._on_close(self.failure)
+
+    async def stream_response(self, send: Send) -> None:
+        """Enter admission in Starlette's actual response-sending task."""
+        with self._execution_scope():
+            await super().stream_response(send)
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
         """Use Starlette for sending and guarantee cleanup on every exit."""
-        error = None
-        try:
-            if scope.get("method") == "HEAD":
-                await Response(
-                    status_code=self.status_code, headers=dict(self.headers)
-                )(scope, receive, send)
-            else:
-                await super().__call__(scope, receive, send)
-        except BaseException as failure:
-            error = failure
-            raise
-        finally:
-            await self.aclose(error)
+        with self._execution_scope():
+            error = None
+            try:
+                if scope.get("method") == "HEAD":
+                    await Response(
+                        status_code=self.status_code, headers=dict(self.headers)
+                    )(scope, receive, send)
+                else:
+                    await super().__call__(scope, receive, send)
+            except BaseException as failure:
+                error = failure
+                raise
+            finally:
+                await self.aclose(error)

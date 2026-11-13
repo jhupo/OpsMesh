@@ -2,14 +2,14 @@
 
 from typing import Any
 
-from pydantic import ConfigDict, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 from starlette.requests import Request
 
 from opsmesh.adapters import Event
 from opsmesh.dependencies import Dependent
-from opsmesh.messages import Message
 
-from .messages import APIMessage
+from ..attachments import AttachmentCollection
+from ..messages import Message
 
 
 class HTTPEvent(Event):
@@ -19,19 +19,18 @@ class HTTPEvent(Event):
 
     request: Request
     payload: Any
-    message: APIMessage
+    attachments: AttachmentCollection = Field(
+        default_factory=AttachmentCollection, exclude=True
+    )
+    installation_id: str = ""
     route_name: str
     user_id: str
     _replied: bool = PrivateAttr(default=False)
     _result: Any = PrivateAttr(default=None)
 
     def get_type(self) -> str:
-        """Allow framework message rules when the input contains text."""
-        return (
-            "message"
-            if any(part.is_text() for part in self.message)
-            else "http"
-        )
+        """Return the request protocol, independently of business fields."""
+        return "http"
 
     def get_event_name(self) -> str:
         """Return the server-registered entrance name."""
@@ -50,8 +49,8 @@ class HTTPEvent(Event):
         raise ValueError("HTTP requests do not define conversation sessions")
 
     def get_message(self) -> Message:
-        """Return the normalized framework message."""
-        return self.message
+        """Reject message injection for ordinary HTTP requests."""
+        raise ValueError("HTTP requests do not contain framework messages")
 
     def is_tome(self) -> bool:
         """HTTP routes explicitly address their registered handler."""
@@ -73,6 +72,20 @@ class HTTPEvent(Event):
             raise RuntimeError("An HTTP event can only receive one response")
         self._result = result
         self._replied = True
+
+
+class APIMessageEvent(HTTPEvent):
+    """A standard API message delivered to existing framework matchers."""
+
+    message: Message
+
+    def get_type(self) -> str:
+        """Keep image-only and text messages in the same event family."""
+        return "message"
+
+    def get_message(self) -> Message:
+        """Return the normalized message."""
+        return self.message
 
 
 class HTTPHandler(Dependent[Any]):

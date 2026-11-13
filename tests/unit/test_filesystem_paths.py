@@ -6,7 +6,7 @@ import pytest
 
 import opsmesh.plugins.filesystem as filesystem
 from opsmesh.plugins.filesystem import files
-from opsmesh.plugins.filesystem._paths import Roots
+from opsmesh.plugins.filesystem._paths import Roots, owned_path
 
 
 @pytest.fixture
@@ -106,3 +106,26 @@ def test_link_into_another_plugin_is_rejected(space):
 
     with pytest.raises(filesystem.PathRejected, match="outside"):
         files._owned(link / "file.txt", must_exist=True)
+
+
+def test_independent_child_plugins_have_flat_nonoverlapping_roots(tmp_path):
+    roots = Roots.prepare(tmp_path)
+    parent = roots.for_plugin("demo")
+    child = roots.for_plugin("demo.worker")
+    assert child.data_dir == roots.data / "demo.worker"
+    assert child.data_dir.parent == parent.data_dir.parent
+    settings = filesystem.Settings(root=tmp_path)
+    with pytest.raises(filesystem.PathRejected, match="outside"):
+        owned_path(
+            parent,
+            child.data_dir / "secret",
+            settings=settings,
+            must_exist=False,
+        )
+    with pytest.raises(filesystem.PathRejected, match="outside"):
+        owned_path(
+            child,
+            parent.data_dir / "secret",
+            settings=settings,
+            must_exist=False,
+        )

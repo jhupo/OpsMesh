@@ -13,6 +13,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from opsmesh.plugins.storage import PluginRecord, PluginStorage
+
 PLUGIN = """from importlib.resources import files
 from agents import Agent, RunConfig
 from agents.testing import ScriptedModel, ModelStep, assistant_message
@@ -59,7 +61,8 @@ async def probe() -> str:
         ))
     ]))
     result = await execution.run(
-        agent, "hello", run_config=RunConfig(tracing_disabled=True)
+        agent, "hello", run_config=RunConfig(tracing_disabled=True),
+        plugin_id=__name__,
     )
     assert result.context_wrapper.usage.total_tokens == 4
     return str(result.final_output)
@@ -70,7 +73,6 @@ async def validated() -> dict[str, str]:
 """
 
 DATABASE_PLUGIN = """from pathlib import Path
-from sqlalchemy import MetaData
 from opsmesh.plugins import PluginMetadata, require
 
 database = require("database")
@@ -79,7 +81,7 @@ __plugin_meta__ = PluginMetadata(
     description="Independent migration smoke probe",
     usage="Validate and apply this plugin's own migration history",
     extra={"database": database.DatabaseSchema(
-        MetaData(), Path(__file__).with_name("migrations"), "initial"
+        Path(__file__).with_name("migrations"), "initial"
     )},
 )
 
@@ -148,14 +150,17 @@ def exercise_core(executable: Path, directory: Path) -> None:
         "'opsmesh.plugins.filesystem'):\n"
         "        assert find_spec(name) is None, name\n"
     )
-    manifest.write_text(
-        json.dumps(
-            {
-                "plugin_paths": [str(directory)],
-                "plugins": [{"module": "core_probe", "required": True}],
-            }
+    manifest.write_text(json.dumps({"data_dir": str(directory / "core-state")}))
+    with PluginStorage(directory / "core-state") as storage:
+        storage.save(
+            PluginRecord(
+                module="core_probe",
+                directory=str(directory),
+                enabled=True,
+                autoload=True,
+                required=True,
+            )
         )
-    )
     subprocess.run(
         [
             str(executable),
@@ -208,14 +213,22 @@ def exercise(
         plugins.extend(database_plugins(directory, dsn))
     plugins.append({"module": "release_probe", "required": True})
     manifest = directory / "host.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plugin_paths": [str(plugin_path), str(directory)],
-                "plugins": plugins,
-            }
-        )
-    )
+    manifest.write_text(json.dumps({"data_dir": str(directory / "host-state")}))
+    with PluginStorage(directory / "host-state") as storage:
+        for values in plugins:
+            root = (
+                plugin_path
+                if values["module"].startswith("opsmesh.")
+                else directory
+            )
+            storage.save(
+                PluginRecord(
+                    **values,
+                    directory=str(root),
+                    enabled=True,
+                    autoload=True,
+                )
+            )
     environment = {**os.environ, "OPSMESH_SMOKE_TOKEN": "release-probe-token"}
     command = [str(executable), "--manifest", str(manifest)]
     subprocess.run(

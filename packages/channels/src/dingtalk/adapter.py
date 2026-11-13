@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any
 
 import anyio
 import httpx
-from dingtalk_stream import AckMessage
+from dingtalk_stream import AckMessage, EventMessage
 
 from opsmesh.adapters import Adapter
 from opsmesh.dispatch import dispatch_event
@@ -19,13 +18,17 @@ from opsmesh.drivers import Driver
 from opsmesh.plugins.channels._queue import EventQueue
 from opsmesh.plugins.channels._validation import connection_segment
 from opsmesh.plugins.channels.context import UserContext
+from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import (
     _current_plugin,
     get_plugin_by_module_name,
     track_registration,
 )
 
-from .channel import DingTalkChannel, outgoing_text
+from ..attachments import AttachmentCollection, AttachmentError
+from ..operations import UnsupportedOperation
+from .attachments import DingTalkAttachments
+from .channel import DingTalkChannel
 from .client import DingTalkClient
 from .config import DingTalkConnectionSettings, DingTalkSettings
 from .errors import (
@@ -34,12 +37,12 @@ from .errors import (
     DingTalkProtocolError,
     DingTalkSendError,
 )
-from .events import DingTalkMessageEvent, parse_callback
+from .events import DingTalkMessageEvent, DingTalkNoticeEvent, parse_callback
+from .groups import DingTalkGroups
+from .sending import DingTalkSender
 from .stream import DingTalkStream
 
 logger = logging.getLogger(__name__)
-
-_WEBHOOK_SAFETY_MS = 5000
 
 
 @dataclass(frozen=True)
@@ -47,8 +50,17 @@ class _WorkItem:
     """One verified event waiting for framework dispatch."""
 
     channel: DingTalkChannel
-    event: DingTalkMessageEvent
-    caller: UserContext
+    event: DingTalkMessageEvent | DingTalkNoticeEvent
+    caller: UserContext | None
+    generation: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        owner = self.channel._owner
+        object.__setattr__(
+            self,
+            "generation",
+            owner.generation if isinstance(owner, Plugin) else 0,
+        )
 
 
 class DingTalkAdapter(Adapter):
@@ -130,6 +142,21 @@ class DingTalkAdapter(Adapter):
         )
         self._declared[self_id] = channel
         track_registration(lambda: self._remove(channel), owner)
+        if isinstance(plugin, Plugin):
+            self.driver.on_ready(
+                lambda: self._activate(channel) if self._started else None
+            )
+
+            async def close_connection() -> None:
+                stream = self._streams.get(channel)
+                if stream is not None:
+                    stream.stop()
+                    await stream.wait_closed()
+                if channel.self_id in self.channels:
+                    self.disconnect(channel)
+                channel.mark_closed()
+
+            self.driver.on_shutdown(close_connection)
         if self._started:
             self._activate(channel)
         return channel
@@ -138,6 +165,13 @@ class DingTalkAdapter(Adapter):
         """Open shared resources and activate declared connections."""
         if self._started:
             return
+        if get_plugin_by_module_name(__name__) is not None:
+            from .config import get_settings
+
+            if self.settings != get_settings():
+                raise DingTalkConfigurationError(
+                    "DingTalk protocol settings changed; restart the host"
+                )
         if not self.driver.started:
             raise DingTalkConfigurationError(
                 "The DingTalk channel requires a running runtime lifespan"
@@ -177,7 +211,6 @@ class DingTalkAdapter(Adapter):
             return
         self.stop_accepting()
         await self.drain()
-        self._started = False
         for channel in list(self._declared.values()):
             if channel.self_id in self.channels:
                 try:
@@ -190,6 +223,7 @@ class DingTalkAdapter(Adapter):
             channel.mark_closed()
         self._streams.clear()
         await self._client.close()
+        self._started = False
 
     async def _call(
         self, channel: DingTalkChannel, operation: str, **data: Any
@@ -202,7 +236,21 @@ class DingTalkAdapter(Adapter):
             return await self._send_message(
                 channel, data.get("event"), data.get("message")
             )
-        raise DingTalkError(
+        if operation in DingTalkGroups.operations:
+            from opsmesh.plugins.registry import get_current_plugin
+
+            if (
+                isinstance(channel._owner, Plugin)
+                and get_current_plugin() is not channel._owner
+            ):
+                raise PermissionError(
+                    "DingTalk connection belongs to another plugin"
+                )
+            if not channel.ready:
+                raise DingTalkSendError("DingTalk connection is not ready")
+            groups = DingTalkGroups(self._client, channel)
+            return await getattr(groups, operation)(**data)
+        raise UnsupportedOperation(
             f"Unsupported DingTalk channel operation: {operation}"
         )
 
@@ -236,6 +284,12 @@ class DingTalkAdapter(Adapter):
 
     def _activate(self, channel: DingTalkChannel) -> None:
         if not self._accepting or channel in self._streams:
+            return
+        owner = channel._owner
+        if isinstance(owner, Plugin) and owner.status not in (
+            PluginStatus.STARTING,
+            PluginStatus.READY,
+        ):
             return
         try:
             secret = self._read_secret(channel)
@@ -294,8 +348,15 @@ class DingTalkAdapter(Adapter):
         if not isinstance(payload, dict):
             return AckMessage.STATUS_BAD_REQUEST, "invalid payload"
         try:
-            event = parse_callback(payload, connection_id=channel.self_id)
-        except DingTalkProtocolError:
+            event = parse_callback(
+                payload,
+                connection_id=channel.self_id,
+                attachments=AttachmentCollection(self.settings.attachments),
+                reader=DingTalkAttachments(
+                    self._client, channel.settings, self.settings.attachments
+                ).read,
+            )
+        except (DingTalkProtocolError, AttachmentError):
             return AckMessage.STATUS_BAD_REQUEST, "invalid payload"
         if event is None:
             return AckMessage.STATUS_OK, "ignored"
@@ -318,7 +379,56 @@ class DingTalkAdapter(Adapter):
             return AckMessage.STATUS_SYSTEM_EXCEPTION, "queue is full"
         return AckMessage.STATUS_OK, "ok"
 
+    def accept_notice(
+        self, channel: DingTalkChannel, message: EventMessage
+    ) -> tuple[int, str]:
+        """Admit a native EVENT after the authenticated Stream delivered it."""
+        if not self._accepting or not channel.ready or not channel.owner_ready:
+            return AckMessage.STATUS_SYSTEM_EXCEPTION, "connection unavailable"
+        headers = message.headers
+        event_id, event_type = (
+            headers.event_id or headers.message_id,
+            headers.event_type,
+        )
+        if (
+            not isinstance(event_id, str)
+            or not isinstance(event_type, str)
+            or not isinstance(message.data, dict)
+        ):
+            return AckMessage.STATUS_BAD_REQUEST, "invalid event"
+        data = message.data
+        actor = data.get("operator")
+        open_conversation = data.get("openConversationId")
+        chat = data.get("chatId")
+        event = DingTalkNoticeEvent(
+            connection_id=channel.self_id,
+            event_id=event_id,
+            event_type=event_type,
+            open_conversation_id=open_conversation
+            if isinstance(open_conversation, str)
+            else None,
+            chat_id=chat if isinstance(chat, str) else None,
+            operator_id=actor if isinstance(actor, str) else None,
+            raw=data,
+        )
+        if not channel.first_delivery(event_id):
+            return AckMessage.STATUS_OK, "duplicate"
+        if not self._queue.put_nowait(_WorkItem(channel, event, None)):
+            channel.release_delivery(event_id)
+            return AckMessage.STATUS_SYSTEM_EXCEPTION, "queue is full"
+        return AckMessage.STATUS_OK, "ok"
+
     async def _dispatch(self, item: _WorkItem) -> None:
+        owner = item.channel._owner
+        expired = (
+            isinstance(owner, Plugin) and owner.generation != item.generation
+        )
+        if expired or not item.channel.owner_ready or not item.channel.ready:
+            logger.info(
+                "Cancelled queued DingTalk event %s: owner stopped",
+                item.event.message_id,
+            )
+            return
         try:
             result = await dispatch_event(
                 item.channel,
@@ -349,25 +459,8 @@ class DingTalkAdapter(Adapter):
             raise DingTalkSendError(
                 "DingTalk replies require a DingTalkMessageEvent"
             )
-        webhook = event.session_webhook
-        if webhook is None:
+        if event.connection_id != channel.self_id:
             raise DingTalkSendError(
-                "DingTalk replies require a session webhook"
+                "DingTalk reply event belongs to another connection"
             )
-        expires = event.session_webhook_expires_at
-        if expires is not None:
-            remaining_ms = expires - int(time.time() * 1000)
-            if remaining_ms <= _WEBHOOK_SAFETY_MS:
-                raise DingTalkSendError(
-                    "The DingTalk session webhook has expired"
-                )
-        text = outgoing_text(message, channel.settings.max_message_length)
-        data = await self._client.post_json(
-            webhook, {"msgtype": "text", "text": {"content": text}}
-        )
-        errcode = data.get("errcode", 0)
-        if errcode not in (0, None):
-            raise DingTalkSendError(
-                f"DingTalk reply failed with code {errcode}"
-            )
-        return data
+        return await DingTalkSender(self._client, channel).send(event, message)

@@ -10,9 +10,8 @@ database = require("database")
 filesystem = require("filesystem")
 conversations = require("conversation_support")
 
-from . import handlers  # noqa: E402, F401
+from . import handlers, messages  # noqa: E402, F401
 from .config import SandboxSettings  # noqa: E402
-from .models import SandboxBase  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="Sandbox conversation",
@@ -22,7 +21,6 @@ __plugin_meta__ = PluginMetadata(
     config=SandboxSettings,
     extra={
         "database": database.DatabaseSchema(
-            SandboxBase.metadata,
             Path(__file__).with_name("migrations"),
             "0001_example_sandbox",
         )

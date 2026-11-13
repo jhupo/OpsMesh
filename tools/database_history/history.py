@@ -10,15 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, Integer, MetaData, Table, Text
 from sqlalchemy.engine import Connection
 
-from .connections import Database
-from .errors import MigrationError
-from .migrations import (
+from opsmesh.plugins.database.connections import Database
+from opsmesh.plugins.database.errors import MigrationError
+from opsmesh.plugins.database.migrations import (
     CUTOVER_TABLE,
     current_revisions,
     lock_migrations,
     revision_graph,
 )
-from .schema import MigrationSource
+from opsmesh.plugins.database.schema import MigrationSource
 
 
 class HistoricalSource(BaseModel):
@@ -52,9 +52,7 @@ def read_manifest(path: Path) -> tuple[MigrationSource, ...]:
                 raise MigrationError(
                     "The archived execution history has a fixed identity"
                 )
-            directory = (
-                Path(__file__).with_name("_legacy_migrations") / "execution"
-            )
+            directory = Path(__file__).with_name("migrations") / "execution"
         else:
             directory = Path(item.directory)
             if not directory.is_absolute():

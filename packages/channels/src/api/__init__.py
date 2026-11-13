@@ -11,7 +11,8 @@ from .errors import (
     RouteConflict,
     RouteRegistrationError,
 )
-from .events import HTTPEvent
+from .events import APIMessageEvent, HTTPEvent
+from .messages import MessageInput, MessageRequest
 from .responses import error_response, json_response, sse_event, sse_response
 from .routes import (
     ACCESS_ADMIN,
@@ -23,6 +24,7 @@ from .routing import (
     delete,
     get,
     get_router,
+    message,
     patch,
     post,
     put,
@@ -36,9 +38,12 @@ __all__ = [
     "APIConfigurationError",
     "APIRouter",
     "APIChannel",
+    "APIMessageEvent",
     "HTTPEvent",
     "HTTPError",
     "IdentitySettings",
+    "MessageInput",
+    "MessageRequest",
     "RouteConflict",
     "RouteRegistration",
     "RouteRegistrationError",
@@ -48,6 +53,7 @@ __all__ = [
     "get",
     "get_router",
     "json_response",
+    "message",
     "patch",
     "post",
     "put",

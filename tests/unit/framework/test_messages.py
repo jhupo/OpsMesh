@@ -67,6 +67,18 @@ def test_selection_and_copy_preserve_message_behavior(message):
     ) == ("secondthird", "imagesecond", "firstsecondthird", "first")
 
 
+def test_plain_text_preserves_whitespace_and_ignores_non_text():
+    message = TextMessage(
+        [
+            TextSegment("text", {"text": " /chat "}),
+            TextSegment("image", {"text": "private attachment URL"}),
+            TextSegment("text", {"text": "hello\n"}),
+        ]
+    )
+    assert message.extract_plain_text() == " /chat hello\n"
+    assert len(message) == 3
+
+
 @pytest.mark.parametrize(
     ("template", "values", "expected"),
     [

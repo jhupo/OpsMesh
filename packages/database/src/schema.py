@@ -5,8 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import MetaData
-
 from opsmesh import get_driver, on_plugin_loaded
 from opsmesh.plugins import require
 from opsmesh.plugins.model import Plugin
@@ -17,9 +15,8 @@ from .errors import MigrationError
 
 @dataclass(frozen=True)
 class DatabaseSchema:
-    """A plugin's native metadata, migration directory, and required head."""
+    """A plugin's migration directory and required head."""
 
-    metadata: MetaData
     directory: Path
     head: str
 
@@ -69,7 +66,6 @@ class SchemaRegistry:
 
     def __init__(self) -> None:
         """Create an empty registry owned by the database plugin."""
-        self._schemas: dict[str, DatabaseSchema] = {}
         self._sources: dict[str, MigrationSource] = {}
 
     def add(self, owner: str, schema: DatabaseSchema) -> Callable[[], None]:
@@ -84,13 +80,11 @@ class SchemaRegistry:
             for item in self._sources.values()
         ):
             raise MigrationError("A migration directory already has an owner")
-        self._schemas[owner] = schema
         self._sources[owner] = source
 
         def remove() -> None:
             if self._sources.get(owner) is source:
                 self._sources.pop(owner)
-                self._schemas.pop(owner)
 
         return remove
 

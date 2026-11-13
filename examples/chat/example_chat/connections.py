@@ -4,23 +4,22 @@ from agents.mcp import MCPServerManager, MCPServerStreamableHttp
 
 from opsmesh import on_shutdown, on_startup
 
+from . import agent as definition
 from . import channels
-from .agent import agent, settings
 from .config import secret
 
 _connections: MCPServerManager | None = None
-
-if settings.qq is not None:
-    channels.qq.declare_connection(settings.qq, name="primary")
-
-if settings.dingtalk is not None:
-    channels.dingtalk.declare_connection(settings.dingtalk, name="internal")
 
 
 @on_startup
 async def connect_mcp() -> None:
     """Connect optional tools before the plugin becomes ready."""
     global _connections
+    settings = definition.settings
+    if settings.qq is not None:
+        channels.qq.declare_connection(settings.qq, name="primary")
+    if settings.dingtalk is not None:
+        channels.dingtalk.declare_connection(settings.dingtalk, name="internal")
     if settings.mcp_url is None:
         return
     headers = {}
@@ -38,7 +37,7 @@ async def connect_mcp() -> None:
         suppress_cancelled_error=False,
     )
     await _connections.connect_all()
-    agent.mcp_servers = _connections.active_servers
+    definition.agent.mcp_servers = _connections.active_servers
 
 
 @on_shutdown
@@ -48,4 +47,5 @@ async def disconnect_mcp() -> None:
     if _connections is not None:
         await _connections.cleanup_all()
         _connections = None
-    agent.mcp_servers = []
+    if hasattr(definition, "agent"):
+        definition.agent.mcp_servers = []

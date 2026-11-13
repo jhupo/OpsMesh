@@ -1,9 +1,7 @@
 """Deployment commands owned by the database plugin."""
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from sqlalchemy import text
 
@@ -37,16 +35,3 @@ async def migrate() -> None:
     """Apply registered plugin migrations without starting the HTTP server."""
     async with _connection() as database:
         await run_migrations(database)
-
-
-async def convert_shared_history() -> None:
-    """Convert the explicit OPSMESH_DATABASE_HISTORY_MANIFEST inventory once."""
-    from .history import convert_shared_history as convert
-
-    value = os.environ.get("OPSMESH_DATABASE_HISTORY_MANIFEST")
-    if not value:
-        raise ValueError(
-            "OPSMESH_DATABASE_HISTORY_MANIFEST must name a manifest file"
-        )
-    async with _connection() as database:
-        await convert(database, Path(value))

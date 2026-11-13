@@ -27,9 +27,9 @@ sudo bash install.sh \
 journalctl -u opsmesh -f
 ```
 
-安装器只部署框架服务及其自带 Python 运行环境。首次安装生成基础框架配置与空插件清单，不生成必需的环境变量文件；升级保留现有配置、插件与数据。安装器不安装插件、不连接数据库、不执行数据库迁移。当前源码的空宿主不监听网络端口；HTTP 服务由 channels 插件提供。框架 `Driver` 管理适配器、通用生命周期和逻辑连接；channels 自己持有网络服务，并通过框架回调完成启停。
+安装器部署框架服务及其自带 Python 运行环境，首次安装生成基础配置，升级保留现有配置、插件与数据。插件通过宿主 CLI 单独登记。HTTP 服务由 channels 插件提供，数据库迁移使用 database 插件的维护命令。
 
-需要插件时，另行部署同版本、同架构的插件运行包，配置 `plugin_paths` 和 `plugins` 后重启。插件运行包携带插件源码、资源和额外 Python 依赖，服务器无需 pip。完整步骤见 [Linux 部署](docs/linux-deployment.md)。
+需要插件时，另行部署同版本、同架构的插件运行包，通过宿主 CLI 登记模块、配置和启用状态后启动。插件运行包携带插件源码、资源和额外 Python 依赖，服务器无需 pip。完整步骤见 [Linux 部署](docs/linux-deployment.md)。
 
 ## 开发
 
@@ -61,6 +61,7 @@ tests/             # 框架及插件的行为验证
 deploy/            # 仅部署框架的安装器、systemd 与可选 Docker
 packaging/         # 可执行包构建定义与依赖锁
 scripts/           # 构建、产物检查及安装验收
+tools/             # 停服期间的目录与数据库历史维护
 .github/workflows/ # CI、Linux 构建及 tag Release
 docs/              # 当前架构、部署和插件契约
 licenses/          # 上游许可文本
@@ -68,14 +69,14 @@ licenses/          # 上游许可文本
 
 ## 发布与文档
 
-`v<version>` tag 触发工作流；版本必须匹配核心和四个插件。验证成功后，Release 同时附带五个包的 wheel／源码包、两种架构的框架可执行包、独立插件运行包和校验文件。当前工作流发布 GitHub Release 附件，不代表包名已注册或已发布到 PyPI。见 [发布说明](docs/releases.md)。
+`v<version>` tag 触发工作流；版本必须匹配核心和四个插件。验证成功后，Release 同时附带五个包的 wheel／源码包、两种架构的框架可执行包、独立插件运行包和校验文件。发布渠道为 GitHub Release，见 [发布说明](docs/releases.md)。
 
 - [架构与职责](docs/plugin-architecture.md)
 - [通道和执行回调](docs/channels-and-callbacks.md)
 - [Langfuse 追踪与兼容边界](docs/langfuse-tracing.md)
 - [数据库迁移](docs/database-migrations.md)
 - [SDK 与框架边界](docs/sdk-and-plugin-boundaries.md)
-- [开源就绪审查](docs/open-source-review.md)
+- [插件配置](docs/plugin-configuration-design.md) · [插件生命周期](docs/plugin-lifecycle-design.md)
 - [安全策略](SECURITY.md) · [变更记录](CHANGELOG.md)
 - [普通对话示例](examples/chat/README.md) · [沙箱示例](examples/sandbox/README.md)
 
@@ -84,5 +85,3 @@ licenses/          # 上游许可文本
 ## 许可证
 
 项目采用 [MIT License](LICENSE)。上游来源与随附许可见 [licenses](licenses)。插件携带的外部资源仍须遵守各自许可。
-
-核心源码直接位于 `src/opsmesh/`，不再嵌套 `framework/`。每个官方插件的源码位于 `packages/<name>/src/`，独立打包并安装到 `opsmesh.plugins.<name>`；插件代码可用标准入口短名 `require("channels")`、`require("execution")`。宿主清单仍填写完整模块路径。

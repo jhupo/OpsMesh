@@ -159,3 +159,11 @@ class TracingSupport:
         if self._processor is None:
             return None
         return self._processor.snapshot()
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Describe the active destination without exposing exporter clients."""
+        return {
+            "destination": self._settings.destination,
+            "installed": self._installed,
+            "local": self.snapshot(),
+        }

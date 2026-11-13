@@ -31,6 +31,7 @@ from opsmesh.rules import Rule
 
 from .errors import RouteConflict, RouteRegistrationError
 from .events import HTTPHandler
+from .messages import MessageRequest
 
 if TYPE_CHECKING:
     from .channel import APIChannel
@@ -103,14 +104,15 @@ class RouteRegistration:
     claim: tuple[str, str]
     name: str
     access: Access
-    handler: Callable[..., Any]
-    dependent: Dependent[Any]
+    handler: Callable[..., Any] | None
+    dependent: Dependent[Any] | None
     body_model: type[BaseModel] | None
     owner: Plugin
     response_adapter: TypeAdapter[Any] | None = None
     allow_response: bool = False
+    response_types: tuple[type, ...] = ()
     matcher: type[Matcher] | None = None
-    message_matchers: tuple[type[Matcher], ...] = ()
+    message_handlers: tuple[type[Matcher], ...] = ()
 
     @property
     def active(self) -> bool:
@@ -119,9 +121,7 @@ class RouteRegistration:
 
     def accepts_matcher(self, matcher: type[Matcher]) -> bool:
         """Restrict one dispatch to the route and its declared commands."""
-        return self.active and (
-            matcher is self.matcher or matcher in self.message_matchers
-        )
+        return matcher is self.matcher or matcher in self.message_handlers
 
 
 class APIRouter:
@@ -147,15 +147,16 @@ class APIRouter:
         *,
         method: str,
         path: str,
-        handler: Callable[..., Any],
+        handler: Callable[..., Any] | None = None,
         body: type[BaseModel] | None = None,
         response_adapter: TypeAdapter[Any] | None = None,
         allow_response: bool = False,
+        response_types: tuple[type, ...] = (),
         access: Access = ACCESS_INVOKE,
         name: str | None = None,
         rule: Rule | None = None,
         permission: Permission | None = None,
-        message_matchers: tuple[type[Matcher], ...] = (),
+        message_handlers: tuple[type[Matcher], ...] = (),
     ) -> RouteRegistration:
         """Register one plugin route below its installation prefix.
 
@@ -166,7 +167,7 @@ class APIRouter:
             raise RouteRegistrationError(f"Unsupported route method: {method}")
         if access not in (ACCESS_INVOKE, ACCESS_ADMIN):
             raise RouteRegistrationError(f"Unsupported access: {access}")
-        if not callable(handler):
+        if not message_handlers and not callable(handler):
             raise RouteRegistrationError("Route handler must be callable")
         if body is not None and not (
             isinstance(body, type) and issubclass(body, BaseModel)
@@ -184,12 +185,28 @@ class APIRouter:
                 f"Invalid plugin installation id: {resolved_id}"
             )
 
-        if message_matchers and (rule is not None or permission is not None):
+        if message_handlers and (rule is not None or permission is not None):
             raise RouteRegistrationError(
                 "Command entrances must declare rules and permissions on "
                 "their matchers, not on the fallback route"
             )
-        for matcher in message_matchers:
+        if message_handlers:
+            if handler is not None or method != "POST":
+                raise RouteRegistrationError(
+                    "Message entrances bind POST matchers only"
+                )
+            if body is None or not issubclass(body, MessageRequest):
+                raise RouteRegistrationError(
+                    "Message bodies must extend MessageRequest"
+                )
+            for ancestor in body.__mro__:
+                if ancestor is MessageRequest:
+                    break
+                if "message" in ancestor.__dict__.get("__annotations__", {}):
+                    raise RouteRegistrationError(
+                        "Message bodies cannot override message"
+                    )
+        for matcher in message_handlers:
             if not isinstance(matcher, type) or not issubclass(
                 matcher, Matcher
             ):
@@ -202,6 +219,11 @@ class APIRouter:
                 raise RouteRegistrationError(
                     "Command matchers must be blocking and persistent"
                 )
+        priorities = [item.priority for item in message_handlers]
+        if len(set(priorities)) != len(priorities):
+            raise RouteRegistrationError(
+                "Message handlers require distinct priorities"
+            )
 
         relative = normalize_relative_path(path)
         full_path = f"/plugins/{resolved_id}{relative}"
@@ -220,8 +242,10 @@ class APIRouter:
             )
 
         try:
-            dependent = HTTPHandler.parse(
-                call=handler, allow_types=_ALLOW_TYPES
+            dependent = (
+                HTTPHandler.parse(call=handler, allow_types=_ALLOW_TYPES)
+                if handler is not None
+                else None
             )
         except ValueError as error:
             raise RouteRegistrationError(
@@ -241,30 +265,26 @@ class APIRouter:
             body_model=body,
             response_adapter=response_adapter,
             allow_response=allow_response,
+            response_types=response_types,
             owner=plugin,
-            message_matchers=tuple(message_matchers),
+            message_handlers=tuple(message_handlers),
         )
 
         async def matches_route(event) -> bool:
-            return (
-                event.get_event_name() == registration.name
-                and registration.active
-            )
+            return event.get_event_name() == registration.name
 
-        registration.matcher = Matcher.new(
-            type_="",
-            priority=max(
-                (item.priority for item in message_matchers), default=0
+        if dependent is not None:
+            registration.matcher = Matcher.new(
+                type_="",
+                priority=1,
+                rule=Rule(matches_route) & rule,
+                permission=permission,
+                handlers=[dependent],
+                source=MatcherSource(
+                    plugin_id=plugin.id_,
+                    module_name=handler.__module__,
+                ),
             )
-            + 1,
-            rule=Rule(matches_route) & rule,
-            permission=permission,
-            handlers=[dependent],
-            source=MatcherSource(
-                plugin_id=plugin.id_,
-                module_name=handler.__module__,
-            ),
-        )
         self._claims[claim] = registration
         self._order.append(registration)
         release = track_registration(

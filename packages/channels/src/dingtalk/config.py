@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..attachments import AttachmentSettings
+
 
 class DingTalkConnectionSettings(BaseModel):
     """One robot account supplied by an entry-owning plugin.
@@ -24,6 +26,7 @@ class DingTalkSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
     request_timeout: float = Field(default=10.0, gt=0)
     shutdown_timeout: float = Field(default=5.0, gt=0)
     reconnect_delay: float = Field(default=3.0, gt=0)

@@ -174,7 +174,7 @@ async def test_context_reaches_rules_permissions_hooks_and_nested_resources(
     )
     result.raise_for_errors()
     assert len(seen) == 7 and all(value is context for value in seen)
-    assert closed == [context]
+    assert closed == [context, context]
     assert (result.matched, result.handled, result.suspended) == (1, 1, 0)
 
 
@@ -368,10 +368,12 @@ async def test_dispatch_orders_processors_and_releases_shared_dependency(
     assert calls == [
         "enter",
         "event before",
+        "enter",
         "matcher before",
         "handler",
         "matcher after",
         "event after",
+        "exit",
         "exit",
     ]
 

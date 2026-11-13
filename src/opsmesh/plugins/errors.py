@@ -7,3 +7,7 @@ class PluginLoadDenied(RuntimeError):
 
 class PluginReloadError(RuntimeError):
     """A revoked plugin source was loaded again in the same process."""
+
+
+class PluginProtectedError(RuntimeError):
+    """A management action would stop or remove a protected plugin."""

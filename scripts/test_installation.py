@@ -81,7 +81,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as name:
         temporary = Path(name)
         manifest = json.loads((ROOT / "deploy/host.example.json").read_text())
-        assert manifest["plugins"] == []
+        assert "plugins" not in manifest
         manifest["environment"] = "installation-test"
         config = temporary / "host.json"
         config.write_text(json.dumps(manifest))
@@ -115,7 +115,7 @@ def main() -> None:
                 ["sudo", "cat", "/etc/opsmesh/host.json"], text=True, timeout=30
             )
         )
-        assert installed["plugins"] == []
+        assert "plugins" not in installed
         run("systemctl", "is-active", "--quiet", "opsmesh")
         run(
             "sudo",

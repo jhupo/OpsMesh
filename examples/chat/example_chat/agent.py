@@ -2,19 +2,29 @@
 
 from agents import Agent, ModelSettings
 from agents.extensions.memory import SQLAlchemySession
+from agents.items import TResponseInputItem
 
+from opsmesh import on_startup
 from opsmesh.plugins.config import get_plugin_config
 
 from . import channels, execution
 from .config import ChatSettings
 
-settings = get_plugin_config(ChatSettings)
-agent = Agent[channels.UserContext](
-    name=settings.name,
-    instructions=settings.instructions,
-    model=settings.model,
-    model_settings=ModelSettings(reasoning=settings.reasoning),
-)
+settings: ChatSettings
+agent: Agent[channels.UserContext]
+
+
+@on_startup
+async def startup() -> None:
+    """Construct the native agent from the active plugin configuration."""
+    global settings, agent
+    settings = get_plugin_config(ChatSettings)
+    agent = Agent[channels.UserContext](
+        name=settings.name,
+        instructions=settings.instructions,
+        model=settings.model,
+        model_settings=ModelSettings(reasoning=settings.reasoning),
+    )
 
 
 class ApprovalUnsupported(RuntimeError):
@@ -22,7 +32,7 @@ class ApprovalUnsupported(RuntimeError):
 
 
 async def reply(
-    message: str,
+    message: str | list[TResponseInputItem],
     caller: channels.UserContext,
     session: SQLAlchemySession,
 ) -> str:

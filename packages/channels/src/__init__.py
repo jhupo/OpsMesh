@@ -5,10 +5,19 @@ from types import ModuleType
 
 from opsmesh.plugins import PluginMetadata
 
+from .attachments import Attachment, AttachmentCollection, AttachmentError
 from .config import ChannelsSettings
 from .context import UserContext
 from .dependencies import Connection
 from .lifecycle import hooks as _lifecycle  # noqa: F401
+from .messages import Message, MessageSegment
+from .operations import (
+    OperationError,
+    OperationPermissionDenied,
+    OperationRateLimited,
+    UnsupportedOperation,
+)
+from .sending import MessageSendError
 
 
 def __getattr__(name: str) -> ModuleType:
@@ -31,6 +40,16 @@ __plugin_meta__ = PluginMetadata(
 )
 
 __all__ = [
+    "Attachment",
+    "AttachmentCollection",
+    "AttachmentError",
+    "Message",
+    "MessageSegment",
+    "MessageSendError",
+    "OperationError",
+    "OperationPermissionDenied",
+    "OperationRateLimited",
+    "UnsupportedOperation",
     "ChannelsSettings",
     "Connection",
     "UserContext",

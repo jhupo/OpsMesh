@@ -1,9 +1,10 @@
-"""Own active execution tasks and optional tracing resources."""
+"""Own optional tracing resources for native SDK execution."""
 
-from opsmesh import on_shutdown, on_startup, on_stopping
+from typing import Any
+
+from opsmesh import on_shutdown, on_startup
 from opsmesh.plugins.config import get_plugin_config
 
-from ._calls import ActiveCalls
 from ._tracing import TracingSupport
 from .config import Settings
 from .errors import ExecutionClosed
@@ -14,7 +15,6 @@ class ExecutionRuntime:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.calls = ActiveCalls()
         self.tracing = TracingSupport(settings.tracing)
         self.started = False
 
@@ -27,11 +27,8 @@ class ExecutionRuntime:
     async def shutdown(self) -> None:
         if not self.started:
             return
-        try:
-            await self.calls.close(self.settings.shutdown_timeout_seconds)
-        finally:
-            await self.tracing.shutdown()
-            self.started = False
+        await self.tracing.shutdown()
+        self.started = False
 
 
 _runtime: ExecutionRuntime | None = None
@@ -52,15 +49,15 @@ async def startup() -> None:
     _runtime = runtime
 
 
-@on_stopping
-async def stopping() -> None:
-    if _runtime is not None:
-        await _runtime.calls.close(_runtime.settings.shutdown_timeout_seconds)
-
-
 @on_shutdown
 async def shutdown() -> None:
     global _runtime
-    runtime, _runtime = _runtime, None
+    runtime = _runtime
     if runtime is not None:
         await runtime.shutdown()
+        _runtime = None
+
+
+def diagnostics() -> dict[str, Any]:
+    """Return a detached, content-free snapshot of tracing diagnostics."""
+    return get_runtime().tracing.diagnostics()

@@ -3,6 +3,7 @@
 from opsmesh.plugins import PluginMetadata
 
 from . import _lifecycle as _lifecycle
+from ._lifecycle import diagnostics
 from ._tracing import TraceContext
 from .callbacks import (
     before_run,
@@ -41,6 +42,7 @@ __all__ = [
     "TraceContext",
     "run",
     "stream",
+    "diagnostics",
     "before_run",
     "on_run_end",
     "on_agent_start",

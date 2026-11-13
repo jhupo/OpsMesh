@@ -42,7 +42,10 @@ class ChannelTransports:
         """Create a stopped coordinator without protocol dependencies."""
         self._declared: dict[ChannelTransport, int] = {}
         self._started: list[ChannelTransport] = []
+        self._dirty: set[ChannelTransport] = set()
         self._running = False
+        self._owners: dict[ChannelTransport, set[str]] = {}
+        self._managed: set[ChannelTransport] = set()
 
     @property
     def has_declarations(self) -> bool:
@@ -51,8 +54,43 @@ class ChannelTransports:
 
     def use(self, transport: ChannelTransport, owner: Any = None) -> None:
         """Attach one declaration to the framework's owning plugin scope."""
-        if self._running and transport not in self._started:
-            raise RuntimeError("New transports require a host restart")
+        from opsmesh.drivers import get_driver
+        from opsmesh.plugins.model import Plugin
+        from opsmesh.plugins.registry import (
+            _current_plugin,
+            get_plugin_by_module_name,
+        )
+
+        plugin = _current_plugin.get()
+        if plugin is None and owner is not None:
+            plugin = get_plugin_by_module_name(getattr(owner, "__module__", ""))
+        if isinstance(plugin, Plugin):
+            self._managed.add(transport)
+            driver = get_driver()
+
+            async def prepare() -> None:
+                self._check_clean(transport)
+                owners = self._owners.setdefault(transport, set())
+                owners.add(plugin.id_)
+                await self._start_transport(transport)
+
+            async def start() -> None:
+                self._check_clean(transport)
+                if (
+                    getattr_static(transport, "start_accepting", None)
+                    is not None
+                ):
+                    await cast(StreamingTransport, transport).start_accepting()
+
+            async def close() -> None:
+                owners = self._owners.get(transport, set())
+                owners.discard(plugin.id_)
+                if not owners and transport in self._started:
+                    await self._close_transport(transport)
+
+            driver.on_ready(prepare)
+            driver.on_started(start)
+            driver.on_shutdown(close)
         self._declared[transport] = self._declared.get(transport, 0) + 1
 
         def remove() -> None:
@@ -66,13 +104,17 @@ class ChannelTransports:
 
     async def startup(self, *entrances: ChannelTransport) -> None:
         """Open requested transports and roll back partial initialization."""
+        for transport in self._dirty:
+            self._check_clean(transport)
         if self._running:
             return
         self._running = True
         try:
-            for transport in (*entrances, *self._declared):
-                self._started.append(transport)
-                await transport.startup()
+            for transport in (
+                *entrances,
+                *(item for item in self._declared if item not in self._managed),
+            ):
+                await self._start_transport(transport)
         except BaseException as error:
             with anyio.CancelScope(shield=True):
                 try:
@@ -87,6 +129,7 @@ class ChannelTransports:
     async def start_accepting(self) -> None:
         """Open remote inputs after all consumers have initialized."""
         for transport in self._started:
+            self._check_clean(transport)
             if getattr_static(transport, "start_accepting", None) is not None:
                 await cast(StreamingTransport, transport).start_accepting()
 
@@ -113,12 +156,30 @@ class ChannelTransports:
         """Close all started transports even if one fails to close."""
         errors: list[BaseException] = []
         with anyio.CancelScope(shield=True):
-            while self._started:
-                transport = self._started.pop()
+            for transport in reversed(tuple(self._started)):
                 try:
-                    await transport.shutdown()
+                    await self._close_transport(transport)
                 except BaseException as error:
                     errors.append(error)
-        self._running = False
+        self._running = bool(self._started)
         if errors:
             raise BaseExceptionGroup("Channel shutdown failed", errors)
+
+    def _check_clean(self, transport: ChannelTransport) -> None:
+        if transport in self._dirty:
+            raise RuntimeError("Channel transport requires successful cleanup")
+
+    async def _start_transport(self, transport: ChannelTransport) -> None:
+        self._check_clean(transport)
+        if transport in self._started:
+            return
+        self._started.append(transport)
+        self._dirty.add(transport)
+        await transport.startup()
+        self._dirty.discard(transport)
+
+    async def _close_transport(self, transport: ChannelTransport) -> None:
+        self._dirty.add(transport)
+        await transport.shutdown()
+        self._started.remove(transport)
+        self._dirty.discard(transport)

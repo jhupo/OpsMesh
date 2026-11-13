@@ -10,6 +10,7 @@ from pydantic import (
     model_validator,
 )
 
+from ..attachments import AttachmentSettings
 from ..server import ListenerSettings
 
 _ID_PATTERN = r"^[A-Za-z0-9_.:@-]{1,128}$"
@@ -72,6 +73,7 @@ class Settings(ListenerSettings):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
     identities: tuple[IdentitySettings, ...] = Field(min_length=1)
     request_timeout_seconds: float = Field(default=300, gt=0)
     stream_error_message: str = Field(

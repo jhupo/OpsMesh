@@ -108,7 +108,7 @@ def require_cutover(connection: Connection, source: MigrationSource) -> None:
     if legacy:
         raise MigrationRequiredError(
             "Shared alembic_version history exists; run the explicit "
-            "database.commands.convert_shared_history command before startup "
+            "tools.database_history maintenance command before startup "
             "or upgrades"
         )
 

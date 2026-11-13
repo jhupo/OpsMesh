@@ -5,7 +5,9 @@ runtime records so dependencies, event handlers, and cleanup resolve the same
 owner. It does not perform a second discovery or import step.
 """
 
+import inspect
 from collections.abc import Callable
+from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -13,6 +15,8 @@ from functools import wraps
 from itertools import chain
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
+
+import anyio
 
 from opsmesh.dependencies import Dependent
 
@@ -26,6 +30,52 @@ _managers: list["PluginManager"] = []
 _current_plugin: ContextVar["Plugin | None"] = ContextVar(
     "_current_plugin", default=None
 )
+
+
+def get_current_plugin() -> "Plugin | None":
+    """Resolve explicit execution ownership, then the nearest plugin caller."""
+    plugin = _current_plugin.get()
+    if plugin is not None:
+        return plugin
+    frame = inspect.currentframe()
+    owners: list[Plugin] = []
+    try:
+        frame = frame.f_back if frame is not None else None
+        while frame is not None:
+            module = frame.f_globals.get("__name__", "")
+            plugin = get_plugin_by_module_name(module)
+            if plugin is not None and plugin not in owners:
+                owners.append(plugin)
+            frame = frame.f_back
+        if not owners:
+            return None
+        owner = owners[0]
+        for candidate in owners[1:]:
+            pending = list(candidate.dependencies)
+            visited: set[str] = set()
+            while pending:
+                name = pending.pop()
+                if name == owner.id_:
+                    owner = candidate
+                    break
+                if name not in visited:
+                    visited.add(name)
+                    dependency = get_plugin(name)
+                    if dependency is not None:
+                        pending.extend(dependency.dependencies)
+        return owner
+    finally:
+        del frame
+
+
+@contextmanager
+def plugin_scope(plugin: "Plugin | None"):
+    """Run declarations or callbacks with their owning plugin identity."""
+    token = _current_plugin.set(plugin)
+    try:
+        yield
+    finally:
+        _current_plugin.reset(token)
 
 
 def _module_name_to_plugin_name(module_name: str) -> str:
@@ -93,6 +143,8 @@ def _new_plugin(
         parent_plugin=parent_plugin,
         config_values=deepcopy(manager.config_values),
         required=bool(getattr(manager, "required", False)),
+        enabled=bool(getattr(manager, "enabled", True)),
+        protected=bool(getattr(manager, "protected", False)),
     )
     if parent_plugin:
         parent_plugin.sub_plugins.add(plugin)
@@ -102,6 +154,31 @@ def _new_plugin(
 
 
 def revoke_plugin(plugin: "Plugin") -> None:
+    """Revoke cleaned declarations after checking the entire child tree."""
+    from .errors import PluginProtectedError
+
+    affected = {plugin}
+    pending = [plugin]
+    while pending:
+        item = pending.pop()
+        affected.update(item.sub_plugins)
+        pending.extend(item.sub_plugins)
+    if any(item.protected for item in affected):
+        raise PluginProtectedError(
+            "Protected plugin declarations cannot be revoked"
+        )
+    if any(not item.cleanup_complete or item.calls for item in affected):
+        raise RuntimeError("Plugin resources must be stopped before revocation")
+    if any(
+        item not in affected
+        and any(owner.id_ in item.dependencies for owner in affected)
+        for item in _plugins.values()
+    ):
+        raise RuntimeError("Revoke dependent plugins first")
+    _revoke_plugin(plugin)
+
+
+def _revoke_plugin(plugin: "Plugin") -> None:
     """Remove owned registrations after failure or after host drain.
 
     This does not undo source side effects or unload Python modules. A failed
@@ -113,14 +190,15 @@ def revoke_plugin(plugin: "Plugin") -> None:
     for child in reversed(tuple(_plugins.values())):
         if child.parent_plugin is plugin:
             try:
-                revoke_plugin(child)
+                _revoke_plugin(child)
             except Exception as error:
                 errors.append(error)
-    while plugin.cleanups:
-        try:
-            plugin.cleanups.pop()()
-        except Exception as error:
-            errors.append(error)
+    for cleanups in (plugin.activation_cleanups, plugin.cleanups):
+        while cleanups:
+            try:
+                cleanups.pop()()
+            except Exception as error:
+                errors.append(error)
     for matcher in tuple(plugin.matcher):
         try:
             matcher.destroy()
@@ -147,11 +225,18 @@ def track_registration(
         )
         plugin = get_plugin_by_module_name(module_name)
     if plugin is not None:
-        plugin.cleanups.append(cleanup)
+        from .model import PluginStatus
+
+        cleanups = (
+            plugin.cleanups
+            if plugin.status is PluginStatus.LOADED
+            else plugin.activation_cleanups
+        )
+        cleanups.append(cleanup)
 
     def release():
-        if plugin is not None and cleanup in plugin.cleanups:
-            plugin.cleanups.remove(cleanup)
+        if plugin is not None and cleanup in cleanups:
+            cleanups.remove(cleanup)
 
     return release
 
@@ -161,11 +246,62 @@ class _HookRegistration(Dependent[Any]):
     """Separate ownership even when two plugins register the same callable."""
 
     registration_id: object = field(default_factory=object)
+    owner: Plugin | None = field(default=None, compare=False, hash=False)
+
+    async def __call__(self, **kwargs):
+        from opsmesh.exceptions import SkippedException
+
+        from .invocation import (
+            PluginUnavailable,
+            _current_call,
+            hold_plugin,
+            invocation_scope,
+        )
+
+        if self.owner is None:
+            return await super().__call__(**kwargs)
+        stack = kwargs.get("stack")
+        owned = AsyncExitStack()
+        call = None
+        if stack is not None:
+            admission = AsyncExitStack()
+            try:
+                with invocation_scope(_current_call.get()):
+                    call = hold_plugin(self.owner, admission)
+            except PluginUnavailable as error:
+                raise SkippedException from error
+
+            async def close_owned(exc_type, error, traceback):
+                with (
+                    plugin_scope(self.owner),
+                    invocation_scope(call),
+                    anyio.CancelScope(shield=True),
+                ):
+                    suppressed = await owned.__aexit__(
+                        exc_type, error, traceback
+                    )
+                    await admission.aclose()
+                    return suppressed
+
+            stack.push_async_exit(close_owned)
+            kwargs = {**kwargs, "stack": owned, "dependency_cache": {}}
+        try:
+            with plugin_scope(self.owner), invocation_scope(call):
+                return await super().__call__(**kwargs)
+        finally:
+            if stack is None:
+                with plugin_scope(self.owner), invocation_scope(call):
+                    await owned.aclose()
 
 
 def register_hook(group, func, parameters):
     """Parse a hook and retain only its own reversible set insertion."""
     dependent = _HookRegistration.parse(call=func, allow_types=parameters)
+    object.__setattr__(
+        dependent,
+        "owner",
+        _current_plugin.get() or get_plugin_by_module_name(func.__module__),
+    )
     group.add(dependent)
     track_registration(lambda: group.discard(dependent), func)
     return func
@@ -173,10 +309,26 @@ def register_hook(group, func, parameters):
 
 def register_callback(group, func):
     """Own one asynchronous channel callback without sharing its identity."""
+    plugin = _current_plugin.get() or get_plugin_by_module_name(func.__module__)
 
     @wraps(func)
     async def registered(*args, **kwargs):
-        return await func(*args, **kwargs)
+        from .invocation import (
+            PluginUnavailable,
+            _current_call,
+            hold_plugin,
+            invocation_scope,
+        )
+
+        with plugin_scope(plugin):
+            async with AsyncExitStack() as stack:
+                try:
+                    with invocation_scope(_current_call.get()):
+                        call = hold_plugin(plugin, stack)
+                except PluginUnavailable:
+                    return None
+                with invocation_scope(call):
+                    return await func(*args, **kwargs)
 
     group.add(registered)
     track_registration(lambda: group.discard(registered), func)

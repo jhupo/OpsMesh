@@ -9,7 +9,6 @@ from pathlib import Path
 def test_schema_declaration_binds_checks_and_rolls_back_failed_plugin(tmp_path):
     source = """
 from pathlib import Path
-from sqlalchemy import MetaData
 from opsmesh import on_startup, on_plugin_loaded
 from opsmesh.plugins import PluginMetadata, require
 
@@ -23,7 +22,7 @@ events = []
 __plugin_meta__ = PluginMetadata(
     name="Example", description="Example", usage="Example",
     extra={"database": database.DatabaseSchema(
-        MetaData(), Path(__file__).with_name("migrations"), "schema_probe_001",
+        Path(__file__).with_name("migrations"), "schema_probe_001",
     )},
 )
 """

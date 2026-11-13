@@ -6,6 +6,8 @@ from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from opsmesh.exceptions import (
     StopPropagation,
 )
@@ -17,11 +19,20 @@ from opsmesh.typing import (
 
 if TYPE_CHECKING:
     from opsmesh.adapters import Channel, Event
+    from opsmesh.plugins.invocation import PluginCall
 
 from .processors import _apply_run_postprocessors, _apply_run_preprocessors
 from .results import record_error, record_outcome
 
 logger = logging.getLogger(__name__)
+
+
+class _DispatchResources(AsyncExitStack):
+    """Allow dependency finalizers to await after event cancellation."""
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        with anyio.CancelScope(shield=True):
+            return await super().__aexit__(exc_type, exc_value, traceback)
 
 
 async def _check_matcher(
@@ -50,6 +61,14 @@ async def _check_matcher(
     Returns:
         Whether the matcher is eligible to run.
     """
+    from opsmesh.plugins.invocation import PluginUnavailable, hold_plugin
+    from opsmesh.plugins.registry import get_plugin
+
+    if stack is not None and Matcher.plugin_id:
+        try:
+            hold_plugin(get_plugin(Matcher.plugin_id), stack)
+        except PluginUnavailable:
+            return False
     if Matcher.expire_time:
         expire_time = Matcher.expire_time
         if expire_time.utcoffset() is not None:
@@ -179,6 +198,8 @@ async def check_and_run_matcher(
     stack: AsyncExitStack | None = None,
     dependency_cache: T_DependencyCache | None = None,
     invocation_context: Any = None,
+    *,
+    admitted_call: "PluginCall | None" = None,
 ) -> None:
     """Check a matcher and execute it if eligible.
 
@@ -190,24 +211,66 @@ async def check_and_run_matcher(
         stack: The asynchronous resource cleanup stack.
         dependency_cache: The event-scoped dependency cache.
         invocation_context: Trusted context supplied for this event only.
+        admitted_call: Explicit admission retained by the event transport.
     """
-    if not await _check_matcher(
-        Matcher=Matcher,
-        channel=channel,
-        event=event,
-        state=state,
-        stack=stack,
-        dependency_cache=dependency_cache,
-        invocation_context=invocation_context,
-    ):
+    from opsmesh.plugins.invocation import (
+        PluginUnavailable,
+        hold_continuation,
+        hold_plugin,
+        invocation_scope,
+    )
+    from opsmesh.plugins.registry import get_plugin, plugin_scope
+
+    plugin = get_plugin(Matcher.plugin_id) if Matcher.plugin_id else None
+    if Matcher.plugin_id and plugin is None:
+        return
+    owned_stack = _DispatchResources()
+    admission = AsyncExitStack()
+    try:
+        call = (
+            hold_continuation(admitted_call, plugin.id_, admission)
+            if admitted_call is not None and plugin is not None
+            else hold_plugin(plugin, admission)
+        )
+    except PluginUnavailable:
         return
 
-    await _run_matcher(
-        Matcher=Matcher,
-        channel=channel,
-        event=event,
-        state=state,
-        stack=stack,
-        dependency_cache=dependency_cache,
-        invocation_context=invocation_context,
-    )
+    async def close_owned(exc_type=None, error=None, traceback=None):
+        with plugin_scope(plugin), invocation_scope(call):
+            suppressed = await owned_stack.__aexit__(exc_type, error, traceback)
+            await admission.aclose()
+            return suppressed
+
+    with plugin_scope(plugin), invocation_scope(call):
+        try:
+            matches = await _check_matcher(
+                Matcher=Matcher,
+                channel=channel,
+                event=event,
+                state=state,
+                stack=owned_stack,
+                dependency_cache=(owned_cache := {}),
+                invocation_context=invocation_context,
+            )
+        except BaseException:
+            await close_owned()
+            raise
+        if not matches:
+            await close_owned()
+            return
+
+        try:
+            await _run_matcher(
+                Matcher=Matcher,
+                channel=channel,
+                event=event,
+                state=state,
+                stack=owned_stack,
+                dependency_cache=owned_cache,
+                invocation_context=invocation_context,
+            )
+        finally:
+            if stack is not None:
+                stack.push_async_exit(close_owned)
+            else:
+                await close_owned()

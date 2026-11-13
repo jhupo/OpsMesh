@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
+
+import anyio
 
 from opsmesh.adapters import Channel
 from opsmesh.matchers import Matcher
-from opsmesh.messages import Message, MessageSegment
 from opsmesh.plugins.channels._dedupe import EventDeduplicator
 from opsmesh.plugins.model import Plugin
 
 from .config import QQConnectionSettings, QQSettings
-from .events import QQMessage, QQMessageEvent, QQMessageSegment
+from .errors import QQSendError
+from .events import QQMessageEvent
 
 if TYPE_CHECKING:
     from .adapter import QQAdapter
@@ -24,44 +28,7 @@ DISCONNECTED = "disconnected"
 CLOSED = "closed"
 
 _SEQUENCE_LIMIT = 512
-
-
-def outgoing_text(message: Any, limit: int) -> str:
-    """Convert a framework message into bounded QQ text.
-
-    Args:
-        message: A string, QQ message, or QQ text segment.
-        limit: Maximum accepted character count.
-
-    Returns:
-        The text payload to send.
-
-    Raises:
-        TypeError: The message is not a QQ text message.
-        ValueError: The message is empty or exceeds the limit.
-    """
-    if isinstance(message, str):
-        text = message
-    elif isinstance(message, QQMessageSegment):
-        if not message.is_text():
-            raise TypeError("QQ channels only send text segments")
-        text = str(message)
-    elif isinstance(message, QQMessage):
-        if not all(segment.is_text() for segment in message):
-            raise TypeError("QQ channels only send text segments")
-        text = message.extract_plain_text()
-    elif isinstance(message, MessageSegment):
-        raise TypeError("QQ channels only send QQ message segments")
-    elif isinstance(message, Message):
-        raise TypeError("QQ channels only send QQ messages")
-    else:
-        raise TypeError("QQ channels only send text messages")
-
-    if not text.strip():
-        raise ValueError("QQ messages cannot be empty")
-    if len(text) > limit:
-        raise ValueError(f"QQ messages are limited to {limit} characters")
-    return text
+_MAX_REPLIES = 5
 
 
 class QQChannel(Channel):
@@ -70,6 +37,16 @@ class QQChannel(Channel):
     The channel is connected to the driver only after its secret and
     callback route are usable.
     """
+
+    receive_types = frozenset({"text", "image", "file", "audio", "video"})
+    send_types = receive_types
+
+    @property
+    def supported_operations(self) -> frozenset[str]:
+        """Return implemented operations, independent of account privileges."""
+        from .groups import QQGroups
+
+        return QQGroups.operations | {"send_message"}
 
     def __init__(
         self,
@@ -97,6 +74,7 @@ class QQChannel(Channel):
             ttl=protocol.dedupe_ttl, capacity=protocol.dedupe_capacity
         )
         self._sequences: OrderedDict[str, int] = OrderedDict()
+        self._reply_locks: dict[str, anyio.Lock] = {}
 
     @property
     def owner_ready(self) -> bool:
@@ -184,9 +162,35 @@ class QQChannel(Channel):
         sequence = self._sequences.get(message_id, 0) + 1
         self._sequences[message_id] = sequence
         self._sequences.move_to_end(message_id)
-        while len(self._sequences) > _SEQUENCE_LIMIT:
-            self._sequences.popitem(last=False)
+        self._prune_sequences()
         return sequence
+
+    @asynccontextmanager
+    async def replies(self, message_id: str, count: int) -> AsyncIterator[None]:
+        """Reserve reply capacity while serializing sends for one message.
+
+        Only attempted sends consume sequence numbers. Upload failures and
+        cancellation before sending leave the unused capacity available.
+        """
+        lock = self._reply_locks.setdefault(message_id, anyio.Lock())
+        try:
+            async with lock:
+                if self._sequences.get(message_id, 0) + count > _MAX_REPLIES:
+                    raise QQSendError(
+                        "QQ allows at most five replies per message"
+                    )
+                yield
+        finally:
+            if not lock.locked() and not lock.statistics().tasks_waiting:
+                self._reply_locks.pop(message_id, None)
+            self._prune_sequences()
+
+    def _prune_sequences(self) -> None:
+        for message_id in tuple(self._sequences):
+            if len(self._sequences) <= _SEQUENCE_LIMIT:
+                break
+            if message_id not in self._reply_locks:
+                del self._sequences[message_id]
 
     async def send(
         self,
@@ -198,7 +202,7 @@ class QQChannel(Channel):
 
         Args:
             event: The incoming QQ message event.
-            message: The text content to send.
+            message: Text or framework message with attachment references.
             **kwargs: Reserved for future send options.
 
         Returns:

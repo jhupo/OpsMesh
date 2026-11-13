@@ -1,9 +1,4 @@
-"""Create execution call and usage observation tables.
-
-Revision ID: 0001_execution_observations
-Revises:
-Create Date: 2026-11-11
-"""
+"""Archived execution observations schema retained for history conversion."""
 
 from __future__ import annotations
 

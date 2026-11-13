@@ -26,7 +26,11 @@ def usage(input_tokens, output_tokens):
 
 
 @pytest.fixture
-async def execution(monkeypatch):
+async def execution(monkeypatch, callback_owner):
+    with callback_owner("execution"):
+        pass
+    with callback_owner("test_consumer"):
+        pass
     runtime = ExecutionRuntime(Settings())
     await runtime.startup()
     monkeypatch.setattr(lifecycle, "_runtime", runtime)
@@ -169,8 +173,6 @@ async def test_cancellation_during_terminal_observation_reaches_caller(
 async def test_shutdown_cancels_consumers_and_notifies_observers(
     execution, callback_owner, streaming
 ):
-    from opsmesh.plugins.execution.errors import ExecutionClosed
-
     observations = []
     with callback_owner("cancelled"):
 
@@ -193,28 +195,33 @@ async def test_shutdown_cancels_consumers_and_notifies_observers(
 
     task = asyncio.create_task(consume())
     await asyncio.wait_for(model.started.wait(), 2)
-    await lifecycle.get_runtime().shutdown()
+    from opsmesh.plugins import PluginStatus, get_plugin
+    from opsmesh.plugins.invocation import drain_plugin
+
+    consumer = get_plugin("cancelled")
+    consumer.status = PluginStatus.STOPPING
+    await drain_plugin(consumer, 0.2)
     with pytest.raises(asyncio.CancelledError):
         await task
     assert len(observations) == 1
     assert isinstance(observations[0], asyncio.CancelledError)
-    with pytest.raises(ExecutionClosed):
-        await execution.run(agent, "again")
+    from opsmesh.plugins.invocation import PluginUnavailable
+
+    with pytest.raises(PluginUnavailable):
+        await execution.run(agent, "again", plugin_id="cancelled")
 
 
 @pytest.mark.anyio
 async def test_declared_dependency_callbacks_participate(
     execution, callback_owner, monkeypatch
 ):
-    from types import SimpleNamespace
+    from opsmesh.plugins import get_plugin
 
-    from opsmesh.plugins.execution import callbacks
-
-    dependencies = {
-        "chat": SimpleNamespace(dependencies={"users"}),
-        "users": SimpleNamespace(dependencies=set()),
-    }
-    monkeypatch.setattr(callbacks, "get_plugin", dependencies.get)
+    with callback_owner("chat"):
+        pass
+    with callback_owner("users"):
+        pass
+    get_plugin("chat").dependencies.append("users")
     observed = []
     with callback_owner("users"):
 
@@ -257,12 +264,14 @@ async def test_native_approval_state_is_resumed_without_platform_state(
         ]
     )
     agent = Agent(name="test", model=model, tools=[publish])
-    interrupted = await execution.run(agent, "publish")
+    interrupted = await execution.run(
+        agent, "publish", plugin_id="test_consumer"
+    )
     assert len(interrupted.interruptions) == 1
     assert invoked == []
     state = interrupted.to_state()
     state.approve(interrupted.interruptions[0])
-    result = await execution.run(agent, state)
+    result = await execution.run(agent, state, plugin_id="test_consumer")
     assert result.final_output == "complete"
     assert invoked == [True]
 
@@ -323,18 +332,27 @@ async def test_stream_cleanup_finishes_before_consumer_cancellation():
 
 
 @pytest.fixture
-def callback_owner():
+def callback_owner(monkeypatch):
     from contextlib import contextmanager
-    from types import SimpleNamespace
+    from types import ModuleType
 
-    from opsmesh.plugins import registry
+    from opsmesh.plugins import Plugin, PluginManager, PluginStatus, registry
 
     owners = []
+    monkeypatch.setattr(registry, "_plugins", {})
 
     @contextmanager
     def register(name):
-        plugin = SimpleNamespace(id_=name, ready=True, cleanups=[])
-        owners.append(plugin)
+        plugin = registry.get_plugin(name)
+        if plugin is None:
+            module = (
+                execution_module if name == "execution" else ModuleType(name)
+            )
+            plugin = Plugin(name, module, module.__name__, PluginManager())
+            plugin.status = PluginStatus.READY
+            plugin.dependencies = [] if name == "execution" else ["execution"]
+            registry._plugins[name] = plugin
+            owners.append(plugin)
         token = registry._current_plugin.set(plugin)
         try:
             yield plugin
@@ -343,7 +361,7 @@ def callback_owner():
 
     yield register
     for plugin in owners:
-        for cleanup in reversed(plugin.cleanups):
+        for cleanup in reversed(plugin.activation_cleanups + plugin.cleanups):
             cleanup()
 
 
@@ -487,12 +505,14 @@ async def test_native_sandbox_runs_through_same_execution(execution, streaming):
     )
     if streaming:
         async with execution.stream(
-            agent, "hello", run_config=config
+            agent, "hello", run_config=config, plugin_id="test_consumer"
         ) as result:
             async for _ in result.stream_events():
                 pass
     else:
-        result = await execution.run(agent, "hello", run_config=config)
+        result = await execution.run(
+            agent, "hello", run_config=config, plugin_id="test_consumer"
+        )
     assert result.final_output == "sandbox answer"
     sandbox.assert_complete()
 
@@ -538,7 +558,7 @@ async def test_revoked_callback_is_not_selected(execution, callback_owner):
         async def revoked(response):
             raise AssertionError("Revoked callback ran")
 
-    for cleanup in plugin.cleanups:
+    for cleanup in tuple(plugin.activation_cleanups + plugin.cleanups):
         cleanup()
     model = ScriptedModel([ModelStep(output=[assistant_message("done")])])
     result = await execution.run(
@@ -599,3 +619,440 @@ async def test_callback_cleanup_preserves_original_failure(
     assert caught.value is original
     assert closed == [True]
     assert any("dependency close failed" in note for note in original.__notes__)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_admitted_callbacks_continue_while_owner_stops(
+    execution, callback_owner, streaming
+):
+    from typing import Annotated
+
+    from opsmesh.params import Depends
+    from opsmesh.plugins import PluginStatus, get_plugin
+    from opsmesh.plugins.invocation import PluginUnavailable, plugin_call
+
+    observed = []
+
+    async def resource():
+        async with plugin_call("stopping"):
+            observed.append("open")
+        try:
+            yield None
+        finally:
+            async with plugin_call("stopping"):
+                observed.append("close")
+
+    with callback_owner("stopping"):
+
+        @execution.on_llm_start
+        async def stopping():
+            owner = get_plugin("stopping")
+            assert owner.calls
+            owner.status = PluginStatus.STOPPING
+
+        @execution.on_llm_end
+        async def response(value: Annotated[Any, Depends(resource)]):
+            async with plugin_call("stopping"):
+                observed.append("response")
+
+            async def background():
+                with pytest.raises(PluginUnavailable):
+                    async with plugin_call("stopping"):
+                        pass
+
+            await asyncio.create_task(background())
+
+        @execution.on_run_end
+        async def finished(value: Annotated[Any, Depends(resource)]):
+            async with plugin_call("stopping"):
+                observed.append("finished")
+
+    model = ScriptedModel([ModelStep(output=[assistant_message("done")])])
+    agent = Agent(name="test", model=model)
+    if streaming:
+        async with execution.stream(
+            agent, "hello", plugin_id="stopping"
+        ) as result:
+            async for _ in result.stream_events():
+                pass
+    else:
+        result = await execution.run(agent, "hello", plugin_id="stopping")
+    assert result.final_output == "done"
+    assert observed == [
+        "open",
+        "response",
+        "close",
+        "open",
+        "finished",
+        "close",
+    ]
+    assert not get_plugin("stopping").calls
+
+
+@pytest.mark.anyio
+async def test_callback_dependencies_and_finalizers_keep_their_owner(
+    execution, callback_owner
+):
+    from typing import Annotated
+
+    from opsmesh.params import Depends
+    from opsmesh.plugins import get_current_plugin, get_plugin
+
+    observed = []
+
+    async def resource():
+        identifier = get_current_plugin().id_
+        observed.append(("open", identifier))
+        try:
+            yield identifier
+        finally:
+            observed.append(("close", get_current_plugin().id_))
+
+    for identifier in ("consumer", "observer"):
+        with callback_owner(identifier):
+
+            @execution.on_llm_start
+            async def observe(value: Annotated[str, Depends(resource)]):
+                assert get_current_plugin().id_ == value
+
+    get_plugin("consumer").dependencies.append("observer")
+    model = ScriptedModel([ModelStep(output=[assistant_message("done")])])
+    await execution.run(
+        Agent(name="test", model=model), "hello", plugin_id="consumer"
+    )
+    assert observed == [
+        ("open", "consumer"),
+        ("open", "observer"),
+        ("close", "observer"),
+        ("close", "consumer"),
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("event", ["on_llm_end", "on_run_end"])
+async def test_callback_cleanup_timeout_retains_its_plugin_admission(
+    execution, callback_owner, monkeypatch, event
+):
+    from typing import Annotated
+
+    from opsmesh.params import Depends
+    from opsmesh.plugins import get_plugin
+    from opsmesh.plugins.invocation import drain_plugin
+
+    started = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def resource():
+        try:
+            yield None
+        finally:
+            started.set()
+            await asyncio.sleep(1)
+            finished.set()
+
+    with callback_owner("cleanup_timeout"):
+
+        @getattr(execution, event)
+        async def observe(value: Annotated[Any, Depends(resource)]):
+            pass
+
+    monkeypatch.setattr(
+        lifecycle.get_runtime(),
+        "settings",
+        Settings(cleanup_timeout_seconds=0.01),
+    )
+    agent = Agent(
+        name="test",
+        model=ScriptedModel([ModelStep(output=[assistant_message("done")])]),
+    )
+    if event == "on_llm_end":
+        with pytest.raises(TimeoutError):
+            await execution.run(agent, "hello", plugin_id="cleanup_timeout")
+    else:
+        result = await execution.run(
+            agent, "hello", plugin_id="cleanup_timeout"
+        )
+        assert result.final_output == "done"
+    owner = get_plugin("cleanup_timeout")
+    assert started.is_set()
+    assert not finished.is_set()
+    assert owner.calls
+    assert all(call.active for call in owner.calls.values())
+    assert get_plugin("execution").calls
+    with pytest.raises(TimeoutError):
+        await drain_plugin(owner, 0.01)
+
+
+@pytest.mark.anyio
+async def test_background_execution_requires_explicit_known_owner(execution):
+    model = ScriptedModel([ModelStep(output=[assistant_message("unused")])])
+    agent = Agent(name="test", model=model)
+    with pytest.raises(ValueError, match="requires plugin_id"):
+        await execution.run(agent, "hello")
+    with pytest.raises(ValueError, match="Unknown execution owner"):
+        await execution.run(agent, "hello", plugin_id="missing")
+    assert not model.calls
+
+
+@pytest.mark.anyio
+async def test_cancelled_future_in_end_observer_propagates(
+    execution, callback_owner
+):
+    with callback_owner("terminal_future"):
+
+        @execution.on_run_end
+        async def cancelled():
+            future = asyncio.get_running_loop().create_future()
+            future.cancel()
+            await future
+
+    model = ScriptedModel([ModelStep(output=[assistant_message("done")])])
+    with pytest.raises(asyncio.CancelledError):
+        await execution.run(
+            Agent(name="test", model=model),
+            "hello",
+            plugin_id="terminal_future",
+        )
+
+
+@pytest.mark.anyio
+async def test_pending_sdk_cleanup_keeps_plugin_resources(
+    execution, callback_owner, monkeypatch
+):
+
+    from opsmesh.plugins import get_plugin
+    from opsmesh.plugins.execution import _invocation
+
+    class PendingStream:
+        is_complete = True
+        run_loop_exception = None
+        run_loop_task = None
+
+    released = asyncio.Event()
+    closing = asyncio.Event()
+    result = PendingStream()
+    result._sandbox_cleanup_task = asyncio.create_task(released.wait())
+
+    async def timeout_cleanup(*args, **kwargs):
+        closing.set()
+        return False
+
+    monkeypatch.setattr(_invocation, "RunResultStreaming", PendingStream)
+    monkeypatch.setattr(_invocation, "close_stream", timeout_cleanup)
+    with callback_owner("pending"):
+        pass
+
+    async def consume():
+        async with _invocation.Invocation(
+            Agent(name="unused"),
+            "hello",
+            context=None,
+            hooks=None,
+            run_config=None,
+            plugin_id="pending",
+            trace_context=None,
+        ) as invocation:
+            invocation.result = result
+
+    task = asyncio.create_task(consume())
+    try:
+        await closing.wait()
+        await asyncio.sleep(0)
+        assert get_plugin("pending").calls
+        assert get_plugin("execution").calls
+        assert not task.done()
+    finally:
+        released.set()
+        with pytest.raises(TimeoutError, match="SDK stream cleanup failed"):
+            await task
+    assert not get_plugin("pending").calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("guardrail_type", ["input", "output"])
+async def test_native_stream_guardrails_keep_plugin_resources_until_done(
+    execution, callback_owner, monkeypatch, guardrail_type
+):
+    from agents import (
+        GuardrailFunctionOutput,
+        input_guardrail,
+        output_guardrail,
+    )
+
+    from opsmesh.plugins import get_plugin
+    from opsmesh.plugins.execution import _invocation
+
+    entered = asyncio.Event()
+    released = asyncio.Event()
+    settling = asyncio.Event()
+    guardrail_tasks = []
+
+    async def guardrail(context, agent, value):
+        guardrail_tasks.append(asyncio.current_task())
+        entered.set()
+        while not released.is_set():
+            try:
+                await released.wait()
+            except asyncio.CancelledError:
+                pass
+        return GuardrailFunctionOutput(
+            output_info=None, tripwire_triggered=False
+        )
+
+    native_settle = _invocation.settle_stream
+
+    async def settle(result):
+        settling.set()
+        await native_settle(result)
+
+    monkeypatch.setattr(_invocation, "settle_stream", settle)
+    monkeypatch.setattr(
+        lifecycle.get_runtime(),
+        "settings",
+        Settings(cleanup_timeout_seconds=0.01),
+    )
+    with callback_owner("guarded"):
+        pass
+    decorator = (
+        input_guardrail if guardrail_type == "input" else output_guardrail
+    )
+    agent = Agent(
+        name="guarded",
+        model=ScriptedModel([ModelStep(output=[assistant_message("done")])]),
+        **{f"{guardrail_type}_guardrails": [decorator(guardrail)]},
+    )
+    results = []
+
+    async def consume():
+        async with execution.stream(
+            agent, "hello", plugin_id="guarded"
+        ) as result:
+            results.append(result)
+            await entered.wait()
+
+    consumer = asyncio.create_task(consume())
+    try:
+        await asyncio.wait_for(settling.wait(), timeout=10)
+        assert not consumer.done()
+        assert all(not task.done() for task in guardrail_tasks)
+        assert get_plugin("guarded").calls
+        assert get_plugin("execution").calls
+        guardrail_task = getattr(
+            results[0], f"_{guardrail_type}_guardrails_task"
+        )
+        assert not guardrail_task.done()
+    finally:
+        released.set()
+        with pytest.raises(TimeoutError, match="SDK stream cleanup failed"):
+            await asyncio.wait_for(consumer, timeout=5)
+    assert all(task.done() for task in guardrail_tasks)
+    assert guardrail_task.done()
+    assert not get_plugin("guarded").calls
+    assert not get_plugin("execution").calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_sdk_agent_tool_continues_admitted_run_during_stop(
+    execution, callback_owner, streaming
+):
+    from agents.testing import function_call
+
+    from opsmesh.plugins import PluginStatus, get_plugin
+
+    with callback_owner("delegate"):
+
+        @execution.on_tool_start
+        async def stop_owner(tool):
+            get_plugin("delegate").status = PluginStatus.STOPPING
+
+    inner = Agent(
+        name="inner",
+        model=ScriptedModel(
+            [ModelStep(output=[assistant_message("inner done")])]
+        ),
+    )
+
+    model = ScriptedModel(
+        [
+            ModelStep(
+                output=[
+                    function_call(
+                        "delegate", '{"input":"nested"}', call_id="delegate-1"
+                    )
+                ]
+            ),
+            ModelStep(output=[assistant_message("outer done")]),
+        ]
+    )
+    outer = Agent(
+        name="outer",
+        model=model,
+        tools=[inner.as_tool("delegate", "Delegate to the inner agent")],
+    )
+    if streaming:
+        async with execution.stream(
+            outer, "start", plugin_id="delegate"
+        ) as result:
+            async for _ in result.stream_events():
+                pass
+    else:
+        result = await execution.run(outer, "start", plugin_id="delegate")
+    assert result.final_output == "outer done"
+    assert len(inner.model.calls) == 1
+    assert not get_plugin("delegate").calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_child_execution_cannot_inherit_stopping_parent_admission(
+    execution, callback_owner, streaming
+):
+    from opsmesh.plugins import PluginStatus, get_plugin
+    from opsmesh.plugins.invocation import PluginUnavailable
+
+    child_model = ScriptedModel(
+        [ModelStep(output=[assistant_message("unused")])]
+    )
+    child = Agent(name="child", model=child_model)
+    rejected = []
+
+    with callback_owner("independent"):
+
+        @execution.before_run
+        async def start_background(agent):
+            if agent.name != "parent":
+                return
+
+            async def background():
+                with pytest.raises(PluginUnavailable):
+                    if streaming:
+                        async with execution.stream(
+                            child, "new", plugin_id="independent"
+                        ):
+                            pass
+                    else:
+                        await execution.run(
+                            child, "new", plugin_id="independent"
+                        )
+                rejected.append(True)
+
+            task = asyncio.create_task(background())
+            get_plugin("independent").status = PluginStatus.STOPPING
+            await task
+
+    result = await execution.run(
+        Agent(
+            name="parent",
+            model=ScriptedModel(
+                [ModelStep(output=[assistant_message("parent done")])]
+            ),
+        ),
+        "hello",
+        plugin_id="independent",
+    )
+    assert result.final_output == "parent done"
+    assert rejected == [True]
+    assert not child_model.calls
+    assert not get_plugin("independent").calls
