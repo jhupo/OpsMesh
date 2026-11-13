@@ -45,6 +45,45 @@ def manifest(directory):
     return host.HostManifest(data_dir=directory / "data")
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("register_online", [False, True])
+async def test_external_plugin_namespace_is_discovered_and_restored(
+    host_dir, register_online
+):
+    import opsmesh
+    import opsmesh.plugins
+
+    original_root = list(opsmesh.__path__)
+    original_plugins = list(opsmesh.plugins.__path__)
+    external = host_dir / "external"
+    package = external / "opsmesh" / "plugins" / "host_test_external"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("value = 42\n", encoding="utf-8")
+    record = PluginRecord(
+        module="opsmesh.plugins.host_test_external",
+        directory=str(external),
+        enabled=True,
+        autoload=True,
+        required=True,
+    )
+    if not register_online:
+        with PluginStorage(host_dir / "data") as storage:
+            storage.save(record)
+    try:
+        async with host.load_host(manifest(host_dir)):
+            manager = host.get_host()
+            if register_online:
+                await manager.register(record)
+            plugin = manager.load(record.module)
+            assert plugin.module.value == 42
+            assert plugin.module.__file__ == str(package / "__init__.py")
+        assert list(opsmesh.__path__) == original_root
+        assert list(opsmesh.plugins.__path__) == original_plugins
+    finally:
+        sys.modules.pop(record.module, None)
+        vars(opsmesh.plugins).pop("host_test_external", None)
+
+
 def test_storage_migrates_version_one_records(tmp_path):
     with PluginStorage(tmp_path) as storage:
         storage.save(PluginRecord(module="sample"))

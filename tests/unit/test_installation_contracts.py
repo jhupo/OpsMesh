@@ -18,8 +18,11 @@ def test_default_manifest_needs_no_plugins_or_credentials():
     manifest = HostManifest.model_validate_json(
         (ROOT / "deploy/host.example.json").read_text(encoding="utf-8")
     )
-    assert manifest.plugins == ()
-    assert manifest.plugin_paths == ()
+    assert set(manifest.model_dump()) == {
+        "environment", "framework", "data_dir"
+    }
+    assert manifest.environment == "production"
+    assert manifest.data_dir == Path("/var/lib/opsmesh")
 
 
 def test_installation_validation_refuses_non_disposable_hosts(monkeypatch):
@@ -40,7 +43,9 @@ def test_installer_probe_archive_retains_payload_and_checksums(
     contents = {
         "opsmesh": b"executable",
         "deploy/systemd/opsmesh.service": service,
-        "deploy/host.example.json": json.dumps({"plugins": []}).encode(),
+        "deploy/host.example.json": json.dumps(
+            {"environment": "production", "framework": {}, "data_dir": "./data"}
+        ).encode(),
     }
     with tarfile.open(archive, "w:gz") as output:
         for relative, content in contents.items():

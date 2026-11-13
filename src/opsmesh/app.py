@@ -33,6 +33,15 @@ from opsmesh.plugins.storage import PluginRecord, PluginStorage
 logger = logging.getLogger(__name__)
 
 
+def _refresh_plugin_namespace() -> None:
+    """Expose external plugin roots through both namespace levels."""
+    import opsmesh
+    import opsmesh.plugins
+
+    for package in (opsmesh, opsmesh.plugins):
+        package.__path__ = extend_path(package.__path__, package.__name__)
+
+
 @contextmanager
 def _data_lock(root: Path):
     """Prevent two hosts from managing the same resource directory."""
@@ -173,15 +182,18 @@ class Host:
             await anyio.to_thread.run_sync(self.storage.save, record)
             self.records[record.module] = record
             original_path = list(sys.path)
+            import opsmesh
+            import opsmesh.plugins
+
+            original_namespaces = (
+                list(opsmesh.__path__), list(opsmesh.plugins.__path__)
+            )
             try:
                 self._manager(record)
-                import opsmesh.plugins as plugin_package
-
-                plugin_package.__path__ = extend_path(
-                    plugin_package.__path__, plugin_package.__name__
-                )
+                _refresh_plugin_namespace()
             except BaseException:
                 sys.path[:] = original_path
+                opsmesh.__path__, opsmesh.plugins.__path__ = original_namespaces
                 self.records.pop(record.module)
                 await anyio.to_thread.run_sync(
                     self.storage.delete, record.module
@@ -313,17 +325,17 @@ async def load_host(
     _host = host
     existing = get_loaded_plugins()
     original_path = list(sys.path)
+    import opsmesh
     import opsmesh.plugins as plugin_package
 
+    original_root_namespace = list(opsmesh.__path__)
     original_namespace = list(plugin_package.__path__)
     from opsmesh.plugins.registry import _managers
 
     original_managers = list(_managers)
     try:
         await host.prepare()
-        plugin_package.__path__ = extend_path(
-            plugin_package.__path__, plugin_package.__name__
-        )
+        _refresh_plugin_namespace()
         set_plugin_admission(host.admit)
         if load_entries:
             for record in tuple(host.records.values()):
@@ -346,6 +358,7 @@ async def load_host(
             finally:
                 clear_plugin_admission()
                 sys.path[:] = original_path
+                opsmesh.__path__ = original_root_namespace
                 plugin_package.__path__ = original_namespace
                 _managers[:] = original_managers
                 _host = None

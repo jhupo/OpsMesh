@@ -120,6 +120,13 @@ async def main():
     async with driver.lifespan():
         entrance = transports._started[0]
         assert entrance.started
+        try:
+            registry.revoke_plugin(consumer)
+        except RuntimeError as error:
+            assert "stopped before revocation" in str(error)
+        else:
+            raise AssertionError("Running plugin revocation was accepted")
+        await manager.stop_plugin("consumer")
         registry.revoke_plugin(consumer)
         assert not get_router().registrations
         assert entrance.started
