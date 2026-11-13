@@ -13,8 +13,6 @@ from pydantic import (
     model_validator,
 )
 
-CONFIG_NAMESPACE = "opsmesh.plugins.execution"
-
 
 class LangfuseSettings(BaseModel):
     """Optional Langfuse bridge configuration."""
@@ -72,4 +70,3 @@ class Settings(BaseModel):
 
     tracing: TracingSettings = Field(default_factory=TracingSettings)
     cleanup_timeout_seconds: float = Field(default=10.0, gt=0.0, le=300.0)
-    shutdown_timeout_seconds: float = Field(default=10.0, gt=0.0, le=300.0)

@@ -1,51 +1,74 @@
-"""Represent API input using the framework message protocol."""
+"""Validate API content and convert it to common message segments."""
 
-from __future__ import annotations
+from collections.abc import Callable
+from typing import Annotated, Literal
 
-from typing import Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from opsmesh.messages import Message, MessageSegment
+from ..attachments import Attachment, AttachmentCollection
+from ..messages import Message, MessageSegment
+from .errors import HTTPError
 
 
-class APIMessageSegment(MessageSegment["APIMessage"]):
-    """A text segment or a structured JSON data segment."""
+class TextContent(BaseModel):
+    """Text within an ordered API message."""
 
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["text"]
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class AttachmentContent(BaseModel):
+    """Reference an already uploaded file; URLs and paths are not accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["image", "file", "audio", "video"]
+    attachment_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
+MessageContent = Annotated[
+    TextContent | AttachmentContent, Field(discriminator="type")
+]
+MessageInput = (
+    Annotated[str, Field(min_length=1, max_length=8000)]
+    | Annotated[list[MessageContent], Field(min_length=1, max_length=32)]
+)
+
+
+class MessageRequest(BaseModel):
+    """The API message protocol, extendable with plugin-owned fields."""
+
+    model_config = ConfigDict(extra="forbid")
+    message: MessageInput
+
+    @field_validator("message")
     @classmethod
-    def get_message_class(cls) -> type[APIMessage]:
-        """Return the API message sequence type."""
-        return APIMessage
-
-    def __str__(self) -> str:
-        """Expose only text to command and text matching rules."""
-        return self.data["text"] if self.is_text() else ""
-
-    def is_text(self) -> bool:
-        """Whether this segment carries plain text."""
-        return self.type == "text"
+    def nonblank_text(cls, value: MessageInput) -> MessageInput:
+        """Reject whitespace-only plain messages."""
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("Message text must not be blank")
+        return value
 
 
-class APIMessage(Message[APIMessageSegment]):
-    """A framework text message or a structured operation's data."""
-
-    @classmethod
-    def get_segment_class(cls) -> type[APIMessageSegment]:
-        """Return the API segment type."""
-        return APIMessageSegment
-
-    @staticmethod
-    def _construct(msg: str) -> list[APIMessageSegment]:
-        return [APIMessageSegment("text", {"text": msg})] if msg else []
-
-    @classmethod
-    def from_payload(cls, payload: Any) -> APIMessage:
-        """Convert a JSON string or object into framework message segments.
-
-        Strings and an object's string ``message`` field become plain text.
-        Other JSON values remain data, so metadata cannot become a command.
-        Text messages contain no data segments, so metadata cannot appear as
-        command arguments. HTTPEvent retains the complete validated payload.
-        """
-        text = payload.get("message") if isinstance(payload, dict) else payload
-        if isinstance(text, str):
-            return cls(text)
-        return cls(APIMessageSegment("data", {"value": payload}))
+def from_request(
+    request: MessageRequest,
+    files: AttachmentCollection,
+    resolve: Callable[[str, AttachmentCollection], Attachment] | None = None,
+) -> Message:
+    """Resolve each attachment under the authenticated route owner."""
+    value = request.message
+    if isinstance(value, str):
+        return Message(value)
+    message = Message()
+    for part in value:
+        if isinstance(part, TextContent):
+            message.append(MessageSegment.text(part.text))
+        else:
+            if resolve is None:
+                raise HTTPError(422, "Attachment transfer is unavailable")
+            metadata = resolve(part.attachment_id, files)
+            segment = MessageSegment.attachment(metadata)
+            if segment.type != part.type and part.type != "file":
+                raise HTTPError(422, "Attachment type does not match content")
+            message.append(MessageSegment(part.type, segment.data))
+    return message

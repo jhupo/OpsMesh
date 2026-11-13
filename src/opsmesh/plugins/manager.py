@@ -26,8 +26,8 @@ from .registry import (
     _managers,
     _module_name_to_plugin_id,
     _new_plugin,
+    _revoke_plugin,
     get_plugin,
-    revoke_plugin,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,20 +57,15 @@ class PluginManager:
         search_path: Iterable[str] | None = None,
         *,
         config: Mapping[str, Any] | None = None,
-        namespace: str | None = None,
         required: bool = False,
+        protected: bool = False,
     ):
-        if (config is None) != (namespace is None):
-            raise ValueError(
-                "Plugin configuration and namespace are required together"
-            )
-        if namespace is not None and not namespace.strip():
-            raise ValueError("Plugin configuration namespace cannot be empty")
         self.config_values = (
             deepcopy(dict(config)) if config is not None else None
         )
-        self.config_namespace = namespace
         self.required = bool(required)
+        self.protected = bool(protected)
+        self.enabled = True
         """Whether a startup failure of this plugin must abort the host."""
         # simple plugin not in search path
         self.plugins: set[str] = set(plugins or [])
@@ -261,6 +256,25 @@ class PluginManager:
             )
         )
 
+    async def start_plugin(self, name: str) -> None:
+        """Load declarations if needed, then start plugin resources."""
+        from opsmesh.drivers import get_driver
+
+        plugin = self.load_plugin(name)
+        if plugin is None:
+            raise RuntimeError(f"Cannot load plugin: {name}")
+        await get_driver()._lifespan.start_plugin(plugin)
+
+    async def stop_plugin(self, name: str) -> None:
+        """Stop resources while retaining loaded code and declarations."""
+        from opsmesh.drivers import get_driver
+
+        from .registry import get_plugin_by_module_name
+
+        plugin = get_plugin_by_module_name(self._resolve_module_name(name))
+        if plugin is not None:
+            await get_driver()._lifespan.stop_plugin(plugin)
+
 
 class PluginFinder(MetaPathFinder):
     """Add plugin ownership to source, bytecode, and frozen imports."""
@@ -351,7 +365,7 @@ class PluginLoader(Loader):
             notify_plugin_loaded(plugin)
             bind_plugin_lifecycle(plugin)
         except BaseException:
-            revoke_plugin(plugin)
+            _revoke_plugin(plugin)
             raise
         finally:
             # leave plugin context

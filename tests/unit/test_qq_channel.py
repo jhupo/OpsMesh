@@ -14,18 +14,18 @@ from opsmesh.config import Config, Env
 from opsmesh.dispatch.results import DispatchResult
 from opsmesh.drivers import Driver
 from opsmesh.plugins import registry
+from opsmesh.plugins.channels.messages import Message, MessageSegment
 from opsmesh.plugins.channels.qq import (
     READY,
     QQAdapter,
     QQConfigurationError,
     QQConnectionSettings,
-    QQMessage,
-    QQMessageSegment,
     QQProtocolError,
     QQSendError,
     QQSettings,
     parse_callback,
 )
+from opsmesh.plugins.model import PluginStatus
 
 SECRET = "0123456789abcdef0123456789abcdef"
 
@@ -37,6 +37,7 @@ class FakePlugin:
         self.ready = True
         self.id_ = id_
         self.cleanups = []
+        self.status = PluginStatus.LOADED
 
 
 @contextmanager
@@ -64,7 +65,15 @@ class FakeHTTP:
         self.calls = []
         self.closed = False
 
-    async def post(self, url, *, json=None, headers=None, timeout=None):
+    async def post(
+        self,
+        url,
+        *,
+        json=None,
+        headers=None,
+        timeout=None,
+        follow_redirects=False,
+    ):
         self.calls.append({"url": url, "json": json, "headers": headers or {}})
         if not self.responses:
             raise AssertionError("unexpected vendor request")
@@ -242,9 +251,9 @@ def test_event_mapping_namespaces_callers_and_sessions():
 
 
 def test_message_construction_and_outgoing_rules():
-    message = QQMessage("hello")
+    message = Message("hello")
     assert message.extract_plain_text() == "hello"
-    assert QQMessageSegment("text", {"text": "world"}).is_text() is True
+    assert MessageSegment("text", {"text": "world"}).is_text() is True
 
 
 @pytest.mark.anyio
@@ -472,6 +481,36 @@ async def test_replies_use_cached_tokens_and_sequence(monkeypatch):
         assert first["json"]["content"] == "reply"
         assert first["json"]["msg_seq"] == 1
         assert second["json"]["msg_seq"] == 2
+        foreign = event.model_copy(update={"connection_id": "other-bot"})
+        with pytest.raises(QQSendError, match="another connection"):
+            await channel.send(foreign, "reply")
+        await adapter.shutdown()
+
+
+@pytest.mark.anyio
+async def test_channel_send_dispatches_attachment_to_media_sender(monkeypatch):
+    from opsmesh.plugins.channels import Attachment
+
+    monkeypatch.setenv("QQ_SECRET", SECRET)
+    client = FakeHTTP(
+        FakeResponse({"access_token": "token"}),
+        FakeResponse({"file_info": "info"}),
+        FakeResponse({"id": "sent-file"}),
+    )
+    adapter = make_adapter(client)
+    channel = declare(adapter, FakePlugin("support"))
+    async with adapter.driver.lifespan():
+        await adapter.startup()
+        event = parse_callback(c2c_payload(), connection_id=channel.self_id)
+        attachment = event.attachments.add_bytes(
+            Attachment.create("report.txt", "text/plain"), b"report"
+        )
+        result = await channel.send(
+            event, MessageSegment.attachment(attachment)
+        )
+        assert result == {"id": "sent-file"}
+        assert client.calls[1]["json"]["file_type"] == 4
+        assert client.calls[2]["json"]["media"] == {"file_info": "info"}
         await adapter.shutdown()
 
 
@@ -576,11 +615,25 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
+    from types import ModuleType
+
     from opsmesh.dispatch import dispatch_event
     from opsmesh.matchers import Matcher, MatcherSource
+    from opsmesh.plugins.model import Plugin
 
     adapter = make_adapter()
-    owner = FakePlugin("support")
+    owner = Plugin(
+        name="support",
+        module=ModuleType("support"),
+        module_name="support",
+        manager=None,
+        status=PluginStatus.READY,
+    )
+    monkeypatch.setattr(
+        registry,
+        "get_plugin",
+        lambda name: owner if name == "support" else None,
+    )
     channel = declare(adapter, owner)
     event = parse_callback(c2c_payload(), connection_id=channel.self_id)
     calls = []
@@ -606,7 +659,7 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
             channel, event, matcher_filter=channel.accepts_matcher
         )
         result.raise_for_errors()
-        owner.ready = False
+        owner.status = PluginStatus.STOPPING
         result = await dispatch_event(
             channel, event, matcher_filter=channel.accepts_matcher
         )

@@ -24,7 +24,6 @@ def load_plugin(
     module_path: str | Path,
     *,
     config: Mapping[str, Any] | None = None,
-    namespace: str | None = None,
 ) -> Plugin | None:
     """Load a local or installed plugin.
 
@@ -32,14 +31,13 @@ def load_plugin(
         module_path: A dotted plugin module name
             or a pathlib.Path identifying the plugin source.
         config: Host-selected installation settings copied before import.
-        namespace: Namespace used by the plugin's get_plugin_config calls.
     """
     module_path = (
         path_to_module_name(module_path)
         if isinstance(module_path, Path)
         else module_path
     )
-    manager = PluginManager([module_path], config=config, namespace=namespace)
+    manager = PluginManager([module_path], config=config)
     _managers.append(manager)
     return manager.load_plugin(module_path)
 
@@ -188,10 +186,20 @@ def require(name: str) -> ModuleType:
         # name is a plugin id or simple module name (equals to plugin id)
         plugin = get_plugin(name)
 
+    owner = _current_plugin.get()
+    if (
+        owner is not None
+        and owner.ready
+        and (plugin is None or plugin.id_ not in owner.dependencies)
+    ):
+        raise RuntimeError("Declare plugin dependencies before starting")
+
     # if plugin not loaded
     if plugin is None:
         # plugin already declared, module name / plugin id
         if manager := _find_manager_by_name(name):
+            if not manager.enabled:
+                raise RuntimeError(f'Plugin dependency "{name}" is disabled')
             plugin = manager.load_plugin(name)
 
         # plugin not declared, try to declare and load it
@@ -209,8 +217,16 @@ def require(name: str) -> ModuleType:
     if plugin is None:
         raise RuntimeError(f'Cannot load plugin "{name}"!')
 
-    owner = _current_plugin.get()
+    if not plugin.enabled:
+        raise RuntimeError(f'Plugin dependency "{name}" is disabled')
     if owner is not None and owner is not plugin:
+        from .model import PluginStatus
+
+        if (
+            owner.status is PluginStatus.READY
+            and plugin.id_ not in owner.dependencies
+        ):
+            raise RuntimeError("Declare plugin dependencies before starting")
         if plugin.id_ not in owner.dependencies:
             owner.dependencies.append(plugin.id_)
     return plugin.module

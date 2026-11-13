@@ -1,6 +1,6 @@
 # 发布
 
-核心 `opsmesh` 和四个官方插件分别构建 Python 包。当前采用同步版本：五个 `pyproject.toml` 的版本必须相同，Release tag 使用 `v<version>`。拆包不意味着宿主默认加载这些插件。
+核心 `opsmesh` 和四个官方插件分别构建 Python 包。采用同步版本：五个 `pyproject.toml` 的版本必须相同，Release tag 使用 `v<version>`。
 
 版本约定：从 `v0.5.0` 起，常规功能与修复均递增为 `0.5.1`、`0.5.2` 等，保持 `0.5.x`。只有明确决定进行大版本调整时才切换版本系列；目录重构或普通功能新增本身不自动升级版本系列。
 
@@ -55,4 +55,4 @@ python scripts/smoke_release.py dist/opsmesh/opsmesh --plugin-path dist/plugins/
 
 `ci.yml` 验证源码、依赖与包边界；`build.yml` 执行 Linux 原生构建和产物验收；`release.yml` 在 tag 与全部版本一致、依赖任务通过后发布附件。工作流文件存在不代表已有成功发布，本地测试也不替代 GitHub runner 的实际结果。
 
-发布仓库为 [jhupo/OpsMesh](https://github.com/jhupo/OpsMesh)。仓库已有 `v0.3.2` 等历史标签，本次重构使用尚未发布的 `0.5.0`，不要复用或移动历史标签。发布前仍需确认 Actions 权限、ARM64 runner 可用性，以及私密漏洞报告渠道。
+发布仓库为 [jhupo/OpsMesh](https://github.com/jhupo/OpsMesh)。发布前确认 Actions 权限、ARM64 runner 可用性及安全报告渠道。

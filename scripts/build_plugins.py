@@ -141,8 +141,8 @@ def main() -> None:
     (bundle / "README.txt").write_text(
         "Optional plugins for the matching OpsMesh host release.\n"
         "Verify SHA256SUMS, extract into an administrator-owned directory,\n"
-        "and add its absolute site directory to host.json plugin_paths.\n"
-        "Enable only needed modules in the plugins manifest.\n"
+        "then use --plugin-action register with the absolute site directory.\n"
+        "Store plugin settings in the host SQLite database, not host.json.\n"
         "The framework installer does not install or enable these plugins.\n"
         "This is an import runtime, not a Python CLI environment. External\n"
         "MCP commands and sandbox programs must be provisioned separately.\n",

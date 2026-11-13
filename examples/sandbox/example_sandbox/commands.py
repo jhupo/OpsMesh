@@ -3,25 +3,40 @@
 import json
 from typing import Annotated
 
-from pydantic import ValidationError
-
 from opsmesh.adapters import Channel, Event
 from opsmesh.messages import Message
 from opsmesh.params import Command, CommandArg, Context, Depends
 from opsmesh.plugins import on_command
+from opsmesh.rules import to_me
 
 from . import channels
 from .conversation import answer, conversation, respond
 from .lifecycle import get_conversations
-from .schemas import ChatReply, ChatRequest, ConversationView
+from .schemas import ChatReply, ConversationView
 from .sessions import ConversationError
 
-chat_command = on_command("chat", force_whitespace=True, block=True)
-help_command = on_command("help", force_whitespace=True, block=True)
-clear_command = on_command("clear", force_whitespace=True, block=True)
-session_command = on_command("session", force_whitespace=True, block=True)
-history_command = on_command("history", force_whitespace=True, block=True)
-reset_command = on_command("reset_workspace", force_whitespace=True, block=True)
+chat_command = on_command(
+    "chat", force_whitespace=True, rule=to_me(), priority=1, block=True
+)
+help_command = on_command(
+    "help", force_whitespace=True, rule=to_me(), priority=2, block=True
+)
+clear_command = on_command(
+    "clear", force_whitespace=True, rule=to_me(), priority=3, block=True
+)
+session_command = on_command(
+    "session", force_whitespace=True, rule=to_me(), priority=4, block=True
+)
+history_command = on_command(
+    "history", force_whitespace=True, rule=to_me(), priority=5, block=True
+)
+reset_command = on_command(
+    "reset_workspace",
+    force_whitespace=True,
+    rule=to_me(),
+    priority=6,
+    block=True,
+)
 COMMAND_MATCHERS = (
     reset_command,
     chat_command,
@@ -41,16 +56,20 @@ async def chat(
     selected: Annotated[ConversationView, Depends(conversation)],
 ) -> None:
     """Run a question in the selected persistent conversation."""
-    try:
-        request = ChatRequest(message=question.extract_plain_text())
-    except ValidationError:
+    text = question.extract_plain_text()
+    has_attachments = any(
+        part.type in {"image", "file", "audio", "video"} for part in question
+    )
+    if len(text) > 8000 or not (text.strip() or has_attachments):
         result = ChatReply(
             text="Usage: /chat <question, 1-8000 characters>",
             session_id=selected.id,
         )
     else:
         try:
-            result = await answer(request.message, caller, selected)
+            result = await answer(
+                question, caller, selected, attachments=event.attachments
+            )
         except channels.api.HTTPError as error:
             if isinstance(event, channels.api.HTTPEvent):
                 raise

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import importlib
 import inspect
+import json
 import logging
 import os
 import signal
@@ -16,13 +17,57 @@ from pathlib import Path
 
 import anyio
 
-from opsmesh.app import load_host, load_manifest
+from opsmesh.app import get_host, load_host, load_manifest
 from opsmesh.plugins import (
     get_loaded_plugins,
     get_plugin_by_module_name,
 )
+from opsmesh.plugins.storage import PluginRecord
 
 logger = logging.getLogger(__name__)
+
+
+async def _plugins(args) -> None:
+    """Manage records for existing plugins without installing packages."""
+    async with load_host(load_manifest(args.manifest), load_entries=False):
+        host = get_host()
+        if args.plugin_action == "list":
+            for record in host.records.values():
+                print(
+                    f"{record.module}\tenabled={record.enabled}\tautoload={record.autoload}"
+                    f"\tprotected={record.protected}"
+                )
+            return
+        if not args.module:
+            raise ValueError("A plugin module is required")
+        if args.plugin_action == "register":
+            await host.register(
+                PluginRecord(
+                    module=args.module,
+                    enabled=args.enabled,
+                    autoload=args.autoload,
+                    required=args.required,
+                    protected=args.protected,
+                    directory=str(args.directory.resolve())
+                    if args.directory
+                    else None,
+                )
+            )
+        elif args.plugin_action == "protect":
+            await anyio.to_thread.run_sync(
+                host.storage.set_protected, args.module
+            )
+        elif args.plugin_action == "enable":
+            await host.enable(args.module)
+        elif args.plugin_action == "disable":
+            await host.disable(args.module)
+        elif args.plugin_action == "configure":
+            if args.config is None:
+                raise ValueError("A JSON configuration file is required")
+            values = json.loads(args.config.read_text(encoding="utf-8"))
+            if not isinstance(values, dict):
+                raise ValueError("Plugin configuration must be a JSON object")
+            await host.save_config(args.module, values)
 
 
 async def _maintenance(manifest_path: Path, command: str | None) -> None:
@@ -104,6 +149,43 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PLUGIN.MODULE:FUNCTION",
         help="Run a public command owned by an enabled plugin, then exit",
     )
+    actions.add_argument(
+        "--plugin-action",
+        choices=[
+            "list",
+            "register",
+            "enable",
+            "disable",
+            "configure",
+            "protect",
+        ],
+        help="Manage an existing plugin while the host is stopped",
+    )
+    parser.add_argument("--module", help="Full plugin module name")
+    parser.add_argument(
+        "--enabled", action="store_true", help="Enable a new plugin record"
+    )
+    parser.add_argument(
+        "--autoload",
+        action="store_true",
+        help="Load a new plugin on host startup",
+    )
+    parser.add_argument(
+        "--required",
+        action="store_true",
+        help="Treat a new plugin startup failure as fatal",
+    )
+    parser.add_argument(
+        "--protected",
+        action="store_true",
+        help="Protect a new enabled, autoloaded, required plugin",
+    )
+    parser.add_argument(
+        "--directory", type=Path, help="Existing plugin import directory"
+    )
+    parser.add_argument(
+        "--config", type=Path, help="JSON values for the selected plugin"
+    )
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -115,7 +197,9 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     try:
-        if args.check or args.command:
+        if args.plugin_action:
+            asyncio.run(_plugins(args))
+        elif args.check or args.command:
             asyncio.run(_maintenance(args.manifest, args.command))
         else:
             asyncio.run(_serve(args.manifest))

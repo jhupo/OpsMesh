@@ -214,13 +214,13 @@ from opsmesh.plugins import get_plugin_config
 class Settings(BaseModel):
     choices: list[str]
 def settings():
-    return get_plugin_config(Settings, namespace="installed")
+    return get_plugin_config(Settings)
 initial = settings()
 """,
         encoding="utf-8",
     )
     source = {"choices": ["saved"]}
-    plugin = load_plugin(name, config=source, namespace="installed")
+    plugin = load_plugin(name, config=source)
     try:
         source["choices"].append("changed")
         plugin.module.initial.choices.append("local")

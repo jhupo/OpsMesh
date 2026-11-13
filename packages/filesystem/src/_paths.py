@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,8 +11,6 @@ from opsmesh.plugins import registry
 
 from .config import Settings
 from .errors import FilesystemError, PathNotFound, PathRejected
-
-_PACKAGE = "opsmesh.plugins.filesystem"
 
 _WINDOWS_RESERVED = {
     "CON",
@@ -65,32 +62,21 @@ class Roots:
 
     def for_plugin(self, module_name: str) -> PluginSpace:
         """Return the directory space owned by one loaded plugin."""
-        parts = _module_parts(module_name)
+        _module_parts(module_name)
+        _validate_component(module_name, error=FilesystemError)
         return PluginSpace(
             module_name=module_name,
-            data_dir=self.data.joinpath(*parts),
-            cache_dir=self.cache.joinpath(*parts),
-            config_dir=self.config.joinpath(*parts),
+            data_dir=self.data / module_name,
+            cache_dir=self.cache / module_name,
+            config_dir=self.config / module_name,
         )
 
 
 def resolve_caller_plugin() -> registry.Plugin:
     """Return the loaded plugin that invoked a public filesystem function."""
-    plugin = registry._current_plugin.get()
-    if plugin is not None and not _is_internal(plugin.module_name):
+    plugin = registry.get_current_plugin()
+    if plugin is not None:
         return plugin
-    frame = inspect.currentframe()
-    try:
-        frame = frame.f_back if frame is not None else None
-        while frame is not None:
-            module_name = frame.f_globals.get("__name__", "")
-            if module_name and not _is_internal(module_name):
-                plugin = registry.get_plugin_by_module_name(module_name)
-                if plugin is not None:
-                    return plugin
-            frame = frame.f_back
-    finally:
-        del frame
     raise FilesystemError("Cannot determine the calling plugin")
 
 
@@ -166,15 +152,9 @@ def _module_parts(module_name: str) -> tuple[str, ...]:
         raise FilesystemError("A plugin module name is required")
     parts = tuple(module_name.split("."))
     for component in parts:
-        if not component or component in {".", ".."}:
-            raise FilesystemError("The plugin module name is not usable")
-        if "/" in component or "\\" in component or "\x00" in component:
+        if not component.isidentifier():
             raise FilesystemError("The plugin module name is not usable")
     return parts
-
-
-def _is_internal(module_name: str) -> bool:
-    return module_name == _PACKAGE or module_name.startswith(f"{_PACKAGE}.")
 
 
 def _within(roots: Sequence[Path], candidate: Path) -> bool:

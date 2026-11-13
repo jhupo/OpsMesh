@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from opsmesh.adapters import Adapter
     from opsmesh.matchers import Matcher
 
+    from .invocation import PluginCall
     from .manager import PluginManager
 
 
@@ -65,6 +66,7 @@ class PluginStatus(StrEnum):
     FAILED = "failed"
     BLOCKED = "blocked"
     STOPPED = "stopped"
+    STOPPING = "stopping"
 
 
 @dataclass(eq=False)
@@ -89,20 +91,30 @@ class Plugin:
     """Plugin metadata."""
     cleanups: list[Callable[[], None]] = field(default_factory=list, repr=False)
     """Registration removals in acquisition order; never arbitrary effects."""
-    config_namespace: str | None = None
-    """Explicit namespace for the host-supplied installation configuration."""
     config_values: dict[Any, Any] | None = field(default=None, repr=False)
     """Owned startup values, independent of global deployment configuration."""
     dependencies: list[str] = field(default_factory=list)
     """Plugin identifiers required before this plugin may accept work."""
     required: bool = False
     """Whether a startup failure must abort the host."""
+    protected: bool = False
+    """Whether normal management may stop or revoke this plugin."""
     status: PluginStatus = PluginStatus.LOADED
     """The current lifecycle state."""
     failure: BaseException | None = field(default=None, repr=False)
     """The startup failure that prevented readiness, when any."""
     blocked_by: set[str] = field(default_factory=set, repr=False)
     """Dependencies whose failure blocks this plugin."""
+
+    enabled: bool = True
+    generation: int = 0
+    """In-memory activation counter, independent of package versions."""
+    cleanup_complete: bool = True
+    activation_cleanups: list[Callable[[], None]] = field(
+        default_factory=list, repr=False
+    )
+    calls: dict[int, "PluginCall"] = field(default_factory=dict, repr=False)
+    completed_shutdown_hooks: set[int] = field(default_factory=set, repr=False)
 
     @property
     def ready(self) -> bool:

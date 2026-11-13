@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
 from opsmesh import on_shutdown, on_startup
 from opsmesh.plugins.config import get_plugin_config
 
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .errors import DatabaseUnavailableError
 
 
@@ -27,6 +27,7 @@ class Database:
         self._settings = settings
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
+        self._closing = False
 
     @property
     def settings(self) -> Settings:
@@ -36,10 +37,14 @@ class Database:
     @property
     def started(self) -> bool:
         """Whether the engine exists and accepts new sessions."""
-        return self._engine is not None
+        return self._engine is not None and not self._closing
 
     async def startup(self) -> None:
         """Create the engine and session factory without connecting."""
+        if self._closing:
+            raise DatabaseUnavailableError(
+                "The database has unfinished cleanup"
+            )
         if self._engine is not None:
             return
         self._engine = create_async_engine(
@@ -51,22 +56,27 @@ class Database:
             pool_recycle=self._settings.pool_recycle,
             pool_pre_ping=True,
         )
-        self._sessionmaker = async_sessionmaker(
-            self._engine,
-            expire_on_commit=False,
-        )
+        try:
+            self._sessionmaker = async_sessionmaker(
+                self._engine, expire_on_commit=False
+            )
+        except BaseException:
+            await self.shutdown()
+            raise
 
     async def shutdown(self) -> None:
         """Dispose the connection pool and forget the engine."""
-        engine, self._engine = self._engine, None
+        self._closing = True
         self._sessionmaker = None
-        if engine is not None:
-            await engine.dispose()
+        if self._engine is not None:
+            await self._engine.dispose()
+        self._engine = None
+        self._closing = False
 
     @property
     def engine(self) -> AsyncEngine:
         """Return the started engine shared by all plugins."""
-        if self._engine is None:
+        if not self.started:
             raise DatabaseUnavailableError(
                 "The database plugin has not started"
             )
@@ -102,15 +112,6 @@ class Database:
 _database: Database | None = None
 
 
-def _prepare() -> Database:
-    """Validate settings and construct the database owner without I/O."""
-    global _database
-    if _database is None:
-        settings = get_plugin_config(Settings, namespace=CONFIG_NAMESPACE)
-        _database = Database(settings)
-    return _database
-
-
 def get_database() -> Database:
     """Return the started database owner."""
     if _database is None or not _database.started:
@@ -144,10 +145,24 @@ async def transaction() -> AsyncIterator[AsyncSession]:
 
 @on_startup
 async def _startup() -> None:
-    await _prepare().startup()
+    global _database
+    if _database is not None:
+        if _database.started:
+            return
+        raise DatabaseUnavailableError("The database has unfinished cleanup")
+    owner = Database(get_plugin_config(Settings))
+    try:
+        await owner.startup()
+    except BaseException:
+        if owner._engine is not None:
+            _database = owner
+        raise
+    _database = owner
 
 
 @on_shutdown
 async def _shutdown() -> None:
+    global _database
     if _database is not None:
         await _database.shutdown()
+        _database = None

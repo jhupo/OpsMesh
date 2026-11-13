@@ -1,8 +1,7 @@
 # Chat plugin
 
-A native SDK Agent with two entrances: an HTTP route and bot commands.
+A native SDK Agent with two entrances: an HTTP route and ordinary bot messages or commands.
 The plugin defines the Agent directly and passes it to `execution.run`.
-There is no Agent factory, borrowing dependency, or per-request Agent creation.
 
 ## Files
 
@@ -16,12 +15,14 @@ chat/
     ├── config.py         # Model and optional connection settings
     ├── agent.py          # Native Agent and SDK execution
     ├── schemas.py        # Conversation request and response contracts
-    ├── conversation.py   # Framework dependency and turn scope
+    ├── conversation.py   # Transport-independent conversation turn
+    ├── handlers.py       # Event dependencies and channel response adaptation
     ├── sessions.py       # Ownership, index operations and SDK Session handles
     ├── models.py         # Conversation index only, no duplicate history
     ├── migrations/       # Index and native SQLAlchemySession tables
     ├── lifecycle.py      # Shared database binding after schema validation
-    ├── http.py           # Chat and owned conversation endpoints
+    ├── http.py           # Message entrance and owned conversation endpoints
+    ├── messages.py       # API and bot message matcher
     ├── commands.py       # Framework conversation command matchers
     ├── connections.py    # Optional QQ, DingTalk and MCP connections
     └── callbacks.py      # SDK observation callbacks
@@ -32,24 +33,15 @@ examples are separate from the conversation logic.
 
 ## Loading and configuration
 
-Install the independent channels, execution and database packages first. For a frozen Linux host, add the matching official plugin runtime archive's `site/` directory to `plugin_paths`; these packages are not embedded in the framework executable.
+Install the independent channels, execution and database packages. Register the existing `example_chat` module with its absolute `examples/chat` import root and `conversation_support` with its absolute `examples/common` import root. For a frozen host, register the official runtime bundle's `site/` import root as described in [Linux deployment](../../docs/linux-deployment.md).
 
-Add `examples/common` and this `chat/` directory to the host's `plugin_paths` and load
-`example_chat`. Use `example_chat` as its configuration namespace:
+Plugin records and values belong to the host SQLite database, never host.json. Configure database and channel authentication first; enable the registered dependencies, then save this plugin's configuration and enable its entry:
 
 ```json
-{
-  "module": "example_chat",
-  "required": true,
-  "config_namespace": "example_chat",
-  "config": {"model": "your-model-name"}
-}
+{"model": "your-model-name"}
 ```
 
-The host must allow its `opsmesh.plugins.channels`,
-`opsmesh.plugins.execution`, `opsmesh.plugins.database`, and
-`conversation_support` dependencies. Configure API authentication under channels' `config.api`.
-The example does not provide a separate launcher or host manifest.
+Use `--plugin-action configure --module example_chat --config PATH` to save that JSON, and `--plugin-action enable --module example_chat` while the service is stopped. Runtime management plugins use the same Host operations. Saving configuration never restarts a running Agent; apply it explicitly. Agent and bot connections are created in startup callbacks, so resource restarts read the current configuration.
 
 `conversation_support` shares index operations, ownership checks and locking
 with the sandbox example. Each example owns its ORM model, tables and migration.
@@ -78,10 +70,20 @@ Send an authenticated request to `POST /plugins/example_chat/chat`:
 {"session_id": "<conversation-id>", "message": "Explain Python context managers."}
 ```
 
-The response is `{"text": "The answer.", "session_id": "<conversation-id>"}`. The API validates `ChatRequest`
-and converts its message into the framework `Event`. The handler reads
-`event.get_plaintext()`; `Context()` provides the authenticated caller. Agent is a module
-object used by `reply`, so it does not need `Depends` or `InstanceOf`.
+The response is `{"text": "The answer.", "session_id": "<conversation-id>"}`.
+`ChatRequest` extends the channel's `MessageRequest`. The entrance binds the same
+command and message matchers used for bots. `Context()` provides the authenticated
+caller, and the normalized message can contain text and attachments.
+
+Session REST routes also enter the framework: each route declaration creates
+a Matcher whose handler receives an HTTPEvent. They use the same conversation
+store as `/session`, `/history`, and `/clear`; only parameter parsing and response
+formatting differ. For example, GET `/sessions/{id}` returns the same metadata
+as sending `/session` to `/chat` with that session ID. A REST lookup is an event,
+not a text message, and does not need a synthetic command string.
+
+Shared turns raise `ConversationError`. The entrance handlers translate it to
+an HTTP error or a bot reply; model execution does not depend on HTTP types.
 
 The request cannot supply caller identity. Empty questions or questions over
 8000 characters are rejected. The plugin validates conversation ownership on
@@ -109,7 +111,8 @@ this plugin, using the framework's default `/` command prefix:
 | `/chat Explain Python` | Pass `Explain Python` to the Agent and send its answer |
 | `/chat` | Show usage without calling a model |
 | `/help` | List commands without calling a model |
-| Ordinary text or unknown commands | Leave the event unhandled |
+| Ordinary addressed text | Run a conversation turn |
+| Unknown commands | Reply with command help without invoking the model |
 
 `on_command` registers the Matcher and Rule. `CommandArg()` injects the parsed
 Message arguments; no manual prefix splitting is needed. `Channel`, `Event`
@@ -242,3 +245,25 @@ selections; the last saved selection becomes the next launch's default.
 The client makes a direct connection, does not follow redirects, and does not
 automatically retry failed requests. After a timeout, inspect /history before
 resending because the server may have completed the turn.
+
+## Attachments and ordinary bot messages
+
+Private messages and group mentions use `on_message` without requiring `/chat`.
+Command matchers run first. Group history remains isolated by connection, group,
+and user. Unmentioned group messages are not processed by these examples.
+
+API messages accept ordered text and attachment references. Upload files to the
+channels endpoint with the same authenticated identity before sending a message.
+The standalone client supports repeated `--file` options (up to 8 MiB each):
+
+```shell
+python examples/chat/client.py --plugin example_chat --file ./report.pdf --message "Summarize this document"
+```
+
+Replace `example_chat` with this example's plugin name. Use `--session <id>` to select
+an existing conversation; the normal saved-selection behavior also applies.
+Chat accepts supported images, PDFs and UTF-8 text. Sandbox writes attachments
+into its native session workspace; processing depends on installed tools.
+QQ and DingTalk can send media through `channel.send`; these conversation
+examples still return the agent's text output. Plugins choose when to send generated files.
+See [message formats, limits and retention](../../docs/multimodal-messages.md).

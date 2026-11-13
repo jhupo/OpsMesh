@@ -7,26 +7,15 @@ and `SandboxRunConfig` directly to `execution.run`.
 
 ## Loading
 
-Install the independent channels, execution, database and filesystem packages first. A frozen Linux host loads them from the matching official plugin runtime archive's `site/` directory, which must also appear in `plugin_paths`. The framework installer does not install them.
+Install channels, execution, database and filesystem separately. Register `example_sandbox` with the absolute `examples/sandbox` import root and `conversation_support` with the absolute `examples/common` import root. Frozen hosts also register the official bundle's `site/` import root; see [Linux deployment](../../docs/linux-deployment.md).
 
-Add `examples/common` and `examples/sandbox` to the host's `plugin_paths`.
-Allow `conversation_support`, `opsmesh.plugins.channels`,
-`opsmesh.plugins.execution`, `opsmesh.plugins.database` and
-`opsmesh.plugins.filesystem` in the host manifest. Load `example_sandbox`
-with its own configuration namespace:
+The host SQLite database stores plugin records and settings. host.json contains only framework/process settings. Configure and enable dependencies before enabling this entry. Save these values using `--plugin-action configure --module example_sandbox --config PATH` while the host is stopped:
 
 ```json
-{
-  "module": "example_sandbox",
-  "required": true,
-  "config_namespace": "example_sandbox",
-  "config": {
-    "model": "your-model-name",
-    "reasoning": {"effort": "medium"},
-    "max_turns": 8
-  }
-}
+{"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}
 ```
+
+Agent construction runs in on_startup. Saving values does not restart resources; runtime management applies them explicitly.
 
 Configure authenticated API identities in the channels plugin and PostgreSQL
 in the database plugin. The native SDK reads `OPENAI_API_KEY` and optional
@@ -39,8 +28,8 @@ opsmesh --manifest /etc/opsmesh/host.json \
   --command opsmesh.plugins.database.commands:migrate
 ```
 
-`DatabaseSchema` in plugin metadata declares the ORM index and migration
-directory. The framework load hook registers them automatically. Startup
+`DatabaseSchema` in plugin metadata declares the migration directory and head.
+The framework load hook registers it automatically. Startup
 checks the expected migration before initializing the conversation store.
 Loading the plugin alone does not connect to PostgreSQL or start a sandbox.
 
@@ -61,6 +50,7 @@ Paths are relative to `/plugins/example_sandbox`.
 | POST | `/chat` | Run a turn or a declared command |
 
 Send `{"message": "your task", "session_id": "<id>"}` to `/chat`.
+The message entrance binds the plugin's existing command and message matchers.
 The response is `{"text": "answer", "session_id": "<id>"}`. Omitting
 `session_id` creates a conversation. Reuse the returned ID for later turns.
 
@@ -124,3 +114,25 @@ input, access isolation, busy operations, clear/reset/delete, restart and
 cancellation. Linux integration checks also use actual PostgreSQL connections
 and the native sandbox `exec_command` tool. Model responses are deterministic
 `ScriptedModel` outputs; no remote model provider is required.
+
+## Attachments and ordinary bot messages
+
+Private messages and group mentions use `on_message` without requiring `/chat`.
+Command matchers run first. Group history remains isolated by connection, group,
+and user. Unmentioned group messages are not processed by these examples.
+
+API messages accept ordered text and attachment references. Upload files to the
+channels endpoint with the same authenticated identity before sending a message.
+The standalone client supports repeated `--file` options (up to 8 MiB each):
+
+```shell
+python examples/chat/client.py --plugin example_sandbox --file ./report.pdf --message "Summarize this document"
+```
+
+Replace `example_sandbox` with this example's plugin name. Use `--session <id>` to select
+an existing conversation; the normal saved-selection behavior also applies.
+Chat accepts supported images, PDFs and UTF-8 text. Sandbox writes attachments
+into its native session workspace; processing depends on installed tools.
+QQ and DingTalk can send media through `channel.send`; these conversation
+examples still return the agent's text output. Plugins choose when to send generated files.
+See [message formats, limits and retention](../../docs/multimodal-messages.md).

@@ -5,33 +5,22 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from opsmesh.adapters import Event
 from opsmesh.params import Context, Depends
 
 from . import channels
 from .commands import COMMAND_MATCHERS
-from .conversation import answer, conversation
 from .lifecycle import get_conversations
+from .messages import message_handler
 from .schemas import (
-    ChatReply,
     ChatRequest,
     ConversationCreate,
     ConversationView,
 )
 from .sessions import ConversationError
 
-
-@channels.api.post("/chat", body=ChatRequest, message_matchers=COMMAND_MATCHERS)
-async def chat(
-    event: Event,
-    caller: Annotated[channels.UserContext, Context()],
-    selected: Annotated[ConversationView, Depends(conversation)],
-) -> ChatReply:
-    """Use command matchers first, then send ordinary text to the model."""
-    message = event.get_plaintext()
-    if message.startswith("/"):
-        raise channels.api.HTTPError(400, "Unknown command; use /help")
-    return await answer(message, caller, selected)
+channels.api.message(
+    "/chat", body=ChatRequest, handlers=(*COMMAND_MATCHERS, message_handler)
+)
 
 
 @channels.api.post("/sessions", body=ConversationCreate)
@@ -40,7 +29,7 @@ async def create_conversation(
     caller: Annotated[channels.UserContext, Context()],
 ) -> ConversationView:
     """Persist an empty conversation owned by the authenticated caller."""
-    return await get_conversations().create(caller.id, event.payload["name"])
+    return await get_conversations().create(caller.id, event.payload.name)
 
 
 @channels.api.get("/sessions")

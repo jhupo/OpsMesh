@@ -62,12 +62,15 @@ if $rollback; then
     [[ -z $archive && -z $checksums && -z $manifest && -z $environment ]] || fail "--rollback cannot replace configuration or install an archive"
     target=$(readlink -f /opt/opsmesh/previous || true)
     [[ $target == /opt/opsmesh/releases/* && -x $target/opsmesh && -f $target/deploy/systemd/opsmesh.service ]] || fail "No previous release"
-    systemd-run --quiet --wait --pipe --collect \
+    systemctl stop opsmesh
+    if ! systemd-run --quiet --wait --pipe --collect \
         --property=User=opsmesh --property=Group=opsmesh \
         --property=WorkingDirectory=/var/lib/opsmesh \
         --property=EnvironmentFile=-/etc/opsmesh/opsmesh.env \
-        "$target/opsmesh" --manifest /etc/opsmesh/host.json --check
-    systemctl stop opsmesh
+        "$target/opsmesh" --manifest /etc/opsmesh/host.json --check; then
+        systemctl start opsmesh || true
+        fail "Rollback configuration check failed"
+    fi
     if ! { install -m 0644 "$target/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service &&
         systemctl daemon-reload && switch_binary "$target" && systemctl start opsmesh; }; then
         if [[ -n $previous ]]; then
@@ -170,11 +173,11 @@ check_configuration() {
         --property=EnvironmentFile=-/etc/opsmesh/opsmesh.env \
         "$release/opsmesh" --manifest /etc/opsmesh/host.json --check
 }
-check_configuration
 if systemctl cat opsmesh >/dev/null 2>&1; then
     systemctl stop opsmesh
 fi
 stopped=true
+check_configuration
 unit_changed=true
 install -m 0644 "$release/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service
 switch_binary "$release"

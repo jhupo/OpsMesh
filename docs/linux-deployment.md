@@ -57,44 +57,43 @@ sudo tar -xzf opsmesh-plugins-0.5.0-linux-x86_64.tar.gz \
   --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.0
 ```
 
-将实际 `site` 路径加入宿主清单：
+host.json 只保存宿主基础配置：
 
 ```json
 {
   "environment": "production",
-  "plugin_paths": ["/var/lib/opsmesh/plugins/official-0.5.0/site"],
-  "plugins": [
-    {
-      "module": "opsmesh.plugins.filesystem",
-      "required": true,
-      "config_namespace": "opsmesh.plugins.filesystem",
-      "config": {"root": "/var/lib/opsmesh/files"}
-    },
-    {
-      "module": "opsmesh.plugins.execution",
-      "required": true,
-      "config_namespace": "opsmesh.plugins.execution",
-      "config": {"tracing": {"destination": "local"}}
-    }
-  ]
+  "data_dir": "/var/lib/opsmesh",
+  "framework": {"command_start": ["/"]}
 }
 ```
 
-这个示例只启用文件与执行能力，不打开 HTTP 监听。需要网络入口时，启用 channels，并在其 `config.api` 配置监听地址，详见[通道配置](channels-and-callbacks.md)。安装包存在不等于自动启用；入口插件列入启动清单；依赖通过 `require()` 自动加载，不需要重复列出。只有覆盖依赖的默认配置、显式禁用或校验来源时才添加对应条目，配置用条目可设置 `autoload: false`。只选择需要的模块，未启用的包不会成为业务功能。
+停止服务后，用 CLI 登记已有运行包。框架不负责下载或解压：
 
 ```bash
-sudo -u opsmesh /opt/opsmesh/current/opsmesh \
-  --manifest /etc/opsmesh/host.json --check
-sudo systemctl restart opsmesh
+sudo systemctl stop opsmesh
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
+  --plugin-action register --module opsmesh.plugins.filesystem \
+  --directory /var/lib/opsmesh/plugins/official-0.5.0/site
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
+  --plugin-action configure --module opsmesh.plugins.filesystem \
+  --config /etc/opsmesh/filesystem.json
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
+  --plugin-action enable --module opsmesh.plugins.filesystem
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json --check
+sudo systemctl start opsmesh
 ```
 
-`host.json` 的 `framework` 只配置框架基础行为，例如 `"framework": {"command_start": ["/"], "command_sep": ["."]}`；省略字段时使用框架默认值。插件参数放在各自的 `plugins[].config` 中，由插件定义字段与校验规则。
+filesystem.json 是 CLI 配置输入，例如 `{"root":"/var/lib/opsmesh/files"}`；配置写入 SQLite 后以数据库为准。登记的 site 中其他已安装入口点在下一次宿主准备时发现，默认允许依赖使用，不主动启动；显式禁用记录不会覆盖。
+
+需要 HTTP 入口时给 channels 保存其 API 配置，再启用入口插件。插件模型、凭据引用和端口都由插件自己定义。详见[插件配置](plugin-configuration-design.md)和[通道配置](channels-and-callbacks.md)。
+
+运行中的服务独占宿主数据目录；离线 CLI、检查和迁移操作需停止服务，在线入口由管理插件提供。
 
 环境文件不是必需文件。systemd 和安装检查允许 `/etc/opsmesh/opsmesh.env` 不存在；需要插件凭据时通过 `--env-file` 显式提供，升级保留已有文件。可选 Docker 示例的 `env_file.required: false` 需要 Docker Compose 2.24.0 或更新版本。
 
 检查命令会导入插件并验证配置，不执行生命周期启动。因此它不证明数据库、MCP 或模型服务可用。手工执行命令需要提供与 systemd 相同的插件凭据；`opsmesh.env` 不会被命令行自动读取。
 
-插件源码和资源是发布内容；不要在运行目录里混放不同版本依赖。升级插件时部署新版本目录、修改清单并重启，保留旧目录用于明确回退。源码插件拥有服务账户权限，只能加载管理员信任的包。第三方插件自行说明其 Python 依赖、外部程序与兼容范围。
+插件源码和资源是发布内容；不要在运行目录里混放不同版本依赖。升级插件时部署新版本目录、更新登记位置并重启，保留旧目录用于明确回退。源码插件拥有服务账户权限，只能加载管理员信任的包。第三方插件自行说明其 Python 依赖、外部程序与兼容范围。
 
 ## 数据库与其他外部服务
 
@@ -126,7 +125,7 @@ sudo bash install.sh --rollback
 
 服务使用 systemd readiness 通知，必要插件启动失败时不报告 READY。退出时框架先停止接单并清理执行，再释放资源。默认写入范围是 `/var/lib/opsmesh` 和临时目录；额外路径由管理员通过 systemd override 明确放行。
 
-框架升级保留插件目录和数据。回退只切换框架程序，不替换当前插件、配置或数据库；管理员必须保证组合版本兼容。需要整组回退时，分别恢复插件清单及程序版本，不应把二进制回退理解为数据恢复。
+框架升级保留插件目录和数据。回退只切换框架程序，不替换当前插件、配置或数据库；管理员必须保证组合版本兼容。需要整组回退时，分别恢复插件记录及程序版本，不应把二进制回退理解为数据恢复。
 
 ## 可选 Docker
 
@@ -138,4 +137,8 @@ sudo bash install.sh --rollback
 
 构建命令、tag 发布附件和工作流职责见 [发布说明](releases.md)。构建必须在目标架构 Linux 执行。源代码单元测试、wheel 安装检查、冻结可执行程序测试及 systemd 安装测试是不同证据；只有对应工作流实际成功，才能声明该版本通过相应验收。
 
-升级至 v0.5.0 时，插件模块改为 `opsmesh.plugins.<name>`，核心导入移除 `.framework`；源码目录扁平化不改变独立插件 wheel 的部署方式。将 channels 的旧 `config.http` 监听字段合入 `config.api`；QQ 若启用则单独配置 `config.qq` 监听地址，更新反向代理的 QQ 回调上游。钉钉使用 Stream。
+## 状态与文件维护
+
+宿主状态库结构版本为 2，启动时事务升级版本 1 记录并补齐 protected=false。更早程序不能管理版本 2 状态库；程序回退前应明确恢复相匹配的状态数据。常驻核心插件通过 CLI 或部署登记 protected 标记，具体约束见[插件配置](plugin-configuration-design.md)。
+
+filesystem 使用完整模块名的平级目录。现有嵌套目录需停服后使用[文件目录维护工具](../packages/filesystem/README.md#behavior)检查及搬迁；数据库共享迁移历史使用[独立转换工具](database-migrations.md)。这两项都是显式维护动作，不会在服务启动时自动搬迁文件或改变业务表。

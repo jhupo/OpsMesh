@@ -6,16 +6,11 @@ from typing import TYPE_CHECKING, Any
 
 from opsmesh.adapters import Channel
 from opsmesh.matchers import Matcher
-from opsmesh.messages import Message, MessageSegment
 from opsmesh.plugins.channels._dedupe import EventDeduplicator
 from opsmesh.plugins.model import Plugin
 
 from .config import DingTalkConnectionSettings, DingTalkSettings
-from .events import (
-    DingTalkMessage,
-    DingTalkMessageEvent,
-    DingTalkMessageSegment,
-)
+from .events import DingTalkMessageEvent
 
 if TYPE_CHECKING:
     from .adapter import DingTalkAdapter
@@ -27,46 +22,18 @@ DISCONNECTED = "disconnected"
 CLOSED = "closed"
 
 
-def outgoing_text(message: Any, limit: int) -> str:
-    """Convert a framework message into bounded DingTalk text.
-
-    Args:
-        message: A string, DingTalk message, or DingTalk text segment.
-        limit: Maximum accepted character count.
-
-    Returns:
-        The text payload to send.
-
-    Raises:
-        TypeError: The message is not a DingTalk text message.
-        ValueError: The message is empty or exceeds the limit.
-    """
-    if isinstance(message, str):
-        text = message
-    elif isinstance(message, DingTalkMessageSegment):
-        if not message.is_text():
-            raise TypeError("DingTalk channels only send text segments")
-        text = str(message)
-    elif isinstance(message, DingTalkMessage):
-        if not all(segment.is_text() for segment in message):
-            raise TypeError("DingTalk channels only send text segments")
-        text = message.extract_plain_text()
-    elif isinstance(message, MessageSegment):
-        raise TypeError("DingTalk channels only send DingTalk segments")
-    elif isinstance(message, Message):
-        raise TypeError("DingTalk channels only send DingTalk messages")
-    else:
-        raise TypeError("DingTalk channels only send text messages")
-
-    if not text.strip():
-        raise ValueError("DingTalk messages cannot be empty")
-    if len(text) > limit:
-        raise ValueError(f"DingTalk messages are limited to {limit} characters")
-    return text
-
-
 class DingTalkChannel(Channel):
     """One declared DingTalk robot connection."""
+
+    receive_types = frozenset({"text", "image", "file", "audio", "video"})
+    send_types = receive_types
+
+    @property
+    def supported_operations(self) -> frozenset[str]:
+        """Return implemented operations, independent of account privileges."""
+        from .groups import DingTalkGroups
+
+        return DingTalkGroups.operations | {"send_message"}
 
     def __init__(
         self,
@@ -178,7 +145,7 @@ class DingTalkChannel(Channel):
 
         Args:
             event: The incoming DingTalk message event.
-            message: The text content to send.
+            message: Text or framework message with attachment references.
             **kwargs: Reserved for future send options.
 
         Returns:

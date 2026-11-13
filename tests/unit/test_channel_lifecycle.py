@@ -22,6 +22,7 @@ from opsmesh.plugins.channels.qq import (
     QQConnectionSettings,
     QQSettings,
 )
+from opsmesh.plugins.model import PluginStatus
 
 QQ_SECRET = "0123456789abcdef0123456789abcdef"
 DINGTALK_SECRET = "dingtalk-test-secret"
@@ -34,6 +35,7 @@ class FakePlugin:
         self.ready = True
         self.id_ = id_
         self.cleanups = []
+        self.status = PluginStatus.LOADED
 
 
 @contextmanager
@@ -329,7 +331,11 @@ async def test_partial_startup_closes_every_acquired_transport():
         ("failing", "close"),
         ("first", "close"),
     ]
-    assert not lifecycle._running
+    assert lifecycle._running
+    assert lifecycle._started == [failing]
+    failing.close_error = None
+    await lifecycle.shutdown()
+    assert events[-1] == ("failing", "close")
     assert not lifecycle._started
 
 
@@ -380,3 +386,141 @@ async def test_cancelled_startup_still_releases_partial_resources():
         tasks.cancel_scope.cancel()
     assert events == [("partial", "close")]
     assert not lifecycle._started
+
+
+@pytest.mark.anyio
+async def test_shared_transport_restarts_after_last_consumer_stops(monkeypatch):
+    from types import ModuleType
+
+    from opsmesh.drivers import base as driver_state
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
+    from opsmesh.plugins.model import Plugin
+
+    driver = make_runtime()
+    monkeypatch.setattr(driver_state, "_driver", driver)
+    first = Plugin("first", ModuleType("first"), "first", None)
+    second = Plugin("second", ModuleType("second"), "second", None)
+    monkeypatch.setattr(
+        registry, "_plugins", {"first": first, "second": second}
+    )
+    events = []
+    transport = ProbeTransport("shared", events)
+    resources = ChannelTransports()
+    with owned_by(first):
+        resources.use(transport)
+    with owned_by(second):
+        resources.use(transport)
+    async with driver.lifespan():
+        await driver._lifespan.stop_plugin(first)
+        assert events == [("shared", "start")]
+        await driver._lifespan.stop_plugin(second)
+        assert events[-1] == ("shared", "close")
+        await driver._lifespan.start_plugin(first)
+        assert events[-1] == ("shared", "start")
+    assert events == [
+        ("shared", "start"),
+        ("shared", "close"),
+        ("shared", "start"),
+        ("shared", "close"),
+    ]
+
+
+@pytest.mark.anyio
+async def test_http_listener_retains_resources_when_cleanup_fails(monkeypatch):
+    from types import SimpleNamespace
+
+    from opsmesh.plugins.channels.server import ListenerSettings, Server
+
+    async def app(scope, receive, send):
+        return None
+
+    server = Server(app, ListenerSettings())
+    closed = []
+    listener = SimpleNamespace()
+    sock = SimpleNamespace(close=lambda: closed.append(True))
+    server._server, server._socket = listener, sock
+
+    async def fail(*args):
+        raise RuntimeError("Injected listener cleanup failure")
+
+    monkeypatch.setattr(server, "_drain_server", fail)
+    with pytest.raises(RuntimeError, match="cleanup"):
+        await server._stop_listener()
+    assert (server._server, server._socket, closed) == (listener, sock, [])
+    with pytest.raises(RuntimeError, match="not clean"):
+        await server.startup(None)
+
+    async def finish(*args):
+        return None
+
+    monkeypatch.setattr(server, "_drain_server", finish)
+    await server._stop_listener()
+    assert (server._server, server._socket, closed) == (None, None, [True])
+
+
+@pytest.mark.anyio
+async def test_failed_shared_transport_cannot_accept_a_new_consumer(
+    monkeypatch,
+):
+    from types import ModuleType
+
+    import opsmesh.drivers
+    from opsmesh.plugins.channels.lifecycle.transports import ChannelTransports
+    from opsmesh.plugins.model import Plugin
+
+    class Hooks:
+        def __init__(self):
+            self.ready, self.started, self.shutdown = [], [], []
+
+        def on_ready(self, function):
+            self.ready.append(function)
+
+        def on_started(self, function):
+            self.started.append(function)
+
+        def on_shutdown(self, function):
+            self.shutdown.append(function)
+
+    class SharedTransport(ProbeTransport):
+        async def start_accepting(self):
+            self.events.append((self.name, "accept"))
+
+    hooks = Hooks()
+    monkeypatch.setattr(opsmesh.drivers, "get_driver", lambda: hooks)
+    resources = ChannelTransports()
+    events = []
+    transport = SharedTransport("shared", events)
+    first = Plugin("first", ModuleType("first"), "first", None)
+    second = Plugin("second", ModuleType("second"), "second", None)
+    with owned_by(first):
+        resources.use(transport)
+    await hooks.ready[0]()
+    await hooks.started[0]()
+    transport.close_error = RuntimeError("Injected cleanup failure")
+    with pytest.raises(RuntimeError, match="cleanup"):
+        await hooks.shutdown[0]()
+    with owned_by(second):
+        resources.use(transport)
+    for operation in (
+        hooks.ready[1],
+        hooks.started[1],
+        resources.startup,
+        resources.start_accepting,
+    ):
+        with pytest.raises(RuntimeError, match="successful cleanup"):
+            await operation()
+    assert events == [
+        ("shared", "start"),
+        ("shared", "accept"),
+        ("shared", "close"),
+    ]
+    transport.close_error = None
+    await hooks.shutdown[0]()
+    await hooks.ready[1]()
+    await hooks.started[1]()
+    assert events[-3:] == [
+        ("shared", "close"),
+        ("shared", "start"),
+        ("shared", "accept"),
+    ]
+    await hooks.shutdown[1]()

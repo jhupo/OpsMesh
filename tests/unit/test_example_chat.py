@@ -27,7 +27,7 @@ for module, values in {
         "qq": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"},
     },
 }.items():
-    manager = PluginManager([module], config=values, namespace=module)
+    manager = PluginManager([module], config=values)
     registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
@@ -39,20 +39,17 @@ assert get_plugin("api") is None
 assert get_plugin("qq") is None
 # Explicit manifest configuration belongs to channels, not its consumer.
 from opsmesh.plugins.channels.qq.config import get_settings
-channels.config_namespace = "opsmesh.plugins.channels"
 channels.config_values = {"qq": {"concurrency": 3}}
-plugin.config_namespace = "example_chat"
+saved_values = plugin.config_values
 plugin.config_values = {"model": "different"}
 token = registry._current_plugin.set(plugin)
 try:
     assert get_settings().concurrency == 3
 finally:
     registry._current_plugin.reset(token)
+plugin.config_values = saved_values
 from opsmesh.plugins.channels.qq import connections
-assert driver_state.get_driver().get_adapter("qq") is not None
-assert driver_state.get_driver().get_adapter("qq").started is False
-adapter = driver_state.get_driver().get_adapter("qq")
-assert adapter.declarations[0].owner_id == plugin.id_
+assert "qq" not in driver_state.get_driver().adapters
 owned_startups = [
     entry
     for entry in driver_state.get_driver()._lifespan._startup_funcs
@@ -73,12 +70,11 @@ assert route.method == "POST"
 assert route.path == "/plugins/example_chat/chat"
 assert route.active is False, "the route must wait for plugin readiness"
 assert route.body_model.__name__ == "ChatRequest"
-assert route.response_adapter.json_schema()["title"] == "ChatReply"
+assert route.message_handlers
+assert route.matcher is None
 
-from example_chat.agent import agent
-
-assert agent.model == "gpt-4o-mini"
-assert agent.model_settings.reasoning.effort == "medium"
+from example_chat import agent as definition
+assert not hasattr(definition, "agent"), "Agent resources start in on_startup"
 print("loaded", plugin.id_, route.path)
 """
 
@@ -113,6 +109,16 @@ def test_example_chat_declares_an_inactive_route():
 
 
 BEHAVIOR_SCRIPT = """
+import asyncio
+from example_chat import connections as chat_connections
+asyncio.run(definition.startup())
+assert definition.agent.model == "gpt-4o-mini"
+assert definition.agent.model_settings.reasoning.effort == "medium"
+token = registry._current_plugin.set(plugin)
+try:
+    asyncio.run(chat_connections.connect_mcp())
+finally:
+    registry._current_plugin.reset(token)
 import runpy
 scenario = runpy.run_path("tests/fixtures/chat_scenario.py")["run_scenario"]
 scenario(plugin, routes, connections)

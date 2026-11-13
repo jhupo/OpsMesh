@@ -76,7 +76,10 @@ def migrate(connection):
 
 def run_scenario(plugin, routes):
     """Test multi-turn history, commands, workspace persistence and cleanup."""
-    plugin.status = PluginStatus.READY
+    from opsmesh.plugins import get_loaded_plugins
+
+    for loaded in get_loaded_plugins():
+        loaded.status = PluginStatus.READY
     caller = UserContext(id="sandbox-user")
     api = APIChannel(
         Settings(identities=[{"id": "test", "token_ref": "TOKEN"}]),
@@ -131,7 +134,7 @@ def run_scenario(plugin, routes):
             },
             receive,
         )
-        result = await api._invoke(
+        result = await api._invoke_request(
             selected, request, SimpleNamespace(caller=owner or caller)
         )
         return json.loads(result.body) if result.status_code != 204 else None
@@ -296,7 +299,6 @@ def run_scenario(plugin, routes):
             from opsmesh.plugins import get_plugin
 
             storage = get_plugin("filesystem")
-            storage.config_namespace = "opsmesh.plugins.filesystem"
             storage.config_values = {"root": temporary + "/files"}
             await files._startup()
             engine = create_async_engine(

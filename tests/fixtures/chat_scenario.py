@@ -31,13 +31,19 @@ from opsmesh.plugins.channels.api import (
     Settings,
 )
 from opsmesh.plugins.channels.api.adapter import APIAdapter
+from opsmesh.plugins.channels.dingtalk.events import (
+    parse_callback as parse_dingtalk,
+)
 from opsmesh.plugins.channels.qq.events import QQMessageEvent
 from opsmesh.plugins.model import PluginStatus
 
 
 def run_scenario(plugin, routes, connections):
     """Exercise conversations using real SDK history and framework dispatch."""
-    plugin.status = PluginStatus.READY
+    from opsmesh.plugins import get_loaded_plugins
+
+    for loaded in get_loaded_plugins():
+        loaded.status = PluginStatus.READY
     channel = driver_state.get_driver().get_adapter("qq").declarations[0]
     responses = []
     caller = UserContext(id="verified-user")
@@ -129,7 +135,7 @@ def run_scenario(plugin, routes, connections):
             },
             receive,
         )
-        result = await api_channel._invoke(
+        result = await api_channel._invoke_request(
             selected, request, SimpleNamespace(caller=owner or caller)
         )
         return json.loads(result.body) if result.status_code != 204 else None
@@ -157,7 +163,6 @@ def run_scenario(plugin, routes, connections):
             await connection.run_sync(migrate)
         store = ChatConversations(engine)
         lifecycle._conversations = store
-        await chat_connections.connect_mcp()
         await dispatch("/help")
         assert responses[-1].startswith("/chat <question>")
         await dispatch("/chat")
@@ -165,12 +170,25 @@ def run_scenario(plugin, routes, connections):
         await dispatch("/chat " + "x" * 8001)
         assert responses[-1].startswith("Usage:")
         assert len(agent.model.calls) == 0
-        await dispatch("/chat Explain Python")
+        from example_chat.messages import addressed_message
+
+        group_event = parse_dingtalk(
+            {
+                "msgtype": "text",
+                "text": {"content": "ordinary group text"},
+                "conversationId": "g",
+                "msgId": "m",
+                "senderStaffId": "u",
+                "conversationType": "2",
+                "isInAtList": False,
+            },
+            connection_id="bot",
+        )
+        assert not await addressed_message(group_event)
+        await dispatch("Explain Python")
         assert responses[-1] == "bot answer"
-        before = list(responses)
-        await dispatch("ordinary text")
         await dispatch("/unknown ignored")
-        assert responses == before
+        assert responses[-1] == "Unknown command; use /help"
 
         first = await invoke("POST", "/sessions", {"name": "First"})
         sid = first["id"]
@@ -196,7 +214,45 @@ def run_scenario(plugin, routes, connections):
                 "POST", "/chat", {"session_id": sid, "message": command}
             )
             assert response["session_id"] == sid
+            if command == "/session":
+                assert json.loads(response["text"]) == await invoke(
+                    "GET", "/sessions/{id}", session_id=sid
+                )
+            elif command == "/history":
+                assert json.loads(response["text"]) == await invoke(
+                    "GET", "/sessions/{id}/messages", session_id=sid
+                )
         assert len(agent.model.calls) == 4
+
+        from example_chat import conversation as turns
+        from example_chat.agent import ApprovalUnsupported
+
+        native_reply = turns.reply
+
+        async def approval_required(*args):
+            raise ApprovalUnsupported("Approval required")
+
+        turns.reply = approval_required
+        try:
+            selected = await store.get(caller.id, sid)
+            try:
+                await turns.answer("Approval", caller, selected)
+            except ConversationError as error:
+                assert error.status == 409
+            else:
+                raise AssertionError("Expected a transport-neutral failure")
+            await expect_error(
+                invoke(
+                    "POST", "/chat", {"session_id": sid, "message": "Approval"}
+                ),
+                409,
+            )
+            await dispatch("Approval")
+            assert responses[-1] == "Approval required"
+            await dispatch("/chat Approval")
+            assert responses[-1] == "Approval required"
+        finally:
+            turns.reply = native_reply
         await expect_error(
             invoke("POST", "/chat", {"session_id": sid, "message": "/unknown"}),
             400,

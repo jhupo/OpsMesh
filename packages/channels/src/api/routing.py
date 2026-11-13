@@ -2,7 +2,8 @@
 
 import inspect
 from collections.abc import Callable
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from types import UnionType
+from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from starlette.responses import Response
@@ -12,6 +13,7 @@ from opsmesh.permissions import Permission
 from opsmesh.rules import Rule
 
 from .errors import RouteRegistrationError
+from .messages import MessageRequest
 from .routes import ACCESS_INVOKE, Access, APIRouter
 
 _router = APIRouter()
@@ -37,14 +39,18 @@ def _return_annotation(handler: Callable[..., Any]) -> Any:
     return annotation
 
 
-def _response_model(annotation: Any) -> type[BaseModel] | None:
-    if annotation is inspect.Signature.empty:
-        return None
+def _response_types(annotation: Any) -> tuple[type[Response], ...]:
     if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return annotation
-    return None
+        return _response_types(get_args(annotation)[0])
+    if isinstance(annotation, type) and issubclass(annotation, Response):
+        return (annotation,)
+    if get_origin(annotation) not in (UnionType, Union):
+        return ()
+    return tuple(
+        kind
+        for branch in get_args(annotation)
+        for kind in _response_types(branch)
+    )
 
 
 def route(
@@ -56,7 +62,6 @@ def route(
     body: type[BaseModel] | None = None,
     rule: Rule | None = None,
     permission: Permission | None = None,
-    message_matchers: tuple[type[Matcher], ...] = (),
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Declare an event handler with an optional JSON validation contract.
 
@@ -69,34 +74,56 @@ def route(
         annotation = _return_annotation(handler)
         if get_origin(annotation) is Annotated:
             annotation = get_args(annotation)[0]
-        response = _response_model(annotation)
-        allows_response = annotation is Response or Response in get_args(
-            annotation
-        )
-        if annotation is Response:
-            adapter = None
-        elif response is not None:
-            adapter = TypeAdapter(annotation)
-        else:
-            adapter = TypeAdapter(
+        responses = _response_types(annotation)
+        adapter = (
+            TypeAdapter(
                 annotation, config=ConfigDict(arbitrary_types_allowed=True)
             )
+            if not (
+                isinstance(annotation, type)
+                and issubclass(annotation, BaseModel)
+            )
+            else TypeAdapter(annotation)
+        )
         _router.register(
             method=method,
             path=path,
             handler=handler,
             body=body,
             response_adapter=adapter,
-            allow_response=allows_response,
+            allow_response=bool(responses),
+            response_types=responses,
             access=access,
             name=name,
             rule=rule,
             permission=permission,
-            message_matchers=message_matchers,
         )
         return handler
 
     return decorator
+
+
+def message(
+    path: str,
+    *,
+    handlers: tuple[type[Matcher], ...],
+    body: type[MessageRequest] = MessageRequest,
+    access: Access = ACCESS_INVOKE,
+    name: str | None = None,
+):
+    """Bind a standard message entrance to existing framework matchers."""
+    if not handlers:
+        raise RouteRegistrationError("Message entrances require handlers")
+    return _router.register(
+        method="POST",
+        path=path,
+        body=body,
+        access=access,
+        name=name,
+        message_handlers=handlers,
+        allow_response=True,
+        response_types=(Response,),
+    )
 
 
 def get(

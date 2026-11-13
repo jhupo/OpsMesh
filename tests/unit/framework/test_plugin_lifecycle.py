@@ -350,5 +350,286 @@ lifespan.on_stopping(lambda: events.append("consumer-stop"))
     async with host.lifespan:
         assert dependency.status is PluginStatus.FAILED
         assert consumer.status is PluginStatus.BLOCKED
-        assert host.events == ["input-failed"]
+        assert host.events == ["input-failed", "input-close"]
     assert host.events == ["input-failed", "input-close", "consumer-stop"]
+
+
+@pytest.mark.anyio
+async def test_resource_restart_keeps_static_declarations(plugin_path):
+    host = _host_module("lifecycle_test_restart_host")
+    plugin = _load(
+        plugin_path,
+        "lifecycle_test_restart",
+        """
+from lifecycle_test_restart_host import lifespan, events
+from opsmesh.plugins.registry import track_registration
+def startup():
+    events.append("open")
+    track_registration(lambda: events.append("activation removed"))
+lifespan.on_startup(startup)
+lifespan.on_shutdown(lambda: events.append("close"))
+""",
+    )
+    async with host.lifespan:
+        await host.lifespan.stop_plugin(plugin)
+        await host.lifespan.stop_plugin(plugin)
+        await host.lifespan.start_plugin(plugin)
+        await host.lifespan.start_plugin(plugin)
+        assert host.events == ["open", "close", "activation removed", "open"]
+    assert host.events[-2:] == ["close", "activation removed"]
+
+
+@pytest.mark.anyio
+async def test_active_consumer_blocks_provider_stop(plugin_path):
+    host = _host_module("lifecycle_test_dependency_host")
+    provider = _load(plugin_path, "lifecycle_test_provider", "value = 1")
+    consumer = _load(
+        plugin_path,
+        "lifecycle_test_consumer",
+        """
+from opsmesh import require
+require("lifecycle_test_provider")
+""",
+    )
+    async with host.lifespan:
+        with pytest.raises(RuntimeError, match="Stop dependent plugins"):
+            await host.lifespan.stop_plugin(provider)
+        await host.lifespan.stop_plugin(consumer)
+        await host.lifespan.stop_plugin(provider)
+        assert provider.cleanup_complete
+
+
+@pytest.mark.anyio
+async def test_stop_waits_for_call_finalizers_before_closing(plugin_path):
+    from contextlib import AsyncExitStack
+
+    import anyio
+
+    from opsmesh.plugins.invocation import hold_plugin
+
+    host = _host_module("lifecycle_test_drain_host")
+    plugin = _load(
+        plugin_path,
+        "lifecycle_test_drain",
+        """
+from lifecycle_test_drain_host import lifespan, events
+lifespan.on_shutdown(lambda: events.append("resource closed"))
+""",
+    )
+    entered = anyio.Event()
+    host.lifespan.shutdown_timeout = 0.2
+
+    async def request():
+        async with AsyncExitStack() as stack:
+            hold_plugin(plugin, stack)
+            entered.set()
+            try:
+                await anyio.sleep_forever()
+            finally:
+                with anyio.CancelScope(shield=True):
+                    await anyio.sleep(0.01)
+                    host.events.append("request cleaned")
+
+    async with host.lifespan:
+        host.lifespan.task_group.start_soon(request)
+        await entered.wait()
+        await host.lifespan.stop_plugin(plugin)
+        assert host.events == ["request cleaned", "resource closed"]
+        assert not plugin.calls
+
+
+@pytest.mark.anyio
+async def test_stop_rejects_self_before_waiting_for_management(plugin_path):
+    from contextlib import AsyncExitStack
+
+    from opsmesh.plugins.invocation import hold_plugin
+
+    host = _host_module("lifecycle_test_self_host")
+    plugin = _load(plugin_path, "lifecycle_test_self", "value = 1")
+    async with host.lifespan:
+        async with AsyncExitStack() as stack:
+            hold_plugin(plugin, stack)
+            with pytest.raises(RuntimeError, match="cannot stop itself"):
+                await host.lifespan.stop_plugin(plugin)
+        assert plugin.ready
+
+
+@pytest.mark.anyio
+async def test_failed_cleanup_prevents_a_second_instance(plugin_path):
+    host = _host_module("lifecycle_test_dirty_host")
+    plugin = _load(
+        plugin_path,
+        "lifecycle_test_dirty",
+        """
+from lifecycle_test_dirty_host import lifespan, events
+broken = True
+def close():
+    if broken:
+        raise ValueError("close failed")
+    events.append("closed")
+lifespan.on_shutdown(close)
+""",
+    )
+    async with host.lifespan:
+        with pytest.raises(ValueError, match="close failed"):
+            await host.lifespan.stop_plugin(plugin)
+        with pytest.raises(RuntimeError, match="unfinished cleanup"):
+            await host.lifespan.start_plugin(plugin)
+        assert plugin.status is PluginStatus.FAILED
+        plugin.module.broken = False
+        await host.lifespan.stop_plugin(plugin)
+        assert plugin.cleanup_complete
+
+
+@pytest.mark.anyio
+async def test_shutdown_includes_resources_started_while_waiting(plugin_path):
+    import asyncio
+
+    host = _host_module("lifecycle_test_barrier_host")
+    provider = _load(plugin_path, "lifecycle_test_barrier_provider", "")
+    await host.lifespan.startup()
+    await host.lifespan.stop_plugin(provider)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def start():
+        entered.set()
+        await release.wait()
+        host.events.append("opened")
+
+    async def close():
+        host.events.append("closed")
+
+    with registry.plugin_scope(provider):
+        host.lifespan.on_startup(start)
+        host.lifespan.on_shutdown(close)
+
+    task = asyncio.create_task(host.lifespan.start_plugin(provider))
+    await entered.wait()
+
+    async def finish_start():
+        await asyncio.sleep(0)
+        release.set()
+
+    release_task = asyncio.create_task(finish_start())
+    await host.lifespan.shutdown()
+    await task
+    await release_task
+    assert host.events == ["opened", "closed"]
+    assert provider.cleanup_complete
+
+
+@pytest.mark.anyio
+async def test_failed_close_retries_only_unfinished_callbacks(plugin_path):
+    host = _host_module("lifecycle_test_partial_host")
+    plugin = _load(
+        plugin_path,
+        "lifecycle_test_partial",
+        """
+from lifecycle_test_partial_host import lifespan, events
+broken = True
+def close_first():
+    if broken:
+        raise OSError("busy")
+    events.append("first")
+lifespan.on_shutdown(close_first)
+lifespan.on_shutdown(lambda: events.append("second"))
+""",
+    )
+    async with host.lifespan:
+        with pytest.raises(OSError, match="busy"):
+            await host.lifespan.stop_plugin(plugin)
+        plugin.module.broken = False
+        await host.lifespan.stop_plugin(plugin)
+    assert host.events == ["second", "first"]
+
+
+@pytest.mark.anyio
+async def test_queued_start_rejects_revoked_plugin(plugin_path):
+    import asyncio
+
+    host = _host_module("lifecycle_test_queued_revoke_host")
+    plugin = _load(plugin_path, "lifecycle_test_queued_revoke", "")
+    async with host.lifespan:
+        await host.lifespan.stop_plugin(plugin)
+        await host.lifespan._management_lock.acquire()
+        pending = asyncio.create_task(host.lifespan.start_plugin(plugin))
+        await asyncio.sleep(0)
+        registry.revoke_plugin(plugin)
+        host.lifespan._management_lock.release()
+        with pytest.raises(RuntimeError, match="revoked before startup"):
+            await pending
+        assert plugin.cleanup_complete and not plugin.ready
+
+
+@pytest.mark.anyio
+async def test_start_rechecks_identity_after_dependency_startup(plugin_path):
+    import asyncio
+
+    host = _host_module("lifecycle_test_dependency_revoke_host")
+    provider = _load(plugin_path, "lifecycle_test_revoked_provider", "")
+    caller = _load(
+        plugin_path,
+        "lifecycle_test_revoked_caller",
+        "from opsmesh import require\n"
+        "require('lifecycle_test_revoked_provider')\n",
+    )
+    async with host.lifespan:
+        await host.lifespan.stop_plugin(caller)
+        await host.lifespan.stop_plugin(provider)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def startup():
+            entered.set()
+            await release.wait()
+
+        with registry.plugin_scope(provider):
+            host.lifespan.on_startup(startup)
+        pending = asyncio.create_task(host.lifespan.start_plugin(caller))
+        await entered.wait()
+        registry.revoke_plugin(caller)
+        release.set()
+        with pytest.raises(
+            RuntimeError, match="revoked during dependency startup"
+        ):
+            await pending
+        assert caller.cleanup_complete and not caller.ready
+
+
+@pytest.mark.anyio
+async def test_hot_start_failure_rejects_calls_before_resource_cleanup(
+    plugin_path,
+):
+    import asyncio
+
+    from opsmesh.plugins.invocation import PluginUnavailable, plugin_call
+
+    host = _host_module("lifecycle_test_hot_start_failure_host")
+    plugin = _load(plugin_path, "lifecycle_test_hot_start_failure", "")
+    closing = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fail_started():
+        raise OSError("cannot activate input")
+
+    async def shutdown():
+        closing.set()
+        await release.wait()
+
+    async with host.lifespan:
+        await host.lifespan.stop_plugin(plugin)
+        with registry.plugin_scope(plugin):
+            host.lifespan.on_started(fail_started)
+            host.lifespan.on_shutdown(shutdown)
+        pending = asyncio.create_task(host.lifespan.start_plugin(plugin))
+        try:
+            await closing.wait()
+            with pytest.raises(PluginUnavailable):
+                async with plugin_call(plugin.id_):
+                    pytest.fail("A failed activation accepted a new call")
+        finally:
+            release.set()
+        with pytest.raises(OSError, match="cannot activate input"):
+            await pending
+        assert plugin.status is PluginStatus.FAILED and plugin.cleanup_complete

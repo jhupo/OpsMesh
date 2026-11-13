@@ -39,9 +39,13 @@ def chat_server():
             self.respond()
 
         def respond(self):
-            data = json.loads(
-                self.rfile.read(int(self.headers.get("Content-Length", 0)))
-                or b"{}"
+            content = self.rfile.read(
+                int(self.headers.get("Content-Length", 0))
+            )
+            data = (
+                content
+                if self.path.startswith("/attachments/")
+                else json.loads(content or b"{}")
             )
             requests.append((self.command, self.path, data))
             path = self.path.removeprefix("/plugins/example_chat")
@@ -49,6 +53,8 @@ def chat_server():
             status = 200
             if self.headers.get("Authorization") != "Bearer test-token":
                 status, result = 401, {"error": "Invalid credentials"}
+            elif self.path.startswith("/attachments/"):
+                status, result = 201, {"id": uuid4().hex}
             elif path == "/sessions" and self.command == "POST":
                 key = str(uuid4())
                 result = {"id": key, "name": data["name"]}
@@ -71,7 +77,12 @@ def chat_server():
                 else:
                     result = {
                         "session_id": key,
-                        "text": "reply:" + data["message"],
+                        "text": "reply:"
+                        + (
+                            data["message"]
+                            if isinstance(data["message"], str)
+                            else "attachments"
+                        ),
                     }
             else:
                 status, result = 404, {"error": "Missing route"}
@@ -196,3 +207,25 @@ def test_plugin_names_cannot_change_request_paths(client_modules, plugin):
     client_module, _ = client_modules
     with pytest.raises(ValueError):
         client_module.ChatClient("http://localhost", "token", plugin=plugin)
+
+
+def test_client_uploads_files_before_sending_ordered_message(
+    client_modules, chat_server, tmp_path
+):
+    module, _ = client_modules
+    address, _, requests = chat_server
+    client = module.ChatClient(address, "test-token", plugin="example_sandbox")
+    selected = client.create_session()["id"]
+    document = tmp_path / "a b.txt"
+    document.write_bytes(b"document content")
+    assert (
+        client.ask("Read this", selected, files=(document,))
+        == "reply:attachments"
+    )
+    assert requests[-2][1] == "/attachments/example_sandbox?name=a+b.txt"
+    assert requests[-2][2] == b"document content"
+    message = requests[-1][2]["message"]
+    assert message[0] == {"type": "text", "text": "Read this"}
+    assert message[1]["type"] == "file"
+    assert len(message[1]["attachment_id"]) == 32
+    assert requests[-1][2]["session_id"] == selected

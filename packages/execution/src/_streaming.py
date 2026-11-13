@@ -8,6 +8,16 @@ from agents.result import RunResultStreaming
 
 logger = logging.getLogger(__name__)
 _pending_cleanup: set[asyncio.Task[Any]] = set()
+_SDK_WORK_TASKS = (
+    "run_loop_task",
+    "_input_guardrails_task",
+    "_output_guardrails_task",
+    "_sandbox_wrapped_run_loop_task",
+)
+_SDK_CLEANUP_TASKS = (
+    "_model_provider_cleanup_task",
+    "_sandbox_cleanup_task",
+)
 
 
 def was_cancelled(result: RunResultStreaming) -> bool:
@@ -41,16 +51,31 @@ async def _close_stream_tasks(
     """Keep SDK cleanup alive when its consumer receives Task.cancel()."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    cleaned = await _wait_task(
-        result.run_loop_task, _remaining(deadline), error_is_failure=False
-    )
-    await asyncio.sleep(0)
-    for name in ("_model_provider_cleanup_task", "_sandbox_cleanup_task"):
-        task = getattr(result, name, None)
-        if task is None:
-            continue
-        cleaned = (await _wait_task(task, _remaining(deadline))) and cleaned
+    cleaned = True
+    observed: set[asyncio.Task[Any]] = set()
+    while True:
+        await asyncio.sleep(0)
+        tasks = _stream_tasks(result)
+        pending = [task for task in tasks if task not in observed]
+        if not pending:
+            break
+        for task in pending:
+            cleaned = (
+                await _wait_task(
+                    task, _remaining(deadline), error_is_failure=tasks[task]
+                )
+            ) and cleaned
+        observed.update(pending)
     return cleaned
+
+
+def _stream_tasks(result: RunResultStreaming) -> dict[asyncio.Task[Any], bool]:
+    """Enumerate tasks owned by the pinned SDK, including guardrails."""
+    return {
+        task: name in _SDK_CLEANUP_TASKS
+        for name in (*_SDK_WORK_TASKS, *_SDK_CLEANUP_TASKS)
+        if (task := getattr(result, name, None)) is not None
+    }
 
 
 async def _wait_task(
@@ -109,3 +134,23 @@ def _release_cleanup(task: asyncio.Task[Any]) -> None:
 
 def _remaining(deadline: float) -> float:
     return deadline - asyncio.get_running_loop().time()
+
+
+async def settle_stream(result: RunResultStreaming) -> None:
+    """Retain caller resources until cancellation-resistant SDK work ends.
+
+    A failed cleanup budget must not turn live SDK work into an untracked
+    consumer. Host shutdown can report the retained call as not drained.
+    """
+    cancellation = None
+    while True:
+        try:
+            await asyncio.sleep(0)
+            tasks = {task for task in _stream_tasks(result) if not task.done()}
+            if not tasks:
+                break
+            await asyncio.wait(tasks)
+        except asyncio.CancelledError as error:
+            cancellation = cancellation or error
+    if cancellation is not None:
+        raise cancellation

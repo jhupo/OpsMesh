@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from opsmesh.plugins.channels._validation import http_url, path_prefix
 
+from ..attachments import AttachmentSettings
 from ..server import ListenerSettings
 
 
@@ -31,6 +32,7 @@ class QQSettings(ListenerSettings):
 
     port: int = Field(default=8081, ge=0, le=65535)
     path_prefix: str = "/channels/qq"
+    attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
     api_base: str = "https://api.sgroup.qq.com"
     sandbox_api_base: str = "https://sandbox.api.sgroup.qq.com"
     token_url: str = "https://bots.qq.com/app/getAppAccessToken"

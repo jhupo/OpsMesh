@@ -4,18 +4,19 @@ import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Annotated
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import MetaData, create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+import opsmesh.plugins.database as database
 from opsmesh.dependencies import Dependent
 from opsmesh.dependencies.params import DefaultParam, DependParam
 from opsmesh.params import Depends
-import opsmesh.plugins.database as database
 from opsmesh.plugins.database import connections, migrations, schema
-from opsmesh.plugins.database.history import convert_history, read_manifest
+from tools.database_history.history import convert_history, read_manifest
 
 
 def source(directory: Path, owner: str, head: str = "initial"):
@@ -53,7 +54,7 @@ def test_nested_owner_has_a_stable_safe_table(tmp_path):
 
 def test_schema_registration_is_atomic_and_reversible(tmp_path):
     item = source(tmp_path, "parent:child")
-    declaration = database.DatabaseSchema(MetaData(), item.directory, item.head)
+    declaration = database.DatabaseSchema(item.directory, item.head)
     release = schema.registry.add(item.owner, declaration)
     with pytest.raises(database.MigrationError):
         schema.registry.add(item.owner, declaration)
@@ -292,3 +293,119 @@ def test_conflicting_target_history_does_not_stamp_other_sources(tmp_path):
             convert_history(connection, (first, second))
         assert not inspect(connection).has_table(first.version_table)
     engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_reactivation_creates_engine_with_current_settings(monkeypatch):
+    settings = database.Settings(dsn="postgresql+asyncpg://localhost/first")
+    monkeypatch.setattr(
+        connections, "get_plugin_config", lambda model: settings
+    )
+    engines = []
+    options = []
+
+    def create(dsn, **kwargs):
+        engine = AsyncMock()
+        engines.append(engine)
+        options.append((dsn, kwargs))
+        return engine
+
+    monkeypatch.setattr(connections, "create_async_engine", create)
+    monkeypatch.setattr(
+        connections, "async_sessionmaker", lambda *a, **k: object()
+    )
+    await connections._startup()
+    first = connections.get_database()
+    await connections._shutdown()
+    settings = database.Settings(
+        dsn="postgresql+asyncpg://localhost/second", pool_size=11
+    )
+    await connections._startup()
+    try:
+        second = connections.get_database()
+        assert second is not first
+        assert second.settings is settings
+        assert options[-1][0].endswith("/second")
+        assert options[-1][1]["pool_size"] == 11
+        engines[0].dispose.assert_awaited_once()
+    finally:
+        await connections._shutdown()
+
+
+@pytest.mark.anyio
+async def test_failed_dispose_retains_owner_and_rejects_new_sessions(
+    monkeypatch,
+):
+    owner = connections.Database(
+        database.Settings(dsn="postgresql+asyncpg://localhost/test")
+    )
+    engine = AsyncMock()
+    engine.dispose.side_effect = [RuntimeError("dispose failed"), None]
+    owner._engine = engine
+    owner._sessionmaker = object()
+    monkeypatch.setattr(connections, "_database", owner)
+    with pytest.raises(RuntimeError, match="dispose failed"):
+        await connections._shutdown()
+    assert connections._database is owner
+    assert owner._engine is engine
+    with pytest.raises(database.DatabaseUnavailableError):
+        connections.get_database()
+    with pytest.raises(database.DatabaseUnavailableError):
+        await connections._startup()
+    await connections._shutdown()
+    assert connections._database is None
+    assert engine.dispose.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_failed_initialization_releases_unpublished_engine(monkeypatch):
+    engine = AsyncMock()
+    monkeypatch.setattr(
+        connections, "create_async_engine", lambda *a, **k: engine
+    )
+    monkeypatch.setattr(
+        connections,
+        "get_plugin_config",
+        lambda model: database.Settings(
+            dsn="postgresql+asyncpg://localhost/test"
+        ),
+    )
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("session factory failed")
+
+    monkeypatch.setattr(connections, "async_sessionmaker", fail)
+    with pytest.raises(RuntimeError, match="session factory failed"):
+        await connections._startup()
+    assert connections._database is None
+    engine.dispose.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_failed_initialization_retains_failed_cleanup_for_retry(
+    monkeypatch,
+):
+    engine = AsyncMock()
+    engine.dispose.side_effect = [RuntimeError("cleanup failed"), None]
+    monkeypatch.setattr(
+        connections, "create_async_engine", lambda *a, **k: engine
+    )
+    monkeypatch.setattr(
+        connections,
+        "get_plugin_config",
+        lambda model: database.Settings(
+            dsn="postgresql+asyncpg://localhost/test"
+        ),
+    )
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("session factory failed")
+
+    monkeypatch.setattr(connections, "async_sessionmaker", fail)
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await connections._startup()
+    assert connections._database is not None
+    with pytest.raises(database.DatabaseUnavailableError):
+        connections.get_engine()
+    await connections._shutdown()
+    assert engine.dispose.await_count == 2

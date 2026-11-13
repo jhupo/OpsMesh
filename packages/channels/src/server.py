@@ -50,6 +50,8 @@ class Server:
     async def startup(self, task_group: TaskGroup) -> None:
         """Listen after all plugin startup and readiness callbacks finish."""
         if self.listen_enabled and not self._listening:
+            if self._server is not None or self._socket is not None:
+                raise RuntimeError("The previous HTTP listener is not clean")
             await self._start_listener(task_group)
 
     def stop_accepting(self) -> None:
@@ -101,23 +103,20 @@ class Server:
             self._serve_scope = await task_group.start(
                 self._serve, server, done
             )
-        except BaseException:
+        except BaseException as error:
             with anyio.CancelScope(shield=True):
-                self._server = None
-                self._server_done = None
-                self._serve_scope = None
-                self._socket = None
-                if server is not None:
-                    try:
-                        with anyio.move_on_after(self.shutdown_timeout):
-                            await server.shutdown(sockets=[sock])
-                    except Exception:
-                        logger.debug(
-                            "HTTP listener startup cleanup failed",
-                            exc_info=True,
-                        )
-                    await self._close_server_listeners(server)
-                self._close_socket(sock)
+                try:
+                    if (
+                        self._server_done is not None
+                        and self._serve_scope is None
+                    ):
+                        self._server_done.set()
+                    await self._stop_listener()
+                except BaseException as cleanup_error:
+                    error.add_note(
+                        f"HTTP startup cleanup failed: {cleanup_error!r}"
+                    )
+                    logger.exception("HTTP listener startup cleanup failed")
             raise
         self._listening = True
         logger.info(
@@ -167,17 +166,15 @@ class Server:
             self._server_done,
             self._serve_scope,
         )
+        if server is not None:
+            await self._drain_server(server, sock, done)
+        if serve_scope is not None:
+            serve_scope.cancel()
+        self._close_socket(sock)
         self._server = None
         self._socket = None
         self._server_done = None
         self._serve_scope = None
-        try:
-            if server is not None:
-                await self._drain_server(server, sock, done)
-        finally:
-            if serve_scope is not None:
-                serve_scope.cancel()
-            self._close_socket(sock)
 
     async def _drain_server(
         self,
@@ -227,14 +224,9 @@ class Server:
         if not pending:
             return
         with anyio.CancelScope(shield=True):
-            try:
-                with anyio.move_on_after(1.0):
-                    await asyncio.gather(*pending, return_exceptions=True)
-            except Exception:
-                logger.debug(
-                    "HTTP request tasks did not finish after shutdown",
-                    exc_info=True,
-                )
+            _, remaining = await asyncio.wait(pending, timeout=1.0)
+            if remaining:
+                raise TimeoutError("HTTP requests have not finished cleanup")
 
     async def _force_close(self, server: uvicorn.Server) -> None:
         server.should_exit = True
@@ -253,11 +245,8 @@ class Server:
     async def _close_server_listeners(server: uvicorn.Server) -> None:
         for listener in list(getattr(server, "servers", ())):
             listener.close()
-            try:
-                with anyio.move_on_after(1.0):
-                    await listener.wait_closed()
-            except Exception:
-                logger.debug("HTTP listener close failed", exc_info=True)
+            with anyio.fail_after(1.0):
+                await listener.wait_closed()
 
     @staticmethod
     def _close_socket(sock: socket.socket | None) -> None:

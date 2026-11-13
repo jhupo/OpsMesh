@@ -1,6 +1,5 @@
 {
   "environment": "production",
   "framework": {},
-  "plugin_paths": [],
-  "plugins": []
+  "data_dir": "/var/lib/opsmesh"
 }

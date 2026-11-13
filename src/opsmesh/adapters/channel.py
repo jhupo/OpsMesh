@@ -78,33 +78,48 @@ class Channel(abc.ABC):
             await channel.send_msg(message="hello world")
             ```
         """
+        from opsmesh.plugins import get_current_plugin, plugin_call
+
+        plugin = get_current_plugin()
+        if plugin is None:
+            return await self._invoke(operation, **data)
+        async with plugin_call(plugin.id_):
+            return await self._invoke(operation, **data)
+
+    async def _invoke(self, operation: str, **data: Any) -> Any:
         result: Any = None
         skip_calling: bool = False
         exception: Exception | None = None
 
         if self._calling_hook:
             logger.debug("Running Calling hooks...")
+            failures: list[Exception] = []
+            replacements: list[MockCallException] = []
 
-            try:
-                async with anyio.create_task_group() as tg:
-                    for hook in self._calling_hook:
-                        tg.start_soon(hook, self, operation, data)
-            except* MockCallException as exc_group:
-                excs = list(flatten_exception_group(exc_group))
-                if len(excs) > 1:
-                    logger.warning(
-                        "Multiple hooks mock the result; using the first."
-                    )
+            async def check(hook):
+                try:
+                    await hook(self, operation, data)
+                except MockCallException as replacement:
+                    replacements.append(replacement)
+                except Exception as error:
+                    failures.append(error)
 
+            async with anyio.create_task_group() as tg:
+                for hook in self._calling_hook:
+                    tg.start_soon(check, hook)
+            if len(failures) == 1:
+                raise failures[0]
+            if failures:
+                raise ExceptionGroup(
+                    "Calling hooks rejected the operation", failures
+                )
+            if len(replacements) > 1:
+                raise RuntimeError(
+                    "Multiple calling hooks supplied mock results"
+                )
+            if replacements:
                 skip_calling = True
-                result = excs[0].result
-                logger.debug("Operation %s was replaced by a hook", operation)
-            except* Exception as exc_group:
-                for exc in flatten_exception_group(exc_group):
-                    logger.error(
-                        "Error when running Calling hook. Running cancelled!",
-                        exc_info=(type(exc), exc, exc.__traceback__),
-                    )
+                result = replacements[0].result
 
         if not skip_calling:
             try:

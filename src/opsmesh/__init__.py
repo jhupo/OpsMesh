@@ -9,6 +9,7 @@ from opsmesh.plugins import MatcherGroup as MatcherGroup
 from opsmesh.plugins import PluginAdmission as PluginAdmission
 from opsmesh.plugins import PluginLoadDenied as PluginLoadDenied
 from opsmesh.plugins import PluginLoadRequest as PluginLoadRequest
+from opsmesh.plugins import PluginProtectedError as PluginProtectedError
 from opsmesh.plugins import PluginReloadError as PluginReloadError
 from opsmesh.plugins import (
     clear_plugin_admission as clear_plugin_admission,
@@ -16,6 +17,7 @@ from opsmesh.plugins import (
 from opsmesh.plugins import (
     get_available_plugin_names as get_available_plugin_names,
 )
+from opsmesh.plugins import get_current_plugin as get_current_plugin
 from opsmesh.plugins import get_loaded_plugins as get_loaded_plugins
 from opsmesh.plugins import get_plugin as get_plugin
 from opsmesh.plugins import (
@@ -40,6 +42,8 @@ from opsmesh.plugins import on_request as on_request
 from opsmesh.plugins import on_shell_command as on_shell_command
 from opsmesh.plugins import on_startswith as on_startswith
 from opsmesh.plugins import on_type as on_type
+from opsmesh.plugins import plugin_call as plugin_call
+from opsmesh.plugins import plugin_scope as plugin_scope
 from opsmesh.plugins import (
     register_plugin_manager as register_plugin_manager,
 )

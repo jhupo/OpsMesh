@@ -1,17 +1,22 @@
 """Check the API channel registration, auth, and HTTP invocation contract."""
 
 import json
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import Annotated, Any
 
 import anyio
 import pytest
 from pydantic import BaseModel
 from starlette.requests import ClientDisconnect
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import (
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 
 import opsmesh.plugins.channels.api as api_module
-from opsmesh.adapters import Event
+from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
@@ -39,6 +44,44 @@ from opsmesh.plugins.channels.api.streaming import (
 )
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import _current_plugin
+
+
+def plugin_owner(name: str, *, ready: bool = True) -> Plugin:
+    return Plugin(
+        name=name,
+        module=ModuleType(name),
+        module_name=name,
+        manager=None,
+        status=PluginStatus.READY if ready else PluginStatus.LOADED,
+    )
+
+
+def declare_message(router, handler, *, path="/chat", rule=None, body=None):
+    from opsmesh.matchers import Matcher, MatcherSource
+    from opsmesh.plugins.channels.api import MessageRequest
+
+    owner = _current_plugin.get() or plugin_owner("support")
+    matcher = Matcher.new(
+        type_="message",
+        priority=1,
+        block=True,
+        handlers=[handler],
+        rule=rule,
+        source=MatcherSource(plugin_id=owner.id_),
+    )
+    token = _current_plugin.set(owner)
+    try:
+        registration = router.register(
+            method="POST",
+            path=path,
+            body=body or MessageRequest,
+            message_handlers=(matcher,),
+            allow_response=True,
+            response_types=(Response,),
+        )
+    finally:
+        _current_plugin.reset(token)
+    return registration
 
 
 @pytest.mark.anyio
@@ -234,6 +277,21 @@ class EchoResult(BaseModel):
 
 
 async def _setup(monkeypatch, router, settings):
+    from opsmesh.plugins import registry
+
+    lookup = registry.get_plugin
+
+    def get_plugin(name):
+        return next(
+            (
+                item.owner
+                for item in reversed(router.registrations)
+                if item.installation_id == name
+            ),
+            None,
+        ) or lookup(name)
+
+    monkeypatch.setattr(registry, "get_plugin", get_plugin)
     driver = make_runtime()
     monkeypatch.setattr(driver_state, "_driver", driver)
     service = APIChannel(settings, router)
@@ -368,12 +426,10 @@ async def test_body_and_response_contracts_are_encoded(monkeypatch):
     router = APIRouter()
 
     async def handler(
-        message: Annotated[Message, EventMessage()],
+        event: HTTPEvent,
         caller: Annotated[UserContext, Context()],
     ) -> EchoResult:
-        return EchoResult(
-            text=message["data"][0].data["value"]["text"], caller=caller.id
-        )
+        return EchoResult(text=event.payload.text, caller=caller.id)
 
     declare_route(
         router,
@@ -694,17 +750,17 @@ async def test_declarative_route_derives_contracts_and_waits_for_owner(
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
     monkeypatch.setattr(api_module.routing, "_router", router)
-    owner = SimpleNamespace(id_="support", ready=False, cleanups=[])
+    owner = plugin_owner("support", ready=False)
     token = _current_plugin.set(owner)
     try:
 
         @api_module.post("/echo", body=EchoBody)
         async def handler(
-            message: Annotated[Message, EventMessage()],
+            event: HTTPEvent,
             caller: Annotated[UserContext, Context()],
         ) -> EchoResult:
             return EchoResult(
-                text=message["data"][0].data["value"]["text"],
+                text=event.payload.text,
                 caller=caller.id,
             )
 
@@ -723,7 +779,7 @@ async def test_declarative_route_derives_contracts_and_waits_for_owner(
         not_ready = await call(driver, request)
         assert not_ready[0]["status"] == 503
 
-        owner.ready = True
+        owner.status = PluginStatus.READY
         ready = await call(
             driver,
             scope("POST", path, token="secret", body=b'{"text":"hi"}'),
@@ -737,7 +793,7 @@ async def test_declarative_route_derives_contracts_and_waits_for_owner(
 def test_declarative_contract_declarations_are_validated(monkeypatch):
     router = APIRouter()
     monkeypatch.setattr(api_module.routing, "_router", router)
-    owner = SimpleNamespace(id_="support", ready=True, cleanups=[])
+    owner = plugin_owner("support")
     token = _current_plugin.set(owner)
     try:
         with pytest.raises(RouteRegistrationError, match="return type"):
@@ -944,13 +1000,12 @@ async def test_decorator_resolves_postponed_annotations(monkeypatch):
         "class Body(BaseModel):\n    text: str\n"
         "class Reply(BaseModel):\n    text: str\n"
         "async def handler(event: Event) -> Reply:\n"
-        '    value = event.get_message()["data"][0].data["value"]\n'
-        '    return Reply(text=value["text"])\n',
+        "    return Reply(text=event.payload.text)\n",
         module.__dict__,
     )
     router = APIRouter()
     monkeypatch.setattr(api_module.routing, "_router", router)
-    owner = SimpleNamespace(id_="postponed", ready=True, cleanups=[])
+    owner = plugin_owner("postponed")
     token = _current_plugin.set(owner)
     try:
         api_module.post("/echo", body=module.Body)(module.handler)
@@ -1215,7 +1270,7 @@ async def test_http_matcher_denial_does_not_invoke_handler(monkeypatch):
         messages = await call(
             driver, scope("GET", "/plugins/test/private", token="secret")
         )
-        assert messages[0]["status"] == 403
+        assert messages[0]["status"] == 204
     finally:
         await service.shutdown()
 
@@ -1257,12 +1312,11 @@ async def test_http_dispatch_timeout_cleans_dependencies(monkeypatch):
 
 
 def test_route_revocation_removes_its_framework_matcher():
-    from types import SimpleNamespace
 
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
 
-    owner = SimpleNamespace(id_="rollback", ready=False, cleanups=[])
+    owner = plugin_owner("rollback", ready=False)
     router = APIRouter()
 
     async def handler():
@@ -1364,6 +1418,7 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
     monkeypatch.setattr(TrieRule, "prefix", type(TrieRule.prefix)())
 
     async def handler(
+        channel: "Channel",
         event: Event,
         message: Annotated[Message, EventMessage()],
         argument: Annotated[Message, CommandArg()],
@@ -1373,19 +1428,28 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
         assert event.get_type() == "message"
         assert message.extract_plain_text() == question
         assert len(message) == 1
-        return {
-            "argument": argument.extract_plain_text(),
-            "id": caller.id,
-            "roles": sorted(caller.roles),
-            "groups": sorted(caller.groups),
-        }
+        await channel.send(
+            event,
+            {
+                "argument": argument.extract_plain_text(),
+                "id": caller.id,
+                "roles": sorted(caller.roles),
+                "groups": sorted(caller.groups),
+            },
+        )
 
-    registration = declare_route(
+    from pydantic import ConfigDict
+
+    from opsmesh.plugins.channels.api import MessageRequest
+
+    class CallerFields(MessageRequest):
+        model_config = ConfigDict(extra="allow")
+
+    registration = declare_message(
         router,
-        method="POST",
+        handler,
         path="/command",
-        handler=handler,
-        plugin_id="support",
+        body=CallerFields,
         rule=command("api_probe", force_whitespace=True),
     )
     try:
@@ -1414,7 +1478,7 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
         }
     finally:
         await channel.shutdown()
-        registration.matcher.destroy()
+        registration.message_handlers[0].destroy()
 
 
 @pytest.mark.anyio
@@ -1433,12 +1497,11 @@ async def test_api_preserves_structured_input_without_promoting_it_to_text(
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
 
-    async def handler(
-        event: Event, message: Annotated[Message, EventMessage()]
-    ):
+    async def handler(event: HTTPEvent):
         assert event.get_type() == "http"
-        assert event.get_plaintext() == ""
-        return {"received": message["data"][0].data["value"]}
+        with pytest.raises(ValueError, match="do not contain"):
+            event.get_message()
+        return {"received": event.payload}
 
     registration = declare_route(
         router,
@@ -1479,13 +1542,7 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
     ):
         await channel.send(event, message)
 
-    registration = declare_route(
-        router,
-        method="POST",
-        path="/echo",
-        handler=handler,
-        plugin_id="support",
-    )
+    registration = declare_message(router, handler, path="/echo")
     driver, channel = await _setup(monkeypatch, router, make_settings())
     try:
         response = await call(
@@ -1494,31 +1551,27 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
                 "POST",
                 registration.path,
                 token="secret",
-                body=b'"hello"',
+                body=b'{"message":"hello"}',
             ),
         )
         assert response[0]["status"] == 200
-        assert payload(response) == [
-            {"type": "text", "data": {"text": "hello"}}
-        ]
+        assert payload(response) == [{"type": "text", "text": "hello"}]
     finally:
         await channel.shutdown()
-        registration.matcher.destroy()
+        registration.message_handlers[0].destroy()
 
 
 @pytest.mark.anyio
 async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
     from opsmesh.adapters import Channel
-    from opsmesh.plugins import on_command
+    from opsmesh.plugins import on_command, on_message
     from opsmesh.rules.checks import TrieRule
 
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
     driver, service = await _setup(monkeypatch, router, make_settings())
     monkeypatch.setattr(TrieRule, "prefix", type(TrieRule.prefix)())
-    owner = SimpleNamespace(
-        id_="support", ready=True, cleanups=[], matcher=set()
-    )
+    owner = plugin_owner("support")
     token = _current_plugin.set(owner)
     seen = []
     try:
@@ -1534,16 +1587,18 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
         async def unrelated_handler():
             raise AssertionError("Undeclared command must not run")
 
-        async def fallback(event: Event):
-            seen.append("fallback")
-            return {"text": event.get_plaintext()}
+        fallback = on_message(priority=10, block=True)
 
-        registration = declare_route(
-            router,
+        @fallback.handle()
+        async def fallback_handler(channel: Channel, event: Event):
+            seen.append("fallback")
+            await channel.send(event, {"text": event.get_plaintext()})
+
+        registration = router.register(
             method="POST",
             path="/message",
-            handler=fallback,
-            message_matchers=(selected,),
+            body=api_module.MessageRequest,
+            message_handlers=(selected, fallback),
         )
     finally:
         _current_plugin.reset(token)
@@ -1573,7 +1628,7 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
     finally:
         selected.destroy()
         unrelated.destroy()
-        registration.matcher.destroy()
+        fallback.destroy()
         await service.shutdown()
 
 
@@ -1582,7 +1637,7 @@ def test_route_rejects_foreign_commands_and_ambiguous_permissions(monkeypatch):
     from opsmesh.permissions import Permission
 
     router = APIRouter()
-    owner = SimpleNamespace(id_="support", ready=True, cleanups=[])
+    owner = plugin_owner("support")
     foreign = Matcher.new(block=True, source=MatcherSource(plugin_id="other"))
     own = Matcher.new(block=True, source=MatcherSource(plugin_id="support"))
     token = _current_plugin.set(owner)
@@ -1592,23 +1647,516 @@ def test_route_rejects_foreign_commands_and_ambiguous_permissions(monkeypatch):
             return None
 
         with pytest.raises(RouteRegistrationError, match="belong"):
-            declare_route(
-                router,
+            router.register(
                 method="POST",
                 path="/foreign",
-                handler=handler,
-                message_matchers=(foreign,),
+                body=api_module.MessageRequest,
+                message_handlers=(foreign,),
             )
         with pytest.raises(RouteRegistrationError, match="permissions"):
-            declare_route(
-                router,
+            router.register(
                 method="POST",
                 path="/permission",
-                handler=handler,
-                message_matchers=(own,),
+                body=api_module.MessageRequest,
+                message_handlers=(own,),
                 permission=Permission(),
             )
     finally:
         _current_plugin.reset(token)
         foreign.destroy()
         own.destroy()
+
+
+@pytest.mark.anyio
+async def test_authenticated_upload_message_and_download_share_scope(
+    monkeypatch,
+):
+    import httpx
+
+    from opsmesh.plugins import registry
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    monkeypatch.setenv("OTHER_API_TOKEN", "other-secret")
+    router = APIRouter()
+
+    async def handler(channel: "Channel", event: HTTPEvent):
+        parts = event.get_message()
+        assert [part.type for part in parts] == ["text", "file"]
+        data = await event.attachments.read(parts[1].data["attachment_id"])
+        await channel.send(
+            event,
+            json_response(
+                {"text": parts.extract_plain_text(), "file": data.decode()}
+            ),
+        )
+
+    registration = declare_message(router, handler)
+    monkeypatch.setattr(
+        registry,
+        "get_plugin",
+        lambda name: registration.owner if name == "support" else None,
+    )
+    settings = make_settings(
+        IdentitySettings(id="alice", token_ref="TEST_API_TOKEN"),
+        IdentitySettings(id="bob", token_ref="OTHER_API_TOKEN"),
+    )
+    _, channel = await _setup(monkeypatch, router, settings)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=channel.app),
+            base_url="http://test",
+        ) as client:
+            result = await client.post(
+                "/attachments/support?name=notes.txt",
+                content=b"hello",
+                headers={"content-type": "text/plain"},
+            )
+            assert result.status_code == 401
+            headers = {
+                "authorization": "Bearer secret",
+                "content-type": "text/plain",
+            }
+            result = await client.post(
+                "/attachments/support?name=notes.txt",
+                content=b"hello",
+                headers=headers,
+            )
+            assert result.status_code == 201
+            attachment_id = result.json()["id"]
+            path = f"/attachments/support/{attachment_id}"
+            assert (await client.get(path, headers=headers)).content == b"hello"
+            other = {"authorization": "Bearer other-secret"}
+            assert (await client.get(path, headers=other)).status_code == 404
+            body = {
+                "message": [
+                    {"type": "text", "text": "read"},
+                    {"type": "file", "attachment_id": attachment_id},
+                ]
+            }
+            result = await client.post(
+                "/plugins/support/chat",
+                json=body,
+                headers={"authorization": "Bearer secret"},
+            )
+            assert result.json() == {"text": "read", "file": "hello"}
+            assert (
+                await client.post(
+                    "/plugins/support/chat", json=body, headers=other
+                )
+            ).status_code == 404
+            registration.owner.status = PluginStatus.LOADED
+            assert (await client.get(path, headers=headers)).status_code == 404
+    finally:
+        await channel.shutdown()
+    assert not channel.uploads._uploads
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_api_sends_files_as_protected_download_references(
+    monkeypatch, wrapped
+):
+    import httpx
+
+    from opsmesh.adapters import Channel
+    from opsmesh.plugins import registry
+    from opsmesh.plugins.channels import Attachment, Message, MessageSegment
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler(channel: Channel, event: HTTPEvent):
+        attachment = event.attachments.add_bytes(
+            Attachment.create("report.txt", "text/plain"), b"report"
+        )
+        segment = MessageSegment.attachment(attachment)
+        await channel.send(event, Message(segment) if wrapped else segment)
+
+    registration = declare_route(
+        router, method="GET", path="/report", handler=handler
+    )
+    monkeypatch.setattr(registry, "get_plugin", lambda name: registration.owner)
+    _, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=channel.app),
+            base_url="http://test",
+        ) as client:
+            headers = {"authorization": "Bearer secret"}
+            result = await client.get(
+                "/plugins/support/report", headers=headers
+            )
+            assert result.status_code == 200
+            path = result.json()[0]["download_url"]
+            assert (await client.get(path)).status_code == 401
+            download = await client.get(path, headers=headers)
+            assert download.content == b"report"
+            assert download.headers["x-content-type-options"] == "nosniff"
+    finally:
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "request_body",
+    [
+        {},
+        {"message": ""},
+        {"message": "  "},
+        {"message": []},
+        {"message": {"text": "hello"}},
+    ],
+)
+async def test_message_binding_rejects_missing_or_invalid_message(
+    monkeypatch, request_body
+):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler():
+        raise AssertionError("Invalid messages must not reach a matcher")
+
+    registration = declare_message(router, handler)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        result = await call(
+            server,
+            scope(
+                "POST",
+                registration.path,
+                token="secret",
+                body=json.dumps(request_body).encode(),
+            ),
+        )
+        assert result[0]["status"] == 422
+    finally:
+        registration.message_handlers[0].destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+async def test_message_handler_return_is_not_an_implicit_reply(monkeypatch):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler():
+        return {"ignored": True}
+
+    registration = declare_message(router, handler)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        result = await call(
+            server,
+            scope(
+                "POST",
+                registration.path,
+                token="secret",
+                body=b'{"message":"hello"}',
+            ),
+        )
+        assert result[0]["status"] == 204
+    finally:
+        registration.message_handlers[0].destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+async def test_message_handler_second_reply_fails_safely(monkeypatch):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler(channel: Channel, event: Event):
+        await channel.send(event, {"first": True})
+        await channel.send(event, {"second": True})
+
+    registration = declare_message(router, handler)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        result = await call(
+            server,
+            scope(
+                "POST",
+                registration.path,
+                token="secret",
+                body=b'{"message":"hello"}',
+            ),
+        )
+        assert result[0]["status"] == 500
+        assert payload(result) == {"error": "internal server error"}
+    finally:
+        registration.message_handlers[0].destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        JSONResponse,
+        Annotated[JSONResponse, "native"],
+        JSONResponse | dict[str, str],
+    ],
+)
+async def test_native_response_subclass_contract(monkeypatch, annotation):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler():
+        return JSONResponse({"native": True})
+
+    registration = declare_route(
+        router,
+        method="GET",
+        path="/native",
+        handler=handler,
+        result_type=annotation,
+    )
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        result = await call(
+            server, scope(path=registration.path, token="secret")
+        )
+        assert payload(result) == {"native": True}
+    finally:
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+async def test_native_response_rejects_undeclared_subclass(monkeypatch):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler():
+        return PlainTextResponse("private")
+
+    registration = declare_route(
+        router,
+        method="GET",
+        path="/native",
+        handler=handler,
+        result_type=JSONResponse,
+    )
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    try:
+        result = await call(
+            server, scope(path=registration.path, token="secret")
+        )
+        assert result[0]["status"] == 500
+        assert "private" not in body(result).decode()
+    finally:
+        await channel.shutdown()
+
+
+def test_message_binding_rejects_message_override_and_equal_priorities():
+    from opsmesh.matchers import Matcher, MatcherSource
+
+    class ChangedMessage(api_module.MessageRequest):
+        message: str
+
+    owner = plugin_owner("support")
+    handlers = tuple(
+        Matcher.new(
+            type_="message",
+            block=True,
+            source=MatcherSource(plugin_id="support"),
+        )
+        for _ in range(2)
+    )
+    token = _current_plugin.set(owner)
+    try:
+        with pytest.raises(RouteRegistrationError, match="override"):
+            APIRouter().register(
+                method="POST",
+                path="/override",
+                body=ChangedMessage,
+                message_handlers=handlers[:1],
+            )
+        with pytest.raises(RouteRegistrationError, match="distinct priorities"):
+            APIRouter().register(
+                method="POST",
+                path="/parallel",
+                body=api_module.MessageRequest,
+                message_handlers=handlers,
+            )
+    finally:
+        _current_plugin.reset(token)
+        for handler in handlers:
+            handler.destroy()
+
+
+@pytest.mark.anyio
+async def test_image_only_api_request_stays_a_framework_message(monkeypatch):
+    from opsmesh.plugins.channels import Attachment
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+
+    async def handler(channel: Channel, event: Event):
+        await channel.send(
+            event,
+            {
+                "type": event.get_type(),
+                "parts": [part.type for part in event.get_message()],
+            },
+        )
+
+    registration = declare_message(router, handler)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    image = channel.uploads.put(
+        ("support", "api:user"),
+        Attachment.create("image.png", "image/png"),
+        b"image-content",
+    )
+    try:
+        result = await call(
+            server,
+            scope(
+                "POST",
+                registration.path,
+                token="secret",
+                body=json.dumps(
+                    {"message": [{"type": "image", "attachment_id": image.id}]}
+                ).encode(),
+            ),
+        )
+        assert payload(result) == {"type": "message", "parts": ["image"]}
+    finally:
+        registration.message_handlers[0].destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("message_route", [False, True])
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_admitted_request_continues_after_owner_starts_stopping(
+    monkeypatch, message_route, streamed
+):
+    from opsmesh.plugins.invocation import plugin_call
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+    closed = []
+    registration = None
+
+    async def resource():
+        try:
+            yield "resource"
+        finally:
+            async with plugin_call(registration.owner.id_):
+                closed.append(True)
+
+    dependency = Depends(resource)
+
+    async def handler(channel: Channel, event: Event, value=dependency):
+        assert value == "resource"
+        assert registration.owner.status is PluginStatus.STOPPING
+        assert len(registration.owner.calls) == 2
+        async with plugin_call(registration.owner.id_):
+            assert len(registration.owner.calls) == 2
+        if streamed:
+
+            async def chunks():
+                assert registration.owner.calls and not closed
+                yield b"continued"
+
+            await channel.send(event, StreamingResponse(chunks()))
+        else:
+            await channel.send(event, json_response({"continued": True}))
+
+    if message_route:
+        registration = declare_message(router, handler)
+    else:
+        registration = declare_route(
+            router, method="POST", path="/continue", handler=handler
+        )
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    parse = channel._parse_body
+
+    async def parse_while_stopping(route, request):
+        assert len(registration.owner.calls) == 1
+        registration.owner.status = PluginStatus.STOPPING
+        return await parse(route, request)
+
+    monkeypatch.setattr(channel, "_parse_body", parse_while_stopping)
+    try:
+        result = await call(
+            server,
+            scope(
+                "POST",
+                registration.path,
+                token="secret",
+                body=b'{"message":"hello"}',
+            ),
+        )
+        assert result[0]["status"] == 200
+        assert body(result) == (
+            b"continued" if streamed else b'{"continued":true}'
+        )
+        assert closed == [True] and not registration.owner.calls
+    finally:
+        if registration.matcher is not None:
+            registration.matcher.destroy()
+        for matcher in registration.message_handlers:
+            matcher.destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("asgi_version", ["2.0", "2.4"])
+async def test_response_stream_keeps_admission_without_granting_child_tasks(
+    monkeypatch, asgi_version
+):
+    import asyncio
+
+    from starlette.background import BackgroundTask
+
+    from opsmesh.plugins.invocation import PluginUnavailable, plugin_call
+    from opsmesh.plugins.registry import get_current_plugin
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+    events = []
+    registration = None
+
+    async def independent_call():
+        with pytest.raises(PluginUnavailable):
+            async with plugin_call(registration.owner.id_):
+                raise AssertionError("A child task must obtain new admission")
+
+    async def record(stage):
+        assert get_current_plugin() is registration.owner
+        async with plugin_call(registration.owner.id_):
+            assert len(registration.owner.calls) == 2
+            events.append(stage)
+
+    async def chunks():
+        try:
+            await record("stream")
+            await asyncio.create_task(independent_call())
+            yield b"continued"
+        finally:
+            await record("source closed")
+
+    async def handler():
+        registration.owner.status = PluginStatus.STOPPING
+        return StreamingResponse(
+            chunks(), background=BackgroundTask(record, "background")
+        )
+
+    registration = declare_route(
+        router, method="GET", path="/stream-scope", handler=handler
+    )
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    request_scope, queue = scope(
+        path=registration.path, token="secret"
+    )
+    request_scope["asgi"] = {"spec_version": asgi_version}
+    try:
+        result = await call(server, (request_scope, queue))
+        assert body(result) == b"continued"
+        assert events == ["stream", "source closed", "background"]
+        assert not registration.owner.calls
+        assert get_current_plugin() is None
+    finally:
+        registration.matcher.destroy()
+        await channel.shutdown()

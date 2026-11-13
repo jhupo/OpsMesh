@@ -10,7 +10,6 @@ from .channel import (
     FAILED,
     READY,
     QQChannel,
-    outgoing_text,
 )
 from .config import QQConnectionSettings, QQSettings
 from .connections import declare_connection, get_adapter
@@ -24,9 +23,8 @@ from .errors import (
 from .events import (
     C2C_MESSAGE,
     GROUP_MESSAGE,
-    QQMessage,
     QQMessageEvent,
-    QQMessageSegment,
+    QQNoticeEvent,
     parse_callback,
 )
 
@@ -42,9 +40,8 @@ __all__ = [
     "QQConfigurationError",
     "QQConnectionSettings",
     "QQError",
-    "QQMessage",
     "QQMessageEvent",
-    "QQMessageSegment",
+    "QQNoticeEvent",
     "QQProtocolError",
     "QQSendError",
     "QQSettings",
@@ -52,6 +49,5 @@ __all__ = [
     "READY",
     "declare_connection",
     "get_adapter",
-    "outgoing_text",
     "parse_callback",
 ]

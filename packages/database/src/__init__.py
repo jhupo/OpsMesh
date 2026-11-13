@@ -2,7 +2,7 @@
 
 from opsmesh.plugins import PluginMetadata
 
-from .config import CONFIG_NAMESPACE, Settings
+from .config import Settings
 from .connections import (
     Database,
     get_database,
@@ -32,7 +32,6 @@ __plugin_meta__ = PluginMetadata(
 
 __all__ = [
     "Base",
-    "CONFIG_NAMESPACE",
     "Database",
     "DatabaseAccess",
     "DatabaseError",

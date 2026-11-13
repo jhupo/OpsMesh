@@ -1,8 +1,11 @@
 """Coordinate lifecycle callbacks and their shared background task group."""
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
@@ -22,6 +25,12 @@ ASYNC_LIFESPAN_FUNC: TypeAlias = Callable[[], Awaitable[Any]]
 LIFESPAN_FUNC: TypeAlias = SYNC_LIFESPAN_FUNC | ASYNC_LIFESPAN_FUNC
 
 _declarations: dict[tuple[str, str, str], LIFESPAN_FUNC] = {}
+_managing: ContextVar[asyncio.Task | None] = ContextVar(
+    "plugin_management", default=None
+)
+_changing: ContextVar[asyncio.Task | None] = ContextVar(
+    "plugin_change", default=None
+)
 
 
 def on_startup(func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
@@ -108,6 +117,10 @@ class Lifespan:
 
     def __init__(self) -> None:
         self._task_group: TaskGroup | None = None
+        self._management_lock = anyio.Lock()
+        self._closing = False
+        self._management_scopes: set[anyio.CancelScope] = set()
+        self.shutdown_timeout = 30.0
 
         self._startup_funcs: list[_Entry] = []
         self._ready_funcs: list[_Entry] = []
@@ -209,6 +222,9 @@ class Lifespan:
             plugins = []
 
         for plugin in plugins:
+            if not plugin.enabled:
+                blocked.add(plugin.id_)
+                continue
             if plugin.status in (PluginStatus.FAILED, PluginStatus.BLOCKED):
                 blocked.add(plugin.id_)
                 continue
@@ -231,6 +247,9 @@ class Lifespan:
             plugin.blocked_by.clear()
             if not final and plugin.status is PluginStatus.LOADED:
                 plugin.status = PluginStatus.STARTING
+                plugin.generation += 1
+                plugin.cleanup_complete = False
+                plugin.completed_shutdown_hooks.clear()
             await self._run_owned(
                 plugin, owned.get(id(plugin), ()), final=final
             )
@@ -249,13 +268,26 @@ class Lifespan:
         final: bool,
     ) -> None:
         from opsmesh.plugins.model import PluginStatus
+        from opsmesh.plugins.registry import _current_plugin
 
+        token = _current_plugin.set(plugin)
+        management = _managing.set(asyncio.current_task())
         try:
+            if plugin.metadata and plugin.metadata.config:
+                plugin.metadata.config.model_validate(
+                    plugin.config_values or {}
+                )
             await self._run_lifespan_func(entry.func for entry in entries)
         except BaseException as error:
             plugin.status = PluginStatus.FAILED
             plugin.failure = error
-            if plugin.required:
+            try:
+                await self._close_plugin(plugin)
+            except BaseException as cleanup_error:
+                plugin.failure = BaseExceptionGroup(
+                    "Plugin startup and cleanup failed", [error, cleanup_error]
+                )
+            if plugin.required or not isinstance(error, Exception):
                 raise
             logger.error(
                 'Plugin "%s" failed during startup; dependents are blocked',
@@ -263,11 +295,15 @@ class Lifespan:
                 exc_info=(type(error), error, error.__traceback__),
             )
             return
+        finally:
+            _current_plugin.reset(token)
+            _managing.reset(management)
         if final:
             plugin.status = PluginStatus.READY
 
     async def startup(self) -> None:
         """Enter the task group and invoke startup and readiness callbacks."""
+        self._closing = False
         self.task_group = anyio.create_task_group()
         await self.task_group.__aenter__()
         try:
@@ -278,6 +314,230 @@ class Lifespan:
             await self.shutdown()
             raise
 
+    def check_stoppable(self, plugin: "Plugin") -> None:
+        """Reject self-stop and active consumers before changing resources."""
+        from opsmesh.plugins.errors import PluginProtectedError
+        from opsmesh.plugins.model import PluginStatus
+        from opsmesh.plugins.registry import get_loaded_plugins
+
+        if plugin.protected:
+            raise PluginProtectedError(f"Plugin is protected: {plugin.id_}")
+
+        current = asyncio.current_task()
+        if any(current in call.tasks for call in plugin.calls.values()):
+            raise RuntimeError(
+                "A plugin call cannot stop itself or its provider"
+            )
+        consumers = [
+            item.id_
+            for item in get_loaded_plugins()
+            if plugin.id_ in item.dependencies
+            and (
+                item.status
+                in (
+                    PluginStatus.READY,
+                    PluginStatus.STARTING,
+                    PluginStatus.STOPPING,
+                )
+                or not item.cleanup_complete
+            )
+        ]
+        if consumers:
+            raise RuntimeError(
+                f"Stop dependent plugins first: {', '.join(sorted(consumers))}"
+            )
+
+    async def start_plugin(self, plugin: "Plugin") -> None:
+        """Start resources for one loaded plugin and its dependencies."""
+        await self._manage(self._start_plugin, plugin)
+
+    async def stop_plugin(self, plugin: "Plugin") -> None:
+        """Stop one plugin without changing its persisted enabled setting."""
+        self.check_stoppable(plugin)
+        await self._manage(self._stop_plugin, plugin)
+
+    async def _manage(self, operation, plugin: "Plugin") -> None:
+        if _managing.get() is asyncio.current_task():
+            raise RuntimeError(
+                "Lifecycle callbacks cannot nest management operations"
+            )
+        if _changing.get() is asyncio.current_task():
+            if self._closing:
+                raise RuntimeError("The host is shutting down")
+            await operation(plugin)
+            return
+        if not self.started or self._closing:
+            raise RuntimeError("The host lifecycle is not running")
+        done = anyio.Event()
+        errors: list[BaseException] = []
+
+        async def execute() -> None:
+            token = _managing.set(asyncio.current_task())
+            try:
+                with anyio.CancelScope() as scope:
+                    self._management_scopes.add(scope)
+                    try:
+                        async with self._management_lock:
+                            if self._closing:
+                                raise RuntimeError("The host is shutting down")
+                            await operation(plugin)
+                    finally:
+                        self._management_scopes.discard(scope)
+                if scope.cancel_called:
+                    raise RuntimeError(
+                        "Plugin management was cancelled during shutdown"
+                    )
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                _managing.reset(token)
+                done.set()
+
+        self.task_group.start_soon(execute)
+        with anyio.CancelScope(shield=True):
+            await done.wait()
+        if errors:
+            raise errors[0]
+
+    @asynccontextmanager
+    async def change(self):
+        """Serialize persisted intent and runtime mutation together."""
+        if (
+            _managing.get() is asyncio.current_task()
+            or _changing.get() is asyncio.current_task()
+        ):
+            raise RuntimeError(
+                "Lifecycle callbacks cannot nest management operations"
+            )
+        if self._closing:
+            raise RuntimeError("The host is shutting down")
+        async with self._management_lock:
+            if self._closing:
+                raise RuntimeError("The host is shutting down")
+            token = _changing.set(asyncio.current_task())
+            try:
+                with anyio.CancelScope(shield=True) as scope:
+                    self._management_scopes.add(scope)
+                    try:
+                        yield
+                    finally:
+                        self._management_scopes.discard(scope)
+                if scope.cancel_called:
+                    raise RuntimeError(
+                        "Plugin management was cancelled during shutdown"
+                    )
+            finally:
+                _changing.reset(token)
+
+    async def _owned_phase(
+        self, entries: list[_Entry], plugin: "Plugin"
+    ) -> None:
+        from opsmesh.plugins.registry import _current_plugin
+
+        token = _current_plugin.set(plugin)
+        management = _managing.set(asyncio.current_task())
+        try:
+            await self._run_lifespan_func(
+                entry.func for entry in tuple(entries) if entry.plugin is plugin
+            )
+        finally:
+            _current_plugin.reset(token)
+            _managing.reset(management)
+
+    async def _start_plugin(self, plugin: "Plugin") -> None:
+        from opsmesh.plugins.model import PluginStatus
+        from opsmesh.plugins.registry import (
+            get_plugin,
+            get_plugins_in_dependency_order,
+        )
+
+        if get_plugin(plugin.id_) is not plugin:
+            raise RuntimeError(
+                "Plugin declarations were revoked before startup"
+            )
+        get_plugins_in_dependency_order()
+        if plugin.ready:
+            return
+        if not plugin.enabled or not plugin.cleanup_complete:
+            raise RuntimeError("Plugin is disabled or has unfinished cleanup")
+        for name in plugin.dependencies:
+            if self._closing:
+                raise RuntimeError("The host is shutting down")
+            dependency = get_plugin(name)
+            if dependency is None:
+                raise RuntimeError(f"Missing plugin dependency: {name}")
+            await self._start_plugin(dependency)
+        if self._closing:
+            raise RuntimeError("The host is shutting down")
+        if get_plugin(plugin.id_) is not plugin:
+            raise RuntimeError(
+                "Plugin declarations were revoked during dependency startup"
+            )
+        plugin.status = PluginStatus.STARTING
+        plugin.generation += 1
+        plugin.cleanup_complete = False
+        plugin.failure = None
+        plugin.completed_shutdown_hooks.clear()
+        try:
+            if plugin.metadata and plugin.metadata.config:
+                plugin.metadata.config.model_validate(
+                    plugin.config_values or {}
+                )
+            for entries in (self._startup_funcs, self._ready_funcs):
+                await self._owned_phase(entries, plugin)
+            plugin.status = PluginStatus.READY
+            await self._owned_phase(self._started_funcs, plugin)
+        except BaseException as error:
+            plugin.status = PluginStatus.STOPPING
+            plugin.failure = error
+            try:
+                await self._close_plugin(plugin)
+            finally:
+                plugin.status = PluginStatus.FAILED
+            raise
+
+    async def _stop_plugin(self, plugin: "Plugin") -> None:
+        from opsmesh.plugins.model import PluginStatus
+
+        self.check_stoppable(plugin)
+        if (
+            plugin.status in (PluginStatus.STOPPED, PluginStatus.LOADED)
+            and plugin.cleanup_complete
+        ):
+            plugin.status = PluginStatus.STOPPED
+            return
+        plugin.status = PluginStatus.STOPPING
+        try:
+            await self._close_plugin(plugin)
+        except BaseException as error:
+            plugin.status = PluginStatus.FAILED
+            plugin.failure = error
+            raise
+        plugin.status = PluginStatus.STOPPED
+
+    async def _close_plugin(self, plugin: "Plugin") -> None:
+        from opsmesh.plugins.invocation import drain_plugin
+
+        plugin.cleanup_complete = False
+        with anyio.fail_after(self.shutdown_timeout, shield=True):
+            await self._owned_phase(self._quiescing_funcs, plugin)
+            await self._owned_phase(self._stopping_funcs, plugin)
+            await drain_plugin(plugin, self.shutdown_timeout / 2)
+            await self._shutdown_owned(plugin)
+            while plugin.activation_cleanups:
+                plugin.activation_cleanups[-1]()
+                plugin.activation_cleanups.pop()
+        plugin.cleanup_complete = True
+
+    async def _shutdown_owned(self, plugin: "Plugin") -> None:
+        for entry in reversed(tuple(self._shutdown_funcs)):
+            if (
+                entry.plugin is plugin
+                and id(entry.func) not in plugin.completed_shutdown_hooks
+            ):
+                await self._owned_phase([entry], plugin)
+                plugin.completed_shutdown_hooks.add(id(entry.func))
+
     async def shutdown(
         self,
         *,
@@ -286,24 +546,94 @@ class Lifespan:
         exc_tb: TracebackType | None = None,
     ) -> None:
         """Drain work and release plugin resources before closing tasks."""
+        from opsmesh.plugins.invocation import drain_plugin
         from opsmesh.plugins.model import PluginStatus
-        from opsmesh.plugins.registry import get_loaded_plugins
+        from opsmesh.plugins.registry import get_plugins_in_dependency_order
 
         task_group = self.task_group
+        self._closing = True
         errors: list[BaseException] = []
+        failed: set[str] = set()
+        plugins: list[Plugin] = []
+
+        async def phase(entries: list[_Entry]) -> None:
+            for entry in reversed(tuple(entries)):
+                plugin = entry.plugin
+                if plugin is not None and plugin not in plugins:
+                    continue
+                try:
+                    with anyio.fail_after(self.shutdown_timeout, shield=True):
+                        await self._owned_phase([entry], plugin)
+                except BaseException as error:
+                    errors.append(error)
+                    if plugin is not None:
+                        failed.add(plugin.id_)
+                        plugin.failure = error
+
         try:
-            # Hooks may release resources even when the host is cancelled.
             with anyio.CancelScope(shield=True):
-                for phase in (
-                    self._quiescing_funcs,
-                    self._stopping_funcs,
-                    self._shutdown_funcs,
-                ):
-                    for entry in reversed(phase):
-                        try:
-                            await self._run_lifespan_func((entry.func,))
-                        except BaseException as error:
-                            errors.append(error)
+                acquired = False
+                with anyio.move_on_after(self.shutdown_timeout / 2):
+                    await self._management_lock.acquire()
+                    acquired = True
+                if not acquired:
+                    for scope in tuple(self._management_scopes):
+                        scope.cancel()
+                    with anyio.fail_after(self.shutdown_timeout / 2):
+                        await self._management_lock.acquire()
+                try:
+                    plugins = [
+                        plugin
+                        for plugin in get_plugins_in_dependency_order()
+                        if not plugin.cleanup_complete
+                    ]
+                finally:
+                    self._management_lock.release()
+                for plugin in plugins:
+                    plugin.status = PluginStatus.STOPPING
+                await phase(self._quiescing_funcs)
+                await phase(self._stopping_funcs)
+                for plugin in reversed(plugins):
+                    try:
+                        await drain_plugin(plugin, self.shutdown_timeout)
+                        if any(
+                            plugin.id_ in consumer.dependencies
+                            and not consumer.cleanup_complete
+                            for consumer in plugins
+                        ):
+                            raise RuntimeError(
+                                "Dependent plugin cleanup failed"
+                            )
+                        with anyio.fail_after(
+                            self.shutdown_timeout, shield=True
+                        ):
+                            await self._shutdown_owned(plugin)
+                        while plugin.activation_cleanups:
+                            plugin.activation_cleanups[-1]()
+                            plugin.activation_cleanups.pop()
+                        plugin.cleanup_complete = plugin.id_ not in failed
+                        plugin.status = (
+                            PluginStatus.STOPPED
+                            if plugin.cleanup_complete
+                            else PluginStatus.FAILED
+                        )
+                    except BaseException as error:
+                        plugin.failure = error
+                        plugin.status = PluginStatus.FAILED
+                        errors.append(error)
+                await phase(
+                    [
+                        entry
+                        for entry in self._shutdown_funcs
+                        if entry.plugin is None
+                    ]
+                )
+                for plugin in get_plugins_in_dependency_order():
+                    if (
+                        plugin.cleanup_complete
+                        and plugin.status is PluginStatus.FAILED
+                    ):
+                        plugin.status = PluginStatus.STOPPED
         finally:
             task_group.cancel_scope.cancel()
             try:
@@ -312,8 +642,6 @@ class Lifespan:
                 errors.append(error)
             finally:
                 self._task_group = None
-                for plugin in get_loaded_plugins():
-                    plugin.status = PluginStatus.STOPPED
         if errors:
             raise BaseExceptionGroup("Framework lifespan failed", errors)
 

@@ -426,5 +426,9 @@ class Message(list[TMS], abc.ABC):
         return self.__class__(seg for seg in self if seg.type not in types)
 
     def extract_plain_text(self) -> str:
-        """Extract plain-text segments from the message."""
+        """Concatenate text segments in order without changing whitespace.
+
+        Non-text segments are omitted, not rendered as attachment names or
+        placeholders. Use the complete message for multimodal processing.
+        """
         return "".join(str(seg) for seg in self if seg.is_text())

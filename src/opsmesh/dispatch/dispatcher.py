@@ -19,8 +19,9 @@ from opsmesh.typing import (
 
 if TYPE_CHECKING:
     from opsmesh.adapters import Channel, Event
+    from opsmesh.plugins.invocation import PluginCall
 
-from .execution import check_and_run_matcher
+from .execution import _DispatchResources, check_and_run_matcher
 from .processors import (
     _apply_event_postprocessors,
     _apply_event_preprocessors,
@@ -37,14 +38,6 @@ from .results import (
 logger = logging.getLogger(__name__)
 
 
-class _DispatchResources(AsyncExitStack):
-    """Allow dependency finalizers to await after event cancellation."""
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        with anyio.CancelScope(shield=True):
-            return await super().__aexit__(exc_type, exc_value, traceback)
-
-
 async def _dispatch_event(
     channel: "Channel",
     event: "Event",
@@ -52,6 +45,7 @@ async def _dispatch_event(
     *,
     stack: AsyncExitStack | None = None,
     matcher_filter: Callable[[type[Matcher]], bool] | None = None,
+    admitted_call: "PluginCall | None" = None,
 ) -> None:
     """Dispatch an incoming event through the processing pipeline.
 
@@ -61,6 +55,7 @@ async def _dispatch_event(
         invocation_context: Trusted context supplied by the dispatch owner.
         stack: Optional resources retained by the transport until response end.
         matcher_filter: Optional eligibility restriction applied before checks.
+        admitted_call: Explicit transport admission continued by each matcher.
 
     Examples:
         ```python
@@ -117,6 +112,7 @@ async def _dispatch_event(
                     stack,
                     dependency_cache,
                     invocation_context,
+                    admitted_call=admitted_call,
                 )
             except* StopPropagation:
                 break_flag = True
@@ -155,6 +151,7 @@ async def dispatch_event(
     invocation_context: Any = None,
     stack: AsyncExitStack | None = None,
     matcher_filter: Callable[[type[Matcher]], bool] | None = None,
+    admitted_call: "PluginCall | None" = None,
 ) -> DispatchResult:
     """Process one event and report caught failures after resource cleanup.
 
@@ -171,6 +168,7 @@ async def dispatch_event(
             invocation_context,
             stack=stack,
             matcher_filter=matcher_filter,
+            admitted_call=admitted_call,
         )
         return DispatchResult(
             tuple(errors),

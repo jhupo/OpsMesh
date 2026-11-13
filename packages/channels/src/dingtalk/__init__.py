@@ -10,7 +10,6 @@ from .channel import (
     FAILED,
     READY,
     DingTalkChannel,
-    outgoing_text,
 )
 from .config import (
     DingTalkConnectionSettings,
@@ -24,9 +23,8 @@ from .errors import (
     DingTalkSendError,
 )
 from .events import (
-    DingTalkMessage,
     DingTalkMessageEvent,
-    DingTalkMessageSegment,
+    DingTalkNoticeEvent,
     parse_callback,
 )
 
@@ -39,9 +37,8 @@ __all__ = [
     "DingTalkConfigurationError",
     "DingTalkConnectionSettings",
     "DingTalkError",
-    "DingTalkMessage",
     "DingTalkMessageEvent",
-    "DingTalkMessageSegment",
+    "DingTalkNoticeEvent",
     "DingTalkProtocolError",
     "DingTalkSendError",
     "DingTalkSettings",
@@ -49,6 +46,5 @@ __all__ = [
     "READY",
     "declare_connection",
     "get_adapter",
-    "outgoing_text",
     "parse_callback",
 ]

@@ -1,7 +1,5 @@
 """Check the execution plugin's framework lifecycle integration."""
 
-import asyncio
-
 import pytest
 
 import opsmesh.plugins.execution as plugin
@@ -11,8 +9,16 @@ from opsmesh.drivers import base as driver_state
 from opsmesh.plugins.execution import _lifecycle as lifecycle
 
 
+@pytest.fixture
+def execution_settings(monkeypatch):
+    """Supply settings for lifecycle tests without loading a plugin host."""
+    monkeypatch.setattr(lifecycle, "get_plugin_config", lambda model: model())
+
+
 @pytest.mark.anyio
-async def test_lifecycle_starts_and_stops_execution(tmp_path, monkeypatch):
+async def test_lifecycle_starts_and_stops_execution(
+    execution_settings, monkeypatch
+):
     monkeypatch.setattr(driver_state, "_driver", None)
     driver = Driver(Env(), Config())
     driver_state.set_driver(driver)
@@ -23,7 +29,7 @@ async def test_lifecycle_starts_and_stops_execution(tmp_path, monkeypatch):
     async with driver.lifespan():
         execution = lifecycle.get_runtime()
         assert execution.started
-        assert execution.calls.accepting
+        assert plugin.diagnostics()["destination"] == "disabled"
         assert "database" not in plugin.__plugin_meta__.extra
 
     with pytest.raises(plugin.ExecutionClosed):
@@ -37,35 +43,21 @@ def test_unstarted_execution_rejects_access():
 
 
 @pytest.mark.anyio
-async def test_execution_drains_before_consumers_release_resources(monkeypatch):
-    monkeypatch.setattr(driver_state, "_driver", None)
+async def test_failed_tracing_shutdown_retains_runtime_for_retry(
+    execution_settings, monkeypatch
+):
     monkeypatch.setattr(lifecycle, "_runtime", None)
-    driver = Driver(Env(), Config())
-    driver_state.set_driver(driver)
-    driver.on_startup(lifecycle.startup)
-    driver.on_stopping(lifecycle.stopping)
-    driver.on_shutdown(lifecycle.shutdown)
-    events = []
-    entered = asyncio.Event()
+    await lifecycle.startup()
+    runtime = lifecycle.get_runtime()
+    original = runtime.tracing.shutdown
 
-    async def consumer_shutdown():
-        events.append("consumer resources closed")
+    async def unavailable():
+        raise RuntimeError("Exporter shutdown failed")
 
-    driver.on_shutdown(consumer_shutdown)
-
-    async def active_call():
-        calls = lifecycle.get_runtime().calls
-        call = calls.begin()
-        entered.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            events.append("execution finished")
-            calls.end(call)
-
-    async with driver.lifespan():
-        task = asyncio.create_task(active_call())
-        await entered.wait()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert events == ["execution finished", "consumer resources closed"]
+    monkeypatch.setattr(runtime.tracing, "shutdown", unavailable)
+    with pytest.raises(RuntimeError, match="Exporter shutdown"):
+        await lifecycle.shutdown()
+    assert lifecycle.get_runtime() is runtime
+    monkeypatch.setattr(runtime.tracing, "shutdown", original)
+    await lifecycle.shutdown()
+    assert lifecycle._runtime is None

@@ -1,6 +1,6 @@
 # SDK、框架与插件边界
 
-完整契约见 [插件架构](plugin-architecture.md)。本表用于代码审查，不作为另一套实现方案。
+完整契约见 [插件架构](plugin-architecture.md)。
 
 | 原生能力 | 使用位置 | 项目补充 |
 |---|---|---|
@@ -17,4 +17,4 @@
 
 execution 不依赖 database；持久执行记录、UsageTotals、增量账本和持久状态模型均不在当前职责内。结束后需要额外业务统计的插件可以订阅 on_run_end 并读取原生 Usage，其失败不影响已有模型结果。
 
-filesystem 只操作普通文件、目录和 ZIP，没有技能/工具登记表、安装记录或 SQLite。Framework 的 manager 负责加载，registry 负责已加载对象及注册归属；这与业务能力注册中心是不同职责。公开接口简化不等于删除正确的底层所有权机制。
+filesystem 只操作普通文件、目录和 ZIP，业务插件负责技能/工具登记及安装记录。Framework 的 manager 负责加载，registry 负责已加载对象及注册归属。

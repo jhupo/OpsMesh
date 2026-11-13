@@ -3,13 +3,14 @@
 import argparse
 import getpass
 import json
+import mimetypes
 import os
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.request import (
     HTTPRedirectHandler,
     ProxyHandler,
@@ -68,14 +69,27 @@ class ChatClient:
 
     def request(self, method: str, path: str, payload=None):
         """Call one plugin endpoint without redirects or automatic replay."""
-        request = Request(
-            self.base_url.rstrip("/") + "/plugins/" + self.plugin + path,
-            data=json.dumps(payload).encode("utf-8")
+        return self._request(
+            method,
+            "/plugins/" + self.plugin + path,
+            json.dumps(payload).encode("utf-8")
             if payload is not None
             else None,
+        )
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        content: bytes | None,
+        media_type: str = "application/json",
+    ):
+        request = Request(
+            self.base_url.rstrip("/") + path,
+            data=content,
             headers={
                 "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
+                "Content-Type": media_type,
                 "Accept": "application/json",
             },
             method=method,
@@ -103,17 +117,51 @@ class ChatClient:
         except (ValueError, UnicodeError):
             raise ChatClientError("Server returned invalid JSON") from None
 
-    def ask(self, message: str, session_id: str) -> str:
+    def upload(self, path: Path) -> dict[str, str]:
+        """Upload a file and return a message reference under this plugin."""
+        media_type = (
+            mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        )
+        with path.open("rb") as source:
+            content = source.read(8 * 1024 * 1024 + 1)
+        if len(content) > 8 * 1024 * 1024:
+            raise ValueError("The example client accepts files up to 8 MiB")
+        result = self._request(
+            "POST",
+            "/attachments/"
+            + self.plugin
+            + "?"
+            + urlencode({"name": path.name}),
+            content,
+            media_type,
+        )
+        if not isinstance(result, dict) or not re.fullmatch(
+            r"[a-f0-9]{32}", str(result.get("id", ""))
+        ):
+            raise ChatClientError("Server returned an invalid attachment")
+        category = media_type.split("/", 1)[0]
+        kind = category if category in {"image", "audio", "video"} else "file"
+        return {"type": kind, "attachment_id": result["id"]}
+
+    def ask(
+        self, message: str, session_id: str, *, files: tuple[Path, ...] = ()
+    ) -> str:
         """Send one turn or server command to the selected conversation."""
         message = message.strip()
-        if not 1 <= len(message) <= 8000:
-            raise ValueError("Question must contain 1 to 8000 characters")
+        if len(message) > 8000 or not (message or files):
+            raise ValueError(
+                "Provide a question up to 8000 characters or files"
+            )
+        if len(files) > 8:
+            raise ValueError("A message accepts at most 8 files")
         session_id = str(UUID(session_id))
+        parts = [{"type": "text", "text": message}] if message else []
+        parts.extend(self.upload(path) for path in files)
         payload = self.request(
             "POST",
             "/chat",
             {
-                "message": message,
+                "message": parts if files else message,
                 "session_id": session_id,
             },
         )
@@ -175,6 +223,13 @@ def main() -> int:
     )
     parser.add_argument("--plugin", default="example_chat")
     parser.add_argument("--message", help="Send one question and exit")
+    parser.add_argument(
+        "--file",
+        type=Path,
+        action="append",
+        default=[],
+        help="Upload a file for one turn; may be repeated",
+    )
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--session", help="Select an existing conversation")
     parser.add_argument(
@@ -200,8 +255,19 @@ def main() -> int:
             console.new()
         else:
             console.restore()
-        if args.message is not None:
-            print(console.execute(args.message))
+        if args.message is not None or args.file:
+            if args.file:
+                if console.session_id is None:
+                    console.new()
+                print(
+                    client.ask(
+                        args.message or "",
+                        console.session_id,
+                        files=tuple(args.file),
+                    )
+                )
+            else:
+                print(console.execute(args.message))
             return 0
         print(
             "Persistent conversations. "

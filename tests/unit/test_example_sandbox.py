@@ -15,8 +15,7 @@ from opsmesh.plugins import get_plugin, registry
 from opsmesh.plugins.manager import PluginManager
 
 driver_state.set_driver(Driver(Env(), Config()))
-manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"},
-                        namespace="example_sandbox")
+manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"})
 registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None
@@ -27,9 +26,8 @@ routes = [route for route in get_router().registrations
           if route.installation_id == plugin.id_]
 assert len(routes) == 8
 assert routes[0].path == "/plugins/example_sandbox/chat"
-from example_sandbox.agent import agent
-from agents.sandbox import SandboxAgent
-assert isinstance(agent, SandboxAgent)
+from example_sandbox import agent as definition
+assert not hasattr(definition, "agent")
 print("loaded", plugin.id_, routes[0].path)
 """
 
@@ -66,6 +64,10 @@ def test_sandbox_example_loads_without_starting_a_sandbox():
 
 def test_sandbox_sessions_commands_and_workspace_lifetime():
     scenario = """
+import asyncio
+from agents.sandbox import SandboxAgent
+asyncio.run(definition.startup())
+assert isinstance(definition.agent, SandboxAgent)
 import runpy
 scenario = runpy.run_path("tests/fixtures/sandbox_scenario.py")
 scenario["run_scenario"](plugin, routes)

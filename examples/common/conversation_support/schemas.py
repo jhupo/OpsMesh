@@ -5,12 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from opsmesh.plugins.channels.api import MessageRequest
 
-class ChatRequest(BaseModel):
+
+class ChatRequest(MessageRequest):
     """Associate text with an owned conversation; omit ID to create one."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    message: str = Field(min_length=1, max_length=8000)
     session_id: UUID | None = None
 
 
