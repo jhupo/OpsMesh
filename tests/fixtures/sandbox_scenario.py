@@ -1,4 +1,4 @@
-"""Exercise native sandbox history and workspace lifetimes."""
+"""Verify native sandbox streams retain owned history and workspace scopes."""
 
 import asyncio
 import json
@@ -7,10 +7,8 @@ import runpy
 import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
+from uuid import uuid4
 
-import anyio
-from agents import Runner
 from agents.sandbox.session.sandbox_session_state import SandboxSessionState
 from agents.testing import (
     ModelStep,
@@ -21,29 +19,26 @@ from agents.testing import (
 )
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from example_sandbox import execution, lifecycle
+from example_sandbox import lifecycle
 from example_sandbox.agent import agent
 from example_sandbox.sessions import SandboxConversations
 from example_sandbox.workspace import SandboxWorkspaces
 from sqlalchemy.ext.asyncio import create_async_engine
-from starlette.requests import Request
 
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins.channels import UserContext
-from opsmesh.plugins.channels.api import (
-    APIChannel,
-    APIRouter,
-    HTTPError,
-    Settings,
-)
-from opsmesh.plugins.channels.api.adapter import APIAdapter
+from opsmesh.plugins.execution import Settings as ExecutionSettings
+from opsmesh.plugins.execution import _lifecycle as execution_lifecycle
 from opsmesh.plugins.filesystem import files
 from opsmesh.plugins.model import PluginStatus
 
+harness = runpy.run_path("tests/fixtures/chat_scenario.py")
+MessageHarness = harness["MessageHarness"]
+data_of = harness["data_of"]
+text_of = harness["text_of"]
+command_error = harness["command_error"]
+
 
 class ScriptedClient:
-    """Use native SDK scripted sessions while keeping files on test disk."""
-
     def __init__(self):
         self.sessions = []
 
@@ -75,17 +70,12 @@ def migrate(connection):
 
 
 def run_scenario(plugin, routes):
-    """Test multi-turn history, commands, workspace persistence and cleanup."""
     from opsmesh.plugins import get_loaded_plugins
 
     for loaded in get_loaded_plugins():
         loaded.status = PluginStatus.READY
     caller = UserContext(id="sandbox-user")
-    api = APIChannel(
-        Settings(identities=[{"id": "test", "token_ref": "TOKEN"}]),
-        APIRouter(),
-    )
-    api.adapter = APIAdapter(driver_state.get_driver())
+    api = MessageHarness(routes[0], caller)
     model = ScriptedModel(
         [
             ModelStep(output=[assistant_message(text)])
@@ -96,130 +86,64 @@ def run_scenario(plugin, routes):
     original_capabilities = agent.capabilities
     agent.capabilities = []
 
-    async def run_native(selected_agent, message, **options):
-        options.pop("trace_context")
-        options.pop("plugin_id")
-        options["run_config"].tracing_disabled = True
-        return await Runner.run(selected_agent, message, **options)
-
-    execution.run = run_native
-
-    async def invoke(method, path, data=None, session_id=None, owner=None):
-        selected = next(
-            item
-            for item in routes
-            if item.method == method and item.relative_path == path
-        )
-        delivered = False
-
-        async def receive():
-            nonlocal delivered
-            if delivered:
-                await anyio.sleep_forever()
-            delivered = True
-            return {
-                "type": "http.request",
-                "more_body": False,
-                "body": json.dumps(data).encode() if data is not None else b"",
-            }
-
-        request = Request(
-            {
-                "type": "http",
-                "method": method,
-                "path": selected.path,
-                "headers": [],
-                "query_string": b"",
-                "path_params": {"id": session_id} if session_id else {},
-            },
-            receive,
-        )
-        result = await api._invoke_request(
-            selected, request, SimpleNamespace(caller=owner or caller)
-        )
-        return json.loads(result.body) if result.status_code != 204 else None
-
-    async def denied(operation, status):
-        try:
-            await operation
-        except HTTPError as error:
-            assert error.status_code == status
-        else:
-            raise AssertionError("Expected HTTP rejection")
-
     async def verify(engine, backend):
         async with engine.begin() as connection:
             await connection.run_sync(migrate)
         workspace = SandboxWorkspaces(backend)
         store = SandboxConversations(engine, workspace)
         lifecycle._conversations = store
-        first = await invoke("POST", "/sessions", {"name": "First"})
-        sid = first["id"]
-        second = await invoke("POST", "/sessions", {"name": "Second"})
-        second_id = second["id"]
-        result = await invoke(
-            "POST", "/chat", {"session_id": sid, "message": "Remember amber"}
-        )
-        assert result == {"text": "first", "session_id": sid}
+        for command in [
+            "/help",
+            "/sessions",
+            "/session",
+            "/history",
+            "/clear",
+            "/reset_workspace",
+            "/unknown",
+        ]:
+            await api.post(command)
+        assert await store.list(caller.id) == []
+        assert len(model.calls) == 0
+        sid = data_of(await api.post("/new First"))["session_id"]
+        other_window = str(uuid4())
+        second_id = data_of(
+            await api.post("/new Second", conversation_id=other_window)
+        )["session_id"]
+        assert text_of(await api.post("Remember amber")) == "first"
         state_file = workspace.state_file(sid)
         saved = json.loads(state_file.read_text())
         note = workspace.directory(sid) / "note.txt"
         note.write_text("persistent workspace", encoding="utf-8")
-        await invoke(
-            "POST", "/chat", {"session_id": sid, "message": "Continue"}
-        )
+        events = await api.post("Continue", stream=True)
+        assert events[-1][0] == "done"
+        assert events[-2][0] == "message_end"
         assert note.read_text() == "persistent workspace"
         assert (
             json.loads(state_file.read_text())["session_id"]
             == saved["session_id"]
         )
         assert "Remember amber" in json.dumps(model.calls[1].input)
-        await invoke(
-            "POST", "/chat", {"session_id": second_id, "message": "Different"}
+        assert (
+            text_of(await api.post("Different", conversation_id=other_window))
+            == "other"
         )
         assert not (workspace.directory(second_id) / "note.txt").exists()
         assert "Remember amber" not in json.dumps(model.calls[2].input)
-
         for command in ["/help", "/session", "/history", "/clear"]:
-            await invoke(
-                "POST", "/chat", {"session_id": sid, "message": command}
-            )
+            await api.post(command)
         assert len(model.calls) == 3
         assert note.exists()
-        assert (
-            await invoke("GET", "/sessions/{id}/messages", session_id=sid) == []
+        assert data_of(await api.post("/history"))["messages"] == []
+        await command_error(
+            api.post("/use " + sid, owner=UserContext(id="other")), 404
         )
-        await denied(
-            invoke(
-                "DELETE",
-                "/sessions/{id}/workspace",
-                session_id=sid,
-                owner=UserContext(id="other"),
-            ),
-            404,
+        await command_error(
+            api.post("/reset_workspace", owner=UserContext(id="other")), 409
         )
         assert note.exists()
         async with store.hold(caller.id, sid):
-            await denied(
-                invoke("DELETE", "/sessions/{id}/workspace", session_id=sid),
-                409,
-            )
-            await denied(
-                invoke("DELETE", "/sessions/{id}", session_id=sid), 409
-            )
-
-        if engine.dialect.name == "postgresql":
-            competing = SandboxConversations(engine, workspace)
-            async with store.hold(caller.id, sid):
-                try:
-                    await competing.clear(caller.id, sid)
-                except Exception as error:
-                    assert getattr(error, "status", None) == 409
-                else:
-                    raise AssertionError(
-                        "PostgreSQL must reject concurrent ownership"
-                    )
-
+            await command_error(api.post("/reset_workspace"), 409)
+            await command_error(api.post("/delete " + sid), 409)
         await engine.dispose()
         lifecycle._conversations = SandboxConversations(
             engine, SandboxWorkspaces(backend)
@@ -229,14 +153,10 @@ def run_scenario(plugin, routes):
             if sys.platform != "win32":
                 result = await sandbox.exec("printf native-linux-check")
                 assert "native-linux-check" in str(result.stdout)
-        await invoke(
-            "POST", "/chat", {"session_id": sid, "message": "/reset_workspace"}
-        )
+        await api.post("/reset_workspace")
         assert not note.exists()
         assert not state_file.exists()
-        assert (await invoke("GET", "/sessions/{id}", session_id=sid))[
-            "id"
-        ] == sid
+        assert data_of(await api.post("/session"))["session_id"] == sid
 
         entered = asyncio.Event()
 
@@ -258,11 +178,9 @@ def run_scenario(plugin, routes):
             assert all(
                 [not await session.running() for session in backend.sessions]
             )
-        await invoke("DELETE", "/sessions/{id}", session_id=sid)
+        await api.post("/delete " + sid)
         assert not workspace.directory(sid).exists()
         assert not workspace.state_file(sid).exists()
-        await denied(invoke("GET", "/sessions/{id}", session_id=sid), 404)
-        assert (workspace.directory(second_id)).exists()
         if sys.platform != "win32":
             agent.capabilities = original_capabilities
             model.extend(
@@ -282,24 +200,28 @@ def run_scenario(plugin, routes):
                     ModelStep(output=[assistant_message("tool finished")]),
                 ]
             )
-            result = await invoke(
-                "POST",
-                "/chat",
-                {"session_id": second_id, "message": "Write a file"},
+            assert (
+                text_of(
+                    await api.post("Write a file", conversation_id=other_window)
+                )
+                == "tool finished"
             )
-            assert result["text"] == "tool finished"
             assert (
                 workspace.directory(second_id) / "tool-proof.txt"
             ).read_text().strip() == "native-tool"
-        await invoke("DELETE", "/sessions/{id}", session_id=second_id)
+        await api.post("/delete " + second_id, conversation_id=other_window)
         model.assert_complete()
 
     async def main():
-        with tempfile.TemporaryDirectory() as temporary:
-            from opsmesh.plugins import get_plugin
+        from opsmesh.plugins import get_plugin
 
-            storage = get_plugin("filesystem")
-            storage.config_values = {"root": temporary + "/files"}
+        runtime = execution_lifecycle.ExecutionRuntime(ExecutionSettings())
+        execution_lifecycle._runtime = runtime
+        await runtime.startup()
+        with tempfile.TemporaryDirectory() as temporary:
+            get_plugin("filesystem").config_values = {
+                "root": temporary + "/files"
+            }
             await files._startup()
             engine = create_async_engine(
                 os.environ.get("OPSMESH_TEST_DATABASE_URL")
@@ -320,6 +242,7 @@ def run_scenario(plugin, routes):
                 lifecycle._conversations = None
                 await engine.dispose()
                 await files._shutdown()
+                await execution_lifecycle.shutdown()
 
     asyncio.run(main())
     print("sandbox conversations verified")

@@ -76,6 +76,9 @@ class Settings(ListenerSettings):
     attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
     identities: tuple[IdentitySettings, ...] = Field(min_length=1)
     request_timeout_seconds: float = Field(default=300, gt=0)
+    max_output_messages: int = Field(default=128, gt=0)
+    max_output_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
+    stream_buffer_size: int = Field(default=16, gt=0, le=1024)
     stream_error_message: str = Field(
         default="stream failed", min_length=1, max_length=200
     )

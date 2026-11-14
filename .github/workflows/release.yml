@@ -19,7 +19,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python -c 'import os,tomllib; from pathlib import Path; projects=[Path("pyproject.toml"),*Path("packages").glob("*/pyproject.toml")]; assert len(projects)==5; versions={tomllib.loads(p.read_text())["project"]["version"] for p in projects}; assert versions == {os.environ["RELEASE_TAG"].removeprefix("v")}'
+          python -c 'import os,tomllib; from pathlib import Path; projects=[Path("pyproject.toml"),*Path("packages").glob("*/pyproject.toml")]; assert len(projects)==7; versions={tomllib.loads(p.read_text())["project"]["version"] for p in projects}; assert versions == {os.environ["RELEASE_TAG"].removeprefix("v")}'
   build:
     needs: version
     uses: ./.github/workflows/ci.yml

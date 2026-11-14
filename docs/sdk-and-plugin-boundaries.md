@@ -14,6 +14,7 @@
 | Trace / Span / processor | execution | 一次性导出配置、TraceContext、安全关闭 |
 | SQLAlchemy / Alembic | database | 引擎生命周期、声明归属、独立版本表 |
 | Event / Message / Dependent / Matcher | Framework 和 channels | 外部协议适配与经过认证的 UserContext |
+| on_* / Matcher.send / finish / pause / reject | Framework 与 channels | 插件声明处理器、回复消息和多轮控制流；处理器返回值不是通用回复协议 |
 
 execution 不依赖 database；持久执行记录、UsageTotals、增量账本和持久状态模型均不在当前职责内。结束后需要额外业务统计的插件可以订阅 on_run_end 并读取原生 Usage，其失败不影响已有模型结果。
 

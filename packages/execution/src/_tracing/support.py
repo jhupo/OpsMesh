@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from typing import Any
 
@@ -35,6 +36,7 @@ class TracingSupport:
         self._installed = False
         self._processor: LocalTraceProcessor | None = None
         self._bridge: LangfuseBridge | None = None
+        self._langfuse_snapshot: dict[str, Any] | None = None
 
     @property
     def installed(self) -> bool:
@@ -149,6 +151,7 @@ class TracingSupport:
                 logger.warning("SDK trace flush did not complete")
         if self._bridge is not None:
             await self._bridge.shutdown()
+            self._langfuse_snapshot = self._bridge.diagnostics()
             self._bridge = None
         set_trace_processors([])
         set_tracing_disabled(True)
@@ -166,4 +169,7 @@ class TracingSupport:
             "destination": self._settings.destination,
             "installed": self._installed,
             "local": self.snapshot(),
+            "langfuse": self._bridge.diagnostics()
+            if self._bridge is not None
+            else deepcopy(self._langfuse_snapshot),
         }

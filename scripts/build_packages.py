@@ -11,7 +11,14 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_NAMES = ("channels", "database", "execution", "filesystem")
+PLUGIN_NAMES = (
+    "channels",
+    "cron",
+    "database",
+    "execution",
+    "filesystem",
+    "knowledge",
+)
 
 
 def projects(root: Path) -> tuple[Path, ...]:
@@ -63,6 +70,10 @@ def verify_wheel(path: Path) -> None:
                 "alembic",
                 "asyncpg",
                 "langfuse",
+                "apscheduler",
+                "pgvector",
+                "sentence-transformers",
+                "torch",
                 "uvicorn",
                 "httpx",
                 "websockets",
@@ -93,7 +104,7 @@ def verify_wheel(path: Path) -> None:
 
 
 def main() -> None:
-    """Produce five wheel/source pairs without installing any package."""
+    """Produce host and plugin wheel/source pairs without installing them."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "dist/packages")
     arguments = parser.parse_args()
@@ -114,9 +125,7 @@ def main() -> None:
         )
     wheels = list(output.glob("*.whl"))
     if len(wheels) != len(PLUGIN_NAMES) + 1:
-        raise ValueError(
-            "Use a clean output directory for the five release wheels"
-        )
+        raise ValueError("Use a clean output directory for the release wheels")
     for wheel in wheels:
         verify_wheel(wheel)
 

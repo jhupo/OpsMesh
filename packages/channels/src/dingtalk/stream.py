@@ -43,7 +43,9 @@ class RobotCallback(CallbackHandler):
 
     async def process(self, message: CallbackMessage) -> tuple[int, str]:
         """Return an SDK acknowledgement after local queue admission."""
-        return self.channel.adapter.accept_callback(self.channel, message.data)
+        return await self.channel.adapter.accept_callback(
+            self.channel, message.data
+        )
 
 
 class PlatformEvents(EventHandler):
@@ -56,7 +58,7 @@ class PlatformEvents(EventHandler):
 
     async def process(self, event: EventMessage) -> tuple[int, str]:
         """Acknowledge local queue admission using the native SDK contract."""
-        return self.channel.adapter.accept_notice(self.channel, event)
+        return await self.channel.adapter.accept_notice(self.channel, event)
 
 
 class DingTalkStream(DingTalkStreamClient):

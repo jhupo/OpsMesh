@@ -7,6 +7,7 @@ from opsmesh.messages import Message, MessageSegment
 
 from ..sending import normalize
 from .attachments import encode_message
+from .events import APIMessageEvent
 
 
 class APIAdapter(Adapter):
@@ -18,6 +19,12 @@ class APIAdapter(Adapter):
         return "api"
 
     async def _call(self, channel: Channel, operation: str, **data: Any) -> Any:
+        event = data["event"]
+        if isinstance(event, APIMessageEvent):
+            if operation == "reply":
+                return await event.output.send(data["result"])
+            if operation == "stream":
+                return await event.output.stream(data["source"])
         if operation != "reply":
             raise ValueError(f"Unsupported API operation: {operation}")
         result = data["result"]

@@ -24,8 +24,8 @@ assert get_plugin("example_sandbox") is plugin
 from opsmesh.plugins.channels.api import get_router
 routes = [route for route in get_router().registrations
           if route.installation_id == plugin.id_]
-assert len(routes) == 8
-assert routes[0].path == "/plugins/example_sandbox/chat"
+assert len(routes) == 1
+assert routes[0].path == "/plugins/example_sandbox/messages"
 from example_sandbox import agent as definition
 assert not hasattr(definition, "agent")
 print("loaded", plugin.id_, routes[0].path)
@@ -58,7 +58,7 @@ def run_sandbox_script(script):
 def test_sandbox_example_loads_without_starting_a_sandbox():
     assert (
         run_sandbox_script(SCRIPT)
-        == "loaded example_sandbox /plugins/example_sandbox/chat"
+        == "loaded example_sandbox /plugins/example_sandbox/messages"
     )
 
 

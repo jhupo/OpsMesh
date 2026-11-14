@@ -22,7 +22,8 @@ from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
 from opsmesh.messages import Message
 from opsmesh.params import Context, Depends, EventMessage
-from opsmesh.plugins.channels import UserContext
+from opsmesh.plugins.channels import Message as ChannelMessage
+from opsmesh.plugins.channels import MessageSegment, UserContext
 from opsmesh.plugins.channels.api import (
     ACCESS_ADMIN,
     APIChannel,
@@ -56,7 +57,7 @@ def plugin_owner(name: str, *, ready: bool = True) -> Plugin:
     )
 
 
-def declare_message(router, handler, *, path="/chat", rule=None, body=None):
+def declare_message(router, handler, *, rule=None):
     from opsmesh.matchers import Matcher, MatcherSource
     from opsmesh.plugins.channels.api import MessageRequest
 
@@ -73,8 +74,8 @@ def declare_message(router, handler, *, path="/chat", rule=None, body=None):
     try:
         registration = router.register(
             method="POST",
-            path=path,
-            body=body or MessageRequest,
+            path="/messages",
+            body=MessageRequest,
             message_handlers=(matcher,),
             allow_response=True,
             response_types=(Response,),
@@ -82,6 +83,15 @@ def declare_message(router, handler, *, path="/chat", rule=None, body=None):
     finally:
         _current_plugin.reset(token)
     return registration
+
+
+def structured_reply(value):
+    return ChannelMessage(
+        [
+            MessageSegment.text("Result"),
+            MessageSegment.structured(value),
+        ]
+    )
 
 
 @pytest.mark.anyio
@@ -1430,26 +1440,19 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
         assert len(message) == 1
         await channel.send(
             event,
-            {
-                "argument": argument.extract_plain_text(),
-                "id": caller.id,
-                "roles": sorted(caller.roles),
-                "groups": sorted(caller.groups),
-            },
+            structured_reply(
+                {
+                    "argument": argument.extract_plain_text(),
+                    "id": caller.id,
+                    "roles": sorted(caller.roles),
+                    "groups": sorted(caller.groups),
+                }
+            ),
         )
-
-    from pydantic import ConfigDict
-
-    from opsmesh.plugins.channels.api import MessageRequest
-
-    class CallerFields(MessageRequest):
-        model_config = ConfigDict(extra="allow")
 
     registration = declare_message(
         router,
         handler,
-        path="/command",
-        body=CallerFields,
         rule=command("api_probe", force_whitespace=True),
     )
     try:
@@ -1459,18 +1462,11 @@ async def test_api_message_uses_framework_command_and_authenticated_context(
                 "POST",
                 registration.path,
                 token="secret",
-                body=json.dumps(
-                    {
-                        "message": question,
-                        "id": "forged",
-                        "roles": ["admin"],
-                        "groups": ["forged"],
-                    }
-                ).encode(),
+                body=json.dumps({"message": question}).encode(),
             ),
         )
         assert response[0]["status"] == 200
-        assert payload(response) == {
+        assert payload(response)["messages"][0]["data"] == {
             "argument": question.removeprefix("/api_probe").strip(),
             "id": "api:user",
             "roles": ["agent"],
@@ -1542,7 +1538,7 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
     ):
         await channel.send(event, message)
 
-    registration = declare_message(router, handler, path="/echo")
+    registration = declare_message(router, handler)
     driver, channel = await _setup(monkeypatch, router, make_settings())
     try:
         response = await call(
@@ -1555,7 +1551,12 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
             ),
         )
         assert response[0]["status"] == 200
-        assert payload(response) == [{"type": "text", "text": "hello"}]
+        assert payload(response)["messages"] == [
+            {
+                "content": [{"type": "text", "text": "hello"}],
+                "data": None,
+            }
+        ]
     finally:
         await channel.shutdown()
         registration.message_handlers[0].destroy()
@@ -1581,7 +1582,7 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
         @selected.handle()
         async def selected_handler(channel: Channel, event: Event):
             seen.append("command")
-            await channel.send(event, {"command": True})
+            await channel.send(event, structured_reply({"command": True}))
 
         @unrelated.handle()
         async def unrelated_handler():
@@ -1592,11 +1593,13 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
         @fallback.handle()
         async def fallback_handler(channel: Channel, event: Event):
             seen.append("fallback")
-            await channel.send(event, {"text": event.get_plaintext()})
+            await channel.send(
+                event, structured_reply({"text": event.get_plaintext()})
+            )
 
         registration = router.register(
             method="POST",
-            path="/message",
+            path="/messages",
             body=api_module.MessageRequest,
             message_handlers=(selected, fallback),
         )
@@ -1612,7 +1615,7 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
                 body=b'{"message":"/route_probe"}',
             ),
         )
-        assert payload(response) == {"command": True}
+        assert payload(response)["messages"][0]["data"] == {"command": True}
         assert seen == ["command"]
         response = await call(
             driver,
@@ -1623,7 +1626,7 @@ async def test_route_runs_only_declared_command_matchers_once(monkeypatch):
                 body=b'{"message":"hello"}',
             ),
         )
-        assert payload(response) == {"text": "hello"}
+        assert payload(response)["messages"][0]["data"] == {"text": "hello"}
         assert seen == ["command", "fallback"]
     finally:
         selected.destroy()
@@ -1649,7 +1652,7 @@ def test_route_rejects_foreign_commands_and_ambiguous_permissions(monkeypatch):
         with pytest.raises(RouteRegistrationError, match="belong"):
             router.register(
                 method="POST",
-                path="/foreign",
+                path="/messages",
                 body=api_module.MessageRequest,
                 message_handlers=(foreign,),
             )
@@ -1685,7 +1688,7 @@ async def test_authenticated_upload_message_and_download_share_scope(
         data = await event.attachments.read(parts[1].data["attachment_id"])
         await channel.send(
             event,
-            json_response(
+            structured_reply(
                 {"text": parts.extract_plain_text(), "file": data.decode()}
             ),
         )
@@ -1734,14 +1737,17 @@ async def test_authenticated_upload_message_and_download_share_scope(
                 ]
             }
             result = await client.post(
-                "/plugins/support/chat",
+                "/plugins/support/messages",
                 json=body,
                 headers={"authorization": "Bearer secret"},
             )
-            assert result.json() == {"text": "read", "file": "hello"}
+            assert result.json()["messages"][0]["data"] == {
+                "text": "read",
+                "file": "hello",
+            }
             assert (
                 await client.post(
-                    "/plugins/support/chat", json=body, headers=other
+                    "/plugins/support/messages", json=body, headers=other
                 )
             ).status_code == 404
             registration.owner.status = PluginStatus.LOADED
@@ -1854,20 +1860,22 @@ async def test_message_handler_return_is_not_an_implicit_reply(monkeypatch):
                 body=b'{"message":"hello"}',
             ),
         )
-        assert result[0]["status"] == 204
+        assert result[0]["status"] == 200
+        assert payload(result)["messages"] == []
+        assert payload(result)["status"] == "completed"
     finally:
         registration.message_handlers[0].destroy()
         await channel.shutdown()
 
 
 @pytest.mark.anyio
-async def test_message_handler_second_reply_fails_safely(monkeypatch):
+async def test_message_handler_sends_multiple_complete_messages(monkeypatch):
     monkeypatch.setenv("TEST_API_TOKEN", "secret")
     router = APIRouter()
 
     async def handler(channel: Channel, event: Event):
-        await channel.send(event, {"first": True})
-        await channel.send(event, {"second": True})
+        await channel.send(event, "first")
+        await channel.send(event, "second")
 
     registration = declare_message(router, handler)
     server, channel = await _setup(monkeypatch, router, make_settings())
@@ -1881,8 +1889,13 @@ async def test_message_handler_second_reply_fails_safely(monkeypatch):
                 body=b'{"message":"hello"}',
             ),
         )
-        assert result[0]["status"] == 500
-        assert payload(result) == {"error": "internal server error"}
+        assert result[0]["status"] == 200
+        assert [
+            item["content"][0]["text"] for item in payload(result)["messages"]
+        ] == [
+            "first",
+            "second",
+        ]
     finally:
         registration.message_handlers[0].destroy()
         await channel.shutdown()
@@ -1964,7 +1977,9 @@ def test_message_binding_rejects_message_override_and_equal_priorities():
     )
     token = _current_plugin.set(owner)
     try:
-        with pytest.raises(RouteRegistrationError, match="override"):
+        with pytest.raises(
+            RouteRegistrationError, match="standard MessageRequest"
+        ):
             APIRouter().register(
                 method="POST",
                 path="/override",
@@ -1974,7 +1989,7 @@ def test_message_binding_rejects_message_override_and_equal_priorities():
         with pytest.raises(RouteRegistrationError, match="distinct priorities"):
             APIRouter().register(
                 method="POST",
-                path="/parallel",
+                path="/messages",
                 body=api_module.MessageRequest,
                 message_handlers=handlers,
             )
@@ -1994,10 +2009,12 @@ async def test_image_only_api_request_stays_a_framework_message(monkeypatch):
     async def handler(channel: Channel, event: Event):
         await channel.send(
             event,
-            {
-                "type": event.get_type(),
-                "parts": [part.type for part in event.get_message()],
-            },
+            structured_reply(
+                {
+                    "type": event.get_type(),
+                    "parts": [part.type for part in event.get_message()],
+                }
+            ),
         )
 
     registration = declare_message(router, handler)
@@ -2019,7 +2036,10 @@ async def test_image_only_api_request_stays_a_framework_message(monkeypatch):
                 ).encode(),
             ),
         )
-        assert payload(result) == {"type": "message", "parts": ["image"]}
+        assert payload(result)["messages"][0]["data"] == {
+            "type": "message",
+            "parts": ["image"],
+        }
     finally:
         registration.message_handlers[0].destroy()
         await channel.shutdown()
@@ -2059,9 +2079,22 @@ async def test_admitted_request_continues_after_owner_starts_stopping(
                 assert registration.owner.calls and not closed
                 yield b"continued"
 
-            await channel.send(event, StreamingResponse(chunks()))
+            if message_route:
+
+                async def text_chunks():
+                    assert registration.owner.calls and not closed
+                    yield "continued"
+
+                await channel.call("stream", event=event, source=text_chunks())
+            else:
+                await channel.send(event, StreamingResponse(chunks()))
         else:
-            await channel.send(event, json_response({"continued": True}))
+            await channel.send(
+                event,
+                "continued"
+                if message_route
+                else json_response({"continued": True}),
+            )
 
     if message_route:
         registration = declare_message(router, handler)
@@ -2089,9 +2122,14 @@ async def test_admitted_request_continues_after_owner_starts_stopping(
             ),
         )
         assert result[0]["status"] == 200
-        assert body(result) == (
-            b"continued" if streamed else b'{"continued":true}'
-        )
+        if message_route:
+            assert payload(result)["messages"][0]["content"] == [
+                {"type": "text", "text": "continued"}
+            ]
+        else:
+            assert body(result) == (
+                b"continued" if streamed else b'{"continued":true}'
+            )
         assert closed == [True] and not registration.owner.calls
     finally:
         if registration.matcher is not None:
@@ -2147,9 +2185,7 @@ async def test_response_stream_keeps_admission_without_granting_child_tasks(
         router, method="GET", path="/stream-scope", handler=handler
     )
     server, channel = await _setup(monkeypatch, router, make_settings())
-    request_scope, queue = scope(
-        path=registration.path, token="secret"
-    )
+    request_scope, queue = scope(path=registration.path, token="secret")
     request_scope["asgi"] = {"spec_version": asgi_version}
     try:
         result = await call(server, (request_scope, queue))

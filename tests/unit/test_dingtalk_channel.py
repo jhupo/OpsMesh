@@ -187,7 +187,12 @@ def test_event_mapping_namespaces_callers_and_sessions():
     assert event is not None
     assert event.get_plaintext() == "hello"
     assert event.get_user_id() == "dingtalk:s:bot:sender-1"
-    assert event.get_session_id() == "dingtalk:s:bot:conversation:cid-1"
+    assert json.loads(event.get_session_id()) == [
+        "dingtalk",
+        "dingtalk:s:bot",
+        "cid-1",
+        "sender-1",
+    ]
     assert event.is_tome() is True
     assert event.group_ids == ()
 
@@ -233,7 +238,7 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
         assert "DINGTALK_MISSING" in (bad.error or "")
         assert good.self_id in driver.channels
         assert bad.self_id not in driver.channels
-        assert adapter.accept_callback(bad, direct_payload())[0] == 500
+        assert (await adapter.accept_callback(bad, direct_payload()))[0] == 500
         await adapter.shutdown()
 
     assert good.state == "closed"
@@ -250,7 +255,13 @@ async def test_sdk_callback_dispatches_once(monkeypatch):
     received = anyio.Event()
 
     async def fake_dispatch(
-        channel_, event, *, invocation_context=None, matcher_filter=None
+        channel_,
+        event,
+        *,
+        invocation_context=None,
+        matcher_filter=None,
+        admitted_call=None,
+        stack=None,
     ):
         dispatched.append((channel_, event, invocation_context))
         received.set()
@@ -420,7 +431,8 @@ async def test_shutdown_closes_streams_and_unregisters_channel(monkeypatch):
         assert channel.ready
         await adapter.shutdown()
         assert adapter._streams == {}
-        assert adapter.accept_callback(channel, direct_payload())[0] == 500
+        result = await adapter.accept_callback(channel, direct_payload())
+        assert result[0] == 500
     assert channel.state == "closed"
     assert adapter.driver.channels == {}
 

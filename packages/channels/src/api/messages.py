@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -36,16 +37,30 @@ MessageInput = (
 
 
 class MessageRequest(BaseModel):
-    """The API message protocol, extendable with plugin-owned fields."""
+    """The complete public API message request contract."""
 
     model_config = ConfigDict(extra="forbid")
     message: MessageInput
+    conversation_id: str | None = None
+
+    @field_validator("conversation_id")
+    @classmethod
+    def canonical_conversation(cls, value: str | None) -> str | None:
+        """Accept only canonical UUID strings as conversation separators."""
+        if value is not None and str(UUID(value)) != value:
+            raise ValueError("conversation_id must be a canonical UUID")
+        return value
 
     @field_validator("message")
     @classmethod
     def nonblank_text(cls, value: MessageInput) -> MessageInput:
         """Reject whitespace-only plain messages."""
         if isinstance(value, str) and not value.strip():
+            raise ValueError("Message text must not be blank")
+        if isinstance(value, list) and not any(
+            isinstance(part, AttachmentContent) or part.text.strip()
+            for part in value
+        ):
             raise ValueError("Message text must not be blank")
         return value
 

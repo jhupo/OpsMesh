@@ -9,10 +9,15 @@ Use Python 3.11 or newer in a virtual environment. Install the repository's deve
 ```bash
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-deps -e . -e packages/channels \
-  -e packages/filesystem -e packages/database -e packages/execution
+  -e packages/filesystem -e packages/database -e packages/execution -e packages/cron
 ```
 
 To install only the framework package, use `python -m pip install -e .`. The repository development lock intentionally includes plugin test dependencies; it is not the core runtime dependency list. Linux filesystem tests require the supported Linux system calls.
+
+Knowledge has a separate local embedding dependency lock. For knowledge work,
+install `packaging/knowledge.lock` and the `packages/knowledge` project as well.
+Its deterministic tests use a fake encoder; downloading model weights is a
+separate, explicit provisioning step described in the plugin README.
 
 ## Package boundaries
 

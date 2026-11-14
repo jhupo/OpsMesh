@@ -18,7 +18,9 @@ packages/
 ├── channels/src/                  # opsmesh.plugins.channels
 ├── execution/src/                 # opsmesh.plugins.execution
 ├── database/src/                  # opsmesh.plugins.database
-└── filesystem/src/                # opsmesh.plugins.filesystem
+├── filesystem/src/                # opsmesh.plugins.filesystem
+├── knowledge/src/                 # opsmesh.plugins.knowledge
+└── cron/src/                      # opsmesh.plugins.cron
 examples/
 ├── common/conversation_support/
 ├── chat/example_chat/
@@ -26,7 +28,7 @@ examples/
 tools/                            # 离线数据维护
 ```
 
-核心和四个插件分别构建 wheel 与源码包，同一个 tag 的 Release 一并发布。Linux 框架包携带宿主运行环境，插件运行包按需部署。插件安装模块为 `opsmesh.plugins.<name>`，entry point 提供 `require("channels")` 等短名；持久记录使用完整模块路径。
+核心和六个插件分别构建 wheel 与源码包，同一个 tag 的 Release 一并发布。Linux 框架包携带宿主运行环境，插件运行包按需部署。插件安装模块为 `opsmesh.plugins.<name>`，entry point 提供 `require("channels")` 等短名；持久记录使用完整模块路径。
 
 ## 职责与依赖
 
@@ -55,16 +57,27 @@ host.json 保存 framework、environment 和 data_dir。宿主的 SQLite 保存�
 
 ## 事件、身份与回复
 
+统一消息入口、多次回复、续接筛选和通道对话隔离由 channels 实现，具体协议见通道文档。
+
 ```text
 HTTP / QQ / 钉钉
-→ 通道认证与协议转换
-→ Event + 可信调用者 Context，消息事件另有 Message
+→ 通道认证与统一消息协议解析
+→ Event + Message + 可信调用者 Context
 → Framework Permission / Rule / Matcher / Dependent
-→ 功能插件处理
+→ on_message / on_command 处理器
+→ Matcher.send / Matcher.finish
 → 原 Channel 编码回复
 ```
 
-普通 HTTP 路由保留验证后的业务 payload，返回值形成响应。标准消息入口将文本/附件转换为 Message，并绑定插件已有的 on_message/on_command Matcher；消息处理器显式发送回复。两种入口都通过框架分发一次。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
+channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 认证身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
+
+框架仍保留通道内部健康检查和明确的非消息管理路由能力，但这类路由不承载智能体会话、知识库或 cron 业务。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
+
+HTTP 一次响应承载多条有序消息。普通 send 表示一条完整消息；模型增量通过 channels 的输出操作按 message_id 关联，HTTP SSE 展示增量，机器人默认聚合后发送。非流式回复先在依赖有效期内物化发送数据，清理成功后返回；流式持有资源直到消费和清理完成，再发送请求完成标记。finish 仅结束当前 Matcher，不直接结束 HTTP。结构化结果作为出站 data 段提供，机器人呈现同一消息的可读内容。
+
+conversation_id 是通道对话区分符，channels 结合可信用户、连接及插件构造 Event.get_session_id()；SDK Session 的选择映射属于聊天插件。入口同时允许其已开放 Matcher 的受限临时续接，等待不跨重启保存，也不跨请求持有资源。命令兜底与普通聊天排除规则复用框架解析，未知或未授权命令不进入模型。
+
+框架通过 Matcher.origin 保留临时 Matcher 的原始关联，并在停止和撤销时清理续接。入口复用 matcher_filter、Permission、插件注册归属与 DispatchResult.suspended/errors。HTTP/SSE 和增量编码属于 channels，SDK Session 选择与并发属于聊天插件。资源停止再启动也会清掉旧续接。
 
 channels.UserContext 是冻结的 id、name、groups、roles，集合使用 frozenset。Context() 注入原对象；身份来自认证结果，正文无法覆盖。会话 ID、执行 ID、数据库及 MCP 客户端由调用插件单独管理。Framework permissions.User 是权限匹配器。
 
@@ -90,6 +103,8 @@ execution.run 返回原生 RunResult；stream 是异步上下文管理器，提�
 
 Trace 支持 disabled、local、langfuse。TraceContext 的 user_id、session_id 和 tags 用于观测关联；diagnostics() 返回目的地和有界本地摘要。敏感内容采集由插件配置限制，导出失败不重跑 Agent。详见[Langfuse 追踪](langfuse-tracing.md)。
 
+Langfuse 诊断另含实际 exporter 批次结果、成功/失败计数和最近导出时间；排队不记作导出成功。关闭超时或等待者取消时保留资源与同一个清理任务，后续停止继续等待；只有清理成功才清空引用。后台同步函数不可强制杀死，框架等待其线程退出后再释放依赖，取消或超时结果随后传播。
+
 ## 数据与文件
 
 数据库迁移通过 PluginMetadata.extra["database"] = DatabaseSchema(directory, head) 声明。database 在加载时收集声明，在启动前检查版本；每个插件使用独立版本表，运维命令在事务与 advisory lock 内执行升级。ORM 模型和原生 MetaData 由调用方持有。每次资源启动读取当前配置并新建 engine/sessionmaker。详见[数据库迁移](database-migrations.md)。
@@ -97,6 +112,8 @@ Trace 支持 disabled、local、langfuse。TraceContext 的 user_id、session_id
 filesystem 在一个配置根下分配 data、cache、config，各独立插件使用完整规范模块名作为一个目录段，子插件与父插件平级。普通文件可直接供 SDK LocalFile/LocalDir 使用。路径、链接和 ZIP 检查限制文件逃逸；写入使用原子替换，publish_directory 向不存在的目标发布。
 
 技能和工具索引、包来源、启用状态及业务授权属于功能插件。原始技能目录与沙箱可写工作区分开，工作区改变不自动回写资源。
+
+knowledge 依赖 database 和 filesystem，拥有知识库、原文、分块和索引租约；编码使用固定 BGE 模型目录，检索使用 pgvector。调用插件选择 KnowledgeBase 句柄，将其原生 tools 交给 Agent。cron 仅依赖 database，保存计划定义并用原生 APScheduler 计算触发时间，到期后分发给声明插件的 Matcher；它不选择 Agent，也不生成用户或会话。两者均无默认网络监听，公开对象与示例见各自包说明。
 
 ## Agent、MCP 与会话
 

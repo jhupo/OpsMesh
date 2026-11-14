@@ -1,11 +1,15 @@
 """Shared transport messages built on the framework message protocol."""
 
+import json
+from typing import Any
+
 from opsmesh.messages import Message as FrameworkMessage
 from opsmesh.messages import MessageSegment as FrameworkSegment
 
 from .attachments import Attachment
 
 MEDIA_TYPES = frozenset({"image", "file", "audio", "video"})
+MAX_STRUCTURED_BYTES = 1024 * 1024
 
 
 class MessageSegment(FrameworkSegment["Message"]):
@@ -28,6 +32,18 @@ class MessageSegment(FrameworkSegment["Message"]):
     def text(cls, text: str) -> "MessageSegment":
         """Construct one text segment."""
         return cls("text", {"text": text})
+
+    @classmethod
+    def structured(cls, value: dict[str, Any]) -> "MessageSegment":
+        """Attach an outbound JSON object alongside readable content."""
+        if not isinstance(value, dict) or any(
+            not isinstance(key, str) for key in value
+        ):
+            raise TypeError("Structured message data must be a JSON object")
+        encoded = json.dumps(value, allow_nan=False, ensure_ascii=False)
+        if len(encoded.encode("utf-8")) > MAX_STRUCTURED_BYTES:
+            raise ValueError("Structured message data exceeds the size limit")
+        return cls("data", {"value": json.loads(encoded)})
 
     @classmethod
     def attachment(

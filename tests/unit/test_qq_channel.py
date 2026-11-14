@@ -233,13 +233,25 @@ def test_event_mapping_namespaces_callers_and_sessions():
     assert direct.get_event_name() == "qq.message"
     assert direct.get_plaintext() == "hello"
     assert direct.get_user_id() == "qq:support:bot:user-1"
-    assert direct.get_session_id() == "qq:support:bot:private:user-1"
+    assert json.loads(direct.get_session_id()) == [
+        "qq",
+        "qq:support:bot",
+        "private",
+        None,
+        "user-1",
+    ]
     assert direct.is_tome() is True
     assert direct.group_ids == ()
 
     group = parse_callback(group_payload(), connection_id="qq:support:bot")
     assert group is not None
-    assert group.get_session_id() == "qq:support:bot:group:group-1"
+    assert json.loads(group.get_session_id()) == [
+        "qq",
+        "qq:support:bot",
+        "group",
+        "group-1",
+        "member-1",
+    ]
     assert group.group_ids == ("qq:support:bot:group:group-1",)
 
     assert parse_callback({"op": 0, "t": "READY"}, connection_id="x") is None
@@ -293,7 +305,13 @@ async def test_signed_callback_dispatches_once(monkeypatch):
     received = anyio.Event()
 
     async def fake_dispatch(
-        channel_, event, *, invocation_context=None, matcher_filter=None
+        channel_,
+        event,
+        *,
+        invocation_context=None,
+        matcher_filter=None,
+        admitted_call=None,
+        stack=None,
     ):
         dispatched.append((channel_, event, invocation_context))
         received.set()
@@ -338,7 +356,13 @@ async def test_group_callback_passes_group_context(monkeypatch):
     received = anyio.Event()
 
     async def fake_dispatch(
-        channel_, event, *, invocation_context=None, matcher_filter=None
+        channel_,
+        event,
+        *,
+        invocation_context=None,
+        matcher_filter=None,
+        admitted_call=None,
+        stack=None,
     ):
         dispatched.append(invocation_context)
         received.set()

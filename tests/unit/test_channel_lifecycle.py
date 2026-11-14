@@ -225,6 +225,10 @@ async def test_channels_drain_before_consumers_and_transports_close(
 
     qq._queue._handle = handle
     dingtalk._queue._handle = handle
+    monkeypatch.setattr(qq._queue, "_scope", lambda item: item)
+    monkeypatch.setattr(dingtalk._queue, "_scope", lambda item: item)
+    monkeypatch.setattr(qq._queue, "_release_item", None)
+    monkeypatch.setattr(dingtalk._queue, "_release_item", None)
 
     async def drain_dingtalk():
         release.set()
@@ -411,11 +415,11 @@ async def test_shared_transport_restarts_after_last_consumer_stops(monkeypatch):
     with owned_by(second):
         resources.use(transport)
     async with driver.lifespan():
-        await driver._lifespan.stop_plugin(first)
+        await driver.stop_plugin(first)
         assert events == [("shared", "start")]
-        await driver._lifespan.stop_plugin(second)
+        await driver.stop_plugin(second)
         assert events[-1] == ("shared", "close")
-        await driver._lifespan.start_plugin(first)
+        await driver.start_plugin(first)
         assert events[-1] == ("shared", "start")
     assert events == [
         ("shared", "start"),

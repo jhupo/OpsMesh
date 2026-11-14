@@ -10,13 +10,13 @@ database = require("database")
 filesystem = require("filesystem")
 conversations = require("conversation_support")
 
-from . import handlers, messages  # noqa: E402, F401
+from . import handlers  # noqa: E402, F401
 from .config import SandboxSettings  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="Sandbox conversation",
     description="Native SandboxAgent sessions with persistent owned workspaces",
-    usage="Use session endpoints and POST /plugins/example_sandbox/chat.",
+    usage="POST /plugins/example_sandbox/messages; use conversation commands.",
     type="agent",
     config=SandboxSettings,
     extra={

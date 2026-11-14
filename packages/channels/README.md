@@ -9,9 +9,16 @@ from opsmesh.plugins import require
 
 channels = require("channels")
 
-@channels.api.get("/status")
-async def status() -> dict[str, str]:
-    return {"status": "ready"}
+from opsmesh import on_message
+from opsmesh.matchers import Matcher
+
+chat = on_message(priority=10, block=True)
+
+@chat.handle()
+async def answer(matcher: Matcher) -> None:
+    await matcher.finish("Ready.")
+
+channels.api.message(handlers=(chat,))
 ```
 
 The host allowlist uses `opsmesh.plugins.channels`. The source lives directly in
@@ -43,10 +50,9 @@ the authenticated user and consuming plugin. API, QQ and DingTalk support media 
 QQ uses inline media uploads; DingTalk uses official media IDs and robot templates. See the [attachment guide](../../docs/multimodal-messages.md)
 for formats, authenticated endpoints, temporary cache limits and example usage.
 
-## Message routes
+## Message protocol
 
-Ordinary route bodies remain validated models in `HTTPEvent.payload`. Bind a
-message entrance directly to existing framework matchers:
+Bind the standard message entrance to existing framework matchers:
 
 ```python
 from opsmesh import on_message
@@ -58,15 +64,34 @@ chat = on_message(priority=10, block=True)
 async def answer(channel: Channel, event: Event):
     await channel.send(event, "Received: " + event.get_plaintext())
 
-channels.api.message("/chat", handlers=(chat,))
+channels.api.message(handlers=(chat,))
 ```
 
-The request is `{"message": "hello"}` or an ordered list of typed text and
-attachment references. Plugins may extend `MessageRequest` with their own fields.
-The API accepts only the bound plugin's persistent, blocking matchers with
-distinct priorities. A handler explicitly sends one response; no reply returns
-204. `UserContext` comes from authentication. API streams retain dependencies
-until completion or disconnect.
+The only business message endpoint is `POST /plugins/{plugin_id}/messages`.
+`MessageRequest` accepts `message` and an optional canonical UUID
+`conversation_id`. Message content is text or an ordered list of text and
+validated attachment references. Unknown fields and custom body models are
+rejected. Keep the returned conversation ID to continue the same conversation;
+each user, plugin, connection and conversation has a separate framework scope.
+Concurrent requests in that scope receive 409.
+
+The API binds persistent, blocking matchers with distinct priorities and their
+scoped framework continuations. Handlers may send multiple complete messages.
+JSON replies contain `conversation_id`, `status` (`completed`, `waiting`, or
+`failed`), `messages`, and a safe `error`. Empty results return 200 with no
+messages. Add one `MessageSegment.structured({...})` alongside readable content
+to populate a message's `data`; robots send only the readable content.
+
+`Accept: text/event-stream` selects SSE. Ordinary sends become separate
+`message` events. To send an incremental answer, call
+`await channel.call("stream", event=event, source=text_iterator)` inside the
+source's execution scope. SSE uses `message_start`, ordered `message_delta`
+events, and `message_end` with a shared `message_id`; JSON and robot channels
+aggregate the text under output limits. A unique `done` follows successful
+dispatch and resource cleanup. Failures emit a safe `error` without `done`.
+Buffers are bounded, and disconnect cancels dispatch and closes its resources.
+Settings `max_output_messages`, `max_output_bytes`, and `stream_buffer_size`
+control API output bounds.
 
 ## Platform group operations
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pydantic import ConfigDict, Field
@@ -109,7 +110,15 @@ class DingTalkMessageEvent(Event):
 
     def get_session_id(self) -> str:
         """Return the conversation identifier scoped by connection."""
-        return f"{self.connection_id}:conversation:{self.conversation_id}"
+        return json.dumps(
+            [
+                "dingtalk",
+                self.connection_id,
+                self.conversation_id,
+                self.user_id,
+            ],
+            separators=(",", ":"),
+        )
 
     def get_message(self) -> Message:
         """Return the message content as DingTalk segments."""

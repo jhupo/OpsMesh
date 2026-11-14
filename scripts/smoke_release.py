@@ -20,6 +20,8 @@ from agents import Agent, RunConfig
 from agents.testing import ScriptedModel, ModelStep, assistant_message
 from agents.usage import Usage
 from pydantic import BaseModel
+from opsmesh import on_command
+from opsmesh.matchers import Matcher
 from opsmesh.plugins import require
 
 channels = require("channels")
@@ -53,7 +55,6 @@ async def verify():
         finally:
             await sandbox.aclose()
 
-@api.get("/probe")
 async def probe() -> str:
     agent = Agent(name="release-probe", model=ScriptedModel([
         ModelStep(output=[assistant_message("ok")], usage=Usage(
@@ -66,6 +67,18 @@ async def probe() -> str:
     )
     assert result.context_wrapper.usage.total_tokens == 4
     return str(result.final_output)
+
+message_probe = on_command("probe", block=True)
+
+@message_probe.handle()
+async def reply(matcher: Matcher) -> None:
+    await matcher.send("begin")
+    await matcher.finish(channels.Message([
+        channels.MessageSegment.text(await probe()),
+        channels.MessageSegment.structured({"probe": True}),
+    ]))
+
+api.message(handlers=(message_probe,))
 
 @api.post("/validated", body=ProbeRequest)
 async def validated() -> dict[str, str]:
@@ -147,7 +160,8 @@ def exercise_core(executable: Path, directory: Path) -> None:
         "'alembic', 'langfuse', "
         "'opsmesh.plugins.channels', 'opsmesh.plugins.execution', "
         "'opsmesh.plugins.database', "
-        "'opsmesh.plugins.filesystem'):\n"
+        "'opsmesh.plugins.filesystem', 'opsmesh.plugins.cron', "
+        "'opsmesh.plugins.knowledge'):\n"
         "        assert find_spec(name) is None, name\n"
     )
     manifest.write_text(json.dumps({"data_dir": str(directory / "core-state")}))
@@ -272,14 +286,25 @@ def exercise(
             try:
                 assert notify.recv(4096) == b"READY=1"
                 request = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/plugins/release_probe/probe",
-                    headers={"Authorization": "Bearer release-probe-token"},
+                    f"http://127.0.0.1:{port}/plugins/release_probe/messages",
+                    data=b'{"message":"/probe"}',
+                    headers={
+                        "Authorization": "Bearer release-probe-token",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
                 )
                 opener = urllib.request.build_opener(
                     urllib.request.ProxyHandler({})
                 )
                 with opener.open(request, timeout=15) as response:
-                    assert json.load(response) == "ok"
+                    envelope = json.load(response)
+                    assert envelope["status"] == "completed"
+                    assert len(envelope["messages"]) == 2
+                    assert envelope["messages"][1]["content"] == [
+                        {"type": "text", "text": "ok"}
+                    ]
+                    assert envelope["messages"][1]["data"] == {"probe": True}
                 validated = urllib.request.Request(
                     f"http://127.0.0.1:{port}/plugins/release_probe/validated",
                     data=b'{"value":"ok"}',

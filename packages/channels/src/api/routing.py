@@ -104,10 +104,8 @@ def route(
 
 
 def message(
-    path: str,
     *,
     handlers: tuple[type[Matcher], ...],
-    body: type[MessageRequest] = MessageRequest,
     access: Access = ACCESS_INVOKE,
     name: str | None = None,
 ):
@@ -116,8 +114,8 @@ def message(
         raise RouteRegistrationError("Message entrances require handlers")
     return _router.register(
         method="POST",
-        path=path,
-        body=body,
+        path="/messages",
+        body=MessageRequest,
         access=access,
         name=name,
         message_handlers=handlers,

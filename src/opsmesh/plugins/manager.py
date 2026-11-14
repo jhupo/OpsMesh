@@ -263,7 +263,7 @@ class PluginManager:
         plugin = self.load_plugin(name)
         if plugin is None:
             raise RuntimeError(f"Cannot load plugin: {name}")
-        await get_driver()._lifespan.start_plugin(plugin)
+        await get_driver().start_plugin(plugin)
 
     async def stop_plugin(self, name: str) -> None:
         """Stop resources while retaining loaded code and declarations."""
@@ -273,7 +273,7 @@ class PluginManager:
 
         plugin = get_plugin_by_module_name(self._resolve_module_name(name))
         if plugin is not None:
-            await get_driver()._lifespan.stop_plugin(plugin)
+            await get_driver().stop_plugin(plugin)
 
 
 class PluginFinder(MetaPathFinder):

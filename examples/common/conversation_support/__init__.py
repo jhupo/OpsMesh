@@ -1,15 +1,12 @@
 """Reusable example support; each consumer owns its schema and sessions."""
 
-from opsmesh.plugins import PluginMetadata
+from opsmesh.plugins import PluginMetadata, require
 
-from .models import ConversationRecord
-from .schemas import (
-    ChatReply,
-    ChatRequest,
-    ConversationCreate,
-    ConversationView,
-)
-from .store import ConversationError, ConversationStore
+channels = require("channels")
+
+from .models import ConversationRecord  # noqa: E402
+from .schemas import ConversationView  # noqa: E402
+from .store import ConversationError, ConversationStore  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="Conversation example support",
@@ -22,8 +19,5 @@ __all__ = [
     "ConversationRecord",
     "ConversationStore",
     "ConversationError",
-    "ChatReply",
-    "ChatRequest",
-    "ConversationCreate",
     "ConversationView",
 ]

@@ -16,7 +16,8 @@ from packaging.utils import canonicalize_name
 from release_artifacts import create_archive
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGINS = ("channels", "database", "execution", "filesystem")
+PLUGINS = ("channels", "cron", "database", "execution", "filesystem")
+OPTIONAL_PLUGINS = ("knowledge",)
 
 
 def validate_host_runtime(host: dict) -> None:
@@ -64,7 +65,8 @@ def remove_host_dependencies(site: Path, dependencies: list[dict]) -> None:
             continue
         relative = path.relative_to(site).as_posix()
         if not any(
-            relative.startswith(f"opsmesh/plugins/{name}/") for name in PLUGINS
+            relative.startswith(f"opsmesh/plugins/{name}/")
+            for name in (*PLUGINS, *OPTIONAL_PLUGINS)
         ):
             raise ValueError("Plugin runtime contains framework-owned files")
 
@@ -73,12 +75,21 @@ def main() -> None:
     """Vendor pinned plugin dependencies using the host's native Python ABI."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    parser.add_argument(
+        "--with-knowledge",
+        action="store_true",
+        help=(
+            "Include the local embedding runtime; model weights remain external"
+        ),
+    )
     args = parser.parse_args()
     output = args.output.resolve()
     host = json.loads((output / "opsmesh/BUILD.json").read_text())
     validate_host_runtime(host)
     version = host["version"]
-    bundle = output / "plugins"
+    plugins = (*PLUGINS, *OPTIONAL_PLUGINS) if args.with_knowledge else PLUGINS
+    bundle_name = "plugins-knowledge" if args.with_knowledge else "plugins"
+    bundle = output / bundle_name
     if bundle.exists():
         raise SystemExit("Plugin output already exists; use a clean output")
     site = bundle / "site"
@@ -86,7 +97,7 @@ def main() -> None:
     wheels = output / "python"
     requirements = [
         str(next(wheels.glob(f"opsmesh_{name}-{version}-*.whl")))
-        for name in PLUGINS
+        for name in plugins
     ]
     requirements.append(str(next(wheels.glob(f"opsmesh-{version}-*.whl"))))
     subprocess.run(
@@ -103,7 +114,11 @@ def main() -> None:
             "-r",
             str(ROOT / "requirements.lock"),
             "-r",
-            str(ROOT / "packaging/plugins.lock"),
+            str(
+                ROOT
+                / "packaging"
+                / ("knowledge.lock" if args.with_knowledge else "plugins.lock")
+            ),
             *requirements,
         ],
         check=True,
@@ -131,7 +146,7 @@ def main() -> None:
         "architecture": host["architecture"],
         "glibc": host["glibc"],
         "plugin_path": "site",
-        "modules": [f"opsmesh.plugins.{name}" for name in PLUGINS],
+        "modules": [f"opsmesh.plugins.{name}" for name in plugins],
         "dependencies": inventory,
     }
     (bundle / "BUILD.json").write_text(
@@ -148,7 +163,9 @@ def main() -> None:
         "MCP commands and sandbox programs must be provisioned separately.\n",
         encoding="utf-8",
     )
-    name = f"opsmesh-plugins-{version}-linux-{host['architecture']}.tar.gz"
+    name = (
+        f"opsmesh-{bundle_name}-{version}-linux-{host['architecture']}.tar.gz"
+    )
     create_archive(bundle, output / name)
     print(output / name)
 

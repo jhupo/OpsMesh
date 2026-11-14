@@ -23,6 +23,7 @@ from opsmesh.plugins import (
     get_plugin_by_module_name,
 )
 from opsmesh.plugins.storage import PluginRecord
+from opsmesh.utils import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +55,7 @@ async def _plugins(args) -> None:
                 )
             )
         elif args.plugin_action == "protect":
-            await anyio.to_thread.run_sync(
-                host.storage.set_protected, args.module
-            )
+            await run_sync(host.storage.set_protected)(args.module)
         elif args.plugin_action == "enable":
             await host.enable(args.module)
         elif args.plugin_action == "disable":

@@ -13,8 +13,10 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 | [opsmesh-execution](packages/execution/README.md) | `opsmesh.plugins.execution` | 原生 Runner、流清理、插件回调与可选 Langfuse 追踪 |
 | [opsmesh-filesystem](packages/filesystem/README.md) | `opsmesh.plugins.filesystem` | 插件目录、文件操作与 ZIP 导入导出 |
 | [opsmesh-database](packages/database/README.md) | `opsmesh.plugins.database` | PostgreSQL 连接、事务和插件独立迁移 |
+| [opsmesh-knowledge](packages/knowledge/README.md) | `opsmesh.plugins.knowledge` | BGE 中文编码、pgvector 检索、文档索引与原生工具 |
+| [opsmesh-cron](packages/cron/README.md) | `opsmesh.plugins.cron` | 持久化计划、APScheduler 触发和框架 Matcher |
 
-四个插件拥有独立包定义与依赖，不包含在框架包中。宿主默认不加载插件，也不要求 PostgreSQL、模型密钥或 Langfuse。功能插件通过 `require("execution")` 等声明实际依赖，由框架按需加载，无须在宿主清单重复列出全部依赖。
+六个插件拥有独立包定义与依赖，不包含在框架包中。宿主默认不加载插件，也不要求 PostgreSQL、模型密钥或 Langfuse。功能插件通过 `require("execution")` 等声明实际依赖，由框架按需加载，无须在宿主清单重复列出全部依赖。
 
 ## 安装框架服务
 
@@ -22,7 +24,7 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.5.0-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.1-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 journalctl -u opsmesh -f
 ```
@@ -40,7 +42,7 @@ python -m venv .venv
 # Activate the virtual environment for your shell.
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-deps -e . -e packages/channels \
-  -e packages/filesystem -e packages/database -e packages/execution
+  -e packages/filesystem -e packages/database -e packages/execution -e packages/cron
 ```
 
 只安装框架包时使用 `python -m pip install -e .`。上面的开发锁用于整个仓库验证，包含插件测试需要的依赖，不是框架的运行依赖。仅运行受改动影响的测试，例如：
@@ -49,13 +51,13 @@ python -m pip install --no-deps -e . -e packages/channels \
 python -m pytest tests/unit/test_execution_runner.py tests/unit/test_execution_tracing.py -q
 ```
 
-Langfuse 定向测试需要 execution 的可选追踪依赖，见其包说明。Linux 文件系统发布操作依赖相应系统调用；Windows 开发环境不能替代 Linux 发布验收。贡献与验证约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+knowledge 使用独立依赖锁，不随基础开发环境下载 PyTorch。开发该插件时，另行安装 `packaging/knowledge.lock` 与 `packages/knowledge`；模型权重按包说明单独准备。Langfuse 定向测试需要 execution 的可选追踪依赖，见其包说明。Linux 文件系统发布操作依赖相应系统调用；Windows 开发环境不能替代 Linux 发布验收。贡献与验证约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 目录
 
 ```text
 src/opsmesh/        # 独立框架发行包
-packages/          # channels、execution、filesystem、database 插件发行包
+packages/          # 通道、执行、存储、数据库、知识库与定时器插件发行包
 examples/          # 普通对话、沙箱对话与客户端示例
 tests/             # 框架及插件的行为验证
 deploy/            # 仅部署框架的安装器、systemd 与可选 Docker
@@ -69,7 +71,7 @@ licenses/          # 上游许可文本
 
 ## 发布与文档
 
-`v<version>` tag 触发工作流；版本必须匹配核心和四个插件。验证成功后，Release 同时附带五个包的 wheel／源码包、两种架构的框架可执行包、独立插件运行包和校验文件。发布渠道为 GitHub Release，见 [发布说明](docs/releases.md)。
+`v<version>` tag 触发工作流；版本必须匹配核心和六个插件。验证成功后，Release 同时附带七个包的 wheel／源码包、两种架构的框架可执行包、独立基础插件运行包和校验文件。knowledge 的本地模型运行环境单独构建，不增加框架或基础运行包体积。发布渠道为 GitHub Release，见 [发布说明](docs/releases.md)。
 
 - [架构与职责](docs/plugin-architecture.md)
 - [通道和执行回调](docs/channels-and-callbacks.md)
@@ -79,6 +81,7 @@ licenses/          # 上游许可文本
 - [插件配置](docs/plugin-configuration-design.md) · [插件生命周期](docs/plugin-lifecycle-design.md)
 - [安全策略](SECURITY.md) · [变更记录](CHANGELOG.md)
 - [普通对话示例](examples/chat/README.md) · [沙箱示例](examples/sandbox/README.md)
+- [知识库](packages/knowledge/README.md) · [定时器](packages/cron/README.md)
 
 源码插件是受信任的进程内 Python 代码，具有宿主进程的权限。框架的插件启停与文件目录校验不构成恶意代码沙箱。MCP、模型供应商、数据库和观测服务的部署由使用者按实际插件配置负责。
 

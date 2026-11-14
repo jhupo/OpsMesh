@@ -2,6 +2,16 @@
 
 Changes are recorded here before publication. A section in this file is not proof that a matching release has been published.
 
+## Unreleased
+
+## 0.5.1 — 2026-11-14
+
+- Unify HTTP message requests, ordered replies, structured data and SSE with framework Matcher commands and continuations. Migrate chat, sandbox and the interactive client together.
+- Preserve admitted robot messages and same-conversation ordering during shutdown. Hold synchronous worker dependencies until the actual thread exits on cancellation.
+- Add independent knowledge and cron packages: pinned local BGE plus pgvector, and PostgreSQL schedule definitions dispatched by native APScheduler into framework Matchers.
+- Retain Langfuse cleanup resources across timeout and cancellation; expose aggregate actual exporter delivery results without sensitive span content.
+- Build all plugin distributions separately. Keep local embedding dependencies and weights outside the standard host and base plugin runtime.
+
 ## 0.5.0 — 2026-11-12
 
 - Host manifests only need entry plugins and configuration overrides; `require()` loads dependencies, while explicit disabling and origin checks remain enforced. Configuration namespaces default to module names.

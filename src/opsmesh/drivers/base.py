@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, cast, overload
 
@@ -28,6 +28,7 @@ from opsmesh.utils import flatten_exception_group, run_coro_with_catch
 
 if TYPE_CHECKING:
     from opsmesh.adapters import Adapter, Channel
+    from opsmesh.plugins.model import Plugin
 
 logger = logging.getLogger(__name__)
 A = TypeVar("A", bound="Adapter")
@@ -111,6 +112,24 @@ class Driver:
     async def shutdown(self) -> None:
         """Drain entry callbacks before releasing plugin resources."""
         await self._lifespan.shutdown()
+
+    @asynccontextmanager
+    async def plugin_change(self) -> AsyncIterator[None]:
+        """Serialize a live plugin-management change with host shutdown."""
+        async with self._lifespan.change():
+            yield
+
+    def check_plugin_stoppable(self, plugin: Plugin) -> None:
+        """Reject stopping a protected plugin or one with active consumers."""
+        self._lifespan.check_stoppable(plugin)
+
+    async def start_plugin(self, plugin: Plugin) -> None:
+        """Start one loaded plugin through the framework lifecycle."""
+        await self._lifespan.start_plugin(plugin)
+
+    async def stop_plugin(self, plugin: Plugin) -> None:
+        """Stop one loaded plugin through the framework lifecycle."""
+        await self._lifespan.stop_plugin(plugin)
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:

@@ -1,5 +1,6 @@
 """Validate ordered outgoing content before a transport sends anything."""
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -8,6 +9,9 @@ from opsmesh.messages import MessageSegment as FrameworkSegment
 
 from .attachments import Attachment, AttachmentCollection, AttachmentError
 from .messages import MEDIA_TYPES, Message, MessageSegment
+
+MAX_STREAM_BYTES = 1024 * 1024
+_STREAM_CLEANUP_TIMEOUT = 10
 
 
 @dataclass(frozen=True)
@@ -64,15 +68,74 @@ def normalize(message: str | FrameworkMessage | FrameworkSegment) -> Message:
     raise TypeError("Expected a string or framework message")
 
 
+def split_data(message: Message) -> tuple[Message, dict[str, Any] | None]:
+    """Validate outbound structured data and retain readable segments."""
+    content = Message()
+    data = None
+    for segment in message:
+        if segment.type != "data":
+            content.append(segment)
+            continue
+        if data is not None:
+            raise ValueError("A message accepts at most one data segment")
+        value = segment.data.get("value")
+        if not isinstance(value, dict):
+            raise TypeError("Structured message data must be a JSON object")
+        data = MessageSegment.structured(value).data["value"]
+    if not any(
+        part.type in MEDIA_TYPES or (part.is_text() and str(part).strip())
+        for part in content
+    ):
+        raise ValueError("Messages cannot be empty; provide readable content")
+    if len(message) > 32:
+        raise ValueError("A reply accepts at most 32 segments")
+    return content, data
+
+
+async def close_source(source: AsyncIterator[str]) -> None:
+    """Release a caller-owned iterator before request dependencies close."""
+    import anyio
+
+    close = getattr(source, "aclose", None)
+    if close is not None:
+        with anyio.fail_after(_STREAM_CLEANUP_TIMEOUT, shield=True):
+            await close()
+
+
+async def aggregate_stream(source: AsyncIterator[str]) -> str:
+    """Consume a bounded text answer in the caller's execution scope."""
+    chunks: list[str] = []
+    size = 0
+    failure = None
+    try:
+        async for chunk in source:
+            if not isinstance(chunk, str):
+                raise TypeError("Stream increments must be text")
+            size += len(chunk.encode("utf-8"))
+            if size > MAX_STREAM_BYTES:
+                raise ValueError("Stream output exceeds the size limit")
+            if chunk:
+                chunks.append(chunk)
+        return "".join(chunks)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        try:
+            await close_source(source)
+        except BaseException as cleanup_error:
+            if failure is None:
+                raise
+            failure.add_note(f"Stream cleanup failed: {cleanup_error!r}")
+
+
 async def prepare(
     message: str | FrameworkMessage | FrameworkSegment,
     files: AttachmentCollection,
     text_limit: int,
 ) -> list[str | OutgoingAttachment]:
     """Resolve every file before visible sends; preserve text/media order."""
-    segments = normalize(message)
-    if len(segments) > 32:
-        raise ValueError("A reply accepts at most 32 segments")
+    segments, _ = split_data(normalize(message))
     parts: list[str | OutgoingAttachment] = []
     attachment_ids: set[str] = set()
     for segment in segments:

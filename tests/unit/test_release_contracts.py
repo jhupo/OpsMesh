@@ -7,6 +7,7 @@ import py_compile
 import runpy
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,22 @@ from opsmesh.plugins.database import migrations, schema
 from opsmesh.plugins.storage import PluginRecord, PluginStorage
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize(
+    "dependency", ["APScheduler==3.11.3", "pgvector==0.5.1"]
+)
+def test_framework_wheel_rejects_new_plugin_dependencies(tmp_path, dependency):
+    build = runpy.run_path(str(ROOT / "scripts/build_packages.py"))
+    wheel = tmp_path / "opsmesh.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("opsmesh/__init__.py", "")
+        archive.writestr(
+            "opsmesh-0.5.1.dist-info/METADATA",
+            f"Name: opsmesh\nVersion: 0.5.1\nRequires-Dist: {dependency}\n",
+        )
+    with pytest.raises(ValueError, match="depends on a plugin runtime"):
+        build["verify_wheel"](wheel)
 
 
 def test_conversion_history_belongs_to_maintenance_tool():
@@ -104,9 +121,7 @@ def test_smoke_declares_independent_bytecode_migrations(tmp_path, monkeypatch):
     for plugin in plugins[1:]:
         name = plugin["module"]
         directory = tmp_path / name / "migrations"
-        schema.registry.add(
-            name, schema.DatabaseSchema(directory, "initial")
-        )
+        schema.registry.add(name, schema.DatabaseSchema(directory, "initial"))
 
     migrations.validate_migrations()
     sources = schema.registry.sources()
@@ -207,9 +222,7 @@ def test_migrations_accept_bytecode_without_source(tmp_path, monkeypatch):
         str(revision), cfile=str(revision.with_suffix(".pyc")), doraise=True
     )
     revision.unlink()
-    schema.registry.add(
-        "test", schema.DatabaseSchema(tmp_path, "initial")
-    )
+    schema.registry.add("test", schema.DatabaseSchema(tmp_path, "initial"))
     migrations.validate_migrations()
 
 

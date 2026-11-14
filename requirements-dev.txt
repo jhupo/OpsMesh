@@ -1,9 +1,11 @@
 -r requirements.txt
 -r packages/channels/requirements.txt
+-r packages/cron/requirements.txt
 -r packages/database/requirements.txt
 -r packages/execution/requirements.txt
 -r packages/execution/requirements-langfuse.txt
 -r packages/filesystem/requirements.txt
+pgvector==0.5.1
 aiosqlite==0.22.1
 build==1.4.0
 pydantic-settings==2.16.2

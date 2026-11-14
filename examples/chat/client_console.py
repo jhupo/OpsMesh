@@ -1,4 +1,4 @@
-"""Terminal selection and local commands; model history stays on the server."""
+"""Save SDK selections while each terminal keeps its own channel scope."""
 
 from __future__ import annotations
 
@@ -10,17 +10,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from client import response_text
+
 if TYPE_CHECKING:
     from client import ChatClient
 
 
 class ChatConsole:
-    """Keep an independent conversation selection for this terminal."""
+    """Save SDK selection independently of the current channel UUID."""
 
     def __init__(
         self, client: ChatClient, state_file: Path | None = None
     ) -> None:
-        """Separate saved selections by server and credential fingerprint."""
+        """Separate saved selections by server, plugin and credentials."""
         self.client = client
         self.session_id: str | None = None
         self._profile = hashlib.sha256(
@@ -50,7 +52,7 @@ class ChatConsole:
             Path(temporary).unlink(missing_ok=True)
 
     def restore(self) -> None:
-        """Resume a saved selection only after the server checks ownership."""
+        """Revalidate saved SDK ownership in this window's fresh scope."""
         if not self._path.exists():
             return
         try:
@@ -75,45 +77,36 @@ class ChatConsole:
             self.session_id = None
             self._save()
 
-    def use(self, session_id: str) -> str:
-        """Switch this terminal without changing another client's selection."""
-        selected = self.client.get_session(str(UUID(session_id)))
-        self.session_id = selected["id"]
+    def _record(self, response: dict) -> str:
+        for message in response["messages"]:
+            data = message.get("data") or {}
+            if "session_id" in data:
+                self.session_id = str(UUID(data["session_id"]))
+            if data.get("deleted_session_id") == self.session_id:
+                self.session_id = None
         self._save()
-        return f"Selected {self.session_id}: {selected['name']}"
+        return response_text(response)
+
+    def use(self, session_id: str) -> str:
+        """Ask the server to select an existing SDK conversation."""
+        return self.execute("/use " + str(UUID(session_id)))
 
     def new(self, name: str = "New conversation") -> str:
-        """Create and select an empty server-side conversation."""
-        selected = self.client.create_session(name)
-        self.session_id = selected["id"]
-        self._save()
-        return f"Created {self.session_id}: {selected['name']}"
+        """Create an empty session through the shared command handler."""
+        return self.execute("/new " + name)
 
-    def execute(self, text: str) -> str:
-        """Navigate locally or send text to server command matchers."""
-        command, _, argument = text.strip().partition(" ")
-        argument = argument.strip()
-        if command == "/new":
-            return self.new(argument or "New conversation")
-        if command == "/use":
-            if not argument:
-                raise ValueError("Usage: /use <session-id>")
-            return self.use(argument)
-        if command == "/sessions":
-            if argument:
-                raise ValueError("Usage: /sessions")
-            return json.dumps(
-                self.client.list_sessions(), ensure_ascii=False, indent=2
-            )
-        if command == "/delete":
-            if not argument:
-                raise ValueError("Usage: /delete <session-id>")
-            selected = str(UUID(argument))
-            self.client.delete_session(selected)
-            if selected == self.session_id:
-                self.session_id = None
-                self._save()
-            return f"Deleted {selected}"
-        if self.session_id is None:
-            self.new()
-        return self.client.ask(text, self.session_id)
+    def execute(self, text: str, files: tuple[Path, ...] = ()) -> str:
+        """Send commands and ordinary messages through one JSON endpoint."""
+        return self._record(self.client.send(text, files))
+
+    def execute_stream(self, text: str, files: tuple[Path, ...] = ()) -> str:
+        """Display SSE increments and persist selection after completion."""
+        increments = []
+
+        def display(delta: str) -> None:
+            increments.append(delta)
+            print(delta, end="", flush=True)
+
+        response = self.client.send_stream(text, files, on_delta=display)
+        result = self._record(response)
+        return "" if increments else result

@@ -43,15 +43,17 @@ class Socket:
 def make_stream(http, **settings):
     protocol = DingTalkSettings(reconnect_delay=0.001, **settings)
     connections, disconnected, callbacks = [], [], []
+
+    async def accept_callback(channel, data):
+        callbacks.append(data)
+        return 200, "ok"
+
     adapter = SimpleNamespace(
         client=DingTalkClient(protocol, http),
         stream_connected=connections.append,
         stream_disconnected=disconnected.append,
         stream_finished=lambda channel: None,
-        accept_callback=lambda channel, data: (
-            callbacks.append(data) or 200,
-            "ok",
-        ),
+        accept_callback=accept_callback,
     )
     channel = SimpleNamespace(
         self_id="dingtalk:plugin:bot",
@@ -109,7 +111,9 @@ async def test_handshake_sdk_ack_reconnect_and_stop(monkeypatch):
         assert options["open_timeout"] == 0.2
         return next(sockets)
 
-    monkeypatch.setattr("opsmesh.plugins.channels.dingtalk.stream.connect", connect)
+    monkeypatch.setattr(
+        "opsmesh.plugins.channels.dingtalk.stream.connect", connect
+    )
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(negotiate)
     ) as http:

@@ -1,269 +1,128 @@
 # Chat plugin
 
-A native SDK Agent with two entrances: an HTTP route and ordinary bot messages or commands.
-The plugin defines the Agent directly and passes it to `execution.run`.
-
-## Files
-
-```text
-chat/
-├── client.py             # Standalone HTTP transport and CLI entry
-├── client_console.py     # Terminal commands and saved selection
-├── README.md
-└── example_chat/
-    ├── __init__.py       # Plugin dependencies and declarations
-    ├── config.py         # Model and optional connection settings
-    ├── agent.py          # Native Agent and SDK execution
-    ├── schemas.py        # Conversation request and response contracts
-    ├── conversation.py   # Transport-independent conversation turn
-    ├── handlers.py       # Event dependencies and channel response adaptation
-    ├── sessions.py       # Ownership, index operations and SDK Session handles
-    ├── models.py         # Conversation index only, no duplicate history
-    ├── migrations/       # Index and native SQLAlchemySession tables
-    ├── lifecycle.py      # Shared database binding after schema validation
-    ├── http.py           # Message entrance and owned conversation endpoints
-    ├── messages.py       # API and bot message matcher
-    ├── commands.py       # Framework conversation command matchers
-    ├── connections.py    # Optional QQ, DingTalk and MCP connections
-    └── callbacks.py      # SDK observation callbacks
-```
-
-Read `agent.py`, `conversation.py`, then `http.py` or `commands.py`. Connection and callback
-examples are separate from the conversation logic.
+A native SDK `Agent` with owned `SQLAlchemySession` history. API and bot
+messages use the same framework command and ordinary-message matchers.
+The plugin consumes `execution.stream` inside its history lock and awaits
+`channel.call("stream", event=event, source=text_deltas(result))` before
+closing native execution resources.
 
 ## Loading and configuration
 
-Install the independent channels, execution and database packages. Register the existing `example_chat` module with its absolute `examples/chat` import root and `conversation_support` with its absolute `examples/common` import root. For a frozen host, register the official runtime bundle's `site/` import root as described in [Linux deployment](../../docs/linux-deployment.md).
-
-Plugin records and values belong to the host SQLite database, never host.json. Configure database and channel authentication first; enable the registered dependencies, then save this plugin's configuration and enable its entry:
-
-```json
-{"model": "your-model-name"}
-```
-
-Use `--plugin-action configure --module example_chat --config PATH` to save that JSON, and `--plugin-action enable --module example_chat` while the service is stopped. Runtime management plugins use the same Host operations. Saving configuration never restarts a running Agent; apply it explicitly. Agent and bot connections are created in startup callbacks, so resource restarts read the current configuration.
-
-`conversation_support` shares index operations, ownership checks and locking
-with the sandbox example. Each example owns its ORM model, tables and migration.
-
-| Setting | Purpose |
-|---|---|
-| `model` | Required SDK model name |
-| `reasoning` | Optional native SDK Reasoning, e.g. `{"effort": "medium"}` |
-| `name` | Agent display name; defaults to `OpsMesh Chat Agent` |
-| `instructions` | System instructions |
-| `max_turns` | Runner turn limit; defaults to 8 |
-| `qq` | Optional QQ connection settings |
-| `dingtalk` | Optional DingTalk connection settings |
-| `mcp_url` | Optional trusted Streamable HTTP MCP endpoint |
-| `mcp_token_ref` | Environment variable containing the optional MCP token |
-
-The SDK default provider reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`.
-The example inherits execution's tracing configuration, including Langfuse;
-it does not override the destination or disable tracing.
-
-## HTTP
-
-Send an authenticated request to `POST /plugins/example_chat/chat`:
+Install channels, execution and database independently. Register `example_chat`
+with the absolute `examples/chat` import root and `conversation_support` with
+the absolute `examples/common` import root. Frozen hosts also register the
+official bundle's `site/` root; see [Linux deployment](../../docs/linux-deployment.md).
+The host SQLite database stores plugin records and values. Configure API
+authentication and PostgreSQL before enabling the example.
 
 ```json
-{"session_id": "<conversation-id>", "message": "Explain Python context managers."}
+{"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}
 ```
 
-The response is `{"text": "The answer.", "session_id": "<conversation-id>"}`.
-`ChatRequest` extends the channel's `MessageRequest`. The entrance binds the same
-command and message matchers used for bots. `Context()` provides the authenticated
-caller, and the normalized message can contain text and attachments.
+Save settings with `--plugin-action configure --module example_chat --config PATH`
+while the host is stopped, then enable its entry. Optional settings include
+`name`, `instructions`, `qq`, `dingtalk`, `mcp_url` and `mcp_token_ref`.
+The SDK reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`. Tracing follows
+execution's configuration. Configuration changes require a resource restart.
 
-Session REST routes also enter the framework: each route declaration creates
-a Matcher whose handler receives an HTTPEvent. They use the same conversation
-store as `/session`, `/history`, and `/clear`; only parameter parsing and response
-formatting differ. For example, GET `/sessions/{id}` returns the same metadata
-as sending `/session` to `/chat` with that session ID. A REST lookup is an event,
-not a text message, and does not need a synthetic command string.
-
-Shared turns raise `ConversationError`. The entrance handlers translate it to
-an HTTP error or a bot reply; model execution does not depend on HTTP types.
-
-The request cannot supply caller identity. Empty questions or questions over
-8000 characters are rejected. The plugin validates conversation ownership on
-every operation; knowing an ID does not grant access. Omitting session_id
-creates a new conversation, so clients should send it on subsequent turns. An SDK approval interruption returns HTTP 409;
-it is never automatically approved.
-
-## Bot commands
-
-Declare a connection in this plugin's configuration, for example:
-
-```json
-{
-  "model": "your-model-name",
-  "qq": {"app_id": "12345", "secret_ref": "QQ_APP_SECRET"}
-}
-```
-
-DingTalk uses `dingtalk.client_id` and `dingtalk.client_secret_ref` instead.
-Only configured connections start. Commands operate on connections owned by
-this plugin, using the framework's default `/` command prefix:
-
-| Message | Behavior |
-|---|---|
-| `/chat Explain Python` | Pass `Explain Python` to the Agent and send its answer |
-| `/chat` | Show usage without calling a model |
-| `/help` | List commands without calling a model |
-| Ordinary addressed text | Run a conversation turn |
-| Unknown commands | Reply with command help without invoking the model |
-
-`on_command` registers the Matcher and Rule. `CommandArg()` injects the parsed
-Message arguments; no manual prefix splitting is needed. `Channel`, `Event`
-and `Context()` come from framework dependency injection. An approval
-interruption produces an explanatory bot response without continuing the run.
-
-## Lifecycle and limits
-
-Optional MCP connections use the native `MCPServerManager` and framework
-`on_startup` / `on_shutdown` declarations. Connections are ready before the
-plugin accepts requests. HTTP requests and bot queues drain before plugin
-shutdown closes MCP connections. This example launches no detached background
-calls and does not implement a second active-call counter.
-
-History uses native `SQLAlchemySession` over the shared PostgreSQL engine.
-The plugin owns only the conversation index and exclusive turn scope. Empty
-conversations persist immediately. Clearing uses SDK `clear_session()` and
-keeps the index. Deletion first persists a deleting marker, then clears history
-and removes the index; retry DELETE to finish interrupted cleanup. A marked
-conversation cannot run again.
-
-Execution, history reads, clear and delete share a process-local guard plus
-PostgreSQL row locking with NOWAIT. Busy operations return HTTP 409; locks
-release on completion, failure or cancellation. Different conversations can
-run concurrently. No database engine or message-history implementation is
-created inside execution. SDK approval continuation and streaming remain
-outside this example's supported operations.
-
-For bots, the default persistent conversation is scoped by plugin, channel,
-connection, channel conversation and verified caller. Group members do not
-share history automatically. Bot commands include /chat, /help, /session,
-/history and /clear. Conversation selection commands (/new, /use, /sessions,
-/delete) are terminal commands calling the HTTP management endpoints; this
-example does not implement bot-side selection switching.
-
-## Session API and migration
-
-All paths are under `/plugins/example_chat`. Every operation requires the
-configured API identity token.
-
-| Method | Path | Behavior |
-|---|---|---|
-| POST | `/sessions` | Create with optional name; return metadata and ID |
-| GET | `/sessions?limit=50&offset=0` | List owned indexes; limit 1-200 |
-| GET | `/sessions/{id}` | Read metadata |
-| GET | `/sessions/{id}/messages` | Read the latest 100 native history items |
-| DELETE | `/sessions/{id}/messages` | Clear history, keep index; return 204 |
-| DELETE | `/sessions/{id}` | Delete owned history and index; return 204 |
-| POST | `/chat` | Execute text or a declared command in the selected session |
-
-Deploy the updated host and plugin together. Stop the host before applying the
-registered migration with its normal manifest and environment, then restart:
+Before starting, apply the declared migration with the existing host manifest:
 
 ```sh
 opsmesh --manifest /etc/opsmesh/host.json \
   --command opsmesh.plugins.database.commands:migrate
 ```
 
-The manifest must load example_chat so its migration is discovered. Startup
-checks the revision; it does not silently create tables. The migration creates
-`example_chat_conversations`, `example_chat_sdk_sessions`, and
-`example_chat_sdk_messages`. The latter two match the installed SDK's native
-SQLAlchemySession schema and are used directly by the SDK.
+The migration owns `example_chat_conversations`, `example_chat_sdk_sessions`
+and `example_chat_sdk_messages`. Startup checks the revision; the SDK owns
+history reads and writes. Each consumer of `conversation_support` has separate
+tables, models and migrations.
 
-The plugin declares `database.DatabaseSchema` in `PluginMetadata.extra`.
-The database plugin consumes that declaration through the framework's
-`on_plugin_loaded` hook, registers it with the consumer's ownership, and adds
-the startup check. Consumer code does not call `register_models`,
-`register_migrations` or `check_migrations`. `database = require(...)` records
-the dependency and returns its public module; `get_engine()` borrows its engine.
+## Messages and commands
 
-HTTP /chat explicitly selects this plugin's declared command matchers before
-its ordinary-text fallback. Dispatch happens once. Unrelated matchers and
-other routes cannot consume this request. Command replies carry the same
-session_id and do not call the model. Unknown slash commands return 400.
+Send authenticated requests to `POST /plugins/example_chat/messages`:
 
-Tests use a temporary SQLite database, the real migration, native SDK sessions,
-ScriptedModel and framework dispatch. They cover multi-turn input, history
-isolation, persistence after recreating the store, access rejection, busy
-operations, cancellation, deletion recovery, HTTP command routing and terminal
-state. Linux integration verification additionally uses real PostgreSQL and
-competing connections for row-lock checks. Remote model calls are not covered.
-
-## Local terminal client
-
-`client.py` uses only the Python standard library. Start it with:
-
-```powershell
-python examples/chat/client.py
+```json
+{"conversation_id":"d250759b-8d9a-4c3a-a1af-397292fc835d","message":"/new Research"}
 ```
 
-The default OpsMesh address is `http://192.168.232.129:8080`. Override it with
-`--base-url` or `OPSMESH_URL`. Enter the API token at the hidden prompt, or set
-`OPSMESH_API_TOKEN` in the current process environment. The deployment's API
-token is stored in `/etc/opsmesh/opsmesh.env`; it is not the model API key.
-No credentials are saved by this client.
+The response envelope contains `conversation_id`, `status`, ordered `messages`
+and `error`. Each message has readable `content` and optional structured `data`.
+`/new` and `/use` return `data.session_id` and `data.session`. The SDK session
+ID is distinct from `conversation_id`. Subsequent text reuses only the channel
+UUID, with the selection stored by the plugin under `Event.get_session_id()`.
+The scope includes the trusted protocol, connection, plugin and caller.
 
-For one request:
-
-```powershell
-python examples/chat/client.py --message "What is 2 + 3?"
-```
-
-Ordinary text continues the selected conversation. `/help`, `/session`,
-`/history` and `/clear` are sent to the server and handled by framework command
-matchers in that same conversation.
-
-| Terminal input | Behavior |
+| Message | Result |
 |---|---|
-| `/new [name]` | Create and select an empty conversation |
-| `/sessions` | List your conversations |
-| `/use <id>` | Verify ownership and switch this terminal |
-| `/session` | Show current metadata |
-| `/history` | Show recent SDK history |
-| `/clear` | Clear current history without changing the ID |
-| `/delete <id>` | Delete that conversation; clear selection if it was current |
-| `/exit` | Exit without deleting server history |
+| Ordinary addressed text or `/chat <question>` | Run the selected session; create one on first chat |
+| `/help` | List commands |
+| `/new [name]` | Create and select an empty owned session |
+| `/sessions [limit] [offset]` | Return `data.sessions`, `limit`, `offset`, `next_offset` |
+| `/use <id>` | Verify ownership and select a session |
+| `/session` | Return selected session metadata |
+| `/history [limit]` | Return `data.messages` from native SDK history |
+| `/clear` | Clear selected history and retain its ID |
+| `/delete <id>` | Delete owned history and index; return `deleted_session_id` |
 
-`--new` starts a fresh conversation, and `--session <id>` selects one explicitly.
-`--plugin example_sandbox` uses the sandbox example's API with the same client.
-Saved selection is separated by server, plugin and credential fingerprint.
-By default the client saves only a credential fingerprint and selected ID under
-`~/.opsmesh/chat/`; no token or conversation history is written there. Use
-`--state-file <path>` for a separate saved terminal selection. On startup the
-server revalidates the saved ID. A missing saved conversation clears selection;
-a missing conversation during an active terminal request reports an error
-instead of silently switching. Running terminals keep independent in-memory
-selections; the last saved selection becomes the next launch's default.
+Management commands never invoke a model or implicitly create a session.
+Arguments use the framework's `CommandArg()` dependency factory. Unknown and
+unauthorized commands receive the same unavailable reply; every configured
+command prefix is excluded from ordinary chat. Business validation failures
+send readable messages plus `data.error` with `code`, `message` and `status`.
+Unexpected execution failures use the channels safe error protocol.
 
-The client makes a direct connection, does not follow redirects, and does not
-automatically retry failed requests. After a timeout, inspect /history before
-resending because the server may have completed the turn.
+`Accept: text/event-stream` selects SSE. Complete sends are separate `message`
+events. Native text increments use `message_start`, ordered `message_delta`
+events with one `message_id`, then `message_end`. A unique `done` follows
+successful dispatch and cleanup. Errors terminate the request without success
+`done`. The JSON transport aggregates each streamed answer into one message.
+Bots aggregate increments before sending a complete answer.
 
-## Attachments and ordinary bot messages
+## Lifetime and access
 
-Private messages and group mentions use `on_message` without requiring `/chat`.
-Command matchers run first. Group history remains isolated by connection, group,
-and user. Unmentioned group messages are not processed by these examples.
+Selection is scoped to each API window or verified bot conversation. `/use`
+and every history operation check ownership. Private bot messages and group
+mentions are accepted; unmentioned group messages are ignored. Optional QQ
+and DingTalk connections are declared in this plugin's configuration.
 
-API messages accept ordered text and attachment references. Upload files to the
-channels endpoint with the same authenticated identity before sending a message.
-The standalone client supports repeated `--file` options (up to 8 MiB each):
+Execution, history reads, clear and delete share a local guard and PostgreSQL
+NOWAIT row lock. Expected busy failures carry status 409 in `data.error`.
+Channels also rejects overlapping HTTP requests in one channel scope with
+HTTP 409. Selection and live execution do not survive a resource restart;
+native session history does. Deletion persists intent before cleanup, and
+`/delete <id>` can retry interrupted cleanup. SDK approval continuation is
+not implemented. Optional MCP resources close after admitted calls drain.
 
-```shell
-python examples/chat/client.py --plugin example_chat --file ./report.pdf --message "Summarize this document"
+## Terminal client
+
+The standalone client needs only Python's standard library:
+
+```sh
+python examples/chat/client.py --base-url http://127.0.0.1:8080 --stream
+python examples/chat/client.py --session <id> --message "Continue the conversation"
+python examples/chat/client.py --file ./report.pdf --message "Summarize this document"
 ```
 
-Replace `example_chat` with this example's plugin name. Use `--session <id>` to select
-an existing conversation; the normal saved-selection behavior also applies.
-Chat accepts supported images, PDFs and UTF-8 text. Sandbox writes attachments
-into its native session workspace; processing depends on installed tools.
-QQ and DingTalk can send media through `channel.send`; these conversation
-examples still return the agent's text output. Plugins choose when to send generated files.
-See [message formats, limits and retention](../../docs/multimodal-messages.md).
+Enter the API token at the hidden prompt or set `OPSMESH_API_TOKEN`.
+`OPSMESH_URL` also sets the server address. Every client instance generates
+a fresh conversation UUID. All server commands use the unified messages
+endpoint; only `/exit` remains local. IDs come from structured data, never
+readable text. `--stream` displays SSE increments as they arrive.
+
+`--new` creates a session; `--plugin example_sandbox` selects the sandbox
+example. The client saves only the SDK session ID and a server/plugin/token
+fingerprint under `~/.opsmesh/chat/`. `--state-file` selects another file.
+On launch it uses `/use` to revalidate the saved ID in the new window scope.
+It never saves credentials, history or a reusable channel UUID. Requests do
+not follow redirects or automatically retry.
+
+Attachments are uploaded before sending ordered text and attachment segments.
+The client accepts at most eight files, each up to 8 MiB. Chat supports images,
+PDFs and UTF-8 text; sandbox writes attachments to its native workspace.
+See [message formats and retention](../../docs/multimodal-messages.md).
+
+Focused tests use real migrations, native SDK sessions and deterministic
+`ScriptedModel` streams. They cover selection isolation, commands, ownership,
+busy operations, JSON/SSE output, history persistence and the client protocol.
+Remote models, production PostgreSQL and real bot connections require separate
+integration verification.

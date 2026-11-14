@@ -29,6 +29,7 @@ from opsmesh.plugins import (
 from opsmesh.plugins.admission import PluginLoadRequest
 from opsmesh.plugins.model import Plugin
 from opsmesh.plugins.storage import PluginRecord, PluginStorage
+from opsmesh.utils import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +103,19 @@ class Host:
             raise RuntimeError(
                 "Lifecycle callbacks cannot change plugin settings"
             )
-        async with self.lock, self.driver._lifespan.change():
+        async with self.lock, self.driver.plugin_change():
             yield
 
     async def prepare(self) -> None:
         """Discover installed entry points before importing any plugin."""
-        records = await anyio.to_thread.run_sync(self.storage.list)
+        records = await run_sync(self.storage.list)()
         self.records = {record.module: record for record in records}
         for record in records:
             self._manager(record)
         for entry in entry_points(group="opsmesh.plugins"):
             if entry.module not in self.records:
                 record = PluginRecord(module=entry.module, enabled=True)
-                await anyio.to_thread.run_sync(self.storage.save, record)
+                await run_sync(self.storage.save)(record)
                 self.records[record.module] = record
         for record in self.records.values():
             self._manager(record)
@@ -179,7 +180,7 @@ class Host:
                 and not Path(record.directory).is_dir()
             ):
                 raise ValueError("Plugin import directory does not exist")
-            await anyio.to_thread.run_sync(self.storage.save, record)
+            await run_sync(self.storage.save)(record)
             self.records[record.module] = record
             original_path = list(sys.path)
             import opsmesh
@@ -195,9 +196,7 @@ class Host:
                 sys.path[:] = original_path
                 opsmesh.__path__, opsmesh.plugins.__path__ = original_namespaces
                 self.records.pop(record.module)
-                await anyio.to_thread.run_sync(
-                    self.storage.delete, record.module
-                )
+                await run_sync(self.storage.delete)(record.module)
                 raise
 
     async def save_config(
@@ -214,14 +213,14 @@ class Host:
             record = self.records[module].model_copy(
                 update={"config": values}, deep=True
             )
-            await anyio.to_thread.run_sync(self.storage.save, record)
+            await run_sync(self.storage.save)(record)
             self.records[module] = record
 
     async def apply_config(self, module: str) -> None:
         """Apply saved values, restarting only an already running plugin."""
         current = get_plugin_by_module_name(module)
         if current is not None and self.driver.started:
-            self.driver._lifespan.check_stoppable(current)
+            self.driver.check_plugin_stoppable(current)
         async with self._change():
             plugin = self.load(module)
             record = self.records[module]
@@ -250,7 +249,7 @@ class Host:
             record = self.records[module].model_copy(
                 update={"enabled": True, "autoload": True}
             )
-            await anyio.to_thread.run_sync(self.storage.save, record)
+            await run_sync(self.storage.save)(record)
             self.records[module] = record
             self.managers[module].enabled = True
             plugin = self.load(module)
@@ -266,7 +265,7 @@ class Host:
         """Persist disabled intent after checking active dependencies."""
         current = get_plugin_by_module_name(module)
         if current is not None and self.driver.started:
-            self.driver._lifespan.check_stoppable(current)
+            self.driver.check_plugin_stoppable(current)
         async with self._change():
             plugin = get_plugin_by_module_name(module)
             if self.records[module].protected:
@@ -276,9 +275,9 @@ class Host:
                     "Protected plugins cannot be disabled"
                 )
             if plugin is not None and self.driver.started:
-                self.driver._lifespan.check_stoppable(plugin)
+                self.driver.check_plugin_stoppable(plugin)
             record = self.records[module].model_copy(update={"enabled": False})
-            await anyio.to_thread.run_sync(self.storage.save, record)
+            await run_sync(self.storage.save)(record)
             self.records[module] = record
             self.managers[module].enabled = False
             if plugin is not None:
@@ -313,11 +312,11 @@ async def load_host(
         root = Path(manifest_dir or Path.cwd()) / root
     storage = PluginStorage(root)
     ownership = _data_lock(root)
-    await anyio.to_thread.run_sync(ownership.__enter__)
+    await run_sync(ownership.__enter__)()
     try:
-        await anyio.to_thread.run_sync(storage.__enter__)
+        await run_sync(storage.__enter__)()
     except BaseException:
-        ownership.__exit__(None, None, None)
+        await run_sync(ownership.__exit__)(None, None, None)
         raise
     driver = Driver(Env(environment=manifest.environment), manifest.framework)
     set_driver(driver)
@@ -362,8 +361,8 @@ async def load_host(
                 plugin_package.__path__ = original_namespace
                 _managers[:] = original_managers
                 _host = None
-                await anyio.to_thread.run_sync(storage.__exit__)
-                ownership.__exit__(None, None, None)
+                await run_sync(storage.__exit__)()
+                await run_sync(ownership.__exit__)(None, None, None)
                 from opsmesh.drivers import base
 
                 base._driver = None

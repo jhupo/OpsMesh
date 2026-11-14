@@ -8,11 +8,14 @@ import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from opsmesh.utils import run_sync
 
 from ..config import LangfuseSettings
 from ..errors import TracingConfigurationError
 from .context import TraceContext
+from .exporter import ExportDiagnostics
 
 if TYPE_CHECKING:
     from openinference.instrumentation.openai_agents import (
@@ -36,9 +39,17 @@ class LangfuseBridge:
         self._include_sensitive_data = include_sensitive_data
         self._provider: TracerProvider | None = None
         self._instrumentor: OpenAIAgentsInstrumentor | None = None
+        self._exporter: ExportDiagnostics | None = None
+        self._export_snapshot: dict[str, Any] | None = None
+        self._shutdown_task: asyncio.Task[None] | None = None
+        self._stopping = False
 
     def install(self) -> None:
         """Install one SDK instrumentor and roll back failed initialization."""
+        if self._stopping:
+            raise TracingConfigurationError(
+                "The previous Langfuse bridge has not stopped"
+            )
         if self._instrumentor is not None:
             return
         public_key = _secret(self._settings.public_key_ref)
@@ -113,13 +124,15 @@ class LangfuseBridge:
             f"{public_key}:{secret_key}".encode()
         ).decode("ascii")
         try:
-            exporter = OTLPSpanExporter(
-                endpoint=f"{self._settings.base_url.rstrip('/')}/api/public/otel/v1/traces",
-                headers={
-                    "Authorization": f"Basic {authentication}",
-                    "x-langfuse-ingestion-version": "4",
-                },
-                timeout=self._settings.export_timeout_seconds,
+            exporter = ExportDiagnostics(
+                OTLPSpanExporter(
+                    endpoint=f"{self._settings.base_url.rstrip('/')}/api/public/otel/v1/traces",
+                    headers={
+                        "Authorization": f"Basic {authentication}",
+                        "x-langfuse-ingestion-version": "4",
+                    },
+                    timeout=self._settings.export_timeout_seconds,
+                )
             )
             try:
                 processor = BatchSpanProcessor(
@@ -132,6 +145,7 @@ class LangfuseBridge:
                 exporter.shutdown()
                 raise
             provider.add_span_processor(processor)
+            self._exporter = exporter
         except BaseException as exc:
             provider.shutdown()
             raise TracingConfigurationError(
@@ -160,37 +174,64 @@ class LangfuseBridge:
             yield
 
     async def shutdown(self) -> None:
-        """Stop SDK instrumentation and flush the owned export provider."""
-        instrumentor, provider = self._instrumentor, self._provider
-        self._instrumentor = None
-        self._provider = None
-        if instrumentor is not None:
-            try:
-                instrumentor.uninstrument()
-            except Exception:
-                logger.warning("Unable to uninstrument the Langfuse bridge")
-        if provider is not None:
-            try:
-                flushed = await asyncio.to_thread(
-                    provider.force_flush,
-                    timeout_millis=int(
-                        self._settings.export_timeout_seconds * 1000
-                    ),
+        """Retain resources and one close task until release is confirmed."""
+        self._stopping = True
+        if self._instrumentor is not None:
+            self._instrumentor.uninstrument()
+            self._instrumentor = None
+        if self._provider is not None:
+            if self._shutdown_task is None:
+                self._shutdown_task = asyncio.create_task(
+                    run_sync(self._close_provider)(self._provider)
                 )
-                if not flushed:
-                    logger.warning("Langfuse trace flush did not complete")
-            except Exception:
-                logger.warning("Langfuse trace flush failed")
-            finally:
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(provider.shutdown),
-                        timeout=self._settings.shutdown_timeout_seconds,
-                    )
-                except Exception:
-                    logger.warning(
-                        "Langfuse exporter shutdown did not complete"
-                    )
+                self._shutdown_task.add_done_callback(_observe_shutdown)
+            await asyncio.wait_for(
+                asyncio.shield(self._shutdown_task),
+                timeout=self._settings.shutdown_timeout_seconds,
+            )
+            if self._exporter is not None:
+                self._export_snapshot = self._exporter.snapshot()
+            self._exporter = None
+            self._provider = None
+        self._shutdown_task = None
+        self._stopping = False
+
+    def _close_provider(self, provider: TracerProvider) -> None:
+        """Flush and close sequentially in one retained worker task."""
+        try:
+            flushed = provider.force_flush(
+                timeout_millis=int(self._settings.export_timeout_seconds * 1000)
+            )
+            if not flushed:
+                logger.warning("Langfuse trace flush did not complete")
+        except Exception:
+            logger.warning("Langfuse trace flush failed")
+        finally:
+            provider.shutdown()
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Expose cleanup progress and actual exporter outcomes safely."""
+        task = self._shutdown_task
+        return {
+            "instrumented": self._instrumentor is not None,
+            "provider_active": self._provider is not None,
+            "shutdown_pending": task is not None and not task.done(),
+            "shutdown_failed": task is not None
+            and task.done()
+            and (task.cancelled() or task.exception() is not None),
+            "exporter": self._exporter.snapshot()
+            if self._exporter is not None
+            else (
+                dict(self._export_snapshot)
+                if self._export_snapshot is not None
+                else None
+            ),
+        }
+
+
+def _observe_shutdown(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        logger.warning("Langfuse exporter shutdown failed")
 
 
 def _secret(reference: str) -> str:

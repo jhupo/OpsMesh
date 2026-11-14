@@ -26,6 +26,10 @@ if TYPE_CHECKING:
     from .manager import PluginManager
 
 _plugins: dict[str, "Plugin"] = {}
+# Fast exact-module lookup for the hot ownership path. The fallback in
+# get_plugin_by_module_name keeps tests and embedders that replace _plugins
+# directly correct.
+_module_plugins: dict[str, "Plugin"] = {}
 _managers: list["PluginManager"] = []
 _current_plugin: ContextVar["Plugin | None"] = ContextVar(
     "_current_plugin", default=None
@@ -150,6 +154,7 @@ def _new_plugin(
         parent_plugin.sub_plugins.add(plugin)
 
     _plugins[plugin_id] = plugin
+    _module_plugins[module_name] = plugin
     return plugin
 
 
@@ -206,6 +211,7 @@ def _revoke_plugin(plugin: "Plugin") -> None:
             pass
     plugin.matcher.clear()
     del _plugins[plugin.id_]
+    _module_plugins.pop(plugin.module_name, None)
     if parent_plugin := plugin.parent_plugin:
         parent_plugin.sub_plugins.discard(plugin)
     if errors:
@@ -357,12 +363,23 @@ def get_plugin_by_module_name(module_name: str) -> "Plugin | None":
     Args:
         module_name: The module path exposed as Plugin.module_name.
     """
-    loaded = {plugin.module_name: plugin for plugin in _plugins.values()}
-    has_parent = True
-    while has_parent:
-        if module_name in loaded:
-            return loaded[module_name]
-        module_name, *has_parent = module_name.rsplit(".", 1)
+    candidate = module_name
+    while candidate:
+        plugin = _module_plugins.get(candidate)
+        if plugin is not None and _plugins.get(plugin.id_) is plugin:
+            return plugin
+        if "." not in candidate:
+            break
+        candidate = candidate.rsplit(".", 1)[0]
+
+    # Keep compatibility with callers that replace the registry mapping in
+    # tests or embedded hosts instead of using the loader lifecycle.
+    for plugin in _plugins.values():
+        if module_name == plugin.module_name or module_name.startswith(
+            plugin.module_name + "."
+        ):
+            _module_plugins[plugin.module_name] = plugin
+            return plugin
 
 
 def get_loaded_plugins() -> set["Plugin"]:

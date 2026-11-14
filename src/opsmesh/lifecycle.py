@@ -65,14 +65,24 @@ def on_quiescing(func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
 
 def _declare(phase: str, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
     from opsmesh.plugins.model import PluginStatus
-    from opsmesh.plugins.registry import get_plugin_by_module_name
+    from opsmesh.plugins.registry import (
+        get_plugin_by_module_name,
+        track_registration,
+    )
 
     if not callable(func):
         raise TypeError("Lifecycle callbacks must be callable")
     plugin = get_plugin_by_module_name(func.__module__)
     if plugin is not None and plugin.status is not PluginStatus.LOADED:
         raise RuntimeError("Lifecycle callbacks must be declared while loading")
-    _declarations[(func.__module__, func.__qualname__, phase)] = func
+    key = (func.__module__, func.__qualname__, phase)
+    _declarations[key] = func
+
+    def remove() -> None:
+        if _declarations.get(key) is func:
+            del _declarations[key]
+
+    track_registration(remove, func)
     return func
 
 

@@ -12,17 +12,15 @@ conversations = require("conversation_support")
 # Import declarations only after their dependency plugins are loaded.
 from . import (  # noqa: E402, F401
     callbacks,
-    commands,
     connections,
-    http,
-    messages,
+    handlers,
 )
 from .config import ChatSettings  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="OpsMesh Chat Agent",
     description="A native SDK agent with HTTP and bot command entrances",
-    usage="POST /plugins/example_chat/chat; persistent sessions and commands.",
+    usage="POST /plugins/example_chat/messages; use conversation commands.",
     type="agent",
     config=ChatSettings,
     extra={

@@ -33,7 +33,7 @@ class DingTalkChannel(Channel):
         """Return implemented operations, independent of account privileges."""
         from .groups import DingTalkGroups
 
-        return DingTalkGroups.operations | {"send_message"}
+        return DingTalkGroups.operations | {"send_message", "stream"}
 
     def __init__(
         self,
@@ -67,8 +67,7 @@ class DingTalkChannel(Channel):
     def accepts_matcher(self, matcher: type[Matcher]) -> bool:
         """Limit dispatch to handlers owned by the declaring plugin."""
         return bool(
-            self.owner_ready
-            and matcher._source is not None
+            matcher._source is not None
             and matcher._source.plugin_id == self.owner_id
         )
 

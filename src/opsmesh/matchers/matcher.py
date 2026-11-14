@@ -148,6 +148,7 @@ class Matcher(metaclass=MatcherMeta):
     """An event matcher and its handler execution state."""
 
     _source: ClassVar[MatcherSource | None] = None
+    _origin: ClassVar[type["Matcher"] | None] = None
 
     type: ClassVar[str] = ""
     """The event type matched by this matcher."""
@@ -286,6 +287,7 @@ class Matcher(metaclass=MatcherMeta):
             (cls,),
             {
                 "_source": source,
+                "_origin": cls.origin if temp and cls is not Matcher else None,
                 "type": type_,
                 "rule": rule or Rule(),
                 "permission": permission or Permission(),
@@ -348,7 +350,7 @@ class Matcher(metaclass=MatcherMeta):
 
         def remove():
             if NewMatcher in matchers.get(priority, []):
-                NewMatcher.destroy()
+                matchers[priority].remove(NewMatcher)
 
         NewMatcher._release_registration = staticmethod(
             track_registration(remove, NewMatcher.module)
@@ -362,6 +364,11 @@ class Matcher(metaclass=MatcherMeta):
         matchers[cls.priority].remove(cls)
         if release := cls.__dict__.get("_release_registration"):
             release.__func__()
+
+    @classproperty
+    def origin(cls) -> Type["Matcher"]:  # noqa: UP006
+        """The original matcher that owns this continuation, or itself."""
+        return cls._origin or cls
 
     @classproperty
     def plugin(cls) -> "Plugin | None":

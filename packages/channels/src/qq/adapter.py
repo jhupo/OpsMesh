@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass, field
 from functools import partial
 from types import ModuleType
 from typing import Any
@@ -22,7 +21,9 @@ from opsmesh.dispatch import dispatch_event
 from opsmesh.drivers import Driver
 from opsmesh.plugins.channels._queue import EventQueue
 from opsmesh.plugins.channels._validation import connection_segment
+from opsmesh.plugins.channels._work import QueuedEvent
 from opsmesh.plugins.channels.context import UserContext
+from opsmesh.plugins.invocation import PluginUnavailable, invocation_scope
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import (
     _current_plugin,
@@ -33,6 +34,7 @@ from opsmesh.plugins.registry import (
 from ..attachments import AttachmentCollection, AttachmentError
 from ..operations import UnsupportedOperation
 from ..requests import read_body
+from ..sending import aggregate_stream
 from ..server import Server
 from .attachments import read as read_attachment
 from .channel import QQChannel
@@ -44,7 +46,7 @@ from .errors import (
     QQProtocolError,
     QQSendError,
 )
-from .events import QQMessageEvent, QQNoticeEvent, parse_callback
+from .events import QQMessageEvent, parse_callback
 from .groups import QQGroups
 from .security import QQSigner
 from .sending import QQSender
@@ -52,24 +54,6 @@ from .sending import QQSender
 logger = logging.getLogger(__name__)
 
 _PLAIN_TOKEN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-
-
-@dataclass(frozen=True)
-class _WorkItem:
-    """One verified event waiting for framework dispatch."""
-
-    channel: QQChannel
-    event: QQMessageEvent | QQNoticeEvent
-    caller: UserContext | None
-    generation: int = field(init=False)
-
-    def __post_init__(self) -> None:
-        owner = self.channel._owner
-        object.__setattr__(
-            self,
-            "generation",
-            owner.generation if isinstance(owner, Plugin) else 0,
-        )
 
 
 def _json_response(
@@ -124,6 +108,12 @@ class QQAdapter(Adapter):
             concurrency=settings.concurrency,
             shutdown_timeout=settings.shutdown_timeout,
             handle=self._dispatch,
+            scope=lambda item: (
+                item.event.get_session_id()
+                if isinstance(item.event, QQMessageEvent)
+                else None
+            ),
+            release=QueuedEvent.close,
         )
         self._started = False
 
@@ -255,6 +245,10 @@ class QQAdapter(Adapter):
     ) -> Any:
         if self._declared.get(channel.self_id) is not channel:
             raise QQError("Channel does not belong to this QQ adapter")
+        if operation == "stream":
+            self._validate_reply(channel, data.get("event"))
+            message = await aggregate_stream(data["source"])
+            return await self._send_message(channel, data.get("event"), message)
         if operation == "send_message":
             return await self._send_message(
                 channel, data.get("event"), data.get("message")
@@ -415,14 +409,24 @@ class QQAdapter(Adapter):
             if isinstance(event, QQMessageEvent)
             else None
         )
-        accepted = self._queue.put_nowait(_WorkItem(channel, event, caller))
+        try:
+            item = QueuedEvent(channel, event, caller)
+        except PluginUnavailable:
+            channel.release_delivery(event.event_id)
+            return _json_response(503, {"error": "plugin unavailable"})
+        accepted = False
+        try:
+            accepted = self._queue.put_nowait(item)
+        finally:
+            if not accepted:
+                channel.release_delivery(event.event_id)
+                await item.close()
         if not accepted:
             logger.warning(
                 "Rejecting QQ event %s for %s: queue is full",
                 event.event_id,
                 channel.self_id,
             )
-            channel.release_delivery(event.event_id)
             return _json_response(503, {"error": "queue is full"})
         return _json_response(200, {"status": "ok"})
 
@@ -463,24 +467,22 @@ class QQAdapter(Adapter):
             },
         )
 
-    async def _dispatch(self, item: _WorkItem) -> None:
-        owner = item.channel._owner
-        expired = (
-            isinstance(owner, Plugin) and owner.generation != item.generation
-        )
-        if expired or not item.channel.owner_ready or not item.channel.ready:
+    async def _dispatch(self, item: QueuedEvent) -> None:
+        if item.expired or not item.channel.ready:
             logger.info(
                 "Cancelled queued QQ event %s: owner stopped",
                 item.event.message_id,
             )
             return
         try:
-            result = await dispatch_event(
-                item.channel,
-                item.event,
-                invocation_context=item.caller,
-                matcher_filter=item.channel.accepts_matcher,
-            )
+            with invocation_scope(item.admitted_call):
+                result = await dispatch_event(
+                    item.channel,
+                    item.event,
+                    invocation_context=item.caller,
+                    matcher_filter=item.channel.accepts_matcher,
+                    admitted_call=item.admitted_call,
+                )
         except Exception:
             logger.exception("QQ event %s dispatch failed", item.event.event_id)
             return
@@ -494,12 +496,15 @@ class QQAdapter(Adapter):
     async def _send_message(
         self, channel: QQChannel, event: Any, message: Any
     ) -> Any:
+        self._validate_reply(channel, event)
+        return await QQSender(
+            self._client, channel, self._secrets[channel.self_id]
+        ).send(event, message)
+
+    def _validate_reply(self, channel: QQChannel, event: Any) -> None:
         if not channel.ready:
             raise QQSendError(f"QQ connection {channel.self_id} is not ready")
         if not isinstance(event, QQMessageEvent):
             raise QQSendError("QQ replies require a QQMessageEvent")
         if event.connection_id != channel.self_id:
             raise QQSendError("QQ reply event belongs to another connection")
-        return await QQSender(
-            self._client, channel, self._secrets[channel.self_id]
-        ).send(event, message)

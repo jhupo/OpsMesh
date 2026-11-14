@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pydantic import ConfigDict, Field
@@ -122,9 +123,16 @@ class QQMessageEvent(Event):
 
     def get_session_id(self) -> str:
         """Return the conversation identifier scoped by connection."""
-        if self.group_id is not None:
-            return f"{self.connection_id}:group:{self.group_id}"
-        return f"{self.connection_id}:private:{self.user_id}"
+        return json.dumps(
+            [
+                "qq",
+                self.connection_id,
+                "group" if self.group_id else "private",
+                self.group_id,
+                self.user_id,
+            ],
+            separators=(",", ":"),
+        )
 
     def get_message(self) -> Message:
         """Return the message content as QQ segments."""

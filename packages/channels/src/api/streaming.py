@@ -143,3 +143,60 @@ class ManagedStreamingResponse(StreamingResponse):
                 raise
             finally:
                 await self.aclose(error)
+
+
+class MessageStreamingResponse(ManagedStreamingResponse):
+    """Run message dispatch with a bounded queue and ASGI backpressure."""
+
+    def __init__(self, producer, *, capacity: int, on_close) -> None:
+        """Keep dispatch in the response lifetime with bounded buffering."""
+        super().__init__(
+            iter(()),
+            on_close=on_close,
+            headers={
+                "content-type": "text/event-stream; charset=utf-8",
+                "cache-control": "no-cache",
+                "x-accel-buffering": "no",
+            },
+        )
+        self._producer = producer
+        self._capacity = capacity
+
+    async def stream_response(self, send: Send) -> None:
+        """Cancel dispatch and its dependencies when transport sending fails."""
+        sender, receiver = anyio.create_memory_object_stream[bytes](
+            self._capacity
+        )
+
+        async def produce() -> None:
+            async with sender:
+                await self._producer(sender.send)
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(produce)
+            try:
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": self.status_code,
+                        "headers": self.raw_headers,
+                    }
+                )
+                async with receiver:
+                    async for frame in receiver:
+                        await send(
+                            {
+                                "type": "http.response.body",
+                                "body": frame,
+                                "more_body": True,
+                            }
+                        )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b"",
+                        "more_body": False,
+                    }
+                )
+            finally:
+                tasks.cancel_scope.cancel()

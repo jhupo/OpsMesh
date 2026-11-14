@@ -1,5 +1,6 @@
 """Shared helpers for typing, execution, imports, and serialization."""
 
+import asyncio
 import contextlib
 import dataclasses
 import importlib
@@ -242,9 +243,24 @@ def run_sync(call: Callable[P, R]) -> Callable[P, Coroutine[None, None, R]]:
 
     @wraps(call)
     async def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        return await anyio.to_thread.run_sync(
-            partial(call, *args, **kwargs), abandon_on_cancel=True
+        worker = asyncio.create_task(
+            anyio.to_thread.run_sync(partial(call, *args, **kwargs))
         )
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Dependencies must outlive a thread that cannot be cancelled.
+            with anyio.CancelScope(shield=True):
+                while not worker.done():
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError:
+                        continue
+                    except BaseException:
+                        break
+            if not worker.cancelled():
+                worker.exception()
+            raise
 
     return _wrapper
 
@@ -254,20 +270,37 @@ async def run_sync_ctx_manager(
     cm: AbstractContextManager[T],
 ) -> AsyncGenerator[T, None]:
     """Adapt a synchronous context manager with cancellation-safe cleanup."""
-    with anyio.CancelScope(shield=True):
-        value = await anyio.to_thread.run_sync(cm.__enter__)
+    entered = False
+
+    def enter() -> T:
+        nonlocal entered
+        value = cm.__enter__()
+        entered = True
+        return value
+
+    try:
+        with anyio.CancelScope(shield=True):
+            value = await run_sync(enter)()
+    except BaseException as error:
+        if entered:
+            # Cancellation can arrive after acquisition but before yield.
+            with anyio.CancelScope(shield=True):
+                await run_sync(cm.__exit__)(
+                    type(error), error, error.__traceback__
+                )
+        raise
     try:
         yield value
     except BaseException as error:
         with anyio.CancelScope(shield=True):
-            suppressed = await anyio.to_thread.run_sync(
-                cm.__exit__, type(error), error, error.__traceback__
+            suppressed = await run_sync(cm.__exit__)(
+                type(error), error, error.__traceback__
             )
         if not suppressed:
             raise
     else:
         with anyio.CancelScope(shield=True):
-            await anyio.to_thread.run_sync(cm.__exit__, None, None, None)
+            await run_sync(cm.__exit__)(None, None, None)
 
 
 @overload

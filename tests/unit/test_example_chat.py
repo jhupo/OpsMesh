@@ -16,7 +16,7 @@ from opsmesh.plugins import get_plugin, registry
 from opsmesh.plugins.manager import PluginManager
 
 
-driver_state.set_driver(Driver(Env(), Config()))
+driver_state.set_driver(Driver(Env(), Config(command_start={"/", "!"})))
 for module, values in {
     "opsmesh.plugins.channels": {"api": {"identities": [
         {"id": "smoke-user", "token_ref": "SMOKE_TOKEN"}
@@ -64,12 +64,12 @@ routes = [
     for route in get_router().registrations
     if route.installation_id == "example_chat"
 ]
-assert len(routes) == 7, routes
-route = next(item for item in routes if item.relative_path == "/chat")
+assert len(routes) == 1, routes
+route = next(item for item in routes if item.relative_path == "/messages")
 assert route.method == "POST"
-assert route.path == "/plugins/example_chat/chat"
+assert route.path == "/plugins/example_chat/messages"
 assert route.active is False, "the route must wait for plugin readiness"
-assert route.body_model.__name__ == "ChatRequest"
+assert route.body_model.__name__ == "MessageRequest"
 assert route.message_handlers
 assert route.matcher is None
 
@@ -104,7 +104,7 @@ def run_example_script(script):
 
 def test_example_chat_declares_an_inactive_route():
     assert run_example_script(SCRIPT) == (
-        "loaded example_chat /plugins/example_chat/chat"
+        "loaded example_chat /plugins/example_chat/messages"
     )
 
 

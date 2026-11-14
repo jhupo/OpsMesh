@@ -95,6 +95,12 @@ result = await execution.run(
 
 ## 其他 Langfuse 页面
 
+`execution.diagnostics()["langfuse"]` 提供 instrumentation/provider 的状态及实际导出诊断。
+`exporter.last_result` 区分成功、失败和尚未导出，另含批次计数、最近时间与固定错误代号；
+不包含请求正文、凭据或异常文本。span 入队不计成功，接收端返回成功也不证明查询服务健康。
+停止超时或等待者取消时，桥接保留资源及原关闭任务，后续停止继续等待；未释放资源不会被
+标成已停止。该状态仅用于排障，不是用量账本或可靠投递凭证。
+
 Users 和 Sessions 根据已导出 span 的属性汇总，无需单独创建用户表。
 Prompts、Skills 和 Playground 是 Langfuse 自己的管理能力，不会因为启用 execution
 追踪自动接管插件的提示词、技能文件或模型配置。插件需要使用这些能力时，应显式

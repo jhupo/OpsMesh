@@ -9,10 +9,9 @@ from functools import partial
 from pathlib import Path
 from typing import BinaryIO
 
-from anyio import to_thread
-
 from opsmesh import on_shutdown, on_startup
 from opsmesh.plugins.config import get_plugin_config
+from opsmesh.utils import run_sync
 
 from . import _files as files
 from ._paths import (
@@ -87,16 +86,14 @@ async def write_file(
     if is_root(space, target):
         raise PathRejected("A plugin root cannot be overwritten")
     data = _content_bytes(content)
-    await to_thread.run_sync(
-        partial(files.write_bytes, replace=replace), target, data
-    )
+    await run_sync(partial(files.write_bytes, replace=replace))(target, data)
     return target
 
 
 async def read_file(path: str | Path) -> bytes:
     """Read one regular file inside the calling plugin's file space."""
     target = _owned(path, must_exist=True)
-    return await to_thread.run_sync(files.read_bytes, target)
+    return await run_sync(files.read_bytes)(target)
 
 
 async def delete(path: str | Path) -> None:
@@ -105,7 +102,7 @@ async def delete(path: str | Path) -> None:
     target = _owned(path, must_exist=True)
     if is_root(space, target):
         raise PathRejected("A plugin root cannot be deleted")
-    await to_thread.run_sync(files.delete_path, target)
+    await run_sync(files.delete_path)(target)
 
 
 async def publish_directory(
@@ -117,7 +114,7 @@ async def publish_directory(
     target = owned_path(space, destination, settings=settings, must_exist=False)
     if is_root(space, target):
         raise PathRejected("A plugin root cannot be republished")
-    await to_thread.run_sync(files.publish_directory, origin, target, settings)
+    await run_sync(files.publish_directory)(origin, target, settings)
     return target
 
 
@@ -131,7 +128,7 @@ async def extract_archive(
     if is_root(space, target):
         raise PathRejected("An archive cannot be extracted onto a root")
     source = _binary(stream)
-    await to_thread.run_sync(files.extract_archive, source, target, settings)
+    await run_sync(files.extract_archive)(source, target, settings)
     return target
 
 
@@ -145,7 +142,7 @@ async def export_archive(source: str | Path) -> ArchiveExport:
         settings=settings,
         must_exist=False,
     )
-    await to_thread.run_sync(files.export_archive, origin, destination)
+    await run_sync(files.export_archive)(origin, destination)
     return ArchiveExport(destination)
 
 

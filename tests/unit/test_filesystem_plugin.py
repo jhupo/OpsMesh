@@ -12,9 +12,9 @@ from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import load as plugin_load
 from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins import registry
-from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.filesystem import files
 from opsmesh.plugins.filesystem._paths import resolve_caller_plugin
+from opsmesh.plugins.manager import PluginManager
 
 
 @pytest.fixture

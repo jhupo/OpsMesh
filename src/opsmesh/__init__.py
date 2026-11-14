@@ -60,6 +60,6 @@ from .lifecycle import on_started as on_started
 from .lifecycle import on_startup as on_startup
 from .lifecycle import on_stopping as on_stopping
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 from opsmesh.plugins.hooks import on_plugin_loaded as on_plugin_loaded

@@ -24,7 +24,7 @@
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.5.0-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.1-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 ```
 
@@ -49,12 +49,12 @@ sudo bash install.sh \
 
 ## 按需部署插件
 
-独立插件运行包的 `site/` 包含四个官方插件及其额外依赖。管理员验证校验和后，解压到独立的版本目录，例如：
+基础插件运行包的 `site/` 包含 channels、execution、filesystem、database、cron 及其额外依赖。knowledge 使用单独构建的完整插件运行包和预先准备的模型目录，见[发布说明](releases.md)。管理员验证校验和后，解压到独立的版本目录，例如：
 
 ```bash
-sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.5.0
-sudo tar -xzf opsmesh-plugins-0.5.0-linux-x86_64.tar.gz \
-  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.0
+sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.5.1
+sudo tar -xzf opsmesh-plugins-0.5.1-linux-x86_64.tar.gz \
+  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.1
 ```
 
 host.json 只保存宿主基础配置：
@@ -73,7 +73,7 @@ host.json 只保存宿主基础配置：
 sudo systemctl stop opsmesh
 sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
   --plugin-action register --module opsmesh.plugins.filesystem \
-  --directory /var/lib/opsmesh/plugins/official-0.5.0/site
+  --directory /var/lib/opsmesh/plugins/official-0.5.1/site
 sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
   --plugin-action configure --module opsmesh.plugins.filesystem \
   --config /etc/opsmesh/filesystem.json

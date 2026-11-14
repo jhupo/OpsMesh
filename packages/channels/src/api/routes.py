@@ -121,7 +121,11 @@ class RouteRegistration:
 
     def accepts_matcher(self, matcher: type[Matcher]) -> bool:
         """Restrict one dispatch to the route and its declared commands."""
-        return matcher is self.matcher or matcher in self.message_handlers
+        return (
+            matcher is self.matcher
+            or matcher in self.message_handlers
+            or (matcher.temp and matcher.origin in self.message_handlers)
+        )
 
 
 class APIRouter:
@@ -195,17 +199,14 @@ class APIRouter:
                 raise RouteRegistrationError(
                     "Message entrances bind POST matchers only"
                 )
-            if body is None or not issubclass(body, MessageRequest):
+            if body is not MessageRequest:
                 raise RouteRegistrationError(
-                    "Message bodies must extend MessageRequest"
+                    "Message entrances require the standard MessageRequest body"
                 )
-            for ancestor in body.__mro__:
-                if ancestor is MessageRequest:
-                    break
-                if "message" in ancestor.__dict__.get("__annotations__", {}):
-                    raise RouteRegistrationError(
-                        "Message bodies cannot override message"
-                    )
+            if path != "/messages":
+                raise RouteRegistrationError(
+                    "Message entrances use the fixed /messages path"
+                )
         for matcher in message_handlers:
             if not isinstance(matcher, type) or not issubclass(
                 matcher, Matcher

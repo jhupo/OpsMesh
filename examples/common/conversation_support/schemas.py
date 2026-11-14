@@ -1,32 +1,8 @@
 """Public conversation contracts, separate from native SDK history."""
 
 from datetime import datetime
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from opsmesh.plugins.channels.api import MessageRequest
-
-
-class ChatRequest(MessageRequest):
-    """Associate text with an owned conversation; omit ID to create one."""
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    session_id: UUID | None = None
-
-
-class ChatReply(BaseModel):
-    """Return the answer and the conversation used for this request."""
-
-    text: str
-    session_id: str
-
-
-class ConversationCreate(BaseModel):
-    """Name a new empty conversation."""
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    name: str = Field(default="New conversation", min_length=1, max_length=120)
+from pydantic import BaseModel, ConfigDict
 
 
 class ConversationView(BaseModel):

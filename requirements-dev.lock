@@ -21,7 +21,9 @@ alembic==1.20.1
     #   -c requirements-dev.lock
     #   -r packages/database/requirements.txt
 annotated-doc==0.0.6
-    # via fastapi
+    # via
+    #   -c requirements-dev.lock
+    #   fastapi
 annotated-types==0.8.0
     # via
     #   -c requirements-dev.lock
@@ -39,6 +41,8 @@ anyio==4.16.0
     #   openai
     #   sse-starlette
     #   starlette
+apscheduler==3.11.3
+    # via -r packages/cron/requirements.txt
 asyncpg==0.32.0
     # via
     #   -c requirements-dev.lock
@@ -90,7 +94,9 @@ dingtalk-stream==0.24.3
     #   -c requirements-dev.lock
     #   -r packages/channels/requirements.txt
 fastapi==0.162.5
-    # via -r packages/channels/requirements.txt
+    # via
+    #   -c requirements-dev.lock
+    #   -r packages/channels/requirements.txt
 frozenlist==1.8.0
     # via
     #   -c requirements-dev.lock
@@ -269,6 +275,8 @@ packaging==26.3
     #   langfuse
     #   opentelemetry-instrumentation
     #   pytest
+pgvector==0.5.1
+    # via -r requirements-dev.txt
 pluggy==1.7.0
     # via
     #   -c requirements-dev.lock
@@ -426,6 +434,10 @@ typing-inspection==0.4.5
     #   mcp
     #   pydantic
     #   pydantic-settings
+tzdata==2026.6 ; sys_platform == 'win32'
+    # via tzlocal
+tzlocal==5.4.5
+    # via apscheduler
 urllib3==2.8.0
     # via
     #   -c requirements-dev.lock
