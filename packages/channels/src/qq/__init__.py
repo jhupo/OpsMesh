@@ -21,12 +21,15 @@ from .errors import (
 )
 from .events import (
     C2C_MESSAGE,
+    GROUP_JOIN_REQUEST,
     GROUP_MESSAGE,
     GROUP_MESSAGE_CREATE,
     QQMessageEvent,
     QQNoticeEvent,
     parse_callback,
 )
+from .groups import QQGroupMuteChange, QQGroupOperations
+from .guilds import QQGuildOperations
 
 __all__ = [
     "C2C_MESSAGE",
@@ -36,11 +39,15 @@ __all__ = [
     "FAILED",
     "GROUP_MESSAGE",
     "GROUP_MESSAGE_CREATE",
+    "GROUP_JOIN_REQUEST",
     "QQAdapter",
     "QQChannel",
     "QQConfigurationError",
     "QQConnectionSettings",
     "QQError",
+    "QQGroupMuteChange",
+    "QQGroupOperations",
+    "QQGuildOperations",
     "QQMessageEvent",
     "QQNoticeEvent",
     "QQProtocolError",

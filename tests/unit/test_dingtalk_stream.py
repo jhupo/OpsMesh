@@ -131,7 +131,10 @@ async def test_handshake_sdk_ack_reconnect_and_stop(monkeypatch):
         assert callbacks == [{"text": {"content": "hello"}}]
         assert all(
             body["subscriptions"]
-            == [{"type": "CALLBACK", "topic": ChatbotMessage.TOPIC}]
+            == [
+                {"type": "EVENT", "topic": "*"},
+                {"type": "CALLBACK", "topic": ChatbotMessage.TOPIC},
+            ]
             for body in requests
         )
         assert len(uris) == 2

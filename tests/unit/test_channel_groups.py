@@ -20,7 +20,11 @@ from opsmesh.plugins.channels.operations import operation_response
 from opsmesh.plugins.channels.qq.client import QQClient
 from opsmesh.plugins.channels.qq.config import QQConnectionSettings, QQSettings
 from opsmesh.plugins.channels.qq.events import QQNoticeEvent, parse_callback
-from opsmesh.plugins.channels.qq.groups import QQGroups
+from opsmesh.plugins.channels.qq.groups import (
+    QQGroupMuteChange,
+    QQGroupOperations,
+)
+from opsmesh.plugins.channels.qq.guilds import QQGuildOperations
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import plugin_scope
 
@@ -73,13 +77,6 @@ from opsmesh.plugins.registry import plugin_scope
             "/guilds/g/mute",
             b'{"mute_seconds":"0"}',
         ),
-        (
-            "get_delete_member",
-            {"guild_id": "g", "user_id": "u"},
-            "DELETE",
-            "/guilds/g/members/u",
-            b'{"add_blacklist":false,"delete_history_msg_days":0}',
-        ),
     ],
 )
 async def test_qq_guild_operation_wire_contract(
@@ -104,7 +101,7 @@ async def test_qq_guild_operation_wire_contract(
             settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
             protocol=settings,
         )
-        groups = QQGroups(QQClient(settings, http), account, "secret")
+        groups = QQGuildOperations(QQClient(settings, http), account, "secret")
         assert await getattr(groups, operation)(**arguments) is None
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
@@ -113,6 +110,117 @@ async def test_qq_guild_operation_wire_contract(
         assert request.content == body
     if operation == "get_guild_members":
         assert dict(request.url.params) == {"after": "last", "limit": "2"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "operation,arguments,method,path,body",
+    [
+        (
+            "get_group_info",
+            {"group_openid": "group"},
+            "GET",
+            "/v2/groups/group/info",
+            None,
+        ),
+        (
+            "get_group_bot_state",
+            {"group_openid": "group"},
+            "GET",
+            "/v2/groups/group/bot_state",
+            None,
+        ),
+        (
+            "get_group_members",
+            {"group_openid": "group", "cursor": "next", "limit": 2},
+            "GET",
+            "/v2/groups/group/members",
+            None,
+        ),
+        (
+            "get_group_member",
+            {"group_openid": "group", "member_openid": "member"},
+            "GET",
+            "/v2/groups/group/members/member",
+            None,
+        ),
+        (
+            "get_group_restrict_chat_setting",
+            {"group_openid": "group"},
+            "GET",
+            "/v2/groups/group/restrict_chat_setting",
+            None,
+        ),
+        (
+            "set_group_restrict_chat_setting",
+            {
+                "group_openid": "group",
+                "members": [
+                    QQGroupMuteChange(
+                        op="add",
+                        member_openid="member",
+                        mute_expire_at="2026-11-15T01:00:00+08:00",
+                    )
+                ],
+            },
+            "POST",
+            "/v2/groups/group/restrict_chat_setting",
+            b'{"members":[{"op":"add","member_openid":"member","mute_expire_at":"2026-11-15T01:00:00+08:00"}]}',
+        ),
+        (
+            "get_group_join_request_list",
+            {"group_openid": "group", "cursor": "next", "limit": 2},
+            "GET",
+            "/v2/groups/group/join_request_list",
+            None,
+        ),
+        (
+            "approve_group_join_request",
+            {
+                "group_openid": "group",
+                "member_openid": "member",
+                "approve": True,
+            },
+            "POST",
+            "/v2/groups/group/approval_join_request/member",
+            b'{"action":"approve","blacklist":false}',
+        ),
+    ],
+)
+async def test_qq_group_operation_wire_contract(
+    operation, arguments, method, path, body
+):
+    requests = []
+
+    def respond(request):
+        if request.url.path.endswith("/app/getAppAccessToken"):
+            return httpx.Response(
+                200, json={"access_token": "token", "expires_in": 7200}
+            )
+        requests.append(request)
+        return httpx.Response(204)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        settings = QQSettings()
+        account = SimpleNamespace(
+            self_id="owner:qq",
+            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            protocol=settings,
+        )
+        groups = QQGroupOperations(QQClient(settings, http), account, "secret")
+        assert await getattr(groups, operation)(**arguments) is None
+    request = requests[0]
+    assert (request.method, request.url.path) == (method, path)
+    assert request.headers["authorization"] == "QQBot token"
+    if body is not None:
+        assert request.content == body
+    if operation in {"get_group_members", "get_group_join_request_list"}:
+        assert dict(request.url.params) == {
+            "cursor": "next",
+            "limit": "2",
+        }
 
 
 @pytest.mark.anyio
@@ -232,6 +340,24 @@ def test_qq_notice_preserves_subject_without_inventing_actor():
     )
     with pytest.raises(ValueError, match="actor"):
         event.get_user_id()
+
+
+def test_qq_group_join_request_notice_exposes_group_and_member():
+    event = parse_callback(
+        {
+            "t": "GROUP_JOIN_REQUEST",
+            "s": 17,
+            "d": {
+                "group_openid": "group",
+                "member_openid": "member",
+            },
+        },
+        connection_id="bot",
+    )
+    assert isinstance(event, QQNoticeEvent)
+    assert event.event_id == "GROUP_JOIN_REQUEST:17"
+    assert event.group_id == "group"
+    assert event.subject_id == "member"
 
 
 @pytest.mark.anyio

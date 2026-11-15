@@ -40,7 +40,8 @@ from .errors import (
     QQSendError,
 )
 from .events import QQMessageEvent, parse_callback
-from .groups import QQGroups
+from .groups import QQGroupOperations
+from .guilds import QQGuildOperations
 from .sending import QQSender
 from .stream import QQStream
 
@@ -213,7 +214,9 @@ class QQAdapter(Adapter):
             return await self._send_message(
                 channel, data.get("event"), data.get("message")
             )
-        if operation in QQGroups.operations:
+        if operation in (
+            QQGuildOperations.operations | QQGroupOperations.operations
+        ):
             from opsmesh.plugins.registry import get_current_plugin
 
             if (
@@ -223,7 +226,14 @@ class QQAdapter(Adapter):
                 raise PermissionError("QQ connection belongs to another plugin")
             if not channel.ready:
                 raise QQSendError("QQ connection is not ready")
-            groups = QQGroups(self._client, channel, self._read_secret(channel))
+            operation_type = (
+                QQGuildOperations
+                if operation in QQGuildOperations.operations
+                else QQGroupOperations
+            )
+            groups = operation_type(
+                self._client, channel, self._read_secret(channel)
+            )
             return await getattr(groups, operation)(**data)
         raise UnsupportedOperation(
             f"Unsupported QQ channel operation: {operation}"

@@ -1,9 +1,10 @@
-"""QQ guild operations from the official botpy API contract."""
+"""Ordinary QQ group operations from the Bot API v2 contract."""
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote
 
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from .client import QQClient
 
@@ -11,20 +12,31 @@ if TYPE_CHECKING:
     from .channel import QQChannel
 
 
-class QQGroups:
-    """Borrow an existing account to operate on guild IDs, not group openids."""
+class QQGroupMuteChange(BaseModel):
+    """One member mute change accepted by the group restriction endpoint."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", populate_by_name=True
+    )
+
+    operation: Literal["add", "update", "del"] = Field(alias="op")
+    member_openid: str = Field(min_length=1, max_length=128)
+    mute_expire_at: str | None = None
+
+
+class QQGroupOperations:
+    """Operate on ordinary QQ groups identified by a group openid."""
 
     operations = frozenset(
         {
-            "get_guild",
-            "get_guild_member",
-            "get_guild_members",
-            "get_guild_roles",
-            "mute_member",
-            "unmute_member",
-            "mute_all",
-            "unmute_all",
-            "get_delete_member",
+            "get_group_info",
+            "get_group_bot_state",
+            "get_group_members",
+            "get_group_member",
+            "get_group_restrict_chat_setting",
+            "set_group_restrict_chat_setting",
+            "get_group_join_request_list",
+            "approve_group_join_request",
         }
     )
 
@@ -49,84 +61,128 @@ class QQGroups:
             method, base + path, token=token, body=body, params=params
         )
 
-    async def get_guild(self, guild_id: str) -> JsonValue:
-        """Read guild information; requires access to the specified guild."""
-        return await self._request("GET", f"/guilds/{quote(guild_id, safe='')}")
+    @staticmethod
+    def _group_path(group_openid: str, suffix: str = "") -> str:
+        """Build a path scoped to one ordinary QQ group."""
+        if not group_openid.strip():
+            raise ValueError("QQ group openid must not be empty")
+        return f"/v2/groups/{quote(group_openid, safe='')}{suffix}"
 
-    async def get_guild_member(self, guild_id: str, user_id: str) -> JsonValue:
-        """Read one guild member using native QQ user IDs."""
+    async def get_group_info(self, group_openid: str) -> JsonValue:
+        """Read ordinary group information."""
+        return await self._request(
+            "GET", self._group_path(group_openid, "/info")
+        )
+
+    async def get_group_bot_state(self, group_openid: str) -> JsonValue:
+        """Read the bot's state in an ordinary group."""
+        return await self._request(
+            "GET", self._group_path(group_openid, "/bot_state")
+        )
+
+    async def get_group_members(
+        self, group_openid: str, *, cursor: str | None = None, limit: int = 100
+    ) -> JsonValue:
+        """Read one ordinary group member page when the app is entitled."""
+        if not 1 <= limit <= 100:
+            raise ValueError("QQ group member limit must be between 1 and 100")
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
         return await self._request(
             "GET",
-            f"/guilds/{quote(guild_id, safe='')}/members/"
-            f"{quote(user_id, safe='')}",
+            self._group_path(group_openid, "/members"),
+            params=params,
         )
 
-    async def get_guild_members(
-        self, guild_id: str, *, after: str = "0", limit: int = 100
+    async def get_group_member(
+        self, group_openid: str, member_openid: str
     ) -> JsonValue:
-        """Read a native cursor page; private-domain permission is required."""
-        if not 1 <= limit <= 400:
-            raise ValueError("QQ member limit must be between 1 and 400")
+        """Read one ordinary group member when the app is entitled."""
+        if not member_openid.strip():
+            raise ValueError("QQ member openid must not be empty")
         return await self._request(
             "GET",
-            f"/guilds/{quote(guild_id, safe='')}/members",
-            params={"after": after, "limit": limit},
+            self._group_path(
+                group_openid, f"/members/{quote(member_openid, safe='')}"
+            ),
         )
 
-    async def get_guild_roles(self, guild_id: str) -> JsonValue:
-        """Read the guild's role definitions."""
-        return await self._request(
-            "GET", f"/guilds/{quote(guild_id, safe='')}/roles"
-        )
-
-    async def mute_member(
-        self, guild_id: str, user_id: str, *, mute_seconds: int
+    async def get_group_restrict_chat_setting(
+        self, group_openid: str
     ) -> JsonValue:
-        """Mute a guild member; the bot requires administrator permission."""
-        if mute_seconds < 0:
-            raise ValueError("Mute seconds must not be negative")
+        """Read group mute state and active member restrictions."""
         return await self._request(
-            "PATCH",
-            f"/guilds/{quote(guild_id, safe='')}/members/"
-            f"{quote(user_id, safe='')}/mute",
-            body={"mute_seconds": str(mute_seconds)},
+            "GET", self._group_path(group_openid, "/restrict_chat_setting")
         )
 
-    async def unmute_member(self, guild_id: str, user_id: str) -> JsonValue:
-        """Clear a member's guild mute."""
-        return await self.mute_member(guild_id, user_id, mute_seconds=0)
-
-    async def mute_all(self, guild_id: str, *, mute_seconds: int) -> JsonValue:
-        """Mute non-admin guild members for the specified duration."""
-        if mute_seconds < 0:
-            raise ValueError("Mute seconds must not be negative")
-        return await self._request(
-            "PATCH",
-            f"/guilds/{quote(guild_id, safe='')}/mute",
-            body={"mute_seconds": str(mute_seconds)},
-        )
-
-    async def unmute_all(self, guild_id: str) -> JsonValue:
-        """Clear the guild-wide mute."""
-        return await self.mute_all(guild_id, mute_seconds=0)
-
-    async def get_delete_member(
+    async def set_group_restrict_chat_setting(
         self,
-        guild_id: str,
-        user_id: str,
+        group_openid: str,
         *,
-        add_blacklist: bool = False,
-        delete_history_msg_days: int = 0,
+        members: Sequence[QQGroupMuteChange],
     ) -> JsonValue:
-        """Remove a guild member using the native botpy operation name."""
-        if delete_history_msg_days not in (-1, 0, 3, 7, 15, 30):
-            raise ValueError("Unsupported QQ history deletion window")
+        """Apply member mute or unmute changes in one group request."""
+        if not members or len(members) > 20:
+            raise ValueError(
+                "QQ group mute changes must contain 1 to 20 members"
+            )
+        changes = [
+            QQGroupMuteChange.model_validate(member).model_dump(
+                mode="json", by_alias=True
+            )
+            for member in members
+        ]
         return await self._request(
-            "DELETE",
-            f"/guilds/{quote(guild_id, safe='')}/members/"
-            f"{quote(user_id, safe='')}",
-            body={
-                "add_blacklist": add_blacklist,
-                "delete_history_msg_days": delete_history_msg_days,
-            },
+            "POST",
+            self._group_path(group_openid, "/restrict_chat_setting"),
+            body={"members": changes},
+        )
+
+    async def get_group_join_request_list(
+        self,
+        group_openid: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> JsonValue:
+        """Read pending group join requests using the native cursor API."""
+        if not 1 <= limit <= 100:
+            raise ValueError("QQ join request limit must be between 1 and 100")
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return await self._request(
+            "GET",
+            self._group_path(group_openid, "/join_request_list"),
+            params=params,
+        )
+
+    async def approve_group_join_request(
+        self,
+        group_openid: str,
+        member_openid: str,
+        *,
+        approve: bool,
+        blacklist: bool = False,
+        reason: str | None = None,
+    ) -> JsonValue:
+        """Approve or decline one pending group join request."""
+        if not member_openid.strip():
+            raise ValueError("QQ member openid must not be empty")
+        if reason is not None and len(reason) > 200:
+            raise ValueError("QQ join request reason is too long")
+        body: dict[str, JsonValue] = {
+            "action": "approve" if approve else "decline",
+            "blacklist": blacklist,
+        }
+        if reason is not None:
+            body["reason"] = reason
+        return await self._request(
+            "POST",
+            self._group_path(
+                group_openid,
+                f"/approval_join_request/{quote(member_openid, safe='')}",
+            ),
+            body=body,
         )
