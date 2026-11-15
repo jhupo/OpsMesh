@@ -24,7 +24,7 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.5.2-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.3-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 journalctl -u opsmesh -f
 ```

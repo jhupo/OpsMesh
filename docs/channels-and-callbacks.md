@@ -243,6 +243,6 @@ API 的 message 支持字符串或有序内容数组。上传、读取、SDK 输
 
 QQ、钉钉通过 Channel.call 暴露已实现的官方操作；连接限制调用插件归属，业务授权由 Permission 或 calling Hook 完成。calling Hook 的拒绝异常阻断供应商请求，普通观测 Hook 失败仅记录日志。
 
-QQ 当前支持频道信息、成员、角色查询以及成员禁言、全员禁言和移除成员；这些接口使用 guild ID，不适用于普通 QQ 群 openid。钉钉支持群基础信息和互通群成员、群名操作，仍受应用权限和群类型限制。
+QQ 频道接口使用 guild ID，支持频道信息、成员、角色查询以及成员和全员禁言。普通 QQ 群接口使用 group openid，支持群信息、机器人状态、成员查询、成员禁言和入群申请查询/审批；普通群踢人、黑名单和自动审批策略未暴露。钉钉支持 Stream 消息、原生事件、群基础信息、互通群成员和群名操作，仍受应用权限和群类型限制。
 
 平台通知保留原生事件类型、ID 和 payload，通过 on_notice/on_type 处理。未知身份不伪造，群业务策略由调用插件决定。准确操作名、接口及官方依据见 [channels 包说明](../packages/channels/README.md#platform-group-operations)。

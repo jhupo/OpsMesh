@@ -18,6 +18,7 @@ from .errors import QQProtocolError
 C2C_MESSAGE = "C2C_MESSAGE_CREATE"
 GROUP_MESSAGE = "GROUP_AT_MESSAGE_CREATE"
 GROUP_MESSAGE_CREATE = "GROUP_MESSAGE_CREATE"
+GROUP_JOIN_REQUEST = "GROUP_JOIN_REQUEST"
 MESSAGE_EVENTS = frozenset({C2C_MESSAGE, GROUP_MESSAGE, GROUP_MESSAGE_CREATE})
 NOTICE_EVENTS = frozenset(
     {
@@ -31,6 +32,7 @@ NOTICE_EVENTS = frozenset(
         "GROUP_DEL_ROBOT",
         "GROUP_MSG_REJECT",
         "GROUP_MSG_RECEIVE",
+        GROUP_JOIN_REQUEST,
     }
 )
 
@@ -190,8 +192,16 @@ def parse_callback(
                 event_id = data.get("id")
         if not isinstance(event_id, str) or not event_id:
             raise QQProtocolError("QQ notice is missing its event ID")
-        operator = data.get("op_member_openid", data.get("op_user_id"))
+        operator = data.get(
+            "op_member_openid",
+            data.get("op_user_id", data.get("member_openid")),
+        )
         user = data.get("user")
+        subject = data.get("member_openid", data.get("user_openid"))
+        subject_id = subject if isinstance(subject, str) else None
+        if subject_id is None and isinstance(user, dict):
+            candidate = user.get("id")
+            subject_id = candidate if isinstance(candidate, str) else None
         return QQNoticeEvent(
             connection_id=connection_id,
             event_id=event_id,
@@ -205,7 +215,7 @@ def parse_callback(
             ),
             group_id=data.get("group_openid"),
             operator_id=operator if isinstance(operator, str) else None,
-            subject_id=user.get("id") if isinstance(user, dict) else None,
+            subject_id=subject_id,
             raw=payload,
         )
     if event_type not in MESSAGE_EVENTS:

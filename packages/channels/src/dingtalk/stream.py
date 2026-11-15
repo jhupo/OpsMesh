@@ -151,16 +151,19 @@ class DingTalkStream(DingTalkStreamClient):
             self.websocket = None
 
     async def _connection_uri(self) -> str:
+        subscriptions = [
+            {"type": "CALLBACK", "topic": ChatbotMessage.TOPIC}
+        ]
+        if self._is_event_required:
+            subscriptions.insert(0, {"type": "EVENT", "topic": "*"})
         connection = await self.adapter.client.post_json(
             self.OPEN_CONNECTION_API,
             {
                 "clientId": self.credential.client_id,
                 "clientSecret": self.credential.client_secret,
-                "subscriptions": [
-                    {"type": "CALLBACK", "topic": ChatbotMessage.TOPIC}
-                ],
+                "subscriptions": subscriptions,
                 "ua": f"dingtalk-sdk-python/v{VERSION_STRING}-union",
-                "localIp": "",
+                "localIp": self.get_host_ip(),
             },
         )
         endpoint, ticket = connection.get("endpoint"), connection.get("ticket")

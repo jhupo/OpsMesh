@@ -4,6 +4,12 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.3 — 2026-11-15
+
+- Add QQ ordinary-group operations for group information, bot state, member lookup, member mute changes, and join-request approval.
+- Separate QQ guild operations from ordinary-group operations and keep kick, blacklist, and automatic approval strategy APIs unexposed.
+- Subscribe DingTalk Stream connections to native `EVENT` frames alongside chatbot callbacks.
+
 ## 0.5.2 — 2026-11-15
 
 - Replace QQ webhook delivery with the official Bot API v2 Gateway WebSocket.

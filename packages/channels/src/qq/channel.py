@@ -44,9 +44,14 @@ class QQChannel(Channel):
     @property
     def supported_operations(self) -> frozenset[str]:
         """Return implemented operations, independent of account privileges."""
-        from .groups import QQGroups
+        from .groups import QQGroupOperations
+        from .guilds import QQGuildOperations
 
-        return QQGroups.operations | {"send_message", "stream"}
+        return (
+            QQGuildOperations.operations
+            | QQGroupOperations.operations
+            | {"send_message", "stream"}
+        )
 
     def __init__(
         self,

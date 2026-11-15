@@ -107,7 +107,10 @@ for the command initiator's business authorization.
 | QQ guild ID | `get_guild`, `get_guild_member`, `get_guild_members`, `get_guild_roles` | GET `/guilds/{guild_id}`, `/members/{user_id}`, `/members`, `/roles` |
 | QQ guild ID | `mute_member`, `unmute_member` | PATCH `/guilds/{guild_id}/members/{user_id}/mute` |
 | QQ guild ID | `mute_all`, `unmute_all` | PATCH `/guilds/{guild_id}/mute` |
-| QQ guild ID | `get_delete_member` | DELETE `/guilds/{guild_id}/members/{user_id}` |
+| QQ group openid | `get_group_info`, `get_group_bot_state` | GET `/v2/groups/{group_openid}/info`, `/bot_state` |
+| QQ group openid | `get_group_members`, `get_group_member` | GET `/v2/groups/{group_openid}/members`, `/members/{member_openid}` |
+| QQ group openid | `get_group_restrict_chat_setting`, `set_group_restrict_chat_setting` | GET/POST `/v2/groups/{group_openid}/restrict_chat_setting` |
+| QQ group openid | `get_group_join_request_list`, `approve_group_join_request` | GET `/v2/groups/{group_openid}/join_request_list`, POST `/approval_join_request/{member_openid}` |
 | DingTalk openConversationId | `query_open_group_base_info` | POST `/v1.0/im/groups/baseInfos/query` |
 | DingTalk interconnection group | `query_group_member` | GET `/v1.0/im/interconnections/conversations/members` |
 | DingTalk interconnection group | `update_group_name` | PUT `/v1.0/im/interconnections/groups/names` |
@@ -118,9 +121,12 @@ Gateway and OpenAPI contracts. The Gateway accepts C2C, `GROUP_AT_MESSAGE_CREATE
 and `GROUP_MESSAGE_CREATE` events when the corresponding intent is enabled.
 QQ permits four passive direct-message replies and five passive group replies;
 the channel enforces those limits per incoming message.
-Member listing requires private-domain access; mute and removal require guild
-administration permissions. These endpoints accept guild IDs, not ordinary QQ
-group openids. DingTalk mappings follow the official `im_1_0` client in
+Guild member listing requires private-domain access; guild mute requires guild
+administration permissions. Ordinary group member and management endpoints may
+require an invited application and the robot must be a group administrator;
+the caller's user permission remains the responsibility of the consumer plugin.
+Kick, blacklist and automatic approval strategy operations are intentionally not
+exposed. DingTalk mappings follow the official `im_1_0` client in
 [alibabacloud-dingtalk](https://pypi.org/project/alibabacloud-dingtalk/2.2.67/).
 The application must have the corresponding OpenAPI grant and group access;
 interconnection-group operations do not apply to every DingTalk chat type.
@@ -130,8 +136,11 @@ Subscribed DingTalk Stream `EVENT` frames become `DingTalkNoticeEvent` using the
 [official Stream SDK](https://github.com/open-dingtalk/dingtalk-stream-sdk-python).
 Subscribe to the required native events in the platform console; handlers use
 `on_notice` or `on_type`. Events preserve native event IDs, types and payloads;
-unknown actors stay absent. Ordinary QQ-group administration and application
-approval operations are not exposed. Their availability has not been verified.
+unknown actors stay absent. Ordinary QQ group administration is available
+through the operations listed above; the consumer plugin remains responsible
+for checking the requesting user's group-admin permission before calling them.
+Kick, blacklist and automatic approval strategy operations are intentionally
+not exposed.
 
 Group results retain native JSON. Local parameter failures raise `ValueError`;
 unknown operations raise `UnsupportedOperation`. HTTP 401/403 and 429 raise
