@@ -1,4 +1,4 @@
-"""QQ official bot channel with verified webhook callbacks."""
+"""QQ Bot API v2 channel connection declarations."""
 
 from __future__ import annotations
 

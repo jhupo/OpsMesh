@@ -28,14 +28,14 @@ DISCONNECTED = "disconnected"
 CLOSED = "closed"
 
 _SEQUENCE_LIMIT = 512
-_MAX_REPLIES = 5
+_MAX_GROUP_REPLIES = 5
 
 
 class QQChannel(Channel):
     """One declared QQ bot connection.
 
-    The channel is connected to the driver only after its secret and
-    callback route are usable.
+    The channel is connected to the driver only after its Gateway handshake
+    succeeds.
     """
 
     receive_types = frozenset({"text", "image", "file", "audio", "video"})
@@ -58,7 +58,6 @@ class QQChannel(Channel):
         connection_name: str,
         settings: QQConnectionSettings,
         protocol: QQSettings,
-        path: str,
     ) -> None:
         """Initialize a declared but not yet active connection."""
         super().__init__(adapter, self_id)
@@ -67,7 +66,6 @@ class QQChannel(Channel):
         self._connection_name = connection_name
         self._settings = settings
         self._protocol = protocol
-        self._path = path
         self._state = CONNECTING
         self._error: str | None = None
         self._dedupe = EventDeduplicator(
@@ -107,11 +105,6 @@ class QQChannel(Channel):
     def protocol(self) -> QQSettings:
         """The shared QQ protocol settings."""
         return self._protocol
-
-    @property
-    def path(self) -> str:
-        """The callback path registered on the HTTP transport."""
-        return self._path
 
     @property
     def state(self) -> str:
@@ -165,7 +158,13 @@ class QQChannel(Channel):
         return sequence
 
     @asynccontextmanager
-    async def replies(self, message_id: str, count: int) -> AsyncIterator[None]:
+    async def replies(
+        self,
+        message_id: str,
+        count: int,
+        *,
+        limit: int = _MAX_GROUP_REPLIES,
+    ) -> AsyncIterator[None]:
         """Reserve reply capacity while serializing sends for one message.
 
         Only attempted sends consume sequence numbers. Upload failures and
@@ -174,9 +173,9 @@ class QQChannel(Channel):
         lock = self._reply_locks.setdefault(message_id, anyio.Lock())
         try:
             async with lock:
-                if self._sequences.get(message_id, 0) + count > _MAX_REPLIES:
+                if self._sequences.get(message_id, 0) + count > limit:
                     raise QQSendError(
-                        "QQ allows at most five replies per message"
+                        f"QQ allows at most {limit} replies per message"
                     )
                 yield
         finally:

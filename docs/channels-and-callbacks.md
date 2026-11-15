@@ -26,13 +26,13 @@ packages/channels/
     │   ├── events.py         # HTTPEvent / APIMessageEvent
     │   ├── streaming.py      # 原生流式响应的依赖关闭作用域
     │   └── config/messages/responses/errors/adapter.py
-    ├── qq/                   # 自己持有 FastAPI Webhook、签名和回复客户端
+    ├── qq/                   # 自己持有 Gateway WebSocket、事件和回复客户端
     └── dingtalk/             # 自己持有官方 Stream SDK 连接和回复客户端
 ```
 
 API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 MessageRequest 协议。认证与入口权限检查完成后，channels 构造框架 Event、Message、可信 UserContext 和附件引用，再进入 Rule、Permission、Matcher、Dependent 链路。命令由框架的 `on_command` 处理，普通消息由 `on_message` 处理。FastAPI 类型不进入业务插件。
 
-连接由所属模块管理：API 自己读取 `config.api` 并创建监听；QQ 自己读取 `config.qq` 并创建 Webhook 监听；钉钉自己建立 Stream 长连接。API 和 QQ 不共享外部注入的服务器，也不依赖彼此的身份配置，只复用 Uvicorn 启停逻辑。API 默认端口 8080，QQ 默认端口 8081，部署时可分别配置。仅使用钉钉时不创建 FastAPI 实例或本地监听。
+连接由所属模块管理：API 自己读取 `config.api` 并创建监听；QQ 自己读取 `config.qq` 并建立官方 Gateway WebSocket；钉钉自己建立 Stream 长连接。QQ 不创建本地 HTTP 监听，也不复用 API 的 Uvicorn 服务器。QQ 通过 `/gateway` 获取 `wss://api.bot.qq.com/websocket/`，在连接后发送 `QQBot` token、intents 和心跳，并在允许时使用 session_id/sequence 恢复。
 
 ```json
 {
@@ -44,12 +44,12 @@ API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 Me
       "port": 8080,
       "identities": [{"id": "operator", "token_ref": "OPSMESH_API_TOKEN"}]
     },
-    "qq": {"host": "127.0.0.1", "port": 8081}
+    "qq": {"enabled": true, "reconnect_delay": 3.0}
   }
 }
 ```
 
-API 配置存在即准备入口；省略时不启用，有业务路由却没有身份配置时启动失败。`enabled=false` 表示不绑定本地端口，可供嵌入式 ASGI 与测试使用；认证仍生效。未声明 QQ 连接时不会启动 QQ 监听；机器人账号由使用它的功能插件声明，建立、重连和关闭由协议模块完成。
+API 配置存在即准备入口；省略时不启用，有业务路由却没有身份配置时启动失败。`qq.enabled=false` 表示不建立 QQ Gateway；机器人账号由使用它的功能插件声明，建立、重连和关闭由 QQ 协议模块完成。
 
 ### 钉钉 Stream 配置
 
@@ -73,7 +73,7 @@ channels 的 `config.dingtalk` 只放公共限制，例如 `request_timeout`、`
 
 固定使用 [官方 dingtalk-stream 0.24.3](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。消息解析、回调及 ACK 使用 SDK 原生实现。该版本原生启动循环会吞掉取消，握手和回复请求使用无超时的同步 HTTP；因此 `stream.py` 只接管异步握手、连接任务和关闭，复用 SDK 协议逻辑。日志不输出握手 ticket、secret 或完整协议帧。回复继续使用钉钉返回的 session webhook（这是出站回复地址，不是本地 Webhook 接收端点）。
 
-QQ 使用签名 Webhook 接入与异步回复客户端，协议参照[官方 botpy](https://github.com/tencent-connect/botpy)。
+QQ 使用官方 Bot API v2 Gateway WebSocket 接入与 OpenAPI 回复客户端。群消息使用 `GROUP_AT_MESSAGE_CREATE` 或 `GROUP_MESSAGE_CREATE` 的 `group_openid`，C2C 消息使用 `C2C_MESSAGE_CREATE` 的 `user_openid`；三者都先转换成 Framework Event，再进入有界队列和 Matcher 分发。被动回复按官方限制执行：单聊最多 4 次，群聊最多 5 次。
 
 channels 自己只维护消息入口、健康检查和传输生命周期。目标架构中业务插件不使用 `@channels.api.get/post/...` 声明会话、知识库或 cron 路由；它们声明 `on_message/on_command` Matcher，并由统一消息入口按插件归属开放。撤销一个业务插件只撤销它的消息入口，不关闭其他消费者共享的 API。
 
@@ -82,7 +82,7 @@ channels 自己只维护消息入口、健康检查和传输生命周期。目�
 统一消息入口使用下面的请求、回复和续接契约。chat/sandbox 示例和客户端已采用该入口；通道内部的非消息管理路由仍可单独声明。
 
 ```text
-FastAPI 请求 / 已验证 QQ 回调 / 钉钉 Stream 消息
+FastAPI 请求 / QQ Gateway Dispatch / 钉钉 Stream 消息
 → 通道认证与协议解析
 → Event + UserContext，消息事件另有 Message
 → dispatch_event

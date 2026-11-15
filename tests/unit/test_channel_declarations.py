@@ -151,7 +151,7 @@ connection = qq.declare_connection(
     run_script(
         tmp_path,
         """
-settings["qq"] = {"concurrency": 2, "host": "127.0.0.1", "port": 0}
+settings["qq"] = {"enabled": False, "concurrency": 2}
 settings.pop("api")
 channels.config_values = settings
 consumer = manager.load_plugin("consumer")
@@ -160,9 +160,9 @@ assert "opsmesh.plugins.channels.api" not in sys.modules
 assert "opsmesh.plugins.channels.dingtalk" not in sys.modules
 async def main():
     async with driver.lifespan():
-        assert consumer.module.connection.ready
+        assert not consumer.module.connection.ready
         assert len(transports._started) == 1
-        assert driver.get_adapter("qq").server.bound_port > 0
+        assert driver.get_adapter("qq").started
     assert not consumer.module.connection.ready
     assert not hasattr(channel_lifecycle, "http")
 asyncio.run(main())

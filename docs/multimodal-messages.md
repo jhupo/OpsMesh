@@ -108,8 +108,9 @@ sampleAudio / sampleVideo；群聊与私聊分别走 groupMessages/send 与 oToM
 协议转换位于各通道的 sending.py / media.py；连接、接收和事件分发留在 adapter.py。
 现有异步客户端承接 HTTP，框架和 execution 不新增发送引擎。当前锁定的 dingtalk-stream
 上传方法使用无 timeout 参数的同步 requests，媒体路径因此沿用相同官方协议的异步调用，
-没有套用可遗留后台线程的同步包装。QQ botpy 旧方法缺少 file_data 参数，因此对照腾讯较新
-Python SDK 的 RichMediaMessage 协议扩展现有 HTTP 路径，没有另起一个 SDK 连接或 token 缓存。
+没有套用可遗留后台线程的同步包装。QQ 接收使用官方 Bot API v2 Gateway WebSocket，
+出站媒体调用官方 OpenAPI 的 file_data/file_info 流程；WebSocket 连接和 OpenAPI
+客户端共享同一个 QQ token 缓存。
 
 组合消息会先解析所有附件、检查格式、上传全部素材，再按内容顺序发送；相邻文本合并。
 这不提供跨平台原子发送：上传成功但后续发送失败，平台素材可能保留至平台规定的过期时间。
@@ -117,7 +118,7 @@ Python SDK 的 RichMediaMessage 协议扩展现有 HTTP 路径，没有另起一
 零基索引；失败段可能已送达但响应丢失，因此不自动重发。取消会继续传播，不启动后续发送。
 单段成功返回原生回执；多段成功返回顺序回执列表。
 
-QQ 每条来信最多回复五次。通道在上传前检查当前记录的剩余次数，同一来信的发送串行执行，
+QQ 单聊每条来信最多回复四次，群聊最多五次。通道在上传前检查当前记录的剩余次数，同一来信的发送串行执行，
 不同来信可并行。只有实际尝试发送才递增序号；上传失败和发送前取消不消耗回复次数。
 发送超时仍可能已经送达，因此已尝试的次数不会退回。该记录属于当前连接的有界内存状态，
 不替代 QQ 服务端限额，也不承诺跨进程、重启或记录淘汰后的全局精确计数。
@@ -146,7 +147,7 @@ await channel.send(event, message)
 语音使用 `duration_ms` 提供真实时长。附件来源仍由插件与 event.attachments 管理，
 不把本地路径交给机器人平台，不向插件暴露平台 token。
 
-协议依据：[腾讯 Python SDK](https://github.com/tencent-connect/qqbot-agent-sdk/blob/main/src/qqbot_agent_sdk/dto.py)、
+协议依据：[QQ Bot API v2](https://bot.q.qq.com/wiki/develop/api-v2/)、
 [钉钉素材上传](https://github.com/open-dingtalk/dingtalk-stream-sdk-python/blob/main/dingtalk_stream/stream.py)、
 [钉钉机器人消息类型](https://open.dingtalk.com/document/orgapp/types-of-messages-sent-by-robots)。
 

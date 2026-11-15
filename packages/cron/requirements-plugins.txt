@@ -1,1 +1,1 @@
-opsmesh-database==0.5.1
+opsmesh-database==0.5.2

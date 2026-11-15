@@ -52,7 +52,7 @@ async def test_qq_rejects_excess_replies_before_network_io(previous, count):
         transport=httpx.MockTransport(unexpected)
     ) as http:
         sender = QQSender(QQClient(channel.protocol, http), channel, "secret")
-        with pytest.raises(QQSendError, match="five replies"):
+        with pytest.raises(QQSendError, match="at most 5 replies"):
             await sender.send(event, message)
     assert len(sequences) == previous
 
@@ -146,10 +146,10 @@ def qq_context(group):
         self_id="bot",
         owner_id="support",
         connection_name="bot",
-        path="/qq",
         protocol=QQSettings(),
         settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
     )
+    channel.mark_ready()
     channel.next_sequence = sequence
     return event, channel, sequences
 
@@ -486,6 +486,11 @@ async def test_mixed_reply_uploads_all_files_before_ordered_sends(
                 DingTalkClient(DingTalkSettings(), http), channel
             )
         )
+        if protocol == "qq" and not event.group_id:
+            with pytest.raises(QQSendError, match="at most 4 replies"):
+                await sender.send(event, message)
+            assert calls == []
+            return
         if upload_failure:
             with pytest.raises(Exception, match="rejected"):
                 await sender.send(event, message)

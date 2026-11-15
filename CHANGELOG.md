@@ -4,6 +4,13 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.2 — 2026-11-15
+
+- Replace QQ webhook delivery with the official Bot API v2 Gateway WebSocket.
+- Add Gateway heartbeat acknowledgement checks, bounded reconnect backoff and fatal close handling.
+- Parse QQ notice events from standard Gateway envelopes without requiring an outer event ID.
+- Refresh the synchronized framework and official plugin package versions.
+
 ## 0.5.1 — 2026-11-14
 
 - Unify HTTP message requests, ordered replies, structured data and SSE with framework Matcher commands and continuations. Migrate chat, sandbox and the interactive client together.
