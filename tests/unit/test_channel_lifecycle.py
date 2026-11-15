@@ -100,7 +100,7 @@ async def test_two_channel_adapters_share_one_driver_lifespan(monkeypatch):
 
     async with driver.lifespan():
         await wait_ready(dingtalk_channel)
-        assert qq_channel.ready is True
+        assert qq_channel.ready is False
         assert dingtalk_channel.ready is True
 
     assert qq_channel.ready is False
@@ -162,32 +162,18 @@ async def test_channel_startup_requires_a_running_driver_lifespan():
 
 
 @pytest.mark.anyio
-async def test_qq_startup_failure_rolls_back_routes_and_workers(monkeypatch):
+async def test_qq_startup_starts_only_the_event_queue(monkeypatch):
     monkeypatch.setenv("QQ_SECRET", QQ_SECRET)
     driver = make_runtime()
     adapter = QQAdapter(driver, settings=QQSettings(enabled=False))
     first = declare_qq(adapter, "first")
     second = declare_qq(adapter, "second")
 
-    async def handler(request):
-        return None
-
-    adapter.app.add_api_route(second.path, handler, methods=["POST"])
-    occupied = adapter.app.router.routes[-1]
-
     async with driver.lifespan():
-        with pytest.raises(QQConfigurationError, match="unavailable"):
-            await adapter.startup()
-        assert adapter.started is False
-        assert driver.channels == {}
-        assert first.state == "closed"
-        assert second.state == "closed"
-
-        adapter.app.router.routes.remove(occupied)
         await adapter.startup()
         assert adapter.started is True
-        assert first.ready is True
-        assert second.ready is True
+        assert first.ready is False
+        assert second.ready is False
         await adapter.shutdown()
 
 
@@ -207,7 +193,6 @@ async def test_channels_drain_before_consumers_and_transports_close(
     qq_channel = declare_qq(qq)
     dingtalk_channel = declare_dingtalk(dingtalk)
     transports = transport_module.ChannelTransports()
-    transports.use(qq)
     transports.use(dingtalk)
     consumer = FakePlugin("consumer")
     handled = []
@@ -216,18 +201,14 @@ async def test_channels_drain_before_consumers_and_transports_close(
     async def handle(item):
         await release.wait()
         assert consumer.ready
-        assert qq_channel.ready and dingtalk_channel.ready
-        assert qq.started and dingtalk.started
-        assert not qq._queue.running and not dingtalk._queue.running
-        assert not qq._queue.put_nowait("late")
+        assert dingtalk_channel.ready
+        assert dingtalk.started
+        assert not dingtalk._queue.running
         assert not dingtalk._queue.put_nowait("late")
         handled.append(item)
 
-    qq._queue._handle = handle
     dingtalk._queue._handle = handle
-    monkeypatch.setattr(qq._queue, "_scope", lambda item: item)
     monkeypatch.setattr(dingtalk._queue, "_scope", lambda item: item)
-    monkeypatch.setattr(qq._queue, "_release_item", None)
     monkeypatch.setattr(dingtalk._queue, "_release_item", None)
 
     async def drain_dingtalk():
@@ -238,8 +219,8 @@ async def test_channels_drain_before_consumers_and_transports_close(
     monkeypatch.setattr(dingtalk, "drain", drain_dingtalk)
 
     async def close_consumer():
-        assert sorted(handled) == ["dingtalk", "qq"]
-        assert qq_channel.ready and dingtalk_channel.ready
+        assert handled == ["dingtalk"]
+        assert dingtalk_channel.ready
         consumer.ready = False
 
     driver.on_startup(transports.startup)
@@ -249,7 +230,6 @@ async def test_channels_drain_before_consumers_and_transports_close(
     driver.on_shutdown(close_consumer)
     async with driver.lifespan():
         await wait_ready(dingtalk_channel)
-        assert qq._queue.put_nowait("qq")
         assert dingtalk._queue.put_nowait("dingtalk")
     assert not consumer.ready
     assert not qq_channel.ready and not dingtalk_channel.ready

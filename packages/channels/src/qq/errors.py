@@ -9,10 +9,6 @@ class QQConfigurationError(QQError, ValueError):
     """A connection or protocol setting is unusable."""
 
 
-class QQSignatureError(QQError):
-    """A callback signature or timestamp failed verification."""
-
-
 class QQProtocolError(QQError):
     """A verified callback body is not a supported QQ payload."""
 

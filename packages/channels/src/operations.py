@@ -44,7 +44,10 @@ def operation_response(response: httpx.Response) -> JsonValue:
     except ValueError:
         raise OperationError(response.status_code, "invalid_json") from None
     code = (
-        data.get("errcode", data.get("code"))
+        data.get(
+            "err_code",
+            data.get("errcode", data.get("code")),
+        )
         if isinstance(data, dict)
         else None
     )

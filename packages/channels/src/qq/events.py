@@ -17,7 +17,8 @@ from .errors import QQProtocolError
 
 C2C_MESSAGE = "C2C_MESSAGE_CREATE"
 GROUP_MESSAGE = "GROUP_AT_MESSAGE_CREATE"
-MESSAGE_EVENTS = frozenset({C2C_MESSAGE, GROUP_MESSAGE})
+GROUP_MESSAGE_CREATE = "GROUP_MESSAGE_CREATE"
+MESSAGE_EVENTS = frozenset({C2C_MESSAGE, GROUP_MESSAGE, GROUP_MESSAGE_CREATE})
 NOTICE_EVENTS = frozenset(
     {
         "GUILD_CREATE",
@@ -97,7 +98,7 @@ class QQMessageEvent(Event):
     group_id: str | None = None
     message_id: str
     event_id: str
-    timestamp: int | None = None
+    timestamp: str | int | None = None
     content: str
     message: Message | None = None
     attachments: AttachmentCollection = Field(
@@ -175,13 +176,20 @@ def parse_callback(
     """
     event_type = payload.get("t")
     if event_type in NOTICE_EVENTS:
-        data, event_id = payload.get("d"), payload.get("id")
-        if (
-            not isinstance(data, dict)
-            or not isinstance(event_id, str)
-            or not event_id
-        ):
+        data = payload.get("d")
+        if not isinstance(data, dict):
             raise QQProtocolError("QQ notice is missing its data or event ID")
+        event_id = payload.get("id")
+        if not isinstance(event_id, str) or not event_id:
+            sequence = payload.get("s")
+            if isinstance(sequence, (str, int)) and not isinstance(
+                sequence, bool
+            ):
+                event_id = f"{event_type}:{sequence}"
+            else:
+                event_id = data.get("id")
+        if not isinstance(event_id, str) or not event_id:
+            raise QQProtocolError("QQ notice is missing its event ID")
         operator = data.get("op_member_openid", data.get("op_user_id"))
         user = data.get("user")
         return QQNoticeEvent(
@@ -214,7 +222,7 @@ def parse_callback(
         raise QQProtocolError("QQ message event is missing its author")
 
     group_id: str | None = None
-    if event_type == GROUP_MESSAGE:
+    if event_type in {GROUP_MESSAGE, GROUP_MESSAGE_CREATE}:
         group_id = data.get("group_openid")
         user_id = author.get("member_openid")
         if not isinstance(group_id, str) or not isinstance(user_id, str):
@@ -227,15 +235,22 @@ def parse_callback(
     attachments = attachments or AttachmentCollection()
     message = parse_message(data, attachments, reader)
     timestamp = data.get("timestamp")
-    event_id = payload.get("id")
+    if not isinstance(timestamp, (str, int)):
+        timestamp = None
+    message_sequence = data.get("msg_seq")
+    if isinstance(message_sequence, (str, int)):
+        event_id = f"{message_id}:{message_sequence}"
+    else:
+        event_id = payload.get("id")
+    user_name = author.get("username")
     return QQMessageEvent(
         connection_id=connection_id,
         user_id=user_id,
-        user_name=None,
+        user_name=user_name if isinstance(user_name, str) else None,
         group_id=group_id,
         message_id=message_id,
         event_id=event_id if isinstance(event_id, str) else message_id,
-        timestamp=timestamp if isinstance(timestamp, int) else None,
+        timestamp=timestamp,
         content=content,
         message=message,
         attachments=attachments,

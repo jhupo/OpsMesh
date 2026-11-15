@@ -32,7 +32,11 @@ class QQSender:
         for part in parts:
             if isinstance(part, OutgoingAttachment):
                 media_type(part)
-        async with self.channel.replies(event.message_id, len(parts)):
+        async with self.channel.replies(
+            event.message_id,
+            len(parts),
+            limit=5 if event.group_id else 4,
+        ):
             return await self._send_parts(event, parts)
 
     async def _send_parts(

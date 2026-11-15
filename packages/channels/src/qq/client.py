@@ -1,4 +1,4 @@
-"""QQ HTTP requests and per-connection access-token caching."""
+"""QQ HTTP API requests and per-connection access-token caching."""
 
 from __future__ import annotations
 
@@ -114,9 +114,33 @@ class QQClient:
             raise QQSendError("QQ vendor response is not JSON") from error
         if not isinstance(data, dict):
             raise QQSendError("QQ vendor response is invalid")
-        if data.get("code") not in (None, 0, "0"):
+        error_code = data.get("code", data.get("err_code"))
+        if error_code not in (None, 0, "0"):
             raise QQSendError("QQ rejected the request")
         return data
+
+    async def gateway_url(
+        self,
+        connection_id: str,
+        app_id: str,
+        secret: str,
+        *,
+        sandbox: bool = False,
+    ) -> str:
+        """Return the authenticated WebSocket Gateway URL for one bot."""
+        token = await self.access_token(connection_id, app_id, secret)
+        base = (
+            self.settings.sandbox_api_base
+            if sandbox
+            else self.settings.api_base
+        )
+        payload = await self.request_json("GET", f"{base}/gateway", token=token)
+        if not isinstance(payload, dict):
+            raise QQSendError("QQ Gateway response is invalid")
+        url = payload.get("url")
+        if not isinstance(url, str) or not url.startswith("wss://"):
+            raise QQSendError("QQ Gateway response has no secure URL")
+        return url
 
     async def request_json(
         self,

@@ -9,7 +9,7 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 | 发行包 | 导入模块 | 内容 |
 |---|---|---|
 | `opsmesh` | `opsmesh` | 框架、驱动接口、宿主和命令行 |
-| [opsmesh-channels](packages/channels/README.md) | `opsmesh.plugins.channels` | FastAPI 入口、QQ Webhook、钉钉 Stream 与统一用户上下文 |
+| [opsmesh-channels](packages/channels/README.md) | `opsmesh.plugins.channels` | FastAPI 入口、QQ Gateway、钉钉 Stream 与统一用户上下文 |
 | [opsmesh-execution](packages/execution/README.md) | `opsmesh.plugins.execution` | 原生 Runner、流清理、插件回调与可选 Langfuse 追踪 |
 | [opsmesh-filesystem](packages/filesystem/README.md) | `opsmesh.plugins.filesystem` | 插件目录、文件操作与 ZIP 导入导出 |
 | [opsmesh-database](packages/database/README.md) | `opsmesh.plugins.database` | PostgreSQL 连接、事务和插件独立迁移 |
@@ -24,7 +24,7 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.5.1-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.2-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 journalctl -u opsmesh -f
 ```

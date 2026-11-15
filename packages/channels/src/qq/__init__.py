@@ -1,4 +1,4 @@
-"""QQ official bot channel with verified webhook callbacks."""
+"""QQ Bot API v2 channel with an official Gateway WebSocket."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from .errors import (
     QQError,
     QQProtocolError,
     QQSendError,
-    QQSignatureError,
 )
 from .events import (
     C2C_MESSAGE,
     GROUP_MESSAGE,
+    GROUP_MESSAGE_CREATE,
     QQMessageEvent,
     QQNoticeEvent,
     parse_callback,
@@ -35,6 +35,7 @@ __all__ = [
     "DISCONNECTED",
     "FAILED",
     "GROUP_MESSAGE",
+    "GROUP_MESSAGE_CREATE",
     "QQAdapter",
     "QQChannel",
     "QQConfigurationError",
@@ -45,7 +46,6 @@ __all__ = [
     "QQProtocolError",
     "QQSendError",
     "QQSettings",
-    "QQSignatureError",
     "READY",
     "declare_connection",
     "get_adapter",

@@ -81,7 +81,7 @@ conversation_id 是通道对话区分符，channels 结合可信用户、连接�
 
 channels.UserContext 是冻结的 id、name、groups、roles，集合使用 frozenset。Context() 注入原对象；身份来自认证结果，正文无法覆盖。会话 ID、执行 ID、数据库及 MCP 客户端由调用插件单独管理。Framework permissions.User 是权限匹配器。
 
-Driver 管理框架容器与逻辑连接；Adapter 实现协议；Channel 表示具体账号或逻辑端点。send/call 由 Channel/Adapter 提供。API、QQ 各持有自己的监听服务，钉钉持有官方 Stream 连接。
+Driver 管理框架容器与逻辑连接；Adapter 实现协议；Channel 表示具体账号或逻辑端点。send/call 由 Channel/Adapter 提供。API 持有本地 HTTP 监听，QQ 持有官方 Gateway WebSocket，钉钉持有官方 Stream 连接。
 
 ## 调用与资源生命周期
 

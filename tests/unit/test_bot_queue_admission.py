@@ -1,13 +1,11 @@
 """Keep acknowledged callbacks admitted through queue and dependency cleanup."""
 
-import json
 import time
 from types import ModuleType
 from typing import Annotated
 
 import anyio
 import pytest
-from starlette.requests import Request
 
 from opsmesh.adapters import Event
 from opsmesh.config import Config, Env
@@ -27,7 +25,6 @@ from opsmesh.plugins.channels.qq import (
     QQConnectionSettings,
     QQSettings,
 )
-from opsmesh.plugins.channels.qq.security import QQSigner
 from opsmesh.plugins.invocation import plugin_call
 from opsmesh.plugins.model import Plugin, PluginStatus
 
@@ -75,7 +72,7 @@ class BotHarness:
                     QQConnectionSettings(app_id="123", secret_ref="BOT_SECRET"),
                     name="bot",
                 )
-                self.adapter._signers[self.channel.self_id] = QQSigner(SECRET)
+                self.adapter._accepting = True
             else:
                 self.adapter = DingTalkAdapter(
                     self.driver,
@@ -114,7 +111,8 @@ class BotHarness:
                 },
             )
             return result
-        body = json.dumps(
+        accepted = await self.adapter.accept_event(
+            self.channel,
             {
                 "op": 0,
                 "t": "C2C_MESSAGE_CREATE",
@@ -124,28 +122,9 @@ class BotHarness:
                     "content": message_id,
                     "author": {"user_openid": "user"},
                 },
-            }
-        ).encode()
-        stamp = str(int(time.time()))
-        signature = QQSigner(SECRET).sign(stamp + body.decode())
-
-        async def receive():
-            return {"type": "http.request", "body": body, "more_body": False}
-
-        request = Request(
-            {
-                "type": "http",
-                "method": "POST",
-                "path": self.channel.path,
-                "headers": [
-                    (b"x-signature-ed25519", signature.encode()),
-                    (b"x-signature-timestamp", stamp.encode()),
-                ],
             },
-            receive,
         )
-        response = await self.adapter._handle_callback(self.channel, request)
-        return response.status_code
+        return 200 if accepted else 503
 
     def bind(self, handler, **options):
         return Matcher.new(

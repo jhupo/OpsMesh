@@ -29,10 +29,12 @@ under `config.api`. FastAPI Depends authenticates requests; handlers run through
 framework Events, Messages, UserContext, Matchers and Dependent. Native Starlette
 responses are used, with managed cleanup for streamed dependency resources.
 
-QQ owns a separate FastAPI Webhook listener under `config.qq`. Consumer plugins
-declare accounts; the QQ module opens connections and validates signatures.
+QQ uses the official Bot API v2 Gateway WebSocket under `config.qq`. Consumer
+plugins declare accounts; the QQ module obtains the Gateway URL, performs the
+official identify/resume handshake, sends heartbeats, reconnects, and converts
+Gateway dispatches into framework events.
 DingTalk owns its official Stream SDK connection and needs no local listener.
-The API and QQ listeners share the Uvicorn lifecycle implementation.
+The API listener owns Uvicorn. QQ does not open a local HTTP listener.
 
 Inputs open after consumer readiness and drain before consumers shut down.
 DingTalk's console must use Stream mode. The channel adds cancellable lifecycle
@@ -111,7 +113,11 @@ for the command initiator's business authorization.
 | DingTalk interconnection group | `update_group_name` | PUT `/v1.0/im/interconnections/groups/names` |
 | DingTalk interconnection group | `add_group_member`, `remove_group_member` | POST `/v1.0/im/interconnections/groups/members`, `/members/remove` |
 
-QQ mappings follow [Tencent's botpy API](https://github.com/tencent-connect/botpy/blob/master/botpy/api.py).
+QQ mappings follow the [QQ Bot API v2](https://bot.q.qq.com/wiki/develop/api-v2/)
+Gateway and OpenAPI contracts. The Gateway accepts C2C, `GROUP_AT_MESSAGE_CREATE`
+and `GROUP_MESSAGE_CREATE` events when the corresponding intent is enabled.
+QQ permits four passive direct-message replies and five passive group replies;
+the channel enforces those limits per incoming message.
 Member listing requires private-domain access; mute and removal require guild
 administration permissions. These endpoints accept guild IDs, not ordinary QQ
 group openids. DingTalk mappings follow the official `im_1_0` client in

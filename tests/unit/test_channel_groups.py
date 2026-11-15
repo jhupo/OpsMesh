@@ -88,7 +88,7 @@ async def test_qq_guild_operation_wire_contract(
     requests = []
 
     def respond(request):
-        if request.url.host == "bots.qq.com":
+        if request.url.path.endswith("/app/getAppAccessToken"):
             return httpx.Response(
                 200, json={"access_token": "token", "expires_in": 7200}
             )
