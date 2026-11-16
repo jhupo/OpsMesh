@@ -3,7 +3,7 @@
 A native SDK `Agent` with owned `SQLAlchemySession` history. API and bot
 messages use the same framework command and ordinary-message matchers.
 The plugin consumes `execution.stream` inside its history lock and awaits
-`channel.call("stream", event=event, source=text_deltas(result))` before
+`channel.call("stream", event=event, source=ConversationOutput(...).stream(result))` before
 closing native execution resources.
 
 ## Loading and configuration
@@ -130,3 +130,31 @@ Focused tests use real migrations, native SDK sessions and deterministic
 busy operations, JSON/SSE output, history persistence and the client protocol.
 Remote models, production PostgreSQL and real bot connections require separate
 integration verification.
+
+## Output policy
+
+`output_format` explicitly selects `markdown` (default) or `text`; content is
+never guessed from punctuation. `publication` defaults to `buffered`, sending
+the final response after SDK guardrails succeed. Explicit `progressive` mode
+uses typed text blocks and may show text that a later guardrail rejects; it
+cannot retract already published text. Approval interruptions are errors in
+this example, not successful completions or automatic continuation.
+
+The shared example output reader consumes the native SDK stream once. Custom
+structured output needs a formatter returning `channels.Message`. Optional file
+selection can publish completed native PNG/JPEG image-generation results;
+ordinary tool-result images are not automatically public. This chat example
+does not enable image generation or file tools by default.
+
+The client displays tables and file links alongside text. `--download-dir ./out`
+saves returned attachments with authenticated, bounded requests to the same
+server. Downloads do not follow redirects or overwrite files. Use `--stream`
+with `publication: progressive` for live text increments; buffered output stays
+a complete SSE message. A plain terminal displays Markdown source.
+
+
+The example chooses presentation using the current channel's `send_types` and
+`stream_formats`. QQ receives plain text, and connections without native
+incremental output use buffered publication. Table-to-text conversion and
+HTTP-only metadata selection are explicit example policies. Channels rejects
+unsupported formats instead of making these decisions for the agent.

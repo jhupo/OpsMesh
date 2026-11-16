@@ -334,7 +334,7 @@ async def search(matcher: Matcher, arguments: Annotated[Message, CommandArg()]) 
 
 续接沿用框架临时 Matcher，补齐原始 Matcher 关联即可，不用模块名或行号代替关联。等待范围复用 Event.get_session_id 和 Permission；入口通过已有 matcher_filter 仅放行绑定来源的有效续接。每次请求重新认证和检查准入，同范围消费由 channels 串行控制。waiting 使用现有 DispatchResult.suspended。state 不持有网络请求或执行资源。复用过期检查与注册清理；停止先关准入、排空调用，再清理该插件临时等待，保留静态声明，避免排空期间新建的等待遗漏。资源停止再启动也不能恢复旧等待，撤销和进程重启同样不恢复；不另建代次登记表或等待管理器。
 
-模型增量不逐段调用普通 send。channels 通过现有 Channel.call 扩展通道输出操作，在调用者的 execution.stream 作用域内消费其转换好的异步文本迭代器；SDK 事件解释仍由调用插件承担。SSE 为同一回答发送带 message_id 的 start/delta/end，增量带有序 sequence；完整消息各自独立。非流式 HTTP 和机器人默认有界聚合后输出完整消息，机器人仅在验证平台支持后采用限频更新。回答结束标记不等于请求 done；失败保留部分输出但不标成功。完整线协议和资源顺序以通道文档为准。
+模型增量不逐段调用普通 send。channels 通过现有 Channel.call 扩展通道输出操作，在调用者的 execution.stream 作用域内消费其转换好的类型化消息流（完整 Message 或文字块 start/delta/end）；SDK 事件解释仍由调用插件承担。SSE 为同一回答发送带 message_id 的 start/delta/end，增量带有序 sequence；完整消息各自独立。非流式 HTTP 和机器人默认有界聚合后输出完整消息，机器人仅在验证平台支持后采用限频更新。回答结束标记不等于请求 done；失败保留部分输出但不标成功。完整线协议和资源顺序以通道文档为准。
 
 未知命令不能依赖 on_message 的优先级自然排除：普通聊天增加非命令 Rule，命令链末尾增加阻断兜底，复用框架的命令前缀与解析结果。权限不通过的已知命令也不得落入模型。存在续接时由续接优先消费，交互需要取消命令则自行声明其行为。
 

@@ -18,6 +18,18 @@ class OperationError(Exception):
         self.status = status
         self.code = code
         self.request_id = request_id
+        self.rejected = (
+            not 200 <= status < 300
+            and status != 0
+            or code
+            not in {
+                "unknown",
+                "transport_error",
+                "invalid_json",
+                "invalid_response",
+                "response_too_large",
+            }
+        )
         super().__init__(f"Platform operation failed ({status}, {code})")
 
 
@@ -42,7 +54,9 @@ def operation_response(response: httpx.Response) -> JsonValue:
     try:
         data = response.json()
     except ValueError:
-        raise OperationError(response.status_code, "invalid_json") from None
+        if 200 <= response.status_code < 300:
+            raise OperationError(response.status_code, "invalid_json") from None
+        data = {}
     code = (
         data.get(
             "err_code",

@@ -1,54 +1,33 @@
-"""Bounded in-memory event queue with a fixed worker pool."""
-
-from __future__ import annotations
+"""Bounded event admission with FIFO ordering within each conversation."""
 
 import logging
+from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import anyio
 from anyio.abc import TaskGroup, TaskStatus
-from anyio.streams.memory import (
-    MemoryObjectReceiveStream,
-    MemoryObjectSendStream,
-)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class _ScopeLane:
-    key: str
-    next_sequence: int = 0
-    turn: int = 0
-    users: int = 0
-    completed: set[int] = field(default_factory=set)
-    changed: anyio.Event = field(default_factory=anyio.Event)
-
-
-@dataclass
 class _QueuedItem:
     item: Any
-    lane: _ScopeLane | None = None
-    sequence: int = 0
+    scope: str | None
 
 
 class EventQueue:
-    """Process vendor callbacks after the transport acknowledged them.
-
-    The queue is in memory only. A full queue rejects admission; process
-    exits or crashes can lose acknowledged events. Workers
-    run in the host task group so they share the driver lifespan instead of
-    entering a nested task group from a different scope.
+    """A bounded, process-local callback queue; only ready work uses workers.
 
     Args:
-        capacity: Maximum queued items before new ones are rejected.
-        concurrency: Number of worker tasks consuming the queue.
-        shutdown_timeout: Seconds to drain queued items during shutdown.
-        handle: Coroutine processing one queued item.
-        scope: Optional conversation key, processed in admission order.
-        release: Cleanup for every accepted item, including cancellation.
+        capacity: Maximum waiting items before admission is rejected.
+        concurrency: Maximum simultaneously executing callbacks.
+        shutdown_timeout: Seconds to drain before cancelling workers.
+        handle: Callback executed for each accepted event.
+        scope: Optional conversation key, serialized in admission order.
+        release: Cleanup for all admitted events, including discarded work.
     """
 
     def __init__(
@@ -67,124 +46,113 @@ class EventQueue:
         self._handle = handle
         self._scope = scope
         self._release_item = release
-        self._lanes: dict[str, _ScopeLane] = {}
-        self._send: MemoryObjectSendStream[Any] | None = None
-        self._receive: MemoryObjectReceiveStream[Any] | None = None
-        self._task_group: TaskGroup | None = None
-        self._worker_scopes: list[anyio.CancelScope] = []
+        self._pending: deque[_QueuedItem] = deque()
+        self._active: set[str] = set()
+        self._accepting = False
+        self._started = False
+        self._changed = anyio.Event()
         self._finished = anyio.Event()
+        self._worker_scopes: list[anyio.CancelScope] = []
         self._running = 0
 
     @property
     def running(self) -> bool:
-        """Whether the queue accepts work."""
-        return self._send is not None
+        """Whether new callbacks can enter the queue."""
+        return self._accepting
+
+    def _notify(self) -> None:
+        changed, self._changed = self._changed, anyio.Event()
+        changed.set()
 
     async def start(self, task_group: TaskGroup) -> None:
-        """Create the queue and start its workers in the host task group."""
-        if self._task_group is not None:
-            if self._send is None:
+        """Start workers in the host task group without nested lifespans."""
+        if self._started:
+            if not self._accepting:
                 raise RuntimeError("The previous event queue has not stopped")
             return
-        send, receive = anyio.create_memory_object_stream[Any](self._capacity)
-        self._send = send
-        self._receive = receive
+        self._started = self._accepting = True
         self._finished = anyio.Event()
-        self._running = self._concurrency
-        self._task_group = task_group
-        scopes: list[anyio.CancelScope] = []
+        self._running = 0
         try:
             for _ in range(self._concurrency):
-                scopes.append(
-                    await task_group.start(self._worker, receive.clone())
-                )
+                self._worker_scopes.append(await task_group.start(self._worker))
         except BaseException:
-            for scope in scopes:
+            self.stop_accepting()
+            for scope in self._worker_scopes:
                 scope.cancel()
-            self._send = None
-            self._receive = None
-            self._task_group = None
-            send.close()
-            receive.close()
+            if not self._running:
+                self._finished.set()
             raise
-        self._worker_scopes = scopes
 
     def put_nowait(self, item: Any) -> bool:
-        """Enqueue one item and report whether it was accepted."""
-        if self._send is None:
+        """Accept without blocking the vendor acknowledgment callback."""
+        if not self._accepting or len(self._pending) >= self._capacity:
             return False
         key = self._scope(item) if self._scope is not None else None
-        lane = None
-        if key is not None:
-            lane = self._lanes.get(key) or _ScopeLane(key)
-        queued = _QueuedItem(item, lane, lane.next_sequence if lane else 0)
-        try:
-            self._send.send_nowait(queued)
-        except (anyio.WouldBlock, anyio.ClosedResourceError):
-            return False
-        if lane is not None:
-            lane.next_sequence += 1
-            lane.users += 1
-            self._lanes[lane.key] = lane
+        self._pending.append(_QueuedItem(item, key))
+        self._notify()
         return True
 
     def stop_accepting(self) -> None:
-        """Reject new work while allowing workers to drain accepted items."""
-        send, self._send = self._send, None
-        if send is not None:
-            send.close()
+        """Reject new work and wake workers to drain accepted callbacks."""
+        self._accepting = False
+        self._notify()
 
     async def stop(self) -> None:
-        """Close the queue, drain workers, then cancel overdue work."""
+        """Drain work, then cancel overdue callbacks and release admission."""
         self.stop_accepting()
-        receive = self._receive
-        scopes = self._worker_scopes
-        started = self._task_group is not None
-        if started:
-            with anyio.move_on_after(self._shutdown_timeout) as draining:
+        if not self._started:
+            return
+        with anyio.move_on_after(self._shutdown_timeout) as draining:
+            await self._finished.wait()
+        if draining.cancelled_caught:
+            logger.warning("Channel event queue did not drain in time")
+            for scope in self._worker_scopes:
+                scope.cancel()
+            with anyio.fail_after(self._shutdown_timeout, shield=True):
                 await self._finished.wait()
-            if draining.cancelled_caught:
-                logger.warning(
-                    "Channel event queue did not drain within %.1fs",
-                    self._shutdown_timeout,
-                )
-                for scope in scopes:
-                    scope.cancel()
-                with anyio.fail_after(self._shutdown_timeout, shield=True):
-                    await self._finished.wait()
-        if receive is not None:
-            receive.close()
-        self._receive = None
-        self._task_group = None
-        self._worker_scopes = []
+        self._worker_scopes.clear()
+        self._started = False
+
+    async def _next(self) -> _QueuedItem | None:
+        while True:
+            for index, queued in enumerate(self._pending):
+                if queued.scope is None or queued.scope not in self._active:
+                    del self._pending[index]
+                    if queued.scope is not None:
+                        self._active.add(queued.scope)
+                    return queued
+            if not self._accepting and not self._pending:
+                return None
+            await self._changed.wait()
 
     async def _worker(
         self,
-        receive: MemoryObjectReceiveStream[Any],
         *,
         task_status: TaskStatus[anyio.CancelScope] = anyio.TASK_STATUS_IGNORED,
     ) -> None:
+        self._running += 1
         try:
             with anyio.CancelScope() as scope:
                 task_status.started(scope)
-                async for queued in receive:
+                while (queued := await self._next()) is not None:
                     try:
-                        await self._wait_for_turn(queued)
                         await self._handle(queued.item)
                     except Exception:
                         logger.exception("Channel event handling failed")
                     finally:
-                        await self._finish(queued)
+                        await self._release(queued)
         finally:
-            receive.close()
             self._running -= 1
             if self._running == 0:
+                self.stop_accepting()
                 try:
-                    await self._discard_pending()
+                    while self._pending:
+                        await self._release(self._pending.popleft())
                 finally:
                     self._finished.set()
 
-    async def _finish(self, queued: _QueuedItem) -> None:
+    async def _release(self, queued: _QueuedItem) -> None:
         try:
             if self._release_item is not None:
                 with anyio.CancelScope(shield=True):
@@ -193,39 +161,6 @@ class EventQueue:
                     except Exception:
                         logger.exception("Channel event cleanup failed")
         finally:
-            self._complete(queued)
-
-    async def _discard_pending(self) -> None:
-        self.stop_accepting()
-        receive = self._receive
-        if receive is None:
-            return
-        with anyio.CancelScope(shield=True):
-            while True:
-                try:
-                    queued = receive.receive_nowait()
-                except (anyio.EndOfStream, anyio.WouldBlock):
-                    return
-                await self._finish(queued)
-
-    async def _wait_for_turn(self, queued: _QueuedItem) -> None:
-        lane = queued.lane
-        if lane is None:
-            return
-        while queued.sequence != lane.turn:
-            await lane.changed.wait()
-
-    def _complete(self, queued: _QueuedItem) -> None:
-        lane = queued.lane
-        if lane is None:
-            return
-        lane.completed.add(queued.sequence)
-        lane.users -= 1
-        # Cancelled waiters cannot let later items overtake an active handler.
-        while lane.turn in lane.completed:
-            lane.completed.remove(lane.turn)
-            lane.turn += 1
-        changed, lane.changed = lane.changed, anyio.Event()
-        changed.set()
-        if lane.users == 0:
-            self._lanes.pop(lane.key, None)
+            if queued.scope is not None:
+                self._active.discard(queued.scope)
+            self._notify()

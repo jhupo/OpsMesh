@@ -22,6 +22,7 @@ class QQStream:
     """Run the SDK on the host loop and expose connection state to channels."""
 
     def __init__(self, channel: QQChannel, secret: str) -> None:
+        """Bind a declared connection to its native gateway lifecycle."""
         self.channel = channel
         self.adapter = channel.adapter
         self.api = self.adapter.client.account(channel, secret)

@@ -1,6 +1,7 @@
 """Configuration owned by the example conversation plugin."""
 
 import os
+from typing import Literal
 
 from openai.types.shared import Reasoning
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -13,6 +14,8 @@ class ChatSettings(BaseModel):
 
     model: str = Field(min_length=1)
     reasoning: Reasoning | None = None
+    output_format: Literal["text", "markdown"] = "markdown"
+    publication: Literal["buffered", "progressive"] = "buffered"
     name: str = "OpsMesh Chat Agent"
     instructions: str = "Answer the user's question clearly and concisely."
     max_turns: int = Field(default=8, ge=1)

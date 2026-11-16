@@ -21,7 +21,10 @@ async def startup() -> None:
     agent = SandboxAgent[channels.UserContext](
         name="Sandbox assistant",
         instructions=(
-            "Use your workspace to solve the task and explain the result."
+            "Use your workspace to solve the task and explain the result. "
+            "Call publish_file after you finish creating a user deliverable. "
+            "Use workspace-relative paths; exclude intermediate files. "
+            "Wait for all writers to finish before publishing."
         ),
         model=settings.model,
         model_settings=ModelSettings(reasoning=settings.reasoning),

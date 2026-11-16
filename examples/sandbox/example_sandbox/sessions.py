@@ -3,7 +3,7 @@
 from conversation_support import ConversationError as ConversationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from . import conversations
+from . import conversations, filesystem
 from .models import Conversation
 from .workspace import SandboxWorkspaces
 
@@ -25,6 +25,9 @@ class SandboxConversations(conversations.ConversationStore):
     async def remove_assets(self, session_id: str) -> None:
         """Delete files and persisted SDK sandbox state before the index."""
         await self.workspaces.reset(session_id)
+        delivery_root = filesystem.data_file("deliverables/" + session_id)
+        if delivery_root.exists():
+            await filesystem.delete(delivery_root)
 
     async def reset_workspace(self, owner_id: str, session_id: str) -> None:
         """Reset files explicitly without deleting conversation history."""

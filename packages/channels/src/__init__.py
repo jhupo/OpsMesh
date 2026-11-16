@@ -9,16 +9,23 @@ from .attachments import Attachment, AttachmentCollection, AttachmentError
 from .config import ChannelConnections, ChannelsSettings
 from .context import UserContext
 from .dependencies import Connection
-from .lifecycle import hooks as _lifecycle  # noqa: F401
 from .lifecycle import consumers as _consumers  # noqa: F401
-from .rules import in_group
-from .messages import Message, MessageSegment
+from .lifecycle import hooks as _lifecycle  # noqa: F401
+from .messages import (
+    Message,
+    MessageSegment,
+    StreamMessageEnd,
+    StreamMessageStart,
+    StreamTextDelta,
+)
 from .operations import (
     OperationError,
     OperationPermissionDenied,
     OperationRateLimited,
     UnsupportedOperation,
 )
+from .receipts import Delivery, DeliveryReceipt
+from .rules import in_group
 from .sending import MessageSendError
 
 
@@ -46,6 +53,11 @@ __all__ = [
     "Attachment",
     "AttachmentCollection",
     "AttachmentError",
+    "Delivery",
+    "DeliveryReceipt",
+    "StreamMessageStart",
+    "StreamTextDelta",
+    "StreamMessageEnd",
     "Message",
     "MessageSegment",
     "MessageSendError",

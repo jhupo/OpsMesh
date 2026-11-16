@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
-import re
+import time
 from typing import Any
 
+import anyio
 import httpx
 from pydantic import JsonValue
 from yarl import URL
@@ -15,7 +16,7 @@ from ..operations import OperationError, operation_response
 from .config import DingTalkConnectionSettings, DingTalkSettings
 from .errors import DingTalkSendError
 
-_MAX_RESPONSE_BYTES = 1024 * 1024
+_TOKEN_REFRESH_MARGIN = 60
 
 
 class DingTalkClient:
@@ -28,6 +29,8 @@ class DingTalkClient:
         self.settings = settings
         self._http = http
         self._owns_http = http is None
+        self._tokens: dict[tuple[str, str], tuple[str, float]] = {}
+        self._token_locks: dict[tuple[str, str], anyio.Lock] = {}
 
     def open(self) -> None:
         """Open the HTTP transport on adapter startup."""
@@ -36,6 +39,8 @@ class DingTalkClient:
 
     async def close(self) -> None:
         """Close the owned HTTP transport."""
+        self._tokens.clear()
+        self._token_locks.clear()
         if self._owns_http and self._http is not None:
             await self._http.aclose()
             self._http = None
@@ -61,23 +66,41 @@ class DingTalkClient:
                 timeout=self.settings.request_timeout,
                 follow_redirects=False,
             )
-        except httpx.HTTPError as error:
-            raise DingTalkSendError("DingTalk reply request failed") from error
+        except httpx.HTTPError:
+            raise OperationError(0, "transport_error") from None
         return self._response(response)
 
+    def forget(self, connection: DingTalkConnectionSettings) -> None:
+        """Discard cached credentials when their owning connection stops."""
+        key = (connection.client_id, connection.client_secret_ref)
+        self._tokens.pop(key, None)
+        self._token_locks.pop(key, None)
+
     async def access_token(self, connection: DingTalkConnectionSettings) -> str:
-        """Get a token for the owning bot without a blocking SDK request."""
-        secret = os.environ.get(connection.client_secret_ref)
-        if not secret:
-            raise DingTalkSendError("DingTalk credentials are unavailable")
-        result = await self.post_json(
-            "https://api.dingtalk.com/v1.0/oauth2/accessToken",
-            {"appKey": connection.client_id, "appSecret": secret},
-        )
-        token = result.get("accessToken")
-        if not isinstance(token, str) or not token:
-            raise DingTalkSendError("DingTalk authentication failed")
-        return token
+        """Reuse a connection token and coalesce concurrent refreshes."""
+        key = (connection.client_id, connection.client_secret_ref)
+        lock = self._token_locks.setdefault(key, anyio.Lock())
+        async with lock:
+            cached = self._tokens.get(key)
+            if cached is not None and time.monotonic() < cached[1]:
+                return cached[0]
+            secret = os.environ.get(connection.client_secret_ref)
+            if not secret:
+                raise DingTalkSendError("DingTalk credentials are unavailable")
+            result = await self.post_json(
+                "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+                {"appKey": connection.client_id, "appSecret": secret},
+            )
+            token = result.get("accessToken")
+            if not isinstance(token, str) or not token:
+                raise DingTalkSendError("DingTalk authentication failed")
+            lifetime = result.get("expireIn")
+            if isinstance(lifetime, (int, float)) and lifetime > 0:
+                remaining = max(
+                    0, lifetime - min(_TOKEN_REFRESH_MARGIN, lifetime / 10)
+                )
+                self._tokens[key] = (token, time.monotonic() + remaining)
+            return token
 
     async def request_json(
         self,
@@ -128,7 +151,7 @@ class DingTalkClient:
                 follow_redirects=False,
             )
         except httpx.HTTPError:
-            raise DingTalkSendError("DingTalk media upload failed") from None
+            raise OperationError(0, "transport_error") from None
         result = self._response(response)
         media_id = result.get("media_id")
         if not isinstance(media_id, str) or not media_id:
@@ -139,27 +162,7 @@ class DingTalkClient:
 
     @staticmethod
     def _response(response: httpx.Response) -> dict[str, Any]:
-        if not 200 <= response.status_code < 300:
-            raise DingTalkSendError(
-                f"DingTalk reply failed with status {response.status_code}"
-            )
-        if len(response.content) > _MAX_RESPONSE_BYTES:
-            raise DingTalkSendError("DingTalk response is too large")
-        try:
-            data = response.json()
-        except ValueError as error:
-            raise DingTalkSendError("DingTalk response is not JSON") from error
+        data = operation_response(response)
         if not isinstance(data, dict):
-            raise DingTalkSendError("DingTalk response is invalid")
-        if data.get("errcode", 0) not in (0, None) or data.get("code") not in (
-            None,
-            0,
-            "0",
-        ):
-            code = str(data.get("errcode") or data.get("code"))
-            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", code):
-                code = "unknown"
-            raise DingTalkSendError(
-                f"DingTalk rejected the request with code {code}"
-            )
+            raise OperationError(response.status_code, "invalid_response")
         return data

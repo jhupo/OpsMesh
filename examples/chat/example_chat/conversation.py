@@ -2,7 +2,7 @@
 
 from conversation_support.entrance import ConversationTurn
 from conversation_support.inputs import model_input
-from conversation_support.streaming import text_deltas
+from conversation_support.outputs import ConversationOutput
 
 from opsmesh.messages import Message
 from opsmesh.plugins.channels.attachments import AttachmentError
@@ -36,5 +36,11 @@ async def answer(
             ),
         ) as result:
             await turn.channel.call(
-                "stream", event=turn.event, source=text_deltas(result)
+                "stream",
+                event=turn.event,
+                source=ConversationOutput(
+                    format=definition.settings.output_format,
+                    channel=turn.channel,
+                    publication=definition.settings.publication,
+                ).stream(result),
             )

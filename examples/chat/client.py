@@ -39,17 +39,31 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def response_text(envelope: dict) -> str:
-    """Render complete messages while omitting chat selection notices."""
-    return "\n".join(
-        "".join(
-            part["text"]
-            for part in message["content"]
-            if part.get("type") == "text"
-        )
-        for message in envelope["messages"]
-        if not isinstance(message.get("data"), dict)
-        or message["data"].get("kind") != "selection"
-    )
+    """Render readable content and authenticated file references in order."""
+    lines = []
+    for message in envelope["messages"]:
+        if (message.get("data") or {}).get("kind") == "selection":
+            continue
+        for part in message["content"]:
+            kind = part["type"]
+            if kind in {"text", "markdown"}:
+                lines.append(part["text"])
+            elif kind == "table":
+                if part.get("caption"):
+                    lines.append(part["caption"])
+                lines.append(" | ".join(part["columns"]))
+                lines.extend(
+                    " | ".join(str(cell) for cell in row)
+                    for row in part["rows"]
+                )
+            elif kind in {"image", "file", "audio", "video"}:
+                lines.append(
+                    f"[{kind}] {part['attachment']['name']}: "
+                    f"{part.get('saved_path', part['download_url'])}"
+                )
+            else:
+                raise ChatClientError(f"Unsupported message segment: {kind}")
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -101,7 +115,9 @@ class ChatClient:
                 message = "Request failed"
             finally:
                 error.close()
-            raise ChatClientError(f"HTTP {status}: {message}", status) from None
+            raise ChatClientError(
+                f"HTTP {status}: {message}", status
+            ) from None
         except (URLError, OSError):
             raise ChatClientError(
                 "Connection failed or timed out; the request was not retried"
@@ -113,7 +129,10 @@ class ChatClient:
 
     def _message_request(self, message, accept: str) -> Request:
         return Request(
-            self.base_url.rstrip("/") + "/plugins/" + self.plugin + "/messages",
+            self.base_url.rstrip("/")
+            + "/plugins/"
+            + self.plugin
+            + "/messages",
             data=json.dumps(
                 {"conversation_id": self.conversation_id, "message": message}
             ).encode("utf-8"),
@@ -127,16 +146,22 @@ class ChatClient:
 
     def _validate(self, envelope) -> dict:
         if not isinstance(envelope, dict):
-            raise ChatClientError("Server returned an invalid message envelope")
+            raise ChatClientError(
+                "Server returned an invalid message envelope"
+            )
         failure = envelope.get("error")
         if isinstance(failure, dict):
-            raise ChatClientError(str(failure.get("message", "Request failed")))
+            raise ChatClientError(
+                str(failure.get("message", "Request failed"))
+            )
         if (
             envelope.get("conversation_id") != self.conversation_id
             or envelope.get("status") not in {"completed", "waiting"}
             or not isinstance(envelope.get("messages"), list)
         ):
-            raise ChatClientError("Server returned an invalid message envelope")
+            raise ChatClientError(
+                "Server returned an invalid message envelope"
+            )
         for message in envelope["messages"]:
             if not isinstance(message, dict) or not isinstance(
                 message.get("content"), list
@@ -149,10 +174,36 @@ class ChatClient:
                     raise ChatClientError(
                         "Server returned an invalid message segment"
                     )
-                if part["type"] == "text" and not isinstance(
+                if part["type"] not in {
+                    "text",
+                    "markdown",
+                    "table",
+                    "image",
+                    "file",
+                    "audio",
+                    "video",
+                }:
+                    raise ChatClientError("Unsupported message segment")
+                if part["type"] in {"text", "markdown"} and not isinstance(
                     part.get("text"), str
                 ):
                     raise ChatClientError("Server returned invalid text")
+                if part["type"] == "table":
+                    columns, rows = part.get("columns"), part.get("rows")
+                    if (
+                        not isinstance(columns, list)
+                        or not columns
+                        or not all(isinstance(cell, str) for cell in columns)
+                        or not isinstance(rows, list)
+                        or any(
+                            not isinstance(row, list)
+                            or len(row) != len(columns)
+                            for row in rows
+                        )
+                    ):
+                        raise ChatClientError("Server returned invalid table")
+                if part["type"] in {"image", "file", "audio", "video"}:
+                    self._attachment(part)
             data = message.get("data")
             if data is not None and not isinstance(data, dict):
                 raise ChatClientError("Server returned invalid message data")
@@ -163,6 +214,49 @@ class ChatClient:
                     failure.get("status"),
                 )
         return envelope
+
+    def _attachment(self, part: dict) -> dict:
+        attachment = part.get("attachment")
+        if (
+            not isinstance(attachment, dict)
+            or not re.fullmatch(r"[a-f0-9]{32}", str(attachment.get("id", "")))
+            or not isinstance(attachment.get("name"), str)
+            or type(attachment.get("size")) is not int
+            or not 0 < attachment["size"] <= MAX_FILE_BYTES
+            or part.get("download_url")
+            != (f"/attachments/{self.plugin}/{attachment['id']}")
+        ):
+            raise ChatClientError("Server returned an invalid attachment")
+        return attachment
+
+    def download(self, part: dict, directory: Path) -> Path:
+        """Save bounded files from this server without following redirects.
+
+        Args:
+            part: A media segment returned by the unified messages API.
+            directory: Caller-selected directory for uniquely named files.
+
+        Returns:
+            The newly written local path; existing files are never replaced.
+        """
+        attachment = self._attachment(part)
+        request = Request(
+            self.base_url.rstrip("/") + part["download_url"],
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        content = self._request(
+            request, lambda response: response.read(MAX_FILE_BYTES + 1)
+        )
+        if len(content) != attachment["size"]:
+            raise ChatClientError("Downloaded file size does not match")
+        suffix = Path(attachment["name"]).suffix
+        if not re.fullmatch(r"\.[A-Za-z0-9]{1,12}", suffix):
+            suffix = ""
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / (uuid4().hex + suffix)
+        with destination.open("xb") as output:
+            output.write(content)
+        return destination
 
     def _content(self, text: str, files: tuple[Path, ...]):
         text = text.strip()
@@ -185,7 +279,12 @@ class ChatClient:
         return self._validate(self._request(request))
 
     def send_stream(
-        self, text: str, files: tuple[Path, ...] = (), *, on_delta=None
+        self,
+        text: str,
+        files: tuple[Path, ...] = (),
+        *,
+        on_delta=None,
+        on_message=None,
     ) -> dict:
         """Collect SSE messages while optionally displaying text deltas."""
         request = self._message_request(
@@ -193,7 +292,10 @@ class ChatClient:
         )
         return self._validate(
             self._request(
-                request, lambda response: collect_stream(response, on_delta)
+                request,
+                lambda response: collect_stream(
+                    response, on_delta, on_message
+                ),
             )
         )
 
@@ -244,8 +346,15 @@ def main() -> int:
     parser.add_argument("--plugin", default="example_chat")
     parser.add_argument("--message", help="Send one question and exit")
     parser.add_argument("--file", type=Path, action="append", default=[])
+    parser.add_argument(
+        "--download-dir",
+        type=Path,
+        help="Save returned files to this directory",
+    )
     parser.add_argument("--timeout", type=float, default=300)
-    parser.add_argument("--session", help="Select an existing SDK conversation")
+    parser.add_argument(
+        "--session", help="Select an existing SDK conversation"
+    )
     parser.add_argument("--new", action="store_true")
     parser.add_argument(
         "--stream", action="store_true", help="Display SSE text increments"
@@ -261,7 +370,9 @@ def main() -> int:
             "OpsMesh API token: "
         )
         client = ChatClient(args.base_url, token, args.timeout, args.plugin)
-        console = ChatConsole(client, args.state_file)
+        console = ChatConsole(
+            client, args.state_file, download_dir=args.download_dir
+        )
         if args.new and args.session:
             raise ValueError("Use either --new or --session")
         if args.session:

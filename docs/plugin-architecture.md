@@ -37,7 +37,7 @@ tools/                            # 离线数据维护
 |---|---|---|
 | 核心 | 插件加载、依赖、配置记录、生命周期、调用排空、事件分发 | 下载和安装包、业务数据、业务策略 |
 | Driver | 适配器注册、逻辑连接索引、任务组和阶段回调 | 网络服务与协议实现 |
-| channels | 认证、协议收发、事件转换、回复与平台群操作 | Agent 选择、会话、群管理策略 |
+| channels | 认证、协议收发、事件转换、附件传输与平台群操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
 | execution | 原生 Runner、流清理、SDK 回调与 Trace | Agent/MCP/沙箱构造、Session、审批、用量存储 |
 | database | PostgreSQL engine、会话工厂、事务和插件迁移 | ORM 模型、业务查询与事务边界 |
 | filesystem | 插件文件空间、文件操作、ZIP 与原子发布 | 技能/工具/Agent 元数据、资源索引与安装 |
@@ -75,6 +75,8 @@ channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调
 框架仍保留通道内部健康检查和明确的非消息管理路由能力，但这类路由不承载智能体会话、知识库或 cron 业务。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
 
 HTTP 一次响应承载多条有序消息。普通 send 表示一条完整消息；模型增量通过 channels 的输出操作按 message_id 关联，HTTP SSE 展示增量，机器人默认聚合后发送。非流式回复先在依赖有效期内物化发送数据，清理成功后返回；流式持有资源直到消费和清理完成，再发送请求完成标记。finish 仅结束当前 Matcher，不直接结束 HTTP。结构化结果作为出站 data 段提供，机器人呈现同一消息的可读内容。
+
+格式由调用插件明确指定：字符串为纯文本，`channels.MessageSegment.markdown()` 为 Markdown，流式调用在 `StreamMessageStart` 中明确每个文字块的格式，不按内容猜测。钉钉配置 AI 卡片模板后将 Markdown 增量更新到同一张卡片，未配置则聚合为完整 Markdown 回复。卡片协议、节流及失败收尾属于 channels；模型增量和会话属于调用插件。框架核心不持有卡片状态。配置与异常语义见 [channels 使用说明](../packages/channels/README.md#explicit-markdown-and-dingtalk-ai-cards)。
 
 conversation_id 是通道对话区分符，channels 结合可信用户、连接及插件构造 Event.get_session_id()；SDK Session 的选择映射属于聊天插件。入口同时允许其已开放 Matcher 的受限临时续接，等待不跨重启保存，也不跨请求持有资源。命令兜底与普通聊天排除规则复用框架解析，未知或未授权命令不进入模型。
 

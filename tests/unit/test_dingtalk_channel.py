@@ -21,6 +21,7 @@ from opsmesh.plugins.channels.dingtalk import (
     parse_callback,
 )
 from opsmesh.plugins.channels.messages import Message
+from opsmesh.plugins.channels.operations import OperationError
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import PluginStatus
 
@@ -49,6 +50,7 @@ def owned_by(plugin):
 class FakeResponse:
     def __init__(self, payload, status_code: int = 200) -> None:
         self.status_code = status_code
+        self.headers = {}
         self._payload = payload
         self.content = json.dumps(payload).encode()
 
@@ -269,7 +271,7 @@ async def test_sdk_callback_dispatches_once(monkeypatch):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.dingtalk.adapter.dispatch_event",
+        "opsmesh.plugins.channels._work.dispatch_event",
         fake_dispatch,
     )
     driver = adapter.driver
@@ -416,7 +418,7 @@ async def test_reply_failures_are_explicit(monkeypatch):
         assert event is not None
         with pytest.raises(ValueError, match="empty"):
             await channel.send(event, "  ")
-        with pytest.raises(DingTalkSendError, match="code 400"):
+        with pytest.raises(OperationError, match="400"):
             await channel.send(event, "reply")
         await adapter.shutdown()
 

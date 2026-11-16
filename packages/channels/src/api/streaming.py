@@ -14,6 +14,17 @@ _CLEANUP_TIMEOUT_SECONDS = 10
 _ExecutionScope = Callable[[], AbstractContextManager[None]]
 
 
+async def close_response(close, failure: BaseException | None) -> None:
+    """Bound teardown and preserve the original transport failure."""
+    try:
+        with anyio.fail_after(_CLEANUP_TIMEOUT_SECONDS, shield=True):
+            await close(failure)
+    except BaseException as error:
+        if failure is None:
+            raise
+        failure.add_note(f"Response cleanup failed: {type(error).__name__}")
+
+
 class StreamLease:
     """Release a response source before its request-scoped dependencies."""
 
@@ -134,7 +145,8 @@ class ManagedStreamingResponse(StreamingResponse):
             try:
                 if scope.get("method") == "HEAD":
                     await Response(
-                        status_code=self.status_code, headers=dict(self.headers)
+                        status_code=self.status_code,
+                        headers=dict(self.headers),
                     )(scope, receive, send)
                 else:
                     await super().__call__(scope, receive, send)
@@ -142,35 +154,52 @@ class ManagedStreamingResponse(StreamingResponse):
                 error = failure
                 raise
             finally:
-                await self.aclose(error)
+                await close_response(self.aclose, error or self.failure)
 
 
 class MessageStreamingResponse(ManagedStreamingResponse):
     """Run message dispatch with a bounded queue and ASGI backpressure."""
 
-    def __init__(self, producer, *, capacity: int, on_close) -> None:
+    def __init__(
+        self,
+        producer,
+        *,
+        capacity: int,
+        on_close,
+        on_written=None,
+        execution_scope=nullcontext,
+    ) -> None:
         """Keep dispatch in the response lifetime with bounded buffering."""
         super().__init__(
             iter(()),
             on_close=on_close,
+            execution_scope=execution_scope,
             headers={
                 "content-type": "text/event-stream; charset=utf-8",
                 "cache-control": "no-cache",
                 "x-accel-buffering": "no",
             },
         )
+        self._on_written = on_written
         self._producer = producer
         self._capacity = capacity
 
     async def stream_response(self, send: Send) -> None:
         """Cancel dispatch and its dependencies when transport sending fails."""
-        sender, receiver = anyio.create_memory_object_stream[bytes](
-            self._capacity
-        )
+        with self._execution_scope():
+            await self._send_frames(send)
+
+    async def _send_frames(self, send: Send) -> None:
+        from .output import OutputFrame
+
+        sender, receiver = anyio.create_memory_object_stream[
+            OutputFrame | bytes
+        ](self._capacity)
 
         async def produce() -> None:
-            async with sender:
-                await self._producer(sender.send)
+            with self._execution_scope():
+                async with sender:
+                    await self._producer(sender.send)
 
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(produce)
@@ -184,13 +213,20 @@ class MessageStreamingResponse(ManagedStreamingResponse):
                 )
                 async with receiver:
                     async for frame in receiver:
+                        body = (
+                            frame.body
+                            if isinstance(frame, OutputFrame)
+                            else frame
+                        )
                         await send(
                             {
                                 "type": "http.response.body",
-                                "body": frame,
+                                "body": body,
                                 "more_body": True,
                             }
                         )
+                        if isinstance(frame, OutputFrame) and self._on_written:
+                            await self._on_written(frame)
                 await send(
                     {
                         "type": "http.response.body",
@@ -200,3 +236,31 @@ class MessageStreamingResponse(ManagedStreamingResponse):
                 )
             finally:
                 tasks.cancel_scope.cancel()
+
+
+class MessageResponse(Response):
+    """Keep plugin ownership until a materialized JSON response is written."""
+
+    def __init__(self, response, *, on_close, execution_scope):
+        """Retain the encoded response and its transport finalizer."""
+        self.response = response
+        self._on_close = on_close
+        self._execution_scope = execution_scope
+        super().__init__(
+            content=response.body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+
+    async def __call__(self, scope, receive, send):
+        """Observe actual writes and finalize even on disconnect."""
+        with self._execution_scope():
+            failure = None
+            try:
+                await self.response(scope, receive, send)
+            except BaseException as error:
+                failure = error
+                raise
+            finally:
+                await close_response(self._on_close, failure)

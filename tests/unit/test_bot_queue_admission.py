@@ -289,7 +289,7 @@ async def test_timeout_releases_active_locked_and_pending_items_once(bot):
         await bot.adapter._queue.stop()
     assert sorted(cleaned) == ["0", "1", "2", "3"]
     assert not bot.owner.calls and not bot.provider.calls
-    assert not bot.adapter._queue._lanes
+    assert not bot.adapter._queue._active
 
 
 @pytest.mark.anyio
@@ -360,4 +360,4 @@ async def test_host_task_cancellation_releases_unconsumed_deliveries(bot):
     assert closed == ["cancelled", "closed"]
     assert not bot.owner.calls and not bot.provider.calls
     assert not bot.adapter._queue.running
-    assert not bot.adapter._queue._lanes
+    assert not bot.adapter._queue._active

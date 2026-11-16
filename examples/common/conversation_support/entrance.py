@@ -10,7 +10,7 @@ from pydantic import ConfigDict
 
 from opsmesh import get_driver, on_command, on_message
 from opsmesh.adapters import Channel, Event
-from opsmesh.matchers import Matcher
+from opsmesh.matchers import Matcher, current_channel
 from opsmesh.messages import Message
 from opsmesh.params import Command, CommandArg, Context, Depends
 from opsmesh.rules import to_me
@@ -73,12 +73,10 @@ async def addressed_command(event: Event) -> bool:
 
 def result_message(text: str, data: dict) -> channels.Message:
     """Pair readable replies with outbound JSON data."""
-    return channels.Message(
-        [
-            channels.MessageSegment.text(text),
-            channels.MessageSegment.structured(data),
-        ]
-    )
+    message = channels.Message(channels.MessageSegment.text(text))
+    if "data" in current_channel.get().send_types:
+        message.append(channels.MessageSegment.structured(data))
+    return message
 
 
 def session_id(argument: str) -> str:
@@ -147,7 +145,11 @@ class ConversationEntrance:
         """Add a consumer-owned command before binding the entrance."""
         self.operations[name] = operation
         command = on_command(
-            name, force_whitespace=True, rule=to_me(), priority=10, block=True
+            name,
+            force_whitespace=True,
+            rule=to_me(),
+            priority=10 + len(self.extra_commands),
+            block=True,
         )
         command.handle()(self.handle_command)
         self.extra_commands.append(command)
@@ -313,7 +315,8 @@ class ConversationEntrance:
         }
         await Matcher.send(
             result_message(
-                json.dumps(data["sessions"], ensure_ascii=False, indent=2), data
+                json.dumps(data["sessions"], ensure_ascii=False, indent=2),
+                data,
             )
         )
 

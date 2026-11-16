@@ -73,11 +73,6 @@ class MessageHarness:
             request,
             SimpleNamespace(caller=options.get("owner", self.caller)),
         )
-        if not options.get("stream"):
-            result = json.loads(response.body)
-            assert result["status"] == "completed", result
-            assert result["conversation_id"] == data["conversation_id"]
-            return result
         chunks = []
 
         async def send(message):
@@ -85,6 +80,11 @@ class MessageHarness:
                 chunks.append(message.get("body", b""))
 
         await response(request.scope, receive, send)
+        if not options.get("stream"):
+            result = json.loads(b"".join(chunks))
+            assert result["status"] == "completed", result
+            assert result["conversation_id"] == data["conversation_id"]
+            return result
         events = []
         for frame in b"".join(chunks).decode().split("\n\n"):
             if frame.strip():
@@ -122,6 +122,7 @@ def migrate(connection):
 
 
 def run_scenario(plugin, routes, connections):
+    from example_chat import agent as definition
     from example_chat import connections as chat_connections
     from example_chat import handlers, lifecycle
     from example_chat.agent import agent
@@ -161,10 +162,14 @@ def run_scenario(plugin, routes, connections):
     channel.send = send
 
     async def call(operation, **options):
-        from opsmesh.plugins.channels.sending import aggregate_stream
+        from opsmesh.plugins.channels.streaming import send_stream
 
         assert operation == "stream"
-        await send(options["event"], await aggregate_stream(options["source"]))
+
+        async def complete(message, identifier):
+            await send(options["event"], message)
+
+        await send_stream(options["source"], complete)
 
     channel.call = call
 
@@ -186,6 +191,9 @@ def run_scenario(plugin, routes, connections):
         outcome.raise_for_errors()
 
     async def verify(engine):
+        definition.settings = definition.settings.model_copy(
+            update={"publication": "progressive"}
+        )
         async with engine.begin() as connection:
             await connection.run_sync(migrate)
         store = ChatConversations(engine)
@@ -264,9 +272,9 @@ def run_scenario(plugin, routes, connections):
             api.post("/session", owner=UserContext(id="other")), 409
         )
         assert (
-            data_of(await api.post("/sessions", owner=UserContext(id="other")))[
-                "sessions"
-            ]
+            data_of(
+                await api.post("/sessions", owner=UserContext(id="other"))
+            )["sessions"]
             == []
         )
         await api.post("/use " + sid, conversation_id=other_window)
@@ -390,7 +398,8 @@ def run_scenario(plugin, routes, connections):
         with tempfile.TemporaryDirectory() as directory:
             engine = create_async_engine(
                 os.environ.get("OPSMESH_TEST_DATABASE_URL")
-                or "sqlite+aiosqlite:///" + str(Path(directory) / "chat.sqlite")
+                or "sqlite+aiosqlite:///"
+                + str(Path(directory) / "chat.sqlite")
             )
             try:
                 await verify(engine)

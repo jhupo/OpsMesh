@@ -6,7 +6,7 @@ from typing import Any
 from opsmesh.messages import Message as FrameworkMessage
 from opsmesh.messages import MessageSegment as FrameworkSegment
 
-from .attachments import Attachment
+from ..attachments import Attachment
 
 MEDIA_TYPES = frozenset({"image", "file", "audio", "video"})
 MAX_STRUCTURED_BYTES = 1024 * 1024
@@ -22,7 +22,7 @@ class MessageSegment(FrameworkSegment["Message"]):
 
     def is_text(self) -> bool:
         """Identify segments that participate in text rules."""
-        return self.type == "text"
+        return self.type in {"text", "markdown"}
 
     def __str__(self) -> str:
         """Expose only text, never attachment metadata or credentials."""
@@ -32,6 +32,30 @@ class MessageSegment(FrameworkSegment["Message"]):
     def text(cls, text: str) -> "MessageSegment":
         """Construct one text segment."""
         return cls("text", {"text": text})
+
+    @classmethod
+    def markdown(cls, text: str, *, title: str = "Reply") -> "MessageSegment":
+        """Mark formatted content explicitly, without inspecting its syntax.
+
+        Args:
+            text: Markdown source supported by the receiving channel.
+            title: Notification title for transports that require one.
+        """
+        if not isinstance(text, str):
+            raise TypeError("Markdown content must be text")
+        if not isinstance(title, str) or not title.strip() or len(title) > 100:
+            raise ValueError("Markdown titles require 1 to 100 characters")
+        return cls("markdown", {"text": text, "title": title})
+
+    @classmethod
+    def table(
+        cls, columns: list[str], rows: list[list], *, caption: str = ""
+    ) -> "MessageSegment":
+        """Describe a table without embedding Markdown or generated files."""
+        from .schemas import TableData
+
+        data = TableData(columns=columns, rows=rows, caption=caption)
+        return cls("table", data.model_dump())
 
     @classmethod
     def structured(cls, value: dict[str, Any]) -> "MessageSegment":

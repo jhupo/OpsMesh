@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 from ..attachments import AttachmentSettings
-from ..server import ListenerSettings
+from .server import ListenerSettings
 
 _ID_PATTERN = r"^[A-Za-z0-9_.:@-]{1,128}$"
 _ENV_REF_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]{0,127}$"

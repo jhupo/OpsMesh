@@ -21,7 +21,7 @@ def frames(response):
         raise ValueError("Incomplete SSE event")
 
 
-def collect_stream(response, on_delta=None):
+def collect_stream(response, on_delta=None, on_message=None):
     """Keep message boundaries and require ordered deltas plus final done."""
     messages = []
     active = {}
@@ -38,6 +38,8 @@ def collect_stream(response, on_delta=None):
                 or identifier in seen
             ):
                 raise ValueError("Invalid message identifier")
+            if active:
+                raise ValueError("Nested stream messages are not allowed")
             seen.add(identifier)
             if kind == "message":
                 messages.append(
@@ -46,9 +48,25 @@ def collect_stream(response, on_delta=None):
                         "data": payload.get("data"),
                     }
                 )
+                if on_message is not None:
+                    on_message(messages[-1])
             else:
+                format = payload.get("format", "text")
+                if format not in {"text", "markdown"}:
+                    raise ValueError("Unknown stream format")
                 message = {
-                    "content": [{"type": "text", "text": ""}],
+                    "streamed": True,
+                    "content": [
+                        {
+                            "type": format,
+                            "text": "",
+                            **(
+                                {"title": payload.get("title", "Reply")}
+                                if format == "markdown"
+                                else {}
+                            ),
+                        }
+                    ],
                     "data": None,
                 }
                 messages.append(message)

@@ -75,7 +75,7 @@ assert route.path == "/plugins/example_chat/messages"
 assert route.active is False, "the route must wait for plugin readiness"
 assert route.body_model.__name__ == "MessageRequest"
 assert route.message_handlers
-assert route.matcher is None
+assert not hasattr(route, "matcher")
 
 from example_chat import agent as definition
 assert not hasattr(definition, "agent"), "Agent resources start in on_startup"

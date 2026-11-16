@@ -180,9 +180,13 @@ status 为 completed、waiting 或 failed；它描述本次消息处理，不代
 
 HTTP 客户端通过 `Accept: text/event-stream` 选择流式传输。普通 Matcher.send 始终发送一条完整消息，每次对应独立的 message 事件，不能把相邻文本消息自动拼成一条回答。仅选择 SSE 不会使 send 变成模型增量接口。
 
-模型增量由 channels 提供独立的通道输出操作，沿用 Channel.call 扩展点，不新增 Matcher 方法或 SDK 事件解析器。该操作在调用者作用域内消费异步文本迭代器；调用插件在 execution.stream 的上下文中将原生 SDK 事件转换成文本增量，并等待通道消费结束。不能返回一个依赖已经关闭的 SDK 流交给通道后台读取。结构化结果和附件继续走完整消息发送。
+模型增量由 channels 提供独立的通道输出操作，沿用 Channel.call 扩展点，不新增 Matcher 方法或 SDK 事件解析器。该操作在调用者作用域内消费完整 Message 或 StreamMessageStart/StreamTextDelta/StreamMessageEnd；调用插件在 execution.stream 的上下文中选择原生 SDK 的公开输出并转换成这些通道数据，然后等待消费结束。不能返回一个依赖已经关闭的 SDK 流交给通道后台读取。结构化结果完成校验后转换为完整 Message；附件和表格可在文字块结束后作为完整 Message 穿插发送。
 
 每个流式回答由 channels 分配一个 message_id：SSE 发出 message_start，随后发送带相同 ID 和单调 sequence 的 message_delta，最后发送 message_end。客户端仅在同一 message_id 下追加 delta；message_end 只结束这一条回答，不代表整个请求成功。普通 message 事件也带独立 message_id。非流式 HTTP 将这些增量有界聚合成一个完整消息项。QQ/钉钉默认同样聚合成完整回答再按平台长度限制发送，不逐 token 调用机器人 API；只有已验证的平台消息更新能力才可启用限频更新，并保证结束时提交完整内容。
+
+出站 Markdown 使用 `channels.MessageSegment.markdown(text, title="Answer")`，普通字符串仍是纯文本，不检测 Markdown 标记。流式入口为 `channel.call("stream", event=event, source=source)`；source 产出类型化事件或完整 Message，在 StreamMessageStart 中设置格式，默认 text。禁止传旧字符串流或整次调用的 format 参数。SSE 的 `message_start.format` 标识整条消息的格式，JSON/完整 SSE 消息保留 `type: markdown`。输入请求协议仍使用文本或附件，不要求客户端把用户输入识别为 Markdown。
+
+钉钉连接可配置 `card: {template_id, content_key, update_interval}`；模板须为已发布的 AI 卡片，内容字段绑定流式 Markdown 组件，并使用原生 `flowStatus`。只有 Markdown 流使用此卡片，每个 Markdown 文字块创建一张卡片，以完整快照限频更新；结束后提交最终状态。异常或取消时有界尝试标记同一张卡片失败，随后传播原异常。没有卡片配置则聚合为完整 Markdown 回复；已配置但发送失败时不自动重发另一条回复。QQ 目前保留可读 Markdown 源文本，不声明支持原生 Markdown 渲染。详见 [channels 配置](../packages/channels/README.md#explicit-markdown-and-dingtalk-ai-cards)。
 
 分发、原生执行及依赖清理成功后，HTTP 发送唯一 done 事件，包含 conversation_id 和 completed/waiting。增量读取、发送或清理失败则发送安全 error（可包含当前 message_id）后关闭，不发送成功 done，不把已显示的部分回答标成完整。HTTP 状态在响应头发出后不可更改。通道不承诺断线恢复，sequence 仅用于本次流的排序。
 
@@ -279,3 +283,15 @@ technical = on_message(rule=channels.in_group("group-b", connection="main"))
 自定义 Rule 的重叠遵循框架原有优先级与阻断语义，不另建路由系统。机器人能收到哪些
 消息仍受平台权限影响，Rule 不扩大平台推送权限。完整示例见
 [同插件多智能体](../examples/groups/README.md)。
+
+
+## 内容与传输边界
+
+智能体插件负责解析 SDK 输出、选择文件、持久化产物和决定展示格式。
+`channel.send_types` 声明完整消息类型，`channel.stream_formats` 声明当前配置支持的增量格式。
+插件通过框架 `Matcher.send()` / `Matcher.finish()` 回复，流通过当前 channel 的 stream 操作发送。
+QQ 不支持增量格式及 Markdown 消息段；钉钉配置卡片后支持 Markdown 增量。
+不支持的消息明确拒绝，插件自行转换或缓冲，不由通道猜测或静默降级。
+示例共享的 files.py 保存产物选择，outputs.py 决定输出格式与缓冲，deliveries.py 处理持久化。
+channels 只管理事件附件访问、协议转换、临时下载引用和实际传输结果。
+HTTP 内容预算不含 JSON/SSE 外层编码，文件字节使用附件限额；处理期限同时适用于 JSON 与 SSE。

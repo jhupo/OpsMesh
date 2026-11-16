@@ -43,6 +43,7 @@ class QQClient:
     def __init__(
         self, settings: QQSettings, http: httpx.AsyncClient | None
     ) -> None:
+        """Borrow HTTP transport and own per-connection native API clients."""
         self.settings = settings
         self._http = http
         self._owns_http = http is None

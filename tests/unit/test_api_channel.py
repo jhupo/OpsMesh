@@ -38,7 +38,10 @@ from opsmesh.plugins.channels.api import (
     json_response,
     sse_response,
 )
-from opsmesh.plugins.channels.api.routes import normalize_relative_path
+from opsmesh.plugins.channels.api.routes import (
+    HTTPRoute,
+    normalize_relative_path,
+)
 from opsmesh.plugins.channels.api.streaming import (
     ManagedStreamingResponse,
     StreamLease,
@@ -78,7 +81,6 @@ def declare_message(router, handler, *, rule=None):
             path="/messages",
             body=MessageRequest,
             message_handlers=(matcher,),
-            allow_response=True,
             response_types=(Response,),
         )
     finally:
@@ -1554,6 +1556,7 @@ async def test_api_channel_can_reply_with_a_framework_message(monkeypatch):
         assert response[0]["status"] == 200
         assert payload(response)["messages"] == [
             {
+                "message_id": payload(response)["messages"][0]["message_id"],
                 "content": [{"type": "text", "text": "hello"}],
                 "data": None,
             }
@@ -2084,7 +2087,11 @@ async def test_admitted_request_continues_after_owner_starts_stopping(
 
                 async def text_chunks():
                     assert registration.owner.calls and not closed
-                    yield "continued"
+                    from opsmesh.plugins.channels import (
+                        Message as ReplyMessage,
+                    )
+
+                    yield ReplyMessage("continued")
 
                 await channel.call("stream", event=event, source=text_chunks())
             else:
@@ -2133,10 +2140,11 @@ async def test_admitted_request_continues_after_owner_starts_stopping(
             )
         assert closed == [True] and not registration.owner.calls
     finally:
-        if registration.matcher is not None:
+        if isinstance(registration, HTTPRoute):
             registration.matcher.destroy()
-        for matcher in registration.message_handlers:
-            matcher.destroy()
+        else:
+            for matcher in registration.message_handlers:
+                matcher.destroy()
         await channel.shutdown()
 
 
@@ -2197,3 +2205,153 @@ async def test_response_stream_keeps_admission_without_granting_child_tasks(
     finally:
         registration.matcher.destroy()
         await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streamed", [False, True])
+@pytest.mark.parametrize("spec", ["2.0", "2.4"])
+async def test_message_transport_retains_owner_after_handler_cleanup(
+    monkeypatch, streamed, spec
+):
+    from opsmesh.plugins.channels import Delivery
+    from opsmesh.plugins.channels.api.events import APIMessageEvent
+    from opsmesh.plugins.invocation import _current_call
+    from opsmesh.plugins.registry import get_current_plugin
+
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+    closed, observed = [], []
+    cleaned = anyio.Event()
+    owner = plugin_owner("support")
+
+    async def resource():
+        try:
+            yield "ready"
+        finally:
+            closed.append(True)
+            cleaned.set()
+
+    async def observe(receipt):
+        assert get_current_plugin() is owner
+        assert owner.calls
+        call = _current_call.get()
+        import asyncio
+
+        assert asyncio.current_task() in call.tasks
+        assert closed == [True]
+        observed.append(receipt.status)
+
+    async def handler(
+        channel: Channel,
+        event: APIMessageEvent,
+        value: Annotated[str, Depends(resource)],
+    ):
+        await channel.send(event, "reply", delivery=Delivery(observe))
+
+    token = _current_plugin.set(owner)
+    try:
+        declare_message(router, handler)
+    finally:
+        _current_plugin.reset(token)
+    server, channel = await _setup(monkeypatch, router, make_settings())
+    request_scope, queued = scope(
+        "POST",
+        "/plugins/support/messages",
+        token="secret",
+        body=json.dumps({"message": "hello"}).encode(),
+        headers=((b"accept", b"text/event-stream"),) if streamed else (),
+    )
+    request_scope["asgi"] = {"version": "3.0", "spec_version": spec}
+
+    async def receive():
+        if queued:
+            return queued.pop(0)
+        await anyio.sleep_forever()
+
+    async def send(frame):
+        if frame["type"] == "http.response.body" and frame.get("body"):
+            await cleaned.wait()
+            assert owner.calls
+            assert closed == [True]
+            owner.status = PluginStatus.STOPPING
+            if b"reply" in frame["body"]:
+                assert not observed
+
+    try:
+        with anyio.fail_after(5):
+            await server.app(request_scope, receive, send)
+        assert observed == ["written"]
+        assert not owner.calls
+        assert not channel._active_conversations
+    finally:
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_message_execution_timeout_applies_to_json_and_sse(
+    monkeypatch, streamed
+):
+    monkeypatch.setenv("TEST_API_TOKEN", "secret")
+    router = APIRouter()
+    closed = []
+
+    async def handler():
+        try:
+            await anyio.sleep_forever()
+        finally:
+            closed.append(True)
+
+    registration = declare_message(router, handler)
+    settings = make_settings().model_copy(
+        update={"request_timeout_seconds": 0.02}
+    )
+    server, channel = await _setup(monkeypatch, router, settings)
+    try:
+        with anyio.fail_after(2):
+            result = await call(
+                server,
+                scope(
+                    "POST",
+                    registration.path,
+                    token="secret",
+                    body=b'{"message":"hello"}',
+                    headers=((b"accept", b"text/event-stream"),)
+                    if streamed
+                    else (),
+                ),
+            )
+        assert closed == [True]
+        assert b"request timed out" in body(result)
+        if not streamed:
+            assert result[0]["status"] == 504
+        assert not channel._active_conversations
+    finally:
+        registration.message_handlers[0].destroy()
+        await channel.shutdown()
+
+
+@pytest.mark.anyio
+async def test_stream_cleanup_does_not_replace_producer_failure():
+    async def source():
+        raise ValueError("original failure")
+        yield b"unused"
+
+    async def close(error):
+        raise RuntimeError("cleanup failure")
+
+    response = ManagedStreamingResponse(source(), on_close=close)
+
+    async def send(message):
+        pass
+
+    async def receive():
+        await anyio.sleep_forever()
+
+    with pytest.raises(ValueError, match="original failure") as caught:
+        await response(
+            {"type": "http", "method": "GET", "asgi": {"spec_version": "2.4"}},
+            receive,
+            send,
+        )
+    assert any("cleanup" in note.lower() for note in caught.value.__notes__)

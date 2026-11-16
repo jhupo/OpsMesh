@@ -21,6 +21,7 @@ class GroupRule:
     protocol: Literal["qq", "dingtalk"] | None
 
     async def __call__(self, channel: Channel, event: Event) -> bool:
+        """Match verified group identity within the declaring plugin."""
         protocol = channel.adapter.get_name()
         if protocol not in {"qq", "dingtalk"}:
             return False

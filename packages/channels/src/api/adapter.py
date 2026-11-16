@@ -5,8 +5,9 @@ from typing import Any
 from opsmesh.adapters import Adapter, Channel
 from opsmesh.messages import Message, MessageSegment
 
-from ..sending import normalize
-from .attachments import encode_message
+from ..sending import message_size, normalize
+from .attachments import prepare_message
+from .errors import HTTPError
 from .events import APIMessageEvent
 
 
@@ -22,16 +23,29 @@ class APIAdapter(Adapter):
         event = data["event"]
         if isinstance(event, APIMessageEvent):
             if operation == "reply":
-                return await event.output.send(data["result"])
+                return await event.output.send(
+                    data["result"], delivery=data.get("delivery")
+                )
             if operation == "stream":
-                return await event.output.stream(data["source"])
+                if "format" in data:
+                    raise TypeError(
+                        "Stream format belongs to StreamMessageStart"
+                    )
+                return await event.output.stream(
+                    data["source"], delivery=data.get("delivery")
+                )
         if operation != "reply":
             raise ValueError(f"Unsupported API operation: {operation}")
         result = data["result"]
         if data["event"].replied:
             raise RuntimeError("An HTTP event can only receive one response")
         if isinstance(result, (Message, MessageSegment)):
-            result = await encode_message(
-                channel, data["event"], normalize(result)
-            )
+            message = normalize(result)
+            if message_size(message) > channel.settings.max_output_bytes:
+                raise HTTPError(500, "message output limit exceeded")
+            result, uploads = await prepare_message(channel, event, message)
+            if uploads:
+                channel.uploads.put_many(
+                    (event.installation_id, event.user_id), uploads
+                )
         data["event"].reply(result)

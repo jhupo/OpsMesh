@@ -8,7 +8,6 @@ import anyio
 import httpx
 import pytest
 
-
 from opsmesh.plugins.channels import (
     Attachment,
     AttachmentCollection,
@@ -17,11 +16,13 @@ from opsmesh.plugins.channels import (
     MessageSegment,
     MessageSendError,
 )
+from opsmesh.plugins.channels.dingtalk.channel import DingTalkChannel
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 from opsmesh.plugins.channels.dingtalk.config import (
     DingTalkConnectionSettings,
     DingTalkSettings,
 )
+from opsmesh.plugins.channels.dingtalk.errors import DingTalkSendError
 from opsmesh.plugins.channels.dingtalk.events import (
     parse_callback as ding_event,
 )
@@ -32,7 +33,7 @@ from opsmesh.plugins.channels.qq.config import QQConnectionSettings, QQSettings
 from opsmesh.plugins.channels.qq.errors import QQSendError
 from opsmesh.plugins.channels.qq.events import parse_callback as qq_event
 from opsmesh.plugins.channels.qq.sending import QQSender
-from opsmesh.plugins.channels.sending import prepare
+from opsmesh.plugins.channels.sending import normalize, prepare
 
 
 @pytest.fixture(autouse=True)
@@ -184,10 +185,11 @@ def ding_context(group):
         connection_id="bot",
     )
     channel = SimpleNamespace(
+        send_types=DingTalkChannel.send_types,
         settings=DingTalkConnectionSettings(
             client_id="robot",
             client_secret_ref="DING_MEDIA_SECRET",
-        )
+        ),
     )
     return event, channel
 
@@ -403,14 +405,16 @@ async def test_prepare_keeps_order_and_rejects_invalid_duration():
         + MessageSegment.attachment(data, duration_ms=True)
     )
     with pytest.raises(AttachmentError, match="duration"):
-        await prepare(message, files, 10)
+        await prepare(normalize(message), files, 10)
     parts = await prepare(
-        Message("a") + Message("b") + MessageSegment.attachment(data),
+        normalize(
+            Message("a") + Message("b") + MessageSegment.attachment(data)
+        ),
         files,
         10,
     )
-    assert parts[0] == "ab"
-    assert parts[1].attachment.id == data.id
+    assert parts[:2] == ["a", "b"]
+    assert parts[2].attachment.id == data.id
 
 
 @pytest.mark.anyio
@@ -510,7 +514,7 @@ async def test_mixed_reply_uploads_all_files_before_ordered_sends(
             assert calls == []
             return
         if upload_failure:
-            with pytest.raises(Exception, match="rejected"):
+            with pytest.raises(Exception, match="Platform operation failed"):
                 await sender.send(event, message)
             assert calls == []
         else:
@@ -536,7 +540,6 @@ async def test_mixed_reply_uploads_all_files_before_ordered_sends(
 
 @pytest.mark.anyio
 async def test_dingtalk_requires_private_staff_id_before_upload():
-    from opsmesh.plugins.channels.dingtalk.errors import DingTalkSendError
 
     event, channel = ding_context(False)
     event.raw.pop("senderStaffId")
@@ -566,13 +569,13 @@ async def test_dingtalk_does_not_invent_duration_or_cover(kind):
 async def test_vendor_image_guess_is_corrected_before_upload():
     event, _ = ding_context(False)
     part = add_file(event, "attachment", "image/jpeg", PNG)
-    prepared = await prepare(part, event.attachments, 100)
+    prepared = await prepare(normalize(part), event.attachments, 100)
     assert prepared[0].attachment.media_type == "image/png"
 
 
 @pytest.mark.anyio
 async def test_upload_rejects_redirect_without_exposing_token():
-    from opsmesh.plugins.channels.dingtalk.errors import DingTalkSendError
+    from opsmesh.plugins.channels.operations import OperationError
 
     requests = []
 
@@ -584,7 +587,7 @@ async def test_upload_rejects_redirect_without_exposing_token():
         transport=httpx.MockTransport(redirect), follow_redirects=True
     ) as http:
         client = DingTalkClient(DingTalkSettings(), http)
-        with pytest.raises(DingTalkSendError) as caught:
+        with pytest.raises(OperationError) as caught:
             await client.upload_media(
                 "secret-token",
                 Attachment.create("a.png", "image/png"),
@@ -593,3 +596,100 @@ async def test_upload_rejects_redirect_without_exposing_token():
             )
     assert len(requests) == 1
     assert "secret-token" not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_dingtalk_token_refresh_is_shared_by_concurrent_calls(
+    monkeypatch,
+):
+    monkeypatch.setenv("SECRET", "value")
+    requests = []
+
+    async def respond(request):
+        requests.append(request)
+        await anyio.sleep(0)
+        return httpx.Response(
+            200, json={"accessToken": "token", "expireIn": 7200}
+        )
+
+    connection = DingTalkConnectionSettings(
+        client_id="app", client_secret_ref="SECRET"
+    )
+    tokens = []
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        client = DingTalkClient(DingTalkSettings(), http)
+
+        async def read_token():
+            tokens.append(await client.access_token(connection))
+
+        async with anyio.create_task_group() as tasks:
+            for _ in range(4):
+                tasks.start_soon(read_token)
+        assert len(requests) == 1
+        client.forget(connection)
+        await read_token()
+        assert len(requests) == 2
+    assert tokens == ["token"] * 5
+
+
+@pytest.mark.anyio
+async def test_dingtalk_preflight_and_rejection_have_distinct_receipts():
+    from opsmesh.plugins.channels import Delivery, OperationRateLimited
+
+    event, channel = ding_context(True)
+    delivery = Delivery()
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(429, json={"code": "rate_limited"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        sender = DingTalkSender(
+            DingTalkClient(DingTalkSettings(), http), channel
+        )
+        with pytest.raises(DingTalkSendError, match="webhook"):
+            await sender.send(event, "hello", delivery=delivery)
+        assert not calls and not delivery.receipts
+        event.session_webhook = (
+            "https://oapi.dingtalk.com/robot/sendBySession?session=test"
+        )
+        with pytest.raises(OperationRateLimited):
+            await sender.send(event, "hello", delivery=delivery)
+    assert [item.status for item in delivery.receipts] == ["failed"]
+
+
+@pytest.mark.anyio
+async def test_dingtalk_send_and_operation_share_rate_limit_errors():
+    from opsmesh.plugins.channels import OperationRateLimited
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(429, json={})
+        )
+    ) as http:
+        client = DingTalkClient(DingTalkSettings(), http)
+        with pytest.raises(OperationRateLimited):
+            await client.post_json("https://api.dingtalk.com/v1.0/test", {})
+        with pytest.raises(OperationRateLimited):
+            await client.request_json("POST", "/v1.0/test", token="token")
+
+
+@pytest.mark.anyio
+async def test_qq_rejects_markdown_without_implicit_text_conversion():
+    from opsmesh.plugins.channels import UnsupportedOperation
+
+    event, channel, _ = qq_context(True)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: pytest.fail("Unsupported output must not send")
+        )
+    ) as http:
+        with pytest.raises(UnsupportedOperation, match="markdown"):
+            await QQSender(
+                QQClient(channel.protocol, http), channel, "secret"
+            ).send(event, MessageSegment.markdown("**hello**"))

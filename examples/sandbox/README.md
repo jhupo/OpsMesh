@@ -100,3 +100,45 @@ Focused tests use deterministic native SDK streams, real migrations, history
 and a scripted sandbox on Windows. Linux runs can additionally exercise native
 `exec_command`. Real PostgreSQL, sandbox isolation, external model providers
 and bot connections require separate integration verification.
+
+## Generated files and output policy
+
+The native `publish_file(path, description="")` tool publishes a completed file
+relative to this example's workspace. It uses the SDK session's bounded file
+reader, rejects absolute/traversal paths, and fixes the bytes before selection.
+The local backend's descriptor-based reader rejects symlinks and nonregular
+files. This is the example's UnixLocalSandbox policy, not a claim that arbitrary
+remote sandbox backends have the same guarantees. Parallel tool calls are
+disabled for this example; finish writing before publishing a file.
+
+Files and send intent are saved through filesystem before publishing download
+references. `/files` lists saved replies; `/files <reply_id>` republishes their
+fixed files with fresh attachment handles. Session ownership is checked first.
+Deleting a session removes these files; `/clear` and `/reset_workspace` retain
+them. Interrupted send attempts stay unknown and are never retried automatically.
+
+`output_format` is `markdown` or `text`; `publication` is `buffered` by default.
+Buffered output waits for final SDK checks and does not publish files on rejected
+or approval-interrupted runs. This example does not resume approvals. Set
+`publication` to `progressive` only when early text publication is acceptable;
+later failures cannot retract it. Files are sent after the native run succeeds.
+The shared converter handles native PNG/JPEG image-generation items when such
+a tool is configured, but does not automatically retrieve provider file IDs or
+publish images returned only for model analysis. Audio/video require actual
+playback metadata and platform-compatible encoding supplied by custom tools.
+
+The client supports tables and downloads:
+
+```bash
+python examples/chat/client.py --plugin example_sandbox --stream --download-dir ./out
+```
+
+QQ and DingTalk media formats, permissions, and card rendering remain subject
+to the owning robot configuration; automated tests use simulated transports.
+
+
+The example chooses presentation using the current channel's `send_types` and
+`stream_formats`. QQ receives plain text, and connections without native
+incremental output use buffered publication. Table-to-text conversion and
+HTTP-only metadata selection are explicit example policies. Channels rejects
+unsupported formats instead of making these decisions for the agent.

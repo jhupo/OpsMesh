@@ -40,6 +40,7 @@ class QQChannel(Channel):
 
     receive_types = frozenset({"text", "image", "file", "audio", "video"})
     send_types = receive_types
+    stream_formats = frozenset()
 
     @property
     def supported_operations(self) -> frozenset[str]:
@@ -206,7 +207,7 @@ class QQChannel(Channel):
         Args:
             event: The incoming QQ message event.
             message: Text or framework message with attachment references.
-            **kwargs: Reserved for future send options.
+            **kwargs: Optional delivery observer.
 
         Returns:
             The vendor response payload.

@@ -91,7 +91,6 @@ def route(
             handler=handler,
             body=body,
             response_adapter=adapter,
-            allow_response=bool(responses),
             response_types=responses,
             access=access,
             name=name,
@@ -119,7 +118,6 @@ def message(
         access=access,
         name=name,
         message_handlers=handlers,
-        allow_response=True,
         response_types=(Response,),
     )
 
