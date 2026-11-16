@@ -3,9 +3,11 @@
 import base64
 from enum import IntEnum
 
+from qqbot_agent_sdk import QQApiClient
+from qqbot_agent_sdk.dto import RichMediaMessage
+
 from ..attachments import AttachmentError
 from ..sending import OutgoingAttachment
-from .client import QQClient
 from .errors import QQSendError
 
 
@@ -43,24 +45,27 @@ def media_type(part: OutgoingAttachment) -> MediaType:
 class QQMedia:
     """Upload into one authenticated recipient's media scope."""
 
-    def __init__(self, client: QQClient, target: str, token: str) -> None:
-        """Borrow the transport and bind its trusted recipient endpoint."""
+    def __init__(
+        self, client: QQApiClient, recipient: tuple[str, str]
+    ) -> None:
+        """Bind the native API to a validated group or private recipient."""
         self.client = client
-        self.target = target
-        self.headers = {"Authorization": f"QQBot {token}"}
+        self.scope, self.recipient = recipient
 
     async def upload(self, part: OutgoingAttachment) -> str:
-        """Obtain file_info without asking the upload endpoint to send."""
-        response = await self.client.post_json(
-            self.target + "/files",
-            {
-                "file_type": int(media_type(part)),
-                "file_data": base64.b64encode(part.content).decode("ascii"),
-                "file_name": part.attachment.name,
-                "srv_send_msg": False,
-            },
-            headers=self.headers,
+        """Upload already bounded bytes with the SDK's native media payload."""
+        body = RichMediaMessage(
+            file_type=int(media_type(part)),
+            file_data=base64.b64encode(part.content).decode("ascii"),
+            file_name=part.attachment.name,
+            srv_send_msg=False,
         )
+        upload = (
+            self.client.upload_group_file
+            if self.scope == "group"
+            else self.client.upload_c2c_file
+        )
+        response = await upload(self.recipient, body)
         file_info = response.get("file_info")
         if not isinstance(file_info, str) or not file_info:
             raise QQSendError("QQ upload response is missing file_info")

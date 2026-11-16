@@ -3,6 +3,8 @@
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
+from qqbot_agent_sdk import MediaInfo, MessageToCreate
+
 from ..sending import MessageSendError, OutgoingAttachment, prepare
 from .client import QQClient
 from .errors import QQSendError
@@ -27,7 +29,9 @@ class QQSender:
     async def send(self, event: QQMessageEvent, message: Any) -> Any:
         """Return vendor responses in order; never replay a partial send."""
         parts = await prepare(
-            message, event.attachments, self.channel.settings.max_message_length
+            message,
+            event.attachments,
+            self.channel.settings.max_message_length,
         )
         for part in parts:
             if isinstance(part, OutgoingAttachment):
@@ -43,21 +47,14 @@ class QQSender:
         self, event: QQMessageEvent, parts: list[str | OutgoingAttachment]
     ) -> Any:
         """Upload and send within the connection's reserved reply scope."""
-        token = await self.client.access_token(
-            self.channel.self_id, self.channel.settings.app_id, self.secret
-        )
-        base = (
-            self.channel.protocol.sandbox_api_base
-            if self.channel.settings.sandbox
-            else self.channel.protocol.api_base
-        )
+        api = self.client.account(self.channel, self.secret)
         recipient = (
-            ("groups", event.group_id)
+            ("group", event.group_id)
             if event.group_id
-            else ("users", event.user_id)
+            else ("c2c", event.user_id)
         )
-        target = f"{base}/v2/{recipient[0]}/{quote(recipient[1], safe='')}"
-        media = QQMedia(self.client, target, token)
+        target = quote(recipient[1], safe="")
+        media = QQMedia(api, (recipient[0], target))
         uploaded: dict[tuple[str, str], str] = {}
         for part in parts:
             if (
@@ -69,22 +66,26 @@ class QQSender:
                 )
         responses: list[dict[str, Any]] = []
         for index, part in enumerate(parts):
-            payload = {
-                "msg_id": event.message_id,
-                "msg_seq": self.channel.next_sequence(event.message_id),
-                "msg_type": 0 if isinstance(part, str) else 7,
-            }
-            if isinstance(part, str):
-                payload["content"] = part
-            else:
-                payload["content"] = " "
-                payload["media"] = {
-                    "file_info": uploaded[(part.kind, part.attachment.id)]
-                }
+            payload = MessageToCreate(
+                msg_id=event.message_id,
+                msg_seq=self.channel.next_sequence(event.message_id),
+                msg_type=0 if isinstance(part, str) else 7,
+                content=part if isinstance(part, str) else " ",
+                media=(
+                    None
+                    if isinstance(part, str)
+                    else MediaInfo(
+                        file_info=uploaded[(part.kind, part.attachment.id)]
+                    )
+                ),
+            )
             try:
-                response = await self.client.post_json(
-                    target + "/messages", payload, headers=media.headers
+                send = (
+                    api.post_group_message
+                    if event.group_id
+                    else api.post_c2c_message
                 )
+                response = await send(target, payload)
                 if not response.get("id"):
                     raise QQSendError("QQ did not confirm the send")
             except Exception as error:

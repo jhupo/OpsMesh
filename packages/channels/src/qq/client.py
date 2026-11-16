@@ -1,169 +1,85 @@
-"""QQ HTTP API requests and per-connection access-token caching."""
+"""Own native QQ SDK clients and their shared HTTP transport."""
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import anyio
 import httpx
-from pydantic import JsonValue
+from qqbot_agent_sdk import QQApiClient
 
 from ..operations import OperationError, operation_response
 from .config import QQSettings
 from .errors import QQSendError
 
-_MAX_RESPONSE_BYTES = 1024 * 1024
-_TOKEN_SAFETY_SECONDS = 60
+if TYPE_CHECKING:
+    from .channel import QQChannel
 
 
-@dataclass
-class _Token:
-    value: str
-    expires_at: float
+class _APITransport:
+    """Apply framework response limits before the SDK consumes responses."""
+
+    def __init__(self, http: httpx.AsyncClient, timeout: float) -> None:
+        self.http = http
+        self.timeout = timeout
+
+    async def request(
+        self, method: str, url: str, **options: Any
+    ) -> httpx.Response:
+        """Preserve safe vendor error types without logging response bodies."""
+        options["timeout"] = self.timeout
+        try:
+            response = await self.http.request(
+                method, url, follow_redirects=False, **options
+            )
+        except httpx.HTTPError:
+            raise OperationError(0, "transport_error") from None
+        operation_response(response)
+        return response
 
 
 class QQClient:
-    """Own the vendor HTTP connection and serialize token refreshes."""
+    """Keep one native API client and token cache per declared connection."""
 
     def __init__(
         self, settings: QQSettings, http: httpx.AsyncClient | None
     ) -> None:
-        """Keep injectable transport ownership explicit."""
         self.settings = settings
         self._http = http
         self._owns_http = http is None
-        self._tokens: dict[str, _Token] = {}
-        self._refresh_locks: dict[str, anyio.Lock] = {}
+        self._accounts: dict[str, QQApiClient] = {}
 
     def open(self) -> None:
-        """Open the HTTP transport on adapter startup."""
+        """Open the shared HTTP transport on adapter startup."""
         if self._http is None:
             self._http = httpx.AsyncClient(trust_env=False)
 
+    def account(self, channel: QQChannel, secret: str) -> QQApiClient:
+        """Return the SDK client bound to this connection's credentials."""
+        if self._http is None:
+            raise QQSendError("The QQ HTTP client is not open")
+        client = self._accounts.get(channel.self_id)
+        if client is None:
+            client = QQApiClient(
+                app_id=channel.settings.app_id,
+                client_secret=secret,
+                log_tag=channel.self_id,
+            )
+            client.setup(
+                _APITransport(self._http, self.settings.request_timeout)
+            )
+            self._accounts[channel.self_id] = client
+        return client
+
+    def forget(self, connection_id: str) -> None:
+        """Release one account after its gateway has stopped."""
+        client = self._accounts.pop(connection_id, None)
+        if client is not None:
+            client.clear_token()
+
     async def close(self) -> None:
-        """Release credentials and owned network resources."""
-        self._tokens.clear()
-        self._refresh_locks.clear()
+        """Discard SDK clients and close the owned HTTP transport."""
+        for connection_id in tuple(self._accounts):
+            self.forget(connection_id)
         if self._owns_http and self._http is not None:
             await self._http.aclose()
             self._http = None
-
-    def forget(self, connection_id: str) -> None:
-        """Discard the cached token for a removed connection."""
-        self._tokens.pop(connection_id, None)
-        self._refresh_locks.pop(connection_id, None)
-
-    async def access_token(
-        self, connection_id: str, app_id: str, secret: str
-    ) -> str:
-        """Share one token refresh among concurrent sends."""
-        lock = self._refresh_locks.setdefault(connection_id, anyio.Lock())
-        async with lock:
-            cached = self._tokens.get(connection_id)
-            if cached is not None and time.monotonic() < cached.expires_at:
-                return cached.value
-            data = await self.post_json(
-                self.settings.token_url,
-                {"appId": app_id, "clientSecret": secret},
-            )
-            token = data.get("access_token")
-            if not isinstance(token, str) or not token:
-                raise QQSendError("QQ token response is invalid")
-            try:
-                lifetime = int(data.get("expires_in", 7200))
-            except (TypeError, ValueError):
-                lifetime = 7200
-            self._tokens[connection_id] = _Token(
-                value=token,
-                expires_at=time.monotonic()
-                + max(lifetime - _TOKEN_SAFETY_SECONDS, 1),
-            )
-            return token
-
-    async def post_json(
-        self,
-        url: str,
-        payload: dict[str, Any],
-        *,
-        headers: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
-        """Send a vendor request and validate its JSON object response."""
-        if self._http is None:
-            raise QQSendError("The QQ HTTP client is not open")
-        try:
-            response = await self._http.post(
-                url,
-                json=payload,
-                headers=headers or {},
-                timeout=self.settings.request_timeout,
-                follow_redirects=False,
-            )
-        except httpx.HTTPError as error:
-            raise QQSendError("QQ vendor request failed") from error
-        if not 200 <= response.status_code < 300:
-            raise QQSendError(
-                f"QQ vendor request failed with status {response.status_code}"
-            )
-        if len(response.content) > _MAX_RESPONSE_BYTES:
-            raise QQSendError("QQ vendor response is too large")
-        try:
-            data = response.json()
-        except ValueError as error:
-            raise QQSendError("QQ vendor response is not JSON") from error
-        if not isinstance(data, dict):
-            raise QQSendError("QQ vendor response is invalid")
-        error_code = data.get("code", data.get("err_code"))
-        if error_code not in (None, 0, "0"):
-            raise QQSendError("QQ rejected the request")
-        return data
-
-    async def gateway_url(
-        self,
-        connection_id: str,
-        app_id: str,
-        secret: str,
-        *,
-        sandbox: bool = False,
-    ) -> str:
-        """Return the authenticated WebSocket Gateway URL for one bot."""
-        token = await self.access_token(connection_id, app_id, secret)
-        base = (
-            self.settings.sandbox_api_base
-            if sandbox
-            else self.settings.api_base
-        )
-        payload = await self.request_json("GET", f"{base}/gateway", token=token)
-        if not isinstance(payload, dict):
-            raise QQSendError("QQ Gateway response is invalid")
-        url = payload.get("url")
-        if not isinstance(url, str) or not url.startswith("wss://"):
-            raise QQSendError("QQ Gateway response has no secure URL")
-        return url
-
-    async def request_json(
-        self,
-        method: str,
-        url: str,
-        *,
-        token: str,
-        body: dict[str, JsonValue] | None = None,
-        params: dict[str, str | int] | None = None,
-    ) -> JsonValue:
-        """Borrow the existing transport for a fixed platform operation."""
-        if self._http is None:
-            raise QQSendError("The QQ HTTP client is not open")
-        try:
-            response = await self._http.request(
-                method,
-                url,
-                json=body,
-                params=params,
-                headers={"Authorization": f"QQBot {token}"},
-                timeout=self.settings.request_timeout,
-                follow_redirects=False,
-            )
-        except httpx.HTTPError:
-            raise OperationError(0, "transport_error") from None
-        return operation_response(response)

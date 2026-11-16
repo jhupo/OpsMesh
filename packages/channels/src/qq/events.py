@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from pydantic import ConfigDict, Field
+from qqbot_agent_sdk import EventParser
 
 from opsmesh.adapters import Event
 
@@ -231,16 +232,18 @@ def parse_callback(
     if not isinstance(author, dict):
         raise QQProtocolError("QQ message event is missing its author")
 
-    group_id: str | None = None
-    if event_type in {GROUP_MESSAGE, GROUP_MESSAGE_CREATE}:
-        group_id = data.get("group_openid")
-        user_id = author.get("member_openid")
-        if not isinstance(group_id, str) or not isinstance(user_id, str):
-            raise QQProtocolError("QQ group message has no group or member")
-    else:
-        user_id = author.get("user_openid")
-        if not isinstance(user_id, str):
-            raise QQProtocolError("QQ direct message has no open identifier")
+    # SDK 1.2.2 omits GROUP_MESSAGE_CREATE from its parser dispatch table.
+    parser_type = (
+        GROUP_MESSAGE if event_type == GROUP_MESSAGE_CREATE else event_type
+    )
+    try:
+        native = EventParser.parse(parser_type, data)
+    except (TypeError, ValueError, AttributeError):
+        raise QQProtocolError("QQ message data is invalid") from None
+    if native is None or not native.user_id or not native.chat_id:
+        raise QQProtocolError("QQ message has no conversation or user")
+    group_id = native.chat_id if native.chat_scope == "group" else None
+    user_id = native.user_id
 
     attachments = attachments or AttachmentCollection()
     message = parse_message(data, attachments, reader)

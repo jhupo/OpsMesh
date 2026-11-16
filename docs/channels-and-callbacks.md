@@ -44,7 +44,7 @@ API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 Me
       "port": 8080,
       "identities": [{"id": "operator", "token_ref": "OPSMESH_API_TOKEN"}]
     },
-    "qq": {"enabled": true, "reconnect_delay": 3.0}
+    "qq": {"enabled": true}
   }
 }
 ```
@@ -73,7 +73,11 @@ channels 的 `config.dingtalk` 只放公共限制，例如 `request_timeout`、`
 
 固定使用 [官方 dingtalk-stream 0.24.3](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。消息解析、回调及 ACK 使用 SDK 原生实现。该版本原生启动循环会吞掉取消，握手和回复请求使用无超时的同步 HTTP；因此 `stream.py` 只接管异步握手、连接任务和关闭，复用 SDK 协议逻辑。日志不输出握手 ticket、secret 或完整协议帧。回复继续使用钉钉返回的 session webhook（这是出站回复地址，不是本地 Webhook 接收端点）。
 
-QQ 使用官方 Bot API v2 Gateway WebSocket 接入与 OpenAPI 回复客户端。群消息使用 `GROUP_AT_MESSAGE_CREATE` 或 `GROUP_MESSAGE_CREATE` 的 `group_openid`，C2C 消息使用 `C2C_MESSAGE_CREATE` 的 `user_openid`；三者都先转换成 Framework Event，再进入有界队列和 Matcher 分发。被动回复按官方限制执行：单聊最多 4 次，群聊最多 5 次。
+QQ 固定使用 [qqbot-agent-sdk 1.2.2](https://github.com/tencent-connect/qqbot-agent-sdk/tree/v1.2.2)。QQApiClient 管理 Token、消息及原生媒体上传；QQWebSocket 管理握手、心跳、重连和 Resume。OpsMesh 负责插件生命周期、框架事件转换、有界队列及 SDK 尚未封装的群管理接口；群管理通过 SDK 的 request() 调用。
+
+SDK 的端点来自进程环境变量，在首次导入前设置。推荐在服务环境中配置 QQ_API_BASE=https://api.bot.qq.com 和 QQ_TOKEN_URL=https://api.bot.qq.com/app/getAppAccessToken。未配置时使用 SDK 原生默认地址。端点不再放入 config.qq；api_base、sandbox_api_base、token_url、reconnect_delay 已移除，账号配置中的 sandbox 也已移除。机器人可用范围由 QQ 开放平台管理，重连退避由 SDK 管理。
+
+SDK 1.2.2 没有完整通知回调及可配置 intents；gateway.py 补这两个入口、原始事件 ID/序列保留及任务清理，并将正常断线返回转为 SDK 重连，避免原生监听空转。业务事件由框架在入队时去重，避免 SDK 仅按消息 ID 去重而丢失连续消息。原生 SDK 在宿主事件循环中运行，不额外启动网关线程。该版本 SDK 的内部钩子已纳入契约测试，升级依赖时必须验证。原生 EventParser 负责消息身份解析，GROUP_MESSAGE_CREATE 按相同的群消息结构补充解析。群消息使用 `GROUP_AT_MESSAGE_CREATE` 或 `GROUP_MESSAGE_CREATE` 的 `group_openid`，C2C 消息使用 `C2C_MESSAGE_CREATE` 的 `user_openid`；三者都先转换成 Framework Event，再进入有界队列和 Matcher 分发。被动回复按官方限制执行：单聊最多 4 次，群聊最多 5 次。
 
 channels 自己只维护消息入口、健康检查和传输生命周期。目标架构中业务插件不使用 `@channels.api.get/post/...` 声明会话、知识库或 cron 路由；它们声明 `on_message/on_command` Matcher，并由统一消息入口按插件归属开放。撤销一个业务插件只撤销它的消息入口，不关闭其他消费者共享的 API。
 
