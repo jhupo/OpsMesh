@@ -26,6 +26,7 @@ from opsmesh.plugins.channels.qq.groups import (
     QQGroupOperations,
 )
 from opsmesh.plugins.channels.qq.guilds import QQGuildOperations
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import plugin_scope
 
@@ -391,14 +392,14 @@ async def test_group_operations_reject_foreign_connection_owner(protocol):
         name="owner",
         module=ModuleType("owner"),
         module_name="owner",
-        manager=None,
+        manager=PluginManager(),
         status=PluginStatus.READY,
     )
     other = Plugin(
         name="other",
         module=ModuleType("other"),
         module_name="other",
-        manager=None,
+        manager=PluginManager(),
         status=PluginStatus.READY,
     )
     driver = Driver(Env(), Config())
@@ -442,7 +443,7 @@ async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
         name="owner",
         module=ModuleType("owner"),
         module_name="owner",
-        manager=None,
+        manager=PluginManager(),
         status=PluginStatus.READY,
     )
     with plugin_scope(owner):

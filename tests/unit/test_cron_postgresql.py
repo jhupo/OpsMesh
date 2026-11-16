@@ -26,13 +26,14 @@ async def postgres_cron(monkeypatch):
     from opsmesh.drivers import Driver, base
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
+    from opsmesh.plugins.manager import PluginManager
     from opsmesh.plugins.model import Plugin, PluginStatus
 
     saved_matchers = dict(matchers.items())
     monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database_api = importlib.import_module("opsmesh.plugins.database")
     database_plugin = Plugin(
-        "database", database_api, database_api.__name__, None
+        "database", database_api, database_api.__name__, PluginManager()
     )
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, "database": database_plugin}
@@ -48,7 +49,7 @@ async def postgres_cron(monkeypatch):
         scheduler_module, "declarations", declaration_module.declarations
     )
     consumer = Plugin(
-        "cron_probe", ModuleType("cron_probe"), "cron_probe", None
+        "cron_probe", ModuleType("cron_probe"), "cron_probe", PluginManager()
     )
     consumer.status = PluginStatus.READY
     monkeypatch.setattr(

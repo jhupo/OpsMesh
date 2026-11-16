@@ -26,6 +26,7 @@ from opsmesh.plugins.channels.api import (
     Settings,
     routing,
 )
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.utils import flatten_exception_group
 
@@ -55,7 +56,7 @@ class ProtocolHarness:
             name=owner_id,
             module=ModuleType(owner_id),
             module_name=owner_id,
-            manager=None,
+            manager=PluginManager(),
             status=PluginStatus.READY,
         )
         self.owners[owner_id] = owner

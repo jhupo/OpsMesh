@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from opsmesh.plugins.manager import PluginManager
+
 
 @pytest.fixture
 def cron(monkeypatch):
@@ -22,7 +24,7 @@ def cron(monkeypatch):
     saved_matchers = dict(matchers.items())
     monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database = importlib.import_module("opsmesh.plugins.database")
-    database_plugin = Plugin("database", database, database.__name__, None)
+    database_plugin = Plugin("database", database, database.__name__, PluginManager())
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, "database": database_plugin}
     )
@@ -40,7 +42,7 @@ def cron(monkeypatch):
         operations, "declarations", declaration_module.declarations
     )
     consumer = Plugin(
-        "timer_consumer", ModuleType("timer_consumer"), "timer_consumer", None
+        "timer_consumer", ModuleType("timer_consumer"), "timer_consumer", PluginManager()
     )
     consumer.status = PluginStatus.READY
     monkeypatch.setattr(
@@ -356,7 +358,7 @@ async def test_old_timer_cannot_enter_a_reloaded_plugin(cron, monkeypatch):
         await runtime.reconcile()
         old_job = runtime.native.get_job(record.id)
         replacement = Plugin(
-            cron.owner.name, cron.owner.module, cron.owner.module_name, None
+            cron.owner.name, cron.owner.module, cron.owner.module_name, PluginManager()
         )
         replacement.status = PluginStatus.READY
         replacement.generation = cron.owner.generation

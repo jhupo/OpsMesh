@@ -199,13 +199,14 @@ def cron_runtime(monkeypatch):
     from opsmesh.drivers import Driver, base
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
+    from opsmesh.plugins.manager import PluginManager
     from opsmesh.plugins.model import Plugin, PluginStatus
 
     saved_matchers = dict(matchers.items())
     monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database_module = importlib.import_module("opsmesh.plugins.database")
     database = Plugin(
-        "database", database_module, database_module.__name__, None
+        "database", database_module, database_module.__name__, PluginManager()
     )
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, database.id_: database}
@@ -220,7 +221,7 @@ def cron_runtime(monkeypatch):
         scheduler, "declarations", declaration_module.declarations
     )
     owner = Plugin(
-        "sync_consumer", ModuleType("sync_consumer"), "sync_consumer", None
+        "sync_consumer", ModuleType("sync_consumer"), "sync_consumer", PluginManager()
     )
     owner.status = PluginStatus.READY
     monkeypatch.setattr(

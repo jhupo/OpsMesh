@@ -23,6 +23,7 @@ from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin
 
 previous_driver = driver_state._driver
@@ -33,7 +34,7 @@ try:
     for dependency in ("database", "filesystem"):
         module = importlib.import_module("opsmesh.plugins." + dependency)
         registry._plugins.setdefault(
-            dependency, Plugin(dependency, module, module.__name__, None)
+            dependency, Plugin(dependency, module, module.__name__, PluginManager())
         )
     pytest.importorskip("opsmesh.plugins.knowledge", exc_type=ImportError)
 finally:

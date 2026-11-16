@@ -16,13 +16,14 @@ from opsmesh.plugins.invocation import (
     hold_plugin,
     plugin_call,
 )
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
 
 @pytest.fixture
 def plugins(monkeypatch):
-    provider = Plugin("provider", ModuleType("provider"), "provider", None)
-    caller = Plugin("caller", ModuleType("caller"), "caller", None)
+    provider = Plugin("provider", ModuleType("provider"), "provider", PluginManager())
+    caller = Plugin("caller", ModuleType("caller"), "caller", PluginManager())
     provider.status = caller.status = PluginStatus.READY
     caller.dependencies = [provider.id_]
     monkeypatch.setattr(
@@ -180,7 +181,7 @@ def test_sync_owner_uses_loaded_plugin_in_opsmesh_namespace(monkeypatch):
         "def owner():\n    return registry.get_current_plugin()\n",
         module.__dict__,
     )
-    plugin = Plugin("custom", module, module.__name__, None)
+    plugin = Plugin("custom", module, module.__name__, PluginManager())
     monkeypatch.setattr(registry, "_plugins", {plugin.id_: plugin})
     assert module.owner() is plugin
 
@@ -193,14 +194,14 @@ def test_sync_provider_resolves_its_actual_dependent(monkeypatch):
         provider_module.__dict__,
     )
     provider = Plugin(
-        "foundation", provider_module, provider_module.__name__, None
+        "foundation", provider_module, provider_module.__name__, PluginManager()
     )
     caller_module = ModuleType("opsmesh.plugins.custom")
     caller_module.provider = provider_module
     exec(
         "def lookup():\n    return provider.lookup()\n", caller_module.__dict__
     )
-    caller = Plugin("custom", caller_module, caller_module.__name__, None)
+    caller = Plugin("custom", caller_module, caller_module.__name__, PluginManager())
     caller.dependencies = [provider.id_]
     monkeypatch.setattr(
         registry, "_plugins", {item.id_: item for item in (provider, caller)}

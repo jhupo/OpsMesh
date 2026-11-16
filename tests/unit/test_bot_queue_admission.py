@@ -26,6 +26,7 @@ from opsmesh.plugins.channels.qq import (
     QQSettings,
 )
 from opsmesh.plugins.invocation import plugin_call
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
 SECRET = "0123456789abcdef0123456789abcdef"
@@ -40,14 +41,14 @@ class BotHarness:
             "provider",
             ModuleType("provider"),
             "provider",
-            None,
+            PluginManager(),
             status=PluginStatus.READY,
         )
         self.owner = Plugin(
             "support",
             ModuleType("support"),
             "support",
-            None,
+            PluginManager(),
             dependencies=["provider"],
             status=PluginStatus.READY,
         )
