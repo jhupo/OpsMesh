@@ -16,9 +16,10 @@ from ..attachments import (
     AttachmentError,
     AttachmentSettings,
 )
-from ..requests import read_body
+from ..sending import prepare_attachment
 from .auth import Authenticator, Principal
 from .errors import HTTPError
+from .requests import read_body
 from .responses import json_response
 
 if TYPE_CHECKING:
@@ -169,10 +170,10 @@ def mount(channel: "APIChannel") -> None:
         channel._mounted[(method, path)] = channel.app.router.routes[-1]
 
 
-async def encode_message(
+async def prepare_message(
     channel: "APIChannel", event: "HTTPEvent", message: Message
-) -> list[dict]:
-    """Turn output files into authenticated, expiring download references."""
+) -> tuple[list[dict], list[tuple[Attachment, bytes]]]:
+    """Prepare download references without publishing files to the cache."""
     if not event.installation_id:
         raise HTTPError(422, "Attachment reply requires an owned route")
     parts = []
@@ -180,14 +181,20 @@ async def encode_message(
     identifiers: set[str] = set()
     for segment in message:
         if segment.is_text():
-            parts.append({"type": "text", "text": str(segment)})
+            parts.append({"type": segment.type, "text": str(segment)})
+            if segment.type == "markdown":
+                parts[-1]["title"] = segment.data.get("title", "Reply")
+        elif segment.type == "table":
+            parts.append({"type": "table", **segment.data})
         elif segment.type in {"image", "file", "audio", "video"}:
-            original = event.attachments.get(segment.data["attachment_id"])
-            content = await event.attachments.read(original.id)
+            media = await prepare_attachment(segment, event.attachments)
+            original, content = media.attachment, media.content
             attachment = Attachment.create(
                 original.name, original.media_type, len(content)
             )
             identifiers.add(original.id)
+            if media.thumbnail is not None:
+                identifiers.add(media.thumbnail.id)
             uploads.append((attachment, content))
             parts.append(
                 {
@@ -198,8 +205,23 @@ async def encode_message(
                     ),
                 }
             )
+            for key in ("duration_ms", "alt"):
+                if key in segment.data:
+                    parts[-1][key] = segment.data[key]
+            if media.thumbnail is not None:
+                thumbnail = Attachment.create(
+                    media.thumbnail.name,
+                    media.thumbnail.media_type,
+                    len(media.thumbnail_content),
+                )
+                uploads.append((thumbnail, media.thumbnail_content))
+                parts[-1]["thumbnail"] = {
+                    "attachment": asdict(thumbnail),
+                    "download_url": (
+                        f"/attachments/{event.installation_id}/{thumbnail.id}"
+                    ),
+                }
         else:
             raise AttachmentError("Unsupported API output segment")
     event.attachments.validate_message(identifiers)
-    channel.uploads.put_many((event.installation_id, event.user_id), uploads)
-    return parts
+    return parts, uploads

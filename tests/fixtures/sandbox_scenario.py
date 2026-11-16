@@ -116,7 +116,8 @@ def run_scenario(plugin, routes):
         note.write_text("persistent workspace", encoding="utf-8")
         events = await api.post("Continue", stream=True)
         assert events[-1][0] == "done"
-        assert events[-2][0] == "message_end"
+        assert events[-2][0] == "message"
+        assert events[-2][1]["content"][0]["text"] == "second"
         assert note.read_text() == "persistent workspace"
         assert (
             json.loads(state_file.read_text())["session_id"]
@@ -202,7 +203,9 @@ def run_scenario(plugin, routes):
             )
             assert (
                 text_of(
-                    await api.post("Write a file", conversation_id=other_window)
+                    await api.post(
+                        "Write a file", conversation_id=other_window
+                    )
                 )
                 == "tool finished"
             )
@@ -235,7 +238,9 @@ def run_scenario(plugin, routes):
                     UnixLocalSandboxClient,
                 )
 
-                backend = UnixLocalSandboxClient(inherit_host_environment=False)
+                backend = UnixLocalSandboxClient(
+                    inherit_host_environment=False
+                )
             try:
                 await verify(engine, backend)
             finally:

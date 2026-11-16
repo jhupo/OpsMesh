@@ -414,7 +414,7 @@ async def test_shared_transport_restarts_after_last_consumer_stops(monkeypatch):
 async def test_http_listener_retains_resources_when_cleanup_fails(monkeypatch):
     from types import SimpleNamespace
 
-    from opsmesh.plugins.channels.server import ListenerSettings, Server
+    from opsmesh.plugins.channels.api.server import ListenerSettings, Server
 
     async def app(scope, receive, send):
         return None

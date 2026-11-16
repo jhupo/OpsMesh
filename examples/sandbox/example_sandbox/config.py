@@ -1,5 +1,7 @@
 """Settings owned by the sandbox example plugin."""
 
+from typing import Literal
+
 from openai.types.shared import Reasoning
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,4 +14,6 @@ class SandboxSettings(BaseModel):
     model: str = Field(min_length=1)
 
     reasoning: Reasoning | None = None
+    output_format: Literal["text", "markdown"] = "markdown"
+    publication: Literal["buffered", "progressive"] = "buffered"
     max_turns: int = Field(default=8, ge=1, le=100)

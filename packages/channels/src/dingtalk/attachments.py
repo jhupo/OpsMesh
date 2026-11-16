@@ -1,5 +1,6 @@
 """Decode DingTalk media and exchange download codes asynchronously."""
 
+import logging
 import mimetypes
 from functools import partial
 from typing import Any
@@ -13,8 +14,11 @@ from ..attachments import (
 from ..attachments.download import download
 from ..attachments.transfer import AttachmentReader
 from ..messages import Message, MessageSegment
+from ..operations import OperationError
 from .client import DingTalkClient
 from .config import DingTalkConnectionSettings
+
+logger = logging.getLogger(__name__)
 
 
 async def unavailable() -> bytes:
@@ -95,6 +99,22 @@ class DingTalkAttachments:
 
     async def read(self, code: str) -> bytes:
         """Resolve a signed media link without exposing access tokens."""
+        try:
+            return await self._download(code)
+        except OperationError as error:
+            logger.warning(
+                "DingTalk attachment link exchange failed: %s", error
+            )
+            raise AttachmentError(
+                "DingTalk attachment link exchange failed "
+                f"({error.status}, {error.code})"
+            ) from None
+        except AttachmentError as error:
+            logger.warning("DingTalk attachment read failed: %s", error)
+            raise
+
+    async def _download(self, code: str) -> bytes:
+        """Exchange the temporary code before downloading bounded content."""
         access_token = await self.client.access_token(self.connection)
         result = await self.client.post_json(
             "https://api.dingtalk.com/v1.0/robot/messageFiles/download",
@@ -102,7 +122,7 @@ class DingTalkAttachments:
             headers={"x-acs-dingtalk-access-token": access_token},
         )
         url = result.get("downloadUrl")
-        if not isinstance(url, str):
+        if not isinstance(url, str) or not url:
             raise AttachmentError("DingTalk download URL is unavailable")
         return await download(
             url,

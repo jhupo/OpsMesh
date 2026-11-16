@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from opsmesh.drivers import get_driver
 
-from ..lifecycle.coordinator import channel_lifecycle
+from ..lifecycle.hooks import transports
 from .adapter import DingTalkAdapter
 from .channel import (
     DingTalkChannel,
@@ -55,6 +56,17 @@ def _declare_connection(
         The declared connection handle.
     """
     adapter = _prepare()
+    if not os.environ.get(settings.client_secret_ref, "").strip():
+        raise ValueError(
+            f"dingtalk.{name}: missing credential environment variable "
+            f"{settings.client_secret_ref}"
+        )
+    for declared in adapter.declarations:
+        if declared.settings.client_id == settings.client_id:
+            raise ValueError(
+                f"dingtalk.{name}: robot account already belongs to "
+                f"{declared.owner_id}"
+            )
     channel = adapter.declare(settings, name=name, owner=owner)
-    channel_lifecycle.transports.use(adapter, owner)
+    transports.use(adapter, owner)
     return channel

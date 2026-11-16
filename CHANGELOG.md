@@ -4,6 +4,14 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.6 — 2026-11-16
+
+- Add typed multimodal replies, Markdown, native DingTalk card streaming, and delivery observations. Agent plugins select and persist output files; channels transport supported message types.
+- Move output formatting and fallback decisions into conversation examples; remove implicit channel rendering and old API transport module paths.
+- Separate HTTP dispatch resources from response ownership, bound JSON/SSE execution, and prevent busy bot conversations from occupying all queue workers.
+- Cache DingTalk access tokens per connection and preserve safe platform error details.
+- Follow bounded, validated HTTPS media redirects for incoming attachments; record safe DingTalk attachment failures without download codes or signed URLs.
+
 ## 0.5.5 — 2026-11-16
 
 - Support PluginMetadata.config_file for first-start JSON configuration import and explicit re-import. Preserve saved values across restarts.

@@ -7,7 +7,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    JsonValue,
+    SerializeAsAny,
     ValidationError,
     ValidationInfo,
     field_validator,
@@ -39,15 +39,19 @@ class ChannelConnections(BaseModel):
         extra="forbid", frozen=True, hide_input_in_errors=True
     )
 
-    qq: dict[str, dict[str, JsonValue]] = Field(default_factory=dict)
-    dingtalk: dict[str, dict[str, JsonValue]] = Field(default_factory=dict)
+    qq: dict[str, SerializeAsAny[BaseModel]] = Field(default_factory=dict)
+    dingtalk: dict[str, SerializeAsAny[BaseModel]] = Field(default_factory=dict)
 
-    @field_validator("qq", "dingtalk")
+    @field_validator("qq", "dingtalk", mode="before")
     @classmethod
     def validate_accounts(
-        cls, values: dict[str, dict[str, JsonValue]], info: ValidationInfo
-    ) -> dict[str, dict[str, JsonValue]]:
+        cls, values: dict, info: ValidationInfo
+    ) -> dict[str, BaseModel]:
         """Validate only protocols requested by this consumer."""
+        if not isinstance(values, dict):
+            raise ValueError(
+                "Connections must be a mapping of names to settings"
+            )
         if not values:
             return values
         from ._validation import connection_segment
@@ -60,6 +64,7 @@ class ChannelConnections(BaseModel):
             else module.DingTalkConnectionSettings
         )
         accounts: set[str] = set()
+        parsed = {}
         for name, raw in values.items():
             connection_segment(name, "Connection name")
             try:
@@ -80,4 +85,5 @@ class ChannelConnections(BaseModel):
                     f"{protocol}.{name}: robot account is already configured"
                 )
             accounts.add(account)
-        return values
+            parsed[name] = settings
+        return parsed

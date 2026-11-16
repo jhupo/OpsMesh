@@ -34,8 +34,8 @@ manager = PluginManager(["consumer", "failed"])
 registry.register_plugin_manager(manager)
 assert all("opsmesh.plugins.channels." + name not in sys.modules
            for name in ("api", "qq", "dingtalk"))
-from opsmesh.plugins.channels.lifecycle.coordinator import channel_lifecycle
-transports = channel_lifecycle.transports
+from opsmesh.plugins.channels.lifecycle.hooks import transports
+transports = transports
 """
 
 
@@ -86,7 +86,6 @@ channels.config_values = settings
 async def main():
     async with driver.lifespan():
         assert not transports._started
-        assert not hasattr(channel_lifecycle, "http")
         assert "uvicorn" not in sys.modules
 asyncio.run(main())
 """,
@@ -164,7 +163,6 @@ async def main():
         assert len(transports._started) == 1
         assert driver.get_adapter("qq").started
     assert not connection.ready
-    assert not hasattr(channel_lifecycle, "http")
 asyncio.run(main())
 registry.revoke_plugin(consumer)
 assert not transports._declared
@@ -234,7 +232,6 @@ async def main():
                 break
             await asyncio.sleep(0)
         assert connection.ready
-        assert not hasattr(channel_lifecycle, "http")
         assert "uvicorn" not in sys.modules
         from inspect import getattr_static
         assert getattr_static(connection, "path", None) is None

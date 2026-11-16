@@ -20,10 +20,15 @@ class ChatConsole:
     """Save SDK selection independently of the current channel UUID."""
 
     def __init__(
-        self, client: ChatClient, state_file: Path | None = None
+        self,
+        client: ChatClient,
+        state_file: Path | None = None,
+        *,
+        download_dir: Path | None = None,
     ) -> None:
         """Separate saved selections by server, plugin and credentials."""
         self.client = client
+        self.download_dir = download_dir
         self.session_id: str | None = None
         self._profile = hashlib.sha256(
             (
@@ -85,6 +90,13 @@ class ChatConsole:
             if data.get("deleted_session_id") == self.session_id:
                 self.session_id = None
         self._save()
+        if self.download_dir is not None:
+            for message in response["messages"]:
+                for part in message["content"]:
+                    if part["type"] in {"image", "file", "audio", "video"}:
+                        part["saved_path"] = str(
+                            self.client.download(part, self.download_dir)
+                        )
         return response_text(response)
 
     def use(self, session_id: str) -> str:
@@ -101,12 +113,30 @@ class ChatConsole:
 
     def execute_stream(self, text: str, files: tuple[Path, ...] = ()) -> str:
         """Display SSE increments and persist selection after completion."""
-        increments = []
+        live_text = False
 
         def display(delta: str) -> None:
-            increments.append(delta)
+            nonlocal live_text
+            live_text = True
             print(delta, end="", flush=True)
 
-        response = self.client.send_stream(text, files, on_delta=display)
-        result = self._record(response)
-        return "" if increments else result
+        def complete(message: dict) -> None:
+            nonlocal live_text
+            if live_text:
+                print()
+                live_text = False
+            content = response_text({"messages": [message]})
+            if content:
+                print(content, flush=True)
+
+        response = self.client.send_stream(
+            text, files, on_delta=display, on_message=complete
+        )
+        self._record(response)
+        saved = [
+            part["saved_path"]
+            for message in response["messages"]
+            for part in message["content"]
+            if "saved_path" in part
+        ]
+        return "\n".join("Saved: " + path for path in saved)

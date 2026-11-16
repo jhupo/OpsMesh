@@ -258,7 +258,8 @@ def test_terminal_restore_uses_new_channel_scope_and_structured_selection(
     second = console.session_id
     console.use(first)
     restored = console_module.ChatConsole(
-        client_module.ChatClient(address, "test-token"), tmp_path / "state.json"
+        client_module.ChatClient(address, "test-token"),
+        tmp_path / "state.json",
     )
     restored.restore()
     assert restored.session_id == first
@@ -287,7 +288,8 @@ def test_selection_does_not_change_when_use_fails(
     client_module, console_module = client_modules
     address, _, _ = chat_server
     console = console_module.ChatConsole(
-        client_module.ChatClient(address, "test-token"), tmp_path / "state.json"
+        client_module.ChatClient(address, "test-token"),
+        tmp_path / "state.json",
     )
     console.new()
     original = console.session_id
@@ -422,7 +424,9 @@ def stream_bytes(events):
         ],
     ],
 )
-def test_sse_rejects_out_of_order_or_incomplete_answers(client_modules, events):
+def test_sse_rejects_out_of_order_or_incomplete_answers(
+    client_modules, events
+):
     module, _ = client_modules
     with pytest.raises(ValueError):
         module.collect_stream(stream_bytes(events))
@@ -444,7 +448,12 @@ def test_sse_complete_messages_are_not_merged(client_modules):
     response = module.collect_stream(
         stream_bytes(
             messages
-            + [("done", {"conversation_id": str(uuid4()), "status": "waiting"})]
+            + [
+                (
+                    "done",
+                    {"conversation_id": str(uuid4()), "status": "waiting"},
+                )
+            ]
         )
     )
     assert module.response_text(response) == "a\nb"
@@ -475,3 +484,62 @@ def test_sse_error_does_not_mark_partial_answer_complete(client_modules):
     )
     with pytest.raises(module.ChatClientError, match="internal server error"):
         client._validate(response)
+
+
+def test_sse_markdown_preserves_format_and_readable_source(client_modules):
+    module, _ = client_modules
+    response = module.collect_stream(
+        stream_bytes(
+            [
+                ("message_start", {"message_id": "a", "format": "markdown"}),
+                (
+                    "message_delta",
+                    {"message_id": "a", "sequence": 1, "delta": "**answer**"},
+                ),
+                ("message_end", {"message_id": "a"}),
+                (
+                    "done",
+                    {"conversation_id": str(uuid4()), "status": "completed"},
+                ),
+            ]
+        )
+    )
+    assert response["messages"][0]["content"] == [
+        {"type": "markdown", "text": "**answer**", "title": "Reply"}
+    ]
+    assert module.response_text(response) == "**answer**"
+
+
+def test_client_download_keeps_credentials_on_its_server_and_preserves_files(
+    client_modules, monkeypatch, tmp_path
+):
+    module, _ = client_modules
+    client = module.ChatClient("https://example.test", "private-token")
+    attachment_id = uuid4().hex
+    part = {
+        "type": "file",
+        "attachment": {
+            "id": attachment_id,
+            "name": "../../report.txt",
+            "size": 4,
+        },
+        "download_url": f"/attachments/example_chat/{attachment_id}",
+    }
+    requests = []
+
+    def request(self, request, reader):
+        requests.append(request)
+        return reader(io.BytesIO(b"file"))
+
+    monkeypatch.setattr(module.ChatClient, "_request", request)
+    first = client.download(part, tmp_path)
+    second = client.download(part, tmp_path)
+    assert first.parent == tmp_path
+    assert first != second
+    assert first.read_bytes() == b"file"
+    assert requests[0].get_header("Authorization") == "Bearer private-token"
+    assert requests[0].full_url.startswith("https://example.test/attachments/")
+    part["download_url"] = "https://other.test/steal"
+    with pytest.raises(module.ChatClientError):
+        client.download(part, tmp_path)
+    assert len(requests) == 2

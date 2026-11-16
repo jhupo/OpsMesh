@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..attachments import AttachmentSettings
+
+
+class DingTalkCardSettings(BaseModel):
+    """A published AI card template with a streaming Markdown component."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    template_id: str = Field(min_length=1, max_length=200)
+    content_key: str = Field(
+        default="msgContent", pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+    )
+    update_interval: float = Field(default=0.8, ge=0.5, le=5)
+
+    @field_validator("content_key")
+    @classmethod
+    def separate_content_from_status(cls, value: str) -> str:
+        """Keep streaming text from overwriting the SDK lifecycle field."""
+        if value == "flowStatus":
+            raise ValueError("flowStatus is reserved for the AI card lifecycle")
+        return value
 
 
 class DingTalkConnectionSettings(BaseModel):
@@ -19,6 +39,7 @@ class DingTalkConnectionSettings(BaseModel):
     client_id: str = Field(pattern=r"^[A-Za-z0-9._-]{1,128}$")
     client_secret_ref: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
     max_message_length: int = Field(default=20000, ge=1, le=100000)
+    card: DingTalkCardSettings | None = None
 
 
 class DingTalkSettings(BaseModel):

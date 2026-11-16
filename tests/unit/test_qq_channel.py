@@ -145,9 +145,7 @@ async def test_native_token_cache_is_shared_with_gateway(monkeypatch):
         client = QQClient(QQSettings(), http)
         channel = SimpleNamespace(
             self_id="one",
-            settings=QQConnectionSettings(
-                app_id="123", secret_ref="QQ_SECRET"
-            ),
+            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
         )
         api = client.account(channel, SECRET)
         assert await api.get_gateway_url() == "wss://api.bot.qq.com/ws/"
@@ -238,7 +236,7 @@ async def test_adapter_admits_gateway_event_once(monkeypatch):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.qq.adapter.dispatch_event", fake_dispatch
+        "opsmesh.plugins.channels._work.dispatch_event", fake_dispatch
     )
     async with adapter.driver.lifespan():
         await adapter.startup()
@@ -432,9 +430,7 @@ async def test_native_api_preserves_safe_operation_errors(monkeypatch, caplog):
         client = QQClient(QQSettings(), http)
         channel = SimpleNamespace(
             self_id="one",
-            settings=QQConnectionSettings(
-                app_id="123", secret_ref="QQ_SECRET"
-            ),
+            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
         )
         api = client.account(channel, SECRET)
         with pytest.raises(OperationPermissionDenied) as caught:

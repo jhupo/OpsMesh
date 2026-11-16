@@ -81,7 +81,7 @@ execution.run/stream 原样接收已有的原生 SDK 输入类型，没有新增
 各 Channel 的 receive_types / send_types 声明当前实现的消息类型。
 API 可以将公共 Message 中的附件转换为受保护的临时下载引用。
 插件先把生成的 bytes 加入 `event.attachments.add_bytes(...)`，再通过 `Channel.send` 回复公共 Message。
-对应路由的返回契约需要允许该消息段列表；也可以直接返回原生 Response。
+统一 messages 入口直接编码这些消息段；业务处理器通过 Matcher/Channel 发送。
 
 QQ、钉钉均通过 `channel.send(event, message)` 发送媒体，接收能力与发送格式限制分别声明：
 
@@ -112,7 +112,7 @@ sampleAudio / sampleVideo；群聊与私聊分别走 groupMessages/send 与 oToM
 出站媒体调用官方 OpenAPI 的 file_data/file_info 流程；WebSocket 连接和 OpenAPI
 客户端共享同一个 QQ token 缓存。
 
-组合消息会先解析所有附件、检查格式、上传全部素材，再按内容顺序发送；相邻文本合并。
+组合消息会先解析所有附件、检查格式、上传全部素材，再按消息段顺序发送；不合并相邻文本，以保留发送位置。
 这不提供跨平台原子发送：上传成功但后续发送失败，平台素材可能保留至平台规定的过期时间。
 多段发送失败抛出 MessageSendError，completed 包含已确认的原生回执，failed_index 为失败段的
 零基索引；失败段可能已送达但响应丢失，因此不自动重发。取消会继续传播，不启动后续发送。
@@ -156,3 +156,29 @@ await channel.send(event, message)
 受影响测试覆盖事件转换、延迟下载、消息顺序、身份隔离、过期、大小限制、取消后重试、
 API 上传与下载、原生 Session 内容持久化、沙箱文件写入及普通机器人对话。
 平台下载流程使用确定性 HTTP 替身验证；真实 QQ/钉钉账号和实际模型媒体能力需在对应部署中验收。
+
+## 类型化回复与文件历史
+
+正文、Markdown、表格和媒体复用 channels 的 Message；详见
+[输出协议](../packages/channels/README.md#explicit-markdown-and-dingtalk-ai-cards)。
+通道不解析模型结果、不扫描 Markdown 中的链接或沙箱文件目录。
+模型的字符串输出格式由插件配置明确指定；结构化输出必须由插件提供转换函数。
+流通过三个文字块事件及完整 Message 保序传递，不把 token 广播成框架事件。
+
+sandbox 示例的原生 publish_file 工具通过已打开 SDK 会话读取受限路径，先固定内容，
+再选择交付。示例保留文件和 manifest；/files 查询，/files <reply_id> 重新发布。
+下载缓存按 channels 的 TTL 过期，持久文件随会话删除；清理历史或重置工作区保留已交付文件。
+这属于智能体插件的策略，filesystem 仍只提供文件操作，execution 仍返回原生 SDK 结果。
+HTTP 的 written 只表示 ASGI 写出，不能解释为用户确认收件。
+
+
+## 内容与传输边界
+
+智能体插件负责解析 SDK 输出、选择文件、持久化产物和决定展示格式。
+`channel.send_types` 声明完整消息类型，`channel.stream_formats` 声明当前配置支持的增量格式。
+插件通过框架 `Matcher.send()` / `Matcher.finish()` 回复，流通过当前 channel 的 stream 操作发送。
+QQ 不支持增量格式及 Markdown 消息段；钉钉配置卡片后支持 Markdown 增量。
+不支持的消息明确拒绝，插件自行转换或缓冲，不由通道猜测或静默降级。
+示例共享的 files.py 保存产物选择，outputs.py 决定输出格式与缓冲，deliveries.py 处理持久化。
+channels 只管理事件附件访问、协议转换、临时下载引用和实际传输结果。
+HTTP 内容预算不含 JSON/SSE 外层编码，文件字节使用附件限额；处理期限同时适用于 JSON 与 SSE。

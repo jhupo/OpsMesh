@@ -2,10 +2,18 @@
 
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
+from uuid import uuid4
 
 from qqbot_agent_sdk import MediaInfo, MessageToCreate
 
-from ..sending import MessageSendError, OutgoingAttachment, prepare
+from ..receipts import Delivery
+from ..sending import (
+    MessageSendError,
+    OutgoingAttachment,
+    normalize,
+    prepare,
+    require_supported,
+)
 from .client import QQClient
 from .errors import QQSendError
 from .events import QQMessageEvent
@@ -26,10 +34,27 @@ class QQSender:
         self.channel = channel
         self.secret = secret
 
-    async def send(self, event: QQMessageEvent, message: Any) -> Any:
+    async def send(
+        self,
+        event: QQMessageEvent,
+        message: Any,
+        *,
+        delivery: Delivery | None = None,
+        message_id: str | None = None,
+    ) -> Any:
         """Return vendor responses in order; never replay a partial send."""
+        delivery = delivery or Delivery()
+        delivery.check_owner()
+        message_id = message_id or uuid4().hex
+        original = normalize(message)
+        require_supported(original, self.channel.send_types)
+        kinds = [
+            part.type
+            for part in original
+            if part.type != "data" and (not part.is_text() or str(part).strip())
+        ]
         parts = await prepare(
-            message,
+            original,
             event.attachments,
             self.channel.settings.max_message_length,
         )
@@ -41,10 +66,17 @@ class QQSender:
             len(parts),
             limit=5 if event.group_id else 4,
         ):
-            return await self._send_parts(event, parts)
+            return await self._send_parts(
+                event, parts, delivery, message_id, kinds
+            )
 
     async def _send_parts(
-        self, event: QQMessageEvent, parts: list[str | OutgoingAttachment]
+        self,
+        event: QQMessageEvent,
+        parts: list[str | OutgoingAttachment],
+        delivery: Delivery,
+        message_id: str,
+        kinds: list[str],
     ) -> Any:
         """Upload and send within the connection's reserved reply scope."""
         api = self.client.account(self.channel, self.secret)
@@ -85,9 +117,16 @@ class QQSender:
                     if event.group_id
                     else api.post_c2c_message
                 )
-                response = await send(target, payload)
-                if not response.get("id"):
-                    raise QQSendError("QQ did not confirm the send")
+                async with delivery.operation(
+                    message_id,
+                    position=index,
+                    original_type=kinds[index],
+                    actual_type="text" if isinstance(part, str) else part.kind,
+                ) as operation:
+                    response = await send(target, payload)
+                    if not response.get("id"):
+                        raise QQSendError("QQ did not confirm the send")
+                    operation.response = response
             except Exception as error:
                 if len(parts) == 1:
                     raise

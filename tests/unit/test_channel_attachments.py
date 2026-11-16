@@ -66,7 +66,7 @@ async def test_failed_api_reply_does_not_publish_partial_uploads(failure):
     from types import SimpleNamespace
 
     from opsmesh.plugins.channels import Message, MessageSegment
-    from opsmesh.plugins.channels.api.attachments import encode_message
+    from opsmesh.plugins.channels.api.output import MessageOutput
 
     files = AttachmentCollection()
     first = files.add_bytes(Attachment.create("a.txt", "text/plain"), b"a")
@@ -83,8 +83,17 @@ async def test_failed_api_reply_does_not_publish_partial_uploads(failure):
             else MessageSegment("unknown", {}),
         ]
     )
-    with pytest.raises((HTTPError, AttachmentError)):
-        await encode_message(SimpleNamespace(uploads=cache), event, message)
+    output = MessageOutput(
+        SimpleNamespace(
+            uploads=cache,
+            settings=SimpleNamespace(
+                max_output_bytes=1024, max_output_messages=8
+            ),
+        ),
+        event,
+    )
+    with pytest.raises((HTTPError, ValueError)):
+        await output.send(message)
     assert not cache._uploads
     cache.put(("chat", "user"), first, b"a")
     assert cache.get(("chat", "user"), first.id).content == b"a"
@@ -285,7 +294,7 @@ async def test_download_blocks_redirects_and_streams_under_size_limit(
             **kwargs,
         ),
     )
-    for pattern in ("failed", "too large"):
+    for pattern in ("not allowed", "too large"):
         with pytest.raises(AttachmentError, match=pattern):
             await transport.download(
                 "https://qpic.cn/image",
@@ -325,7 +334,11 @@ async def test_dingtalk_media_exchanges_credentials_only_at_api(monkeypatch):
 
     class Client(DingTalkClient):
         def __init__(self):
-            pass
+            from opsmesh.plugins.channels.dingtalk.config import (
+                DingTalkSettings,
+            )
+
+            super().__init__(DingTalkSettings(), None)
 
         async def post_json(self, url, body, **options):
             calls.append((url, body, options))
@@ -372,3 +385,134 @@ async def test_cancelled_attachment_read_can_retry():
     with anyio.move_on_after(0.01):
         await files.read(metadata.id)
     assert await files.read(metadata.id) == b"done"
+
+
+@pytest.mark.anyio
+async def test_dingtalk_markdown_download_follows_validated_vendor_redirects(
+    monkeypatch,
+):
+    import httpx
+
+    import opsmesh.plugins.channels.attachments.download as transport
+    from opsmesh.plugins.channels.dingtalk.attachments import parse_message
+
+    requests = []
+    content = b"# Solution\nA working document."
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                302,
+                headers={
+                    "location": "https://files.aliyuncs.com/document?signature=private",
+                    "set-cookie": "secret=value; Domain=.dingtalk.com",
+                },
+            )
+        return httpx.Response(200, content=content)
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        transport.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(respond),
+            **kwargs,
+        ),
+    )
+
+    async def read(code):
+        assert code == "private-code"
+        return await transport.download(
+            "https://media.dingtalk.com/document",
+            AttachmentSettings(),
+            ("dingtalk.com", "aliyuncs.com"),
+        )
+
+    files = AttachmentCollection()
+    message = parse_message(
+        {
+            "msgtype": "file",
+            "content": {
+                "fileName": "solution.md",
+                "downloadCode": "private-code",
+                "fileSize": len(content),
+            },
+        },
+        files,
+        read,
+    )
+    assert await files.read(message[0].data["attachment_id"]) == content
+    assert len(requests) == 2
+    assert "cookie" not in requests[1].headers
+    assert "x-acs-dingtalk-access-token" not in requests[1].headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status,location,pattern,count",
+    [
+        (302, "http://media.dingtalk.com/file", "not allowed", 1),
+        (302, "https://dingtalk.com.evil.test/file", "not allowed", 1),
+        (302, "/loop", "redirect limit", 4),
+        (302, None, "missing location", 1),
+        (403, None, "HTTP 403", 1),
+    ],
+)
+async def test_download_redirect_boundaries(
+    monkeypatch, status, location, pattern, count
+):
+    import httpx
+
+    import opsmesh.plugins.channels.attachments.download as transport
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            status, headers={"location": location} if location else {}
+        )
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        transport.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(
+            transport=httpx.MockTransport(respond),
+            **kwargs,
+        ),
+    )
+    with pytest.raises(AttachmentError, match=pattern) as caught:
+        await transport.download(
+            "https://media.dingtalk.com/file?signature=private",
+            AttachmentSettings(),
+            ("dingtalk.com",),
+        )
+    assert "private" not in str(caught.value)
+    assert len(requests) == count
+
+
+@pytest.mark.anyio
+async def test_dingtalk_link_failure_is_a_safe_attachment_error(caplog):
+    from types import SimpleNamespace
+
+    from opsmesh.plugins.channels.dingtalk.attachments import (
+        DingTalkAttachments,
+    )
+    from opsmesh.plugins.channels.operations import OperationPermissionDenied
+
+    class Client:
+        async def access_token(self, connection):
+            return "private-token"
+
+        async def post_json(self, *args, **kwargs):
+            raise OperationPermissionDenied(403, "Forbidden.AccessDenied")
+
+    reader = DingTalkAttachments(
+        Client(), SimpleNamespace(client_id="robot"), AttachmentSettings()
+    )
+    with pytest.raises(AttachmentError, match="403, Forbidden.AccessDenied"):
+        await reader.read("private-code")
+    assert "link exchange failed" in caplog.text
+    assert "private" not in caplog.text

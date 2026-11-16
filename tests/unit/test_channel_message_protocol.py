@@ -9,13 +9,18 @@ from opsmesh.plugins.channels import (
     AttachmentCollection,
     Message,
     MessageSegment,
+    StreamMessageEnd,
+    StreamMessageStart,
+    StreamTextDelta,
+    UnsupportedOperation,
 )
 from opsmesh.plugins.channels._queue import EventQueue
 from opsmesh.plugins.channels.dingtalk.adapter import DingTalkAdapter
 from opsmesh.plugins.channels.dingtalk.events import DingTalkMessageEvent
 from opsmesh.plugins.channels.qq.adapter import QQAdapter
 from opsmesh.plugins.channels.qq.events import QQMessageEvent
-from opsmesh.plugins.channels.sending import aggregate_stream, prepare
+from opsmesh.plugins.channels.sending import prepare
+from opsmesh.plugins.channels.streaming import message_stream
 
 
 @pytest.mark.anyio
@@ -60,7 +65,7 @@ def test_structured_factory_rejects_non_json_objects(value):
 
 
 def test_structured_data_has_a_shared_size_limit(monkeypatch):
-    from opsmesh.plugins.channels import messages
+    from opsmesh.plugins.channels.messages import segments as messages
 
     monkeypatch.setattr(messages, "MAX_STRUCTURED_BYTES", 8)
     with pytest.raises(ValueError, match="size limit"):
@@ -69,7 +74,7 @@ def test_structured_data_has_a_shared_size_limit(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
-async def test_bot_stream_consumes_the_source_before_one_complete_send(
+async def test_bot_stream_without_native_support_rejects_and_closes_source(
     protocol,
 ):
     if protocol == "qq":
@@ -92,45 +97,54 @@ async def test_bot_stream_consumes_the_source_before_one_complete_send(
             content="hello",
             raw={},
         )
-    channel = SimpleNamespace(self_id="bot", ready=True)
+    channel = SimpleNamespace(
+        self_id="bot", ready=True, settings=SimpleNamespace(card=None)
+    )
     adapter._declared = {"bot": channel}
     stages = []
 
     async def source():
         try:
-            yield "one"
+            yield StreamMessageStart("a")
+            yield StreamTextDelta("a", 1, "one")
             assert stages == []
-            yield " two"
+            yield StreamTextDelta("a", 2, " two")
+            yield StreamMessageEnd("a")
         finally:
             stages.append("source closed")
 
-    async def send(channel, event, message):
-        assert stages == ["source closed"]
-        stages.append(message)
+    async def send(channel, event, message, **options):
+        assert stages == []
+        stages.append(str(message))
 
     adapter._send_message = send
-    await adapter._call(channel, "stream", event=event, source=source())
-    assert stages == ["source closed", "one two"]
+    with pytest.raises(UnsupportedOperation):
+        await adapter._call(channel, "stream", event=event, source=source())
+    assert stages == ["source closed"]
 
 
 @pytest.mark.anyio
 async def test_stream_aggregation_closes_the_source_when_size_limit_is_exceeded(
     monkeypatch,
 ):
-    from opsmesh.plugins.channels import sending
+    from opsmesh.plugins.channels import streaming
 
-    monkeypatch.setattr(sending, "MAX_STREAM_BYTES", 5)
+    monkeypatch.setattr(streaming, "MAX_STREAM_BYTES", 5)
     closed = []
 
     async def source():
         try:
-            yield "first"
-            yield "second"
+            yield StreamMessageStart("a")
+            yield StreamTextDelta("a", 1, "first")
+            yield StreamTextDelta("a", 2, "second")
+            yield StreamMessageEnd("a")
         finally:
             closed.append(True)
 
     with pytest.raises(ValueError, match="size limit"):
-        await aggregate_stream(source())
+        async with message_stream(source()) as reader:
+            async for _, block in reader.blocks():
+                await block.message()
     assert closed == [True]
 
 
@@ -150,7 +164,7 @@ async def test_bot_queue_serializes_each_scope_while_other_scopes_progress():
 
     queue = EventQueue(
         capacity=4,
-        concurrency=3,
+        concurrency=2,
         shutdown_timeout=1,
         handle=handle,
         scope=lambda item: item["scope"],
@@ -166,7 +180,7 @@ async def test_bot_queue_serializes_each_scope_while_other_scopes_progress():
         release.set()
         await queue.stop()
     assert stages.index(("end", 1)) < stages.index(("start", 2))
-    assert not queue._lanes
+    assert not queue._active
 
 
 @pytest.mark.anyio
@@ -190,12 +204,12 @@ async def test_incomplete_queue_stop_retains_workers_until_a_successful_retry():
         await entered.wait()
         with pytest.raises(TimeoutError):
             await queue.stop()
-        assert queue._task_group is not None
-        assert queue._receive is not None
+        assert queue._started
+        assert queue._worker_scopes
         assert not queue.put_nowait("new")
         with pytest.raises(RuntimeError, match="has not stopped"):
             await queue.start(tasks)
         release.set()
         await queue.stop()
-    assert queue._task_group is None
-    assert queue._receive is None
+    assert not queue._started
+    assert not queue._worker_scopes

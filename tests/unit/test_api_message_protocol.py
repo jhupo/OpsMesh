@@ -16,7 +16,14 @@ from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.params import Depends
 from opsmesh.plugins import registry
-from opsmesh.plugins.channels import Attachment, Message, MessageSegment
+from opsmesh.plugins.channels import (
+    Attachment,
+    Message,
+    MessageSegment,
+    StreamMessageEnd,
+    StreamMessageStart,
+    StreamTextDelta,
+)
 from opsmesh.plugins.channels.api import (
     APIChannel,
     APIRouter,
@@ -255,7 +262,9 @@ async def test_multiple_sends_and_finish_preserve_complete_message_order(
         pytest.fail("finish must end this matcher")
 
     response = await protocol.post()
-    assert response.json()["messages"] == [
+    messages = response.json()["messages"]
+    assert len({item.pop("message_id") for item in messages}) == 3
+    assert messages == [
         {"content": [{"type": "text", "text": "first"}], "data": None},
         {
             "content": [{"type": "text", "text": "selected"}],
@@ -354,8 +363,10 @@ async def test_json_stream_aggregates_within_the_callers_scope(protocol):
 
     async def source():
         try:
-            yield "one"
-            yield " two"
+            yield StreamMessageStart("answer")
+            yield StreamTextDelta("answer", 1, "one")
+            yield StreamTextDelta("answer", 2, " two")
+            yield StreamMessageEnd("answer")
         finally:
             stages.append("source closed")
 
@@ -368,6 +379,7 @@ async def test_json_stream_aggregates_within_the_callers_scope(protocol):
     response = await protocol.post()
     assert response.json()["messages"] == [
         {
+            "message_id": "answer",
             "content": [{"type": "text", "text": "one two"}],
             "data": None,
         }
@@ -385,8 +397,10 @@ async def test_sse_keeps_messages_separate_and_finishes_after_cleanup(protocol):
 
     async def source():
         try:
-            yield "one"
-            yield " two"
+            yield StreamMessageStart("answer")
+            yield StreamTextDelta("answer", 1, "one")
+            yield StreamTextDelta("answer", 2, " two")
+            yield StreamMessageEnd("answer")
         finally:
             stages.append("source closed")
 
@@ -441,9 +455,12 @@ async def test_sse_failures_end_with_safe_error_and_no_success_done(
 
     async def source():
         try:
-            yield "partial"
+            yield StreamMessageStart("answer")
+            yield StreamTextDelta("answer", 1, "partial")
             if failure == "increment":
                 raise RuntimeError("private source failure")
+            if failure != "source_cleanup":
+                yield StreamMessageEnd("answer")
         finally:
             stages.append("source closed")
             if failure == "source_cleanup":
@@ -591,7 +608,8 @@ async def test_sse_disconnect_cancels_source_and_closes_dependencies(protocol):
 
     async def source():
         try:
-            yield "partial"
+            yield StreamMessageStart("answer")
+            yield StreamTextDelta("answer", 1, "partial")
             await anyio.sleep_forever()
         finally:
             stages.append("source closed")
@@ -630,9 +648,11 @@ async def test_sse_buffer_applies_backpressure_to_text_source(protocol):
     )
 
     async def source():
+        yield StreamMessageStart("answer")
         for index in range(20):
             consumed.append(index)
-            yield "part"
+            yield StreamTextDelta("answer", index + 1, "part")
+        yield StreamMessageEnd("answer")
 
     async def answer(channel: Channel, event: Event):
         await channel.call("stream", event=event, source=source())
@@ -643,12 +663,13 @@ async def test_sse_buffer_applies_backpressure_to_text_source(protocol):
             await release.wait()
 
     protocol.bind(answer)
-    async with anyio.create_task_group() as tasks:
-        tasks.start_soon(asgi_request, protocol, send)
-        await blocked.wait()
-        await anyio.sleep(0.01)
-        assert len(consumed) <= 3
-        release.set()
+    with anyio.fail_after(2):
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(asgi_request, protocol, send)
+            await blocked.wait()
+            await anyio.sleep(0.01)
+            assert len(consumed) <= 3
+            release.set()
     assert len(consumed) == 20
 
 
@@ -661,7 +682,7 @@ async def test_message_output_limits_fail_safely_and_release_admission(
     protocol.channel.settings = protocol.channel.settings.model_copy(
         update={
             "max_output_messages": 1 if limit == "count" else 128,
-            "max_output_bytes": 32 if limit == "bytes" else 1024,
+            "max_output_bytes": 4 if limit == "bytes" else 1024,
         }
     )
 
@@ -710,7 +731,7 @@ async def test_nonstream_timeout_returns_failed_envelope_after_cleanup(
 
 
 @pytest.mark.anyio
-async def test_sse_is_not_limited_by_nonstream_request_timeout(protocol):
+async def test_sse_uses_the_same_request_timeout_as_json(protocol):
     protocol.channel.settings = protocol.channel.settings.model_copy(
         update={
             "request_timeout_seconds": 0.001,
@@ -723,7 +744,8 @@ async def test_sse_is_not_limited_by_nonstream_request_timeout(protocol):
 
     protocol.bind(answer)
     events = decode_events(await protocol.post(accept="text/event-stream"))
-    assert [name for name, _ in events] == ["message", "done"]
+    assert [name for name, _ in events] == ["error"]
+    assert events[0][1]["code"] == "504"
 
 
 @pytest.mark.anyio
@@ -793,7 +815,8 @@ async def test_sse_transport_failure_cancels_source_and_closes_dependencies(
 
     async def source():
         try:
-            yield "partial"
+            yield StreamMessageStart("answer")
+            yield StreamTextDelta("answer", 1, "partial")
             await anyio.sleep_forever()
         finally:
             stages.append("source closed")
@@ -860,7 +883,6 @@ async def test_source_cleanup_timeout_still_attempts_dependency_cleanup(
     protocol.bind(answer)
     response = await protocol.post(accept="text/event-stream")
     assert [name for name, _ in decode_events(response)] == [
-        "message_start",
         "error",
     ]
     assert stages == ["source close attempted", "dependency closed"]

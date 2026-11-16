@@ -9,9 +9,18 @@ from opsmesh.messages import MessageSegment as FrameworkSegment
 
 from .attachments import Attachment, AttachmentCollection, AttachmentError
 from .messages import MEDIA_TYPES, Message, MessageSegment
+from .operations import UnsupportedOperation
 
 MAX_STREAM_BYTES = 1024 * 1024
 _STREAM_CLEANUP_TIMEOUT = 10
+
+
+@dataclass(frozen=True)
+class OutgoingMarkdown:
+    """Keep explicit formatting intact until the transport encodes it."""
+
+    text: str
+    title: str
 
 
 @dataclass(frozen=True)
@@ -56,16 +65,44 @@ def image_metadata(attachment: Attachment, content: bytes) -> Attachment:
 
 
 def normalize(message: str | FrameworkMessage | FrameworkSegment) -> Message:
-    """Copy supported framework segments without changing their order."""
+    """Validate a copy so direct segment construction cannot bypass schemas."""
+    from .messages.schemas import validate_segment
+
     if isinstance(message, str):
-        return Message(message)
-    if isinstance(message, FrameworkSegment):
-        return Message(MessageSegment(message.type, dict(message.data)))
-    if isinstance(message, FrameworkMessage):
-        return Message(
-            MessageSegment(part.type, dict(part.data)) for part in message
+        message = Message(message)
+    elif isinstance(message, FrameworkSegment):
+        message = Message(message)
+    if not isinstance(message, FrameworkMessage):
+        raise TypeError("Expected a string or framework message")
+    return Message(validate_segment(part) for part in message)
+
+
+def message_size(message: Message) -> int:
+    """Count UTF-8 content, excluding transport envelopes and file bytes."""
+    import json
+
+    size = 0
+    for part in message:
+        if part.is_text():
+            size += len(str(part).encode("utf-8"))
+            if part.type == "markdown":
+                size += len(part.data["title"].encode("utf-8"))
+        else:
+            size += len(
+                json.dumps(
+                    part.data, ensure_ascii=False, allow_nan=False
+                ).encode("utf-8")
+            )
+    return size
+
+
+def require_supported(message: Message, supported: frozenset[str]) -> None:
+    """Reject unsupported content before resolving files or sending."""
+    unsupported = {part.type for part in message} - supported
+    if unsupported:
+        raise UnsupportedOperation(
+            "Unsupported message types: " + ", ".join(sorted(unsupported))
         )
-    raise TypeError("Expected a string or framework message")
 
 
 def split_data(message: Message) -> tuple[Message, dict[str, Any] | None]:
@@ -81,9 +118,10 @@ def split_data(message: Message) -> tuple[Message, dict[str, Any] | None]:
         value = segment.data.get("value")
         if not isinstance(value, dict):
             raise TypeError("Structured message data must be a JSON object")
-        data = MessageSegment.structured(value).data["value"]
+        data = value
     if not any(
-        part.type in MEDIA_TYPES or (part.is_text() and str(part).strip())
+        part.type in MEDIA_TYPES | {"table"}
+        or (part.is_text() and str(part).strip())
         for part in content
     ):
         raise ValueError("Messages cannot be empty; provide readable content")
@@ -92,7 +130,7 @@ def split_data(message: Message) -> tuple[Message, dict[str, Any] | None]:
     return content, data
 
 
-async def close_source(source: AsyncIterator[str]) -> None:
+async def close_source(source: AsyncIterator[object]) -> None:
     """Release a caller-owned iterator before request dependencies close."""
     import anyio
 
@@ -102,96 +140,80 @@ async def close_source(source: AsyncIterator[str]) -> None:
             await close()
 
 
-async def aggregate_stream(source: AsyncIterator[str]) -> str:
-    """Consume a bounded text answer in the caller's execution scope."""
-    chunks: list[str] = []
-    size = 0
-    failure = None
-    try:
-        async for chunk in source:
-            if not isinstance(chunk, str):
-                raise TypeError("Stream increments must be text")
-            size += len(chunk.encode("utf-8"))
-            if size > MAX_STREAM_BYTES:
-                raise ValueError("Stream output exceeds the size limit")
-            if chunk:
-                chunks.append(chunk)
-        return "".join(chunks)
-    except BaseException as error:
-        failure = error
-        raise
-    finally:
-        try:
-            await close_source(source)
-        except BaseException as cleanup_error:
-            if failure is None:
-                raise
-            failure.add_note(f"Stream cleanup failed: {cleanup_error!r}")
+async def prepare_attachment(
+    segment: MessageSegment, files: AttachmentCollection
+) -> OutgoingAttachment:
+    """Validate and materialize one media reference for any transport."""
+    key = segment.data.get("attachment_id")
+    if not isinstance(key, str):
+        raise AttachmentError("Missing attachment reference")
+    attachment = files.get(key)
+    category = attachment.media_type.split("/", 1)[0]
+    if segment.type != "file" and segment.type != category:
+        raise AttachmentError("Attachment type does not match content")
+    duration = segment.data.get("duration_ms")
+    if duration is not None and (type(duration) is not int or duration <= 0):
+        raise AttachmentError("Media duration must be positive milliseconds")
+    thumbnail_id = segment.data.get("thumbnail_id")
+    thumbnail = files.get(thumbnail_id) if thumbnail_id else None
+    content = await files.read(key)
+    if not content:
+        raise AttachmentError("Cannot send an empty attachment")
+    if segment.type == "image":
+        attachment = image_metadata(attachment, content)
+    thumbnail_content = await files.read(thumbnail.id) if thumbnail else None
+    if thumbnail is not None:
+        thumbnail = image_metadata(thumbnail, thumbnail_content)
+    return OutgoingAttachment(
+        attachment,
+        content,
+        segment.type,
+        duration,
+        thumbnail,
+        thumbnail_content,
+    )
 
 
 async def prepare(
-    message: str | FrameworkMessage | FrameworkSegment,
+    message: Message,
     files: AttachmentCollection,
     text_limit: int,
-) -> list[str | OutgoingAttachment]:
+) -> list[str | OutgoingMarkdown | OutgoingAttachment]:
     """Resolve every file before visible sends; preserve text/media order."""
-    segments, _ = split_data(normalize(message))
-    parts: list[str | OutgoingAttachment] = []
+    segments, _ = split_data(message)
+    parts: list[str | OutgoingMarkdown | OutgoingAttachment] = []
     attachment_ids: set[str] = set()
     for segment in segments:
-        if segment.is_text():
+        if segment.type == "markdown":
+            parts.append(OutgoingMarkdown(str(segment), segment.data["title"]))
+        elif segment.is_text():
             text = str(segment)
-            if parts and isinstance(parts[-1], str):
-                parts[-1] += text
-            else:
-                parts.append(text)
+            parts.append(text)
         elif segment.type in MEDIA_TYPES:
-            key = segment.data.get("attachment_id")
-            if not isinstance(key, str):
-                raise AttachmentError("Missing attachment reference")
-            attachment = files.get(key)
-            category = attachment.media_type.split("/", 1)[0]
-            if segment.type != "file" and segment.type != category:
-                raise AttachmentError("Attachment type does not match content")
-            duration = segment.data.get("duration_ms")
-            if duration is not None and (
-                type(duration) is not int or duration <= 0
-            ):
-                raise AttachmentError(
-                    "Media duration must be positive milliseconds"
-                )
-            thumbnail_id = segment.data.get("thumbnail_id")
-            thumbnail = files.get(thumbnail_id) if thumbnail_id else None
-            content = await files.read(key)
-            attachment_ids.add(key)
-            if not content:
-                raise AttachmentError("Cannot send an empty attachment")
-            if segment.type == "image":
-                attachment = image_metadata(attachment, content)
-            thumbnail_content = (
-                await files.read(thumbnail.id) if thumbnail else None
-            )
-            if thumbnail is not None:
-                attachment_ids.add(thumbnail.id)
-                thumbnail = image_metadata(thumbnail, thumbnail_content)
-            parts.append(
-                OutgoingAttachment(
-                    attachment,
-                    content,
-                    segment.type,
-                    duration,
-                    thumbnail,
-                    thumbnail_content,
-                )
-            )
+            part = await prepare_attachment(segment, files)
+            attachment_ids.add(part.attachment.id)
+            if part.thumbnail is not None:
+                attachment_ids.add(part.thumbnail.id)
+            parts.append(part)
         else:
             raise ValueError(f"Unsupported outgoing segment: {segment.type}")
     files.validate_message(attachment_ids)
     parts = [
-        part for part in parts if not isinstance(part, str) or part.strip()
+        part
+        for part in parts
+        if (
+            part.text.strip()
+            if isinstance(part, OutgoingMarkdown)
+            else not isinstance(part, str) or part.strip()
+        )
     ]
     if not parts:
         raise ValueError("Messages cannot be empty")
-    if any(isinstance(part, str) and len(part) > text_limit for part in parts):
+    if any(
+        len(part.text if isinstance(part, OutgoingMarkdown) else part)
+        > text_limit
+        for part in parts
+        if isinstance(part, (str, OutgoingMarkdown))
+    ):
         raise ValueError(f"Text parts are limited to {text_limit} characters")
     return parts

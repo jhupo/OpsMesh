@@ -9,7 +9,6 @@ from typing import Any
 
 from qqbot_agent_sdk import QQWebSocket, WSCallbacks
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +28,7 @@ class QQGateway(QQWebSocket):
         deliver: Callable[[dict[str, Any]], Awaitable[None]],
         name: str,
     ) -> None:
+        """Bind native gateway callbacks and track pending event tasks."""
         super().__init__(callbacks, log_tag=name)
         self._intents = intents
         self._deliver = deliver
@@ -50,9 +50,7 @@ class QQGateway(QQWebSocket):
             payload["d"]["intents"] = self._intents
         return await super()._send_ws_json(payload, label)
 
-    def _create_task(
-        self, coro: Coroutine[Any, Any, Any]
-    ) -> asyncio.Task[Any]:
+    def _create_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Retain SDK helper tasks so none outlive plugin shutdown."""
         task = asyncio.create_task(coro)
         self._pending.add(task)

@@ -15,7 +15,7 @@ from websockets.asyncio.client import connect
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.plugins.channels.api.streaming import ManagedStreamingResponse
-from opsmesh.plugins.channels.server import ListenerSettings, Server
+from opsmesh.plugins.channels.api.server import ListenerSettings, Server
 
 
 def new_server(**options):

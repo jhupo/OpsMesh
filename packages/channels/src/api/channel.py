@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import AsyncExitStack, contextmanager
-from functools import partial
 from typing import Any
 
 import anyio
@@ -23,8 +22,6 @@ from opsmesh.plugins.invocation import PluginUnavailable
 from opsmesh.utils import flatten_exception_group
 
 from ..attachments import AttachmentCollection, AttachmentError
-from ..requests import read_body
-from ..server import Server
 from .adapter import APIAdapter
 from .attachments import AttachmentUploads
 from .attachments import mount as mount_attachments
@@ -34,19 +31,19 @@ from .errors import (
     APIConfigurationError,
     HTTPError,
 )
-from .events import APIMessageEvent, HTTPEvent
-from .messages import from_request
-from .output import MessageOutput
+from .events import HTTPEvent
+from .exchange import MessageExchange
+from .requests import read_body
 from .responses import (
     encode_response,
     error_response,
     json_response,
     reset_stream_error_scope,
-    sse_event,
     stream_error_scope,
 )
-from .routes import APIRouter, RouteRegistration
-from .streaming import MessageStreamingResponse, StreamLease
+from .routes import APIRouter, MessageRoute, RouteRegistration
+from .server import Server
+from .streaming import StreamLease
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +54,8 @@ class APIChannel(Channel):
     """Mount plugin routes on the shared HTTP transport and invoke them."""
 
     receive_types = frozenset({"text", "image", "file", "audio", "video"})
-    send_types = receive_types | {"data"}
+    send_types = receive_types | {"data", "markdown", "table"}
+    stream_formats = frozenset({"text", "markdown"})
 
     def __init__(self, settings: Settings, router: APIRouter) -> None:
         """Create a stopped service bound to a route registry."""
@@ -216,7 +214,7 @@ class APIChannel(Channel):
 
     async def send(self, event: HTTPEvent, message: Any, **kwargs: Any) -> Any:
         """Send a complete message in the current event's response scope."""
-        return await self.call("reply", event=event, result=message)
+        return await self.call("reply", event=event, result=message, **kwargs)
 
     def _mount_internal_routes(self) -> None:
 
@@ -286,8 +284,9 @@ class APIChannel(Channel):
         request: Request,
         principal: Principal,
     ) -> Response:
-        if registration.message_handlers:
-            return await self._invoke_message(registration, request, principal)
+        if isinstance(registration, MessageRoute):
+            exchange = MessageExchange(self, registration, principal)
+            return await exchange.respond(request)
         stack = AsyncExitStack()
         await stack.__aenter__()
         resources = StreamLease(stack)
@@ -306,18 +305,7 @@ class APIChannel(Channel):
                 installation_id=registration.installation_id,
                 user_id=principal.caller.id,
             )
-            if registration.message_handlers:
-                message = from_request(
-                    body,
-                    files,
-                    partial(
-                        self.uploads.resolve,
-                        (registration.installation_id, principal.caller.id),
-                    ),
-                )
-                event = APIMessageEvent(message=message, **values)
-            else:
-                event = HTTPEvent(**values)
+            event = HTTPEvent(**values)
             with anyio.fail_after(self.settings.request_timeout_seconds):
                 outcome = await self._dispatch(
                     registration, event, principal, stack, admitted_call
@@ -354,150 +342,6 @@ class APIChannel(Channel):
             return resources.transfer(response, execution_scope=execution_scope)
         await resources.close()
         return response
-
-    async def _invoke_message(
-        self, registration, request, principal
-    ) -> Response:
-        from opsmesh.plugins.invocation import hold_plugin
-
-        stack = AsyncExitStack()
-        await stack.__aenter__()
-        resources = StreamLease(stack)
-        try:
-            admitted_call = hold_plugin(registration.owner, stack)
-            body = await self._parse_body(registration, request)
-            files = AttachmentCollection(self.settings.attachments)
-            message = from_request(
-                body,
-                files,
-                partial(
-                    self.uploads.resolve,
-                    (registration.installation_id, principal.caller.id),
-                ),
-            )
-            values = dict(
-                request=request,
-                payload=body,
-                attachments=files,
-                route_name=registration.name,
-                installation_id=registration.installation_id,
-                user_id=principal.caller.id,
-                message=message,
-                connection_id=self.self_id,
-            )
-            if body.conversation_id is not None:
-                values["conversation_id"] = body.conversation_id
-            event = APIMessageEvent(**values)
-            scope = event.get_session_id()
-            if scope in self._active_conversations:
-                raise HTTPError(409, "conversation is busy")
-            if not self._active_conversations:
-                self._conversations_drained = anyio.Event()
-            self._active_conversations.add(scope)
-            stack.callback(self._release_conversation, scope)
-            output = MessageOutput(self, event)
-            event.bind_output(output)
-        except BaseException as error:
-            await resources.close(error)
-            raise
-
-        async def process(streamed):
-            from opsmesh.plugins.invocation import invocation_scope
-            from opsmesh.plugins.registry import plugin_scope
-
-            failure = None
-            status = "completed"
-            with (
-                plugin_scope(registration.owner),
-                invocation_scope(admitted_call),
-            ):
-                try:
-                    if streamed:
-                        outcome = await dispatch_event(
-                            self,
-                            event,
-                            invocation_context=principal.caller,
-                            stack=stack,
-                            matcher_filter=registration.accepts_matcher,
-                            admitted_call=admitted_call,
-                        )
-                    else:
-                        with anyio.fail_after(
-                            self.settings.request_timeout_seconds
-                        ):
-                            outcome = await self._dispatch(
-                                registration,
-                                event,
-                                principal,
-                                stack,
-                                admitted_call,
-                            )
-                    if outcome.errors:
-                        raise outcome.errors[0]
-                    if output.failure is not None:
-                        raise output.failure
-                    status = "waiting" if outcome.suspended else "completed"
-                except BaseException as error:
-                    failure = error
-                finally:
-                    output.close()
-                    try:
-                        await resources.close(failure)
-                    except BaseException as cleanup_error:
-                        failure = failure or cleanup_error
-            if isinstance(
-                failure, (anyio.get_cancelled_exc_class(), ClientDisconnect)
-            ):
-                raise failure
-            if failure is not None:
-                return "failed", _message_error(failure)
-            return status, None
-
-        accepts = request.headers.get("accept", "")
-        if any(
-            part.split(";", 1)[0].strip() == "text/event-stream"
-            for part in accepts.split(",")
-        ):
-
-            async def produce(emit):
-                output.emit = emit
-                status, failure = await process(True)
-                if failure is not None:
-                    _, error = failure
-                    payload = {
-                        "conversation_id": event.conversation_id,
-                        **error,
-                    }
-                    if output.current_message_id is not None:
-                        payload["message_id"] = output.current_message_id
-                    await emit(sse_event("error", payload))
-                else:
-                    await emit(
-                        sse_event(
-                            "done",
-                            {
-                                "conversation_id": event.conversation_id,
-                                "status": status,
-                            },
-                        )
-                    )
-
-            async def close(error):
-                output.close()
-                await resources.close(error)
-
-            return MessageStreamingResponse(
-                produce,
-                capacity=self.settings.stream_buffer_size,
-                on_close=close,
-            )
-        status, failure = await process(False)
-        if failure is not None:
-            code, error = failure
-            return json_response(
-                output.envelope(status, error), status_code=code
-            )
-        return json_response(output.envelope(status))
 
     async def _dispatch(
         self, registration, event, principal, stack, admitted_call
@@ -571,33 +415,3 @@ def _blocked_required_plugins() -> list[str]:
         for plugin in get_loaded_plugins()
         if plugin.required and not plugin.ready
     )
-
-
-def _message_error(error: BaseException) -> tuple[int, dict[str, str]]:
-    """Keep unexpected handler and cleanup details out of response bodies."""
-    leaves = (
-        list(flatten_exception_group(error))
-        if isinstance(error, BaseExceptionGroup)
-        else [error]
-    )
-    if len(leaves) == 1:
-        error = leaves[0]
-    if isinstance(error, HTTPError):
-        status, message = error.status_code, error.message
-    elif isinstance(error, PluginUnavailable):
-        status, message = 503, "route is not ready"
-    elif isinstance(error, TimeoutError):
-        status, message = 504, "request timed out"
-    elif isinstance(error, PermissionError):
-        status, message = 403, "request is not permitted"
-    else:
-        logger.error(
-            "API message processing failed",
-            exc_info=(
-                type(error),
-                error,
-                error.__traceback__,
-            ),
-        )
-        status, message = 500, "internal server error"
-    return status, {"code": str(status), "message": message}

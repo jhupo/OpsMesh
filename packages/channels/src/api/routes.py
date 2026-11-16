@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, TypeAdapter
 
-from opsmesh.dependencies import Dependent, Param
+from opsmesh.dependencies import Param
 from opsmesh.dependencies.context import ContextParam
 from opsmesh.dependencies.params import (
     ChannelParam,
@@ -104,27 +104,43 @@ class RouteRegistration:
     claim: tuple[str, str]
     name: str
     access: Access
-    handler: Callable[..., Any] | None
-    dependent: Dependent[Any] | None
-    body_model: type[BaseModel] | None
     owner: Plugin
-    response_adapter: TypeAdapter[Any] | None = None
-    allow_response: bool = False
-    response_types: tuple[type, ...] = ()
-    matcher: type[Matcher] | None = None
-    message_handlers: tuple[type[Matcher], ...] = ()
 
     @property
     def active(self) -> bool:
         """Accept requests only while the declaring plugin is ready."""
         return self.owner.ready
 
+
+@dataclass(eq=False)
+class HTTPRoute(RouteRegistration):
+    """A typed HTTP handler executed by one framework matcher."""
+
+    body_model: type[BaseModel] | None = None
+    response_adapter: TypeAdapter[Any] | None = None
+    response_types: tuple[type, ...] = ()
+    matcher: type[Matcher] | None = None
+
     def accepts_matcher(self, matcher: type[Matcher]) -> bool:
-        """Restrict one dispatch to the route and its declared commands."""
-        return (
-            matcher is self.matcher
-            or matcher in self.message_handlers
-            or (matcher.temp and matcher.origin in self.message_handlers)
+        """Dispatch only to this route's handler."""
+        return matcher is self.matcher
+
+
+@dataclass(eq=False)
+class MessageRoute(RouteRegistration):
+    """The fixed message endpoint bound to existing framework matchers."""
+
+    message_handlers: tuple[type[Matcher], ...] = ()
+
+    @property
+    def body_model(self) -> type[MessageRequest]:
+        """Use the shared channel message request contract."""
+        return MessageRequest
+
+    def accepts_matcher(self, matcher: type[Matcher]) -> bool:
+        """Include only declared matchers and their owned continuations."""
+        return matcher in self.message_handlers or (
+            matcher.temp and matcher.origin in self.message_handlers
         )
 
 
@@ -154,7 +170,6 @@ class APIRouter:
         handler: Callable[..., Any] | None = None,
         body: type[BaseModel] | None = None,
         response_adapter: TypeAdapter[Any] | None = None,
-        allow_response: bool = False,
         response_types: tuple[type, ...] = (),
         access: Access = ACCESS_INVOKE,
         name: str | None = None,
@@ -253,7 +268,7 @@ class APIRouter:
                 f"Invalid route handler for {method} {full_path}: {error}"
             ) from error
 
-        registration = RouteRegistration(
+        identity = dict(
             installation_id=resolved_id,
             method=method,
             relative_path=relative,
@@ -261,14 +276,17 @@ class APIRouter:
             claim=claim,
             name=name or f"{resolved_id}.{method.lower()}.{relative}",
             access=access,
-            handler=handler,
-            dependent=dependent,
-            body_model=body,
-            response_adapter=response_adapter,
-            allow_response=allow_response,
-            response_types=response_types,
             owner=plugin,
-            message_handlers=tuple(message_handlers),
+        )
+        registration = (
+            MessageRoute(**identity, message_handlers=tuple(message_handlers))
+            if message_handlers
+            else HTTPRoute(
+                **identity,
+                body_model=body,
+                response_adapter=response_adapter,
+                response_types=response_types,
+            )
         )
 
         async def matches_route(event) -> bool:
@@ -307,7 +325,10 @@ class APIRouter:
         if self._claims.get(registration.claim) is not registration:
             return
         del self._claims[registration.claim]
-        if registration.matcher is not None:
+        if (
+            isinstance(registration, HTTPRoute)
+            and registration.matcher is not None
+        ):
             with suppress(ValueError):
                 registration.matcher.destroy()
         try:
