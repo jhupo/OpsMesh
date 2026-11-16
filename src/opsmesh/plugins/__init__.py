@@ -10,6 +10,7 @@ from .admission import PluginAdmission as PluginAdmission
 from .admission import PluginLoadRequest as PluginLoadRequest
 from .admission import clear_plugin_admission as clear_plugin_admission
 from .admission import set_plugin_admission as set_plugin_admission
+from .config import get_dependency_config as get_dependency_config
 from .config import get_plugin_config as get_plugin_config
 from .errors import PluginLoadDenied as PluginLoadDenied
 from .errors import PluginProtectedError as PluginProtectedError

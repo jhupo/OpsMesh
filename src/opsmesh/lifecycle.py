@@ -74,7 +74,9 @@ def _declare(phase: str, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
         raise TypeError("Lifecycle callbacks must be callable")
     plugin = get_plugin_by_module_name(func.__module__)
     if plugin is not None and plugin.status is not PluginStatus.LOADED:
-        raise RuntimeError("Lifecycle callbacks must be declared while loading")
+        raise RuntimeError(
+            "Lifecycle callbacks must be declared while loading"
+        )
     key = (func.__module__, func.__qualname__, phase)
     _declarations[key] = func
 
@@ -283,6 +285,9 @@ class Lifespan:
         token = _current_plugin.set(plugin)
         management = _managing.set(asyncio.current_task())
         try:
+            from opsmesh.plugins.config import validate_dependency_config
+
+            validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
                     plugin.config_values or {}
@@ -448,7 +453,9 @@ class Lifespan:
         management = _managing.set(asyncio.current_task())
         try:
             await self._run_lifespan_func(
-                entry.func for entry in tuple(entries) if entry.plugin is plugin
+                entry.func
+                for entry in tuple(entries)
+                if entry.plugin is plugin
             )
         finally:
             _current_plugin.reset(token)
@@ -489,6 +496,9 @@ class Lifespan:
         plugin.failure = None
         plugin.completed_shutdown_hooks.clear()
         try:
+            from opsmesh.plugins.config import validate_dependency_config
+
+            validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
                     plugin.config_values or {}

@@ -153,3 +153,34 @@ unknown operations raise `UnsupportedOperation`. HTTP 401/403 and 429 raise
 raise `OperationError`, preserving safe `status`, `code` and `request_id` fields
 without response bodies. HTTP 200 vendor error codes remain inspectable through
 `OperationError.code`. No automatic approval, retry or membership policy runs.
+
+
+## Consumer-owned robots
+
+A consuming plugin calls `require("channels")` and supplies its robot accounts
+in the plugin configuration file, without adding channel fields to its Settings:
+
+```json
+{
+  "config": {},
+  "dependencies": {
+    "channels": {
+      "qq": {
+        "main": {"app_id": "123456789", "secret_ref": "QQ_APP_SECRET"}
+      }
+    }
+  }
+}
+```
+
+Use a numeric application ID for QQ. DingTalk uses `dingtalk.main` with
+`client_id` and `client_secret_ref`. The CLI imports this file into the plugin
+record. Channels validates it and starts the robot only after its consumer is
+ready; stopping the consumer closes and removes its connections. Re-enabling
+rebuilds them from current saved settings. Duplicate accounts are rejected.
+
+`channels.in_group("group-id", connection="main")` returns a framework Rule
+for `on_message` or `on_command`. It filters verified group messages within
+the current plugin. Add `protocol="qq"` or `protocol="dingtalk"` if the name
+is used by both protocols. Agent selection stays in handler code; see the
+[group assistants example](../../examples/groups/README.md).

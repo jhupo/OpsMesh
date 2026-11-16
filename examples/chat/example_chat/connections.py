@@ -1,11 +1,10 @@
-"""Declare optional bot connections and own shared MCP resources."""
+"""Own optional MCP resources for the conversation agent."""
 
 from agents.mcp import MCPServerManager, MCPServerStreamableHttp
 
 from opsmesh import on_shutdown, on_startup
 
 from . import agent as definition
-from . import channels
 from .config import secret
 
 _connections: MCPServerManager | None = None
@@ -16,10 +15,6 @@ async def connect_mcp() -> None:
     """Connect optional tools before the plugin becomes ready."""
     global _connections
     settings = definition.settings
-    if settings.qq is not None:
-        channels.qq.declare_connection(settings.qq, name="primary")
-    if settings.dingtalk is not None:
-        channels.dingtalk.declare_connection(settings.dingtalk, name="internal")
     if settings.mcp_url is None:
         return
     headers = {}

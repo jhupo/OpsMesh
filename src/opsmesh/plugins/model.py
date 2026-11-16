@@ -45,6 +45,9 @@ class PluginMetadata:
     extra: dict[Any, Any] = field(default_factory=dict)
     """Author metadata and native objects consumed by application modules."""
 
+    dependency_config: Type[BaseModel] | None = None  # noqa: UP006
+    """Schema for settings supplied by each consuming plugin."""
+
     def get_supported_adapters(self) -> set[Type["Adapter"]] | None:  # noqa: UP006
         """Resolve supported adapter classes that are currently installed."""
         if self.supported_adapters is None:
@@ -89,10 +92,16 @@ class Plugin:
     """Child plugins."""
     metadata: PluginMetadata | None = None
     """Plugin metadata."""
-    cleanups: list[Callable[[], None]] = field(default_factory=list, repr=False)
+    cleanups: list[Callable[[], None]] = field(
+        default_factory=list, repr=False
+    )
     """Registration removals in acquisition order; never arbitrary effects."""
     config_values: dict[Any, Any] | None = field(default=None, repr=False)
     """Owned startup values, independent of global deployment configuration."""
+    dependency_config_values: dict[str, dict[str, Any]] = field(
+        default_factory=dict, repr=False
+    )
+    """Consumer-owned values keyed by dependency identifier or module."""
     dependencies: list[str] = field(default_factory=list)
     """Plugin identifiers required before this plugin may accept work."""
     required: bool = False

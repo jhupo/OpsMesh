@@ -22,19 +22,27 @@ from .errors import PluginProtectedError
 SCHEMA_VERSION = 2
 
 
-class PluginRecord(BaseModel):
-    """One plugin's load location, startup settings, and configuration."""
+class PluginConfiguration(BaseModel):
+    """Plugin values and consumer-owned configuration for dependencies."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", hide_input_in_errors=True
     )
+
+    config: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
+    dependencies: dict[str, dict[str, JsonValue]] = Field(
+        default_factory=dict, repr=False
+    )
+
+
+class PluginRecord(PluginConfiguration):
+    """One plugin's load location, startup settings, and configuration."""
 
     module: str
     enabled: bool = False
     autoload: bool = False
     required: bool = False
     protected: bool = False
-    config: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
     directory: str | None = None
 
     @model_validator(mode="after")

@@ -133,9 +133,12 @@ class DingTalkAdapter(Adapter):
         self._declared[self_id] = channel
         track_registration(lambda: self._remove(channel), owner)
         if isinstance(plugin, Plugin):
-            self.driver.on_ready(
-                lambda: self._activate(channel) if self._started else None
-            )
+
+            async def start_connection() -> None:
+                if self._started:
+                    self._activate(channel)
+
+            self.driver.on_started(start_connection)
 
             async def close_connection() -> None:
                 stream = self._streams.get(channel)
@@ -147,8 +150,6 @@ class DingTalkAdapter(Adapter):
                 channel.mark_closed()
 
             self.driver.on_shutdown(close_connection)
-        if self._started:
-            self._activate(channel)
         return channel
 
     async def startup(self) -> None:
@@ -225,7 +226,9 @@ class DingTalkAdapter(Adapter):
         if operation == "stream":
             self._validate_reply(channel, data.get("event"))
             message = await aggregate_stream(data["source"])
-            return await self._send_message(channel, data.get("event"), message)
+            return await self._send_message(
+                channel, data.get("event"), message
+            )
         if operation == "send_message":
             return await self._send_message(
                 channel, data.get("event"), data.get("message")

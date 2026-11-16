@@ -15,7 +15,7 @@ from .config import (
     DingTalkConnectionSettings,
     DingTalkSettings,
 )
-from .connections import declare_connection, get_adapter
+from .connections import get_adapter
 from .errors import (
     DingTalkConfigurationError,
     DingTalkError,
@@ -44,7 +44,6 @@ __all__ = [
     "DingTalkSettings",
     "FAILED",
     "READY",
-    "declare_connection",
     "get_adapter",
     "parse_callback",
 ]

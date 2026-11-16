@@ -3,13 +3,25 @@
 import importlib
 import sys
 from types import ModuleType
+from typing import get_type_hints
 
 import pytest
+from pydantic import TypeAdapter
 
 from opsmesh.plugins import load as plugin_load
 from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins import registry
 from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import PluginMetadata
+
+
+def test_metadata_supports_runtime_type_inspection():
+    annotations = get_type_hints(PluginMetadata)
+    assert annotations["dependency_config"] == annotations["config"]
+    metadata = TypeAdapter(PluginMetadata).validate_python(
+        {"name": "Example", "description": "Example", "usage": "Example"}
+    )
+    assert metadata.dependency_config is None
 
 
 @pytest.fixture
@@ -22,7 +34,9 @@ def plugin_path(tmp_path, monkeypatch):
     monkeypatch.setattr(plugin_load, "_managers", managers)
     yield tmp_path
     for name, module in list(sys.modules.items()):
-        if name.startswith("metadata_test_") and isinstance(module, ModuleType):
+        if name.startswith("metadata_test_") and isinstance(
+            module, ModuleType
+        ):
             del sys.modules[name]
 
 

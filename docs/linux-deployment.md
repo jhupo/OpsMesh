@@ -67,6 +67,9 @@ host.json 只保存宿主基础配置：
 }
 ```
 
+插件配置文件使用 `{"config": {...}, "dependencies": {...}}` 结构；例如 filesystem.json
+为 `{"config": {"root": "/var/lib/opsmesh/files"}, "dependencies": {}}`。
+
 停止服务后，用 CLI 登记已有运行包。框架不负责下载或解压：
 
 ```bash
