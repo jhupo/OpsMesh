@@ -8,7 +8,7 @@ import importlib.util
 import logging
 import pkgutil
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from importlib.abc import Loader, MetaPathFinder
 from itertools import chain
@@ -66,9 +66,11 @@ class PluginManager:
         )
         self.dependency_config_values = deepcopy(dict(dependencies or {}))
         self.required = bool(required)
+        """Whether a startup failure of this plugin must abort the host."""
         self.protected = bool(protected)
         self.enabled = True
-        """Whether a startup failure of this plugin must abort the host."""
+        self.prepare_config: Callable[[Plugin], Awaitable[None]] | None = None
+        """Optional host callback preparing configuration before startup."""
         # simple plugin not in search path
         self.plugins: set[str] = set(plugins or [])
         self.search_path: set[str] = set(search_path or [])

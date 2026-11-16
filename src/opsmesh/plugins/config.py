@@ -2,12 +2,15 @@
 
 import inspect
 from copy import deepcopy
+from pathlib import Path, PureWindowsPath
 from typing import TypeVar
 
 from pydantic import BaseModel, JsonValue, ValidationError
 
 from .model import Plugin
 from .registry import _current_plugin, get_plugin, get_plugin_by_module_name
+
+from .storage import PluginConfiguration
 
 C = TypeVar("C", bound=BaseModel)
 
@@ -128,3 +131,38 @@ def get_dependency_config(config: type[C], owner: Plugin | None = None) -> C:
         if _dependency_provider(consumer, name) is provider:
             return config.model_validate(deepcopy(raw))
     return config.model_validate({})
+
+
+def read_config_file(plugin: Plugin) -> PluginConfiguration:
+    """Read JSON from the plugin entry directory without following escapes.
+
+    Args:
+        plugin: Loaded declarations whose metadata names the configuration.
+
+    Returns:
+        Own settings and dependency settings ready for schema validation.
+
+    Raises:
+        ValueError: No file is declared or the path escapes the plugin root.
+        OSError: The declared file cannot be read.
+    """
+    name = plugin.metadata.config_file if plugin.metadata else None
+    if not name:
+        raise ValueError("The plugin does not declare a configuration file")
+    relative = PureWindowsPath(name)
+    if relative.drive or relative.root or ".." in relative.parts:
+        raise ValueError(
+            "Configuration file must stay within the plugin package"
+        )
+    origin = getattr(plugin.module, "__file__", None)
+    if origin is None:
+        raise ValueError("The plugin has no filesystem entry directory")
+    root = Path(origin).resolve().parent
+    path = root.joinpath(*relative.parts).resolve(strict=True)
+    if not path.is_relative_to(root):
+        raise ValueError(
+            "Configuration file resolves outside the plugin package"
+        )
+    return PluginConfiguration.model_validate_json(
+        path.read_text(encoding="utf-8")
+    )

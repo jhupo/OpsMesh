@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sqlite3
+import subprocess
 import sys
 
 import pytest
@@ -15,7 +16,7 @@ from opsmesh.plugins import load as plugin_load
 from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins.errors import PluginProtectedError
 from opsmesh.plugins.model import PluginStatus
-from opsmesh.plugins.storage import PluginRecord, PluginStorage
+from opsmesh.plugins.storage import SCHEMA_VERSION, PluginRecord, PluginStorage
 
 
 @pytest.fixture
@@ -192,6 +193,274 @@ def test_cli_imports_configuration_and_dependencies_from_one_file(host_dir):
         assert record.dependencies == values["dependencies"]
 
 
+FILE_CONFIG_PLUGIN = """
+from pydantic import BaseModel
+from opsmesh import get_plugin_config, on_startup
+from opsmesh.plugins import PluginMetadata
+
+class Settings(BaseModel):
+    label: str = "default"
+
+__plugin_meta__ = PluginMetadata(
+    "File settings", "File settings test", "test",
+    config=Settings, config_file="settings.json",
+)
+observed = []
+@on_startup
+def start():
+    observed.append(get_plugin_config(Settings).label)
+"""
+
+
+@pytest.mark.anyio
+async def test_declared_file_initializes_once_and_can_be_reimported(host_dir):
+    name = "host_test_file"
+    register(host_dir, name, FILE_CONFIG_PLUGIN, enabled=True, autoload=True)
+    settings = host_dir / "settings.json"
+    settings.write_text('{"config": {"label": "initial"}}', encoding="utf-8")
+    async with host.load_host(manifest(host_dir)) as driver:
+        manager = host.get_host()
+        plugin = get_plugin(name)
+        assert not manager.records[name].config_initialized
+        async with driver.lifespan():
+            assert plugin.module.observed == ["initial"]
+            assert manager.records[name].config_initialized
+            settings.write_text(
+                '{"config": {"label": "edited"}}', encoding="utf-8"
+            )
+            await manager.disable(name)
+            await manager.enable(name)
+            assert plugin.module.observed[-1] == "initial"
+            await manager.import_config(name)
+            assert plugin.config_values == {"label": "initial"}
+            await manager.apply_config(name)
+            assert plugin.module.observed[-1] == "edited"
+            settings.write_text("invalid-json", encoding="utf-8")
+            with pytest.raises(ValidationError):
+                await manager.import_config(name)
+            assert manager.records[name].config == {"label": "edited"}
+    with PluginStorage(host_dir / "data") as storage:
+        assert storage.get(name).config == {"label": "edited"}
+    settings.unlink()
+    restart = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import asyncio
+import sys
+from pathlib import Path
+from opsmesh import app
+from opsmesh.plugins import get_plugin
+sys.path.insert(0, sys.argv[1])
+app.entry_points = lambda **kwargs: ()
+async def main():
+    manifest = app.HostManifest(data_dir=Path(sys.argv[1]) / "data")
+    async with app.load_host(manifest) as driver:
+        async with driver.lifespan():
+            assert get_plugin("host_test_file").module.observed == ["edited"]
+asyncio.run(main())
+""",
+            str(host_dir),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert restart.returncode == 0, restart.stdout + restart.stderr
+
+
+@pytest.mark.anyio
+async def test_explicit_empty_configuration_skips_missing_file(host_dir):
+    name = "host_test_empty"
+    register(
+        host_dir,
+        name,
+        FILE_CONFIG_PLUGIN,
+        enabled=True,
+        autoload=True,
+        config={},
+    )
+    async with host.load_host(manifest(host_dir)) as driver:
+        async with driver.lifespan():
+            plugin = get_plugin(name)
+            assert plugin.ready
+            assert plugin.module.observed == ["default"]
+
+
+@pytest.mark.anyio
+async def test_required_dependency_uses_its_own_config_file(host_dir):
+    register(host_dir, "host_test_provider", DEPENDENCY_PROVIDER, enabled=True)
+    source = (
+        FILE_CONFIG_PLUGIN
+        + """
+from opsmesh import require
+require("host_test_provider")
+"""
+    )
+    register(host_dir, "host_test_child", source, enabled=True)
+    register(
+        host_dir,
+        "host_test_parent",
+        'from opsmesh import require\nrequire("host_test_child")\n',
+        enabled=True,
+        autoload=True,
+    )
+    (host_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "config": {"label": "child"},
+                "dependencies": {
+                    "host_test_provider": {"accounts": ["robot"]}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    async with host.load_host(manifest(host_dir)) as driver:
+        async with driver.lifespan():
+            assert get_plugin("host_test_parent").ready
+            assert get_plugin("host_test_child").module.observed == ["child"]
+            provider = get_plugin("host_test_provider")
+            assert provider.module.observed[-1][1].accounts == ["robot"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "content",
+    [
+        None,
+        "invalid-json",
+        '{"config":{"label":12}}',
+        '{"dependencies":{"undeclared":{}}}',
+    ],
+)
+async def test_invalid_file_is_repairable_without_partial_save(
+    host_dir, content
+):
+    name = "host_test_invalid_file"
+    register(host_dir, name, FILE_CONFIG_PLUGIN, enabled=True, autoload=True)
+    settings = host_dir / "settings.json"
+    if content is not None:
+        settings.write_text(content, encoding="utf-8")
+    async with host.load_host(manifest(host_dir)) as driver:
+        manager = host.get_host()
+        async with driver.lifespan():
+            plugin = get_plugin(name)
+            assert plugin.status is PluginStatus.FAILED
+            assert not manager.records[name].config_initialized
+            assert not manager.storage.get(name).config_initialized
+            await manager.save_config(name, {"label": "repaired"})
+            await manager.enable(name)
+            assert plugin.ready
+            assert plugin.module.observed == ["repaired"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "filename",
+    ["../outside.json", "/outside.json", "C:/outside.json", "C:outside.json"],
+)
+async def test_config_file_rejects_paths_outside_plugin(host_dir, filename):
+    name = "host_test_unsafe_file"
+    source = FILE_CONFIG_PLUGIN.replace('"settings.json"', repr(filename))
+    register(host_dir, name, source)
+    async with host.load_host(manifest(host_dir)):
+        with pytest.raises(ValueError, match="within the plugin package"):
+            await host.get_host().import_config(name)
+
+
+def test_cli_check_imports_file_without_starting_resources(host_dir):
+    from opsmesh.cli import main
+
+    source = FILE_CONFIG_PLUGIN.replace(
+        "observed.append(get_plugin_config(Settings).label)",
+        'raise AssertionError("Must not start resources")',
+    )
+    register(
+        host_dir, "host_test_check_file", source, enabled=True, autoload=True
+    )
+    settings = host_dir / "settings.json"
+    settings.write_text('{"config":{"label":"checked"}}', encoding="utf-8")
+    host_file = host_dir / "host.json"
+    host_file.write_text(
+        manifest(host_dir).model_dump_json(), encoding="utf-8"
+    )
+    assert main(["--manifest", str(host_file), "--check"]) == 0
+    with PluginStorage(host_dir / "data") as storage:
+        assert storage.get("host_test_check_file").config == {
+            "label": "checked"
+        }
+
+
+@pytest.mark.anyio
+async def test_package_configuration_is_relative_to_entry_package(host_dir):
+    name = "host_test_package_file"
+    package = host_dir / name
+    package.mkdir()
+    (package / "assets").mkdir()
+    (package / "__init__.py").write_text(
+        FILE_CONFIG_PLUGIN.replace('"settings.json"', '"assets/options.json"'),
+        encoding="utf-8",
+    )
+    (package / "assets" / "options.json").write_text(
+        '{"config":{"label":"package"}}', encoding="utf-8"
+    )
+    with PluginStorage(host_dir / "data") as storage:
+        storage.save(PluginRecord(module=name, enabled=True, autoload=True))
+    async with host.load_host(manifest(host_dir)) as driver:
+        async with driver.lifespan():
+            assert get_plugin(name).module.observed == ["package"]
+
+
+@pytest.mark.anyio
+async def test_configuration_rejects_symlink_to_outside_plugin(host_dir):
+    name = "host_test_symlink_file"
+    package = host_dir / name
+    package.mkdir()
+    (package / "__init__.py").write_text(FILE_CONFIG_PLUGIN, encoding="utf-8")
+    outside = host_dir / "outside.json"
+    outside.write_text('{"config":{"label":"outside"}}', encoding="utf-8")
+    try:
+        (package / "settings.json").symlink_to(outside)
+    except OSError:
+        pytest.skip("Creating symlinks is unavailable")
+    with PluginStorage(host_dir / "data") as storage:
+        storage.save(PluginRecord(module=name))
+    async with host.load_host(manifest(host_dir)):
+        with pytest.raises(ValueError, match="outside the plugin package"):
+            await host.get_host().import_config(name)
+
+
+def test_cli_import_config_uses_declared_file(host_dir):
+    from opsmesh.cli import main
+
+    name = "host_test_cli_file"
+    register(host_dir, name, FILE_CONFIG_PLUGIN, config={"label": "old"})
+    (host_dir / "settings.json").write_text(
+        '{"config":{"label":"new"}}', encoding="utf-8"
+    )
+    host_file = host_dir / "host.json"
+    host_file.write_text(
+        manifest(host_dir).model_dump_json(), encoding="utf-8"
+    )
+    assert (
+        main(
+            [
+                "--manifest",
+                str(host_file),
+                "--plugin-action",
+                "import-config",
+                "--module",
+                name,
+            ]
+        )
+        == 0
+    )
+    with PluginStorage(host_dir / "data") as storage:
+        assert storage.get(name).config == {"label": "new"}
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("register_online", [False, True])
 async def test_external_plugin_namespace_is_discovered_and_restored(
@@ -231,18 +500,23 @@ async def test_external_plugin_namespace_is_discovered_and_restored(
         vars(opsmesh.plugins).pop("host_test_external", None)
 
 
-def test_storage_migrates_version_one_records(tmp_path):
+@pytest.mark.parametrize("old_version", [1, 2])
+def test_storage_migrates_existing_records(tmp_path, old_version):
     with PluginStorage(tmp_path) as storage:
         storage.save(PluginRecord(module="sample"))
     with sqlite3.connect(tmp_path / "state.sqlite3") as connection:
         connection.execute(
             "UPDATE plugins SET record=?", (json.dumps({"module": "sample"}),)
         )
-        connection.execute("PRAGMA user_version=1")
+        connection.execute(f"PRAGMA user_version={old_version}")
     with PluginStorage(tmp_path) as storage:
         assert storage.get("sample").protected is False
+        assert storage.get("sample").config_initialized is True
     with sqlite3.connect(tmp_path / "state.sqlite3") as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert (
+            connection.execute("PRAGMA user_version").fetchone()[0]
+            == SCHEMA_VERSION
+        )
 
 
 def test_storage_prevents_generic_protection_change_and_delete(tmp_path):

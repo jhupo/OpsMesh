@@ -53,6 +53,7 @@ async def _plugins(args) -> None:
                 PluginRecord(
                     module=args.module,
                     **configuration.model_dump(),
+                    config_initialized=args.config is not None,
                     enabled=args.enabled,
                     autoload=args.autoload,
                     required=args.required,
@@ -76,6 +77,8 @@ async def _plugins(args) -> None:
                 configuration.config,
                 dependencies=configuration.dependencies,
             )
+        elif args.plugin_action == "import-config":
+            await host.import_config(args.module)
 
 
 async def _maintenance(manifest_path: Path, command: str | None) -> None:
@@ -83,6 +86,7 @@ async def _maintenance(manifest_path: Path, command: str | None) -> None:
     manifest = load_manifest(manifest_path)
     async with load_host(manifest, manifest_dir=manifest_path.parent):
         for plugin in get_loaded_plugins():
+            await get_host().initialize_config(plugin)
             validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
@@ -166,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             "enable",
             "disable",
             "configure",
+            "import-config",
             "protect",
         ],
         help="Manage an existing plugin while the host is stopped",

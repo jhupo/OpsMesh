@@ -8,14 +8,20 @@ received from the platform. There is no route table in configuration.
 
 Install the channels and execution plugins, then register `group_assistant`
 with this directory as its import root. Set the SDK model credentials and
-`DINGTALK_CLIENT_SECRET` in the service environment. Import `plugin.json` with:
+`DINGTALK_CLIENT_SECRET` in the service environment. Fill in
+`group_assistant/settings.json` before the first activation. Metadata declares
+this file, so the host validates and saves it automatically on first startup.
+Register the plugin without `--config` to use its declared file.
+
+After initialization, saved SQLite values take precedence. To explicitly import
+an edited file while the host is stopped:
 
 ```sh
-opsmesh --manifest /etc/opsmesh/host.json --plugin-action configure \
-  --module group_assistant --config /path/to/plugin.json
+opsmesh --manifest /etc/opsmesh/host.json --plugin-action import-config \
+  --module group_assistant
 ```
 
-Enable the plugin after configuring it. Channels validates `dependencies.channels`
+Enable the plugin after registration. Channels validates `dependencies.channels`
 and opens the named robot after the plugin becomes ready. No channel fields
 are defined in this plugin's Settings and no connection function is called.
 The same code works with QQ by replacing `dingtalk.main` with `qq.main` using

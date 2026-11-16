@@ -14,4 +14,5 @@ __plugin_meta__ = PluginMetadata(
     description="Route group messages to native agents using framework rules",
     usage="Configure a robot named main and set group IDs in handlers.py.",
     config=AgentSettings,
+    config_file="settings.json",
 )

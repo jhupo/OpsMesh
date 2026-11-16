@@ -8,6 +8,7 @@
 |---|---|
 | host.json | environment、framework、data_dir；仅框架和宿主基础配置 |
 | PluginMetadata.config | 插件自己的 Pydantic 配置类型 |
+| PluginMetadata.config_file | 可选的首次配置文件，相对于插件入口包目录 |
 | PluginMetadata.dependency_config | 提供方定义的依赖配置类型，每个使用方分别填写 |
 | state.sqlite3 | 模块位置、enabled、autoload、required、protected 和 JSON 配置值 |
 | Plugin | 当前模块、运行状态、依赖、活动配置与注册归属 |
@@ -43,8 +44,9 @@ PluginRecord 定义：
 | protected | 核心保护，默认 false；必须同时 enabled、autoload、required |
 | config | JSON 对象，由插件自己的模型校验；默认空对象 |
 | dependencies | 按已声明依赖的短名或完整模块名保存的配置对象；默认空对象 |
+| config_initialized | 配置是否已完成初始化；显式保存的空对象也算已初始化 |
 
-SQLite 仅有 plugins 表：module 主键、record JSON 文本、updated_at；PRAGMA user_version 标记结构版本。版本 2 增加核心保护，版本 1 记录在事务中补齐 protected=false。失败回滚，未知版本拒绝打开，损坏记录不会自动丢弃。
+SQLite 仅有 plugins 表：module 主键、record JSON 文本、updated_at；PRAGMA user_version 标记结构版本。版本 3 增加配置初始化标记；升级时将版本 1、2 的已有记录标记为已初始化，保留已有空配置，版本 1 同时补齐 protected=false。失败回滚，未知版本拒绝打开，损坏记录不会自动丢弃。
 
 PluginStorage 仅负责短连接、参数化 SQL 和记录持久化。调用方通过工作线程读写；数据库事务不跨插件回调。进程独占锁属于 app 宿主，防止两个管理进程同时操作同一数据目录，不属于存储类。
 
@@ -58,7 +60,7 @@ PluginStorage 仅负责短连接、参数化 SQL 和记录持久化。调用方�
 2. 宿主准备阶段发现本地已安装的 opsmesh.plugins 入口点，缺失记录以 enabled=true、autoload=false 登记；已有禁用记录不覆盖。不导入所有发现的插件。
 3. 为各记录准备 PluginManager，然后加载 enabled 且 autoload 的入口。
 4. require 只解析、检查并加载依赖，不写数据库、不安装依赖。依赖必须已登记；未登记的普通源码模块由管理方显式登记。
-5. load 只导入声明；start 校验配置并运行资源回调。实际加载状态每次启动重算，不把 READY 持久化。
+5. load 只导入声明；start 在配置校验和资源回调前完成首次配置导入。实际加载状态每次启动重算，不把 READY 持久化。
 
 显式加载禁用插件可取得 PluginMetadata.config，但不会启动资源，也不会允许其他插件 require 它。这仍会执行受信任的 Python 导入代码，不是沙箱或静态检查。不新增另一套元数据检查加载器。
 
@@ -100,6 +102,33 @@ opsmesh --manifest /etc/opsmesh/host.json --plugin-action register \
 ```
 
 JSON 文件是 CLI 的一次性输入，保存后不会被运行过程读取。依赖有必填参数时先配置依赖。冻结宿主的外部运行包需要登记其绝对 site 导入根；后续入口点发现由宿主准备阶段完成。服务运行时独占锁阻止离线 CLI 修改，在线管理 API 由管理插件实现。
+
+## 插件携带的配置文件
+
+插件在 `PluginMetadata` 声明 `config_file="settings.json"`，仍用 `config=Settings`
+声明自身字段。文件格式与下方 CLI 配置格式一致，包含 `config` 和 `dependencies`。
+文件名不固定，可以放在入口包内的任意子目录；单文件插件按入口文件所在目录定位。
+包安装管理方负责解压，保留文件相对位置，框架不读取或安装 ZIP。
+
+新登记记录未提供配置时，第一次启动（包括间接 require 的插件）或 `--check` 会读取
+声明的文件，校验自身和依赖参数后保存 SQLite，再供启动回调使用。未声明文件则校验
+当前空配置，按模型默认值运行；必填字段缺失时失败。声明文件不存在、JSON 错误或
+参数不合法时不保存初始化标记，也不启动资源，可通过管理接口修正后重新启用。
+
+已有初始化记录不再读取文件，即使文件被修改或删除，也不会覆盖在线保存的值。
+显式传入 `config={}` 或 `dependencies={}` 也表示已经配置，不按对象是否为空猜测。
+`register --config`、`save_config` 和 `configure` 都保存已初始化的配置。
+
+显式重新导入使用 `Host.import_config(module)` 或服务停止时执行：
+
+```bash
+opsmesh --manifest /etc/opsmesh/host.json --plugin-action import-config --module example_chat
+```
+
+重新导入校验成功后只替换保存值；在线调用者再使用 `apply_config` 才重建运行资源。
+导入失败保留原配置。文件路径拒绝绝对路径、上级目录跳转和指向包外的符号链接。
+配置里存密钥环境变量引用，不存明文密钥。该初始化流程由标准 Host 管理；直接嵌入
+`load_plugin(config=...)` 的应用仍负责提供配置，不会隐式创建宿主数据库。
 
 ## 验证范围
 
