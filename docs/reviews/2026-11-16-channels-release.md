@@ -8,6 +8,11 @@ incoming attachment downloads, and packaging version alignment.
 - 347 affected channel, queue, chat, sandbox, and client tests passed.
 - The attachment tests passed again after adding a safe platform-error regression
   (32 tests, including the additional test).
+- CI exposed a missed HTTP protocol test migration: old string streams caused
+  the backpressure fixture to wait indefinitely. Migrated the sources to typed
+  stream events, updated message IDs and budget/deadline assertions, and bounded
+  the fixture wait. All 36 HTTP protocol tests then passed. The first CI run was
+  cancelled and replaced; it is not counted as a successful validation.
 - Ruff and Git whitespace checks passed. Removed import paths were searched
   across source, examples, tests, and documentation.
 - Reviewed HTTP dispatch/response ownership, cancellation, conversation queue
