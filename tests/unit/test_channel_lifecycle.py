@@ -22,6 +22,7 @@ from opsmesh.plugins.channels.qq import (
     QQConnectionSettings,
     QQSettings,
 )
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import PluginStatus
 
 QQ_SECRET = "0123456789abcdef0123456789abcdef"
@@ -382,8 +383,8 @@ async def test_shared_transport_restarts_after_last_consumer_stops(monkeypatch):
 
     driver = make_runtime()
     monkeypatch.setattr(driver_state, "_driver", driver)
-    first = Plugin("first", ModuleType("first"), "first", None)
-    second = Plugin("second", ModuleType("second"), "second", None)
+    first = Plugin("first", ModuleType("first"), "first", PluginManager())
+    second = Plugin("second", ModuleType("second"), "second", PluginManager())
     monkeypatch.setattr(
         registry, "_plugins", {"first": first, "second": second}
     )
@@ -474,8 +475,8 @@ async def test_failed_shared_transport_cannot_accept_a_new_consumer(
     resources = ChannelTransports()
     events = []
     transport = SharedTransport("shared", events)
-    first = Plugin("first", ModuleType("first"), "first", None)
-    second = Plugin("second", ModuleType("second"), "second", None)
+    first = Plugin("first", ModuleType("first"), "first", PluginManager())
+    second = Plugin("second", ModuleType("second"), "second", PluginManager())
     with owned_by(first):
         resources.use(transport)
     await hooks.ready[0]()

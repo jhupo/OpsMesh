@@ -30,6 +30,7 @@ from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
 previous_driver = driver_state._driver
@@ -40,7 +41,7 @@ try:
     for dependency in ("database", "filesystem"):
         module = importlib.import_module("opsmesh.plugins." + dependency)
         registry._plugins.setdefault(
-            dependency, Plugin(dependency, module, module.__name__, None)
+            dependency, Plugin(dependency, module, module.__name__, PluginManager())
         )
     knowledge = pytest.importorskip(
         "opsmesh.plugins.knowledge", exc_type=ImportError
@@ -182,9 +183,9 @@ async def runtime(tmp_path, monkeypatch):
         async with sessions() as session, session.begin():
             yield session
 
-    owner = Plugin("knowledge", knowledge, knowledge.__name__, None)
-    caller = Plugin("consumer", ModuleType("consumer"), "consumer", None)
-    stranger = Plugin("stranger", ModuleType("stranger"), "stranger", None)
+    owner = Plugin("knowledge", knowledge, knowledge.__name__, PluginManager())
+    caller = Plugin("consumer", ModuleType("consumer"), "consumer", PluginManager())
+    stranger = Plugin("stranger", ModuleType("stranger"), "stranger", PluginManager())
     for plugin in (owner, caller, stranger):
         plugin.status = PluginStatus.READY
     caller.dependencies = stranger.dependencies = [owner.id_]

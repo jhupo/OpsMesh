@@ -21,6 +21,7 @@ from opsmesh.plugins.channels.dingtalk import (
     parse_callback,
 )
 from opsmesh.plugins.channels.messages import Message
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import PluginStatus
 
 SECRET = "dingtalk-test-secret"
@@ -476,7 +477,7 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
         name="support",
         module=ModuleType("support"),
         module_name="support",
-        manager=None,
+        manager=PluginManager(),
         status=PluginStatus.READY,
     )
     monkeypatch.setattr(

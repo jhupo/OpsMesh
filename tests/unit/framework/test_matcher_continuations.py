@@ -11,6 +11,7 @@ from opsmesh.lifecycle import Lifespan
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.permissions import Permission
 from opsmesh.plugins import registry
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
 
@@ -26,7 +27,7 @@ def isolated_matchers():
 @pytest.fixture
 def plugin(monkeypatch):
     module = ModuleType("continuation_test")
-    plugin = Plugin(module.__name__, module, module.__name__, None)
+    plugin = Plugin(module.__name__, module, module.__name__, PluginManager())
     monkeypatch.setattr(registry, "_plugins", {plugin.id_: plugin})
     return plugin
 

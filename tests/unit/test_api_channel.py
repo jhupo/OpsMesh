@@ -43,6 +43,7 @@ from opsmesh.plugins.channels.api.streaming import (
     ManagedStreamingResponse,
     StreamLease,
 )
+from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import _current_plugin
 
@@ -52,7 +53,7 @@ def plugin_owner(name: str, *, ready: bool = True) -> Plugin:
         name=name,
         module=ModuleType(name),
         module_name=name,
-        manager=None,
+        manager=PluginManager(),
         status=PluginStatus.READY if ready else PluginStatus.LOADED,
     )
 
@@ -169,7 +170,7 @@ def declare_route(
             name=plugin_id,
             module=ModuleType(plugin_id),
             module_name=plugin_id,
-            manager=None,
+            manager=PluginManager(),
             status=PluginStatus.READY if ready else PluginStatus.LOADED,
         )
     handler.__annotations__["return"] = result_type or (Response | Any)
