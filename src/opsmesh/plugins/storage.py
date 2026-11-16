@@ -19,7 +19,7 @@ from pydantic import (
 
 from .errors import PluginProtectedError
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class PluginConfiguration(BaseModel):
@@ -44,6 +44,18 @@ class PluginRecord(PluginConfiguration):
     required: bool = False
     protected: bool = False
     directory: str | None = None
+    config_initialized: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def identify_explicit_configuration(cls, values: object) -> object:
+        """Treat explicitly supplied values, including empty objects, as saved."""
+        if isinstance(values, dict) and "config_initialized" not in values:
+            values = dict(values)
+            values["config_initialized"] = (
+                "config" in values or "dependencies" in values
+            )
+        return values
 
     @model_validator(mode="after")
     def validate_protection(self) -> Self:
@@ -111,7 +123,7 @@ class PluginStorage:
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, SCHEMA_VERSION):
+            if version not in (0, 1, 2, SCHEMA_VERSION):
                 raise RuntimeError("Unsupported host database schema")
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS plugins ("
@@ -119,12 +131,14 @@ class PluginStorage:
                 "record TEXT NOT NULL CHECK(json_valid(record)), "
                 "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
             )
-            if version == 1:
+            if version in (1, 2):
                 for row in connection.execute(
                     "SELECT module, record FROM plugins"
                 ).fetchall():
                     values = json.loads(row[1])
-                    values["protected"] = False
+                    if version == 1:
+                        values["protected"] = False
+                    values["config_initialized"] = True
                     record = PluginRecord.model_validate(values)
                     connection.execute(
                         "UPDATE plugins SET record=? WHERE module=?",

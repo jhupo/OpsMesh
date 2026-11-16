@@ -4,6 +4,14 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.5 — 2026-11-16
+
+- Support PluginMetadata.config_file for first-start JSON configuration import and explicit re-import. Preserve saved values across restarts.
+- Migrate host records to schema 3, retaining existing configuration, including empty objects.
+- Configure consumer-owned QQ and DingTalk accounts through dependencies.channels, without duplicate Settings declarations or manual connection calls.
+- Add native group Rules and a split-file example for multiple agents on one robot.
+- Fix disabled QQ credential handling, metadata type inspection, configuration snapshot isolation, and connection lifecycle cleanup.
+
 ## 0.5.4 — 2026-11-16
 
 - Replace the QQ protocol implementation with Tencent qqbot-agent-sdk 1.2.2.

@@ -47,6 +47,8 @@ class PluginMetadata:
 
     dependency_config: Type[BaseModel] | None = None  # noqa: UP006
     """Schema for settings supplied by each consuming plugin."""
+    config_file: str | None = None
+    """Initial JSON configuration path relative to the plugin entry package."""
 
     def get_supported_adapters(self) -> set[Type["Adapter"]] | None:  # noqa: UP006
         """Resolve supported adapter classes that are currently installed."""

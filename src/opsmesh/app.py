@@ -29,7 +29,11 @@ from opsmesh.plugins import (
 )
 from opsmesh.plugins.admission import PluginLoadRequest
 from opsmesh.plugins.model import Plugin
-from opsmesh.plugins.storage import PluginRecord, PluginStorage
+from opsmesh.plugins.storage import (
+    PluginConfiguration,
+    PluginRecord,
+    PluginStorage,
+)
 from opsmesh.utils import run_sync
 
 logger = logging.getLogger(__name__)
@@ -139,6 +143,7 @@ class Host:
             protected=record.protected,
         )
         manager.enabled = record.enabled
+        manager.prepare_config = self.initialize_config
         register_plugin_manager(manager)
         self.managers[record.module] = manager
         return manager
@@ -219,27 +224,63 @@ class Host:
         """Validate and persist configuration without restarting a plugin."""
         async with self._change():
             plugin = self.load(module)
-            schema = plugin.metadata.config if plugin.metadata else None
-            if schema is None and values:
-                raise ValueError("The plugin has no configuration schema")
-            if schema is not None:
-                schema.model_validate(values)
-            from opsmesh.plugins.config import validate_dependency_config
-
             dependency_values = (
                 self.records[module].dependencies
                 if dependencies is None
                 else dependencies
             )
-            validate_dependency_config(plugin, dependency_values)
-            record = self.records[module].model_copy(
-                update=deepcopy(
-                    {"config": values, "dependencies": dependency_values}
+            await self._save_configuration(
+                plugin,
+                PluginConfiguration(
+                    config=values, dependencies=dependency_values
                 ),
-                deep=True,
             )
-            await run_sync(self.storage.save)(record)
-            self.records[module] = record
+
+    async def _save_configuration(
+        self, plugin: Plugin, configuration: PluginConfiguration
+    ) -> PluginRecord:
+        """Validate and persist a complete independently owned configuration."""
+        from opsmesh.plugins.config import validate_dependency_config
+
+        schema = plugin.metadata.config if plugin.metadata else None
+        if schema is None and configuration.config:
+            raise ValueError("The plugin has no configuration schema")
+        if schema is not None:
+            schema.model_validate(deepcopy(configuration.config))
+        validate_dependency_config(plugin, configuration.dependencies)
+        record = self.records[plugin.module_name].model_copy(
+            update={**configuration.model_dump(), "config_initialized": True},
+            deep=True,
+        )
+        await run_sync(self.storage.save)(record)
+        self.records[plugin.module_name] = record
+        return record
+
+    async def initialize_config(self, plugin: Plugin) -> None:
+        """Import initial values before resource startup, once per record."""
+        record = self.records[plugin.module_name]
+        if record.config_initialized:
+            return
+        from opsmesh.plugins.config import read_config_file
+
+        configuration = (
+            await run_sync(read_config_file)(plugin)
+            if plugin.metadata and plugin.metadata.config_file is not None
+            else PluginConfiguration(
+                config=record.config, dependencies=record.dependencies
+            )
+        )
+        record = await self._save_configuration(plugin, configuration)
+        self._use_configuration(plugin, record)
+
+    async def import_config(self, module: str) -> None:
+        """Replace saved values from the declared file without restarting."""
+        from opsmesh.plugins.config import read_config_file
+
+        async with self._change():
+            plugin = self.load(module)
+            configuration = await run_sync(read_config_file)(plugin)
+            await self._save_configuration(plugin, configuration)
 
     def _use_configuration(self, plugin: Plugin, record: PluginRecord) -> None:
         """Replace runtime values with independently owned saved snapshots."""
@@ -255,6 +296,7 @@ class Host:
             self.driver.check_plugin_stoppable(current)
         async with self._change():
             plugin = self.load(module)
+            await self.initialize_config(plugin)
             record = self.records[module]
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(record.config)

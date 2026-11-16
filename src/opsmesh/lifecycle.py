@@ -287,6 +287,8 @@ class Lifespan:
         try:
             from opsmesh.plugins.config import validate_dependency_config
 
+            if plugin.manager.prepare_config is not None:
+                await plugin.manager.prepare_config(plugin)
             validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
@@ -498,6 +500,8 @@ class Lifespan:
         try:
             from opsmesh.plugins.config import validate_dependency_config
 
+            if plugin.manager.prepare_config is not None:
+                await plugin.manager.prepare_config(plugin)
             validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
