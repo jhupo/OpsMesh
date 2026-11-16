@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 import httpx
 import pytest
 
+
 from opsmesh.plugins.channels import (
     OperationPermissionDenied,
     OperationRateLimited,
@@ -27,6 +28,20 @@ from opsmesh.plugins.channels.qq.groups import (
 from opsmesh.plugins.channels.qq.guilds import QQGuildOperations
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import plugin_scope
+
+
+@pytest.fixture(autouse=True)
+def qq_token_transport(monkeypatch):
+    """Keep the SDK's synchronous token HTTP request off the network."""
+
+    def respond(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"access_token": "token", "expires_in": 7200},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", respond)
 
 
 @pytest.mark.anyio
@@ -98,7 +113,9 @@ async def test_qq_guild_operation_wire_contract(
         settings = QQSettings()
         account = SimpleNamespace(
             self_id="owner:qq",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            settings=QQConnectionSettings(
+                app_id="123", secret_ref="QQ_SECRET"
+            ),
             protocol=settings,
         )
         groups = QQGuildOperations(QQClient(settings, http), account, "secret")
@@ -206,7 +223,9 @@ async def test_qq_group_operation_wire_contract(
         settings = QQSettings()
         account = SimpleNamespace(
             self_id="owner:qq",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            settings=QQConnectionSettings(
+                app_id="123", secret_ref="QQ_SECRET"
+            ),
             protocol=settings,
         )
         groups = QQGroupOperations(QQClient(settings, http), account, "secret")
@@ -407,7 +426,9 @@ async def test_group_operations_reject_foreign_connection_owner(protocol):
 
 
 @pytest.mark.anyio
-async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(monkeypatch):
+async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
+    monkeypatch,
+):
     from opsmesh.config import Config, Env
     from opsmesh.drivers import Driver
     from opsmesh.plugins.channels.dingtalk import DingTalkAdapter

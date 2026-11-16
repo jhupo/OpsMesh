@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -49,17 +49,13 @@ class QQGroupOperations:
     async def _request(
         self, method: str, path: str, *, body=None, params=None
     ) -> JsonValue:
-        token = await self.client.access_token(
-            self.channel.self_id, self.channel.settings.app_id, self.secret
+        api = self.client.account(self.channel, self.secret)
+        if params:
+            path += "?" + urlencode(params)
+        result = await api.request(
+            method, path, body, timeout=self.channel.protocol.request_timeout
         )
-        base = (
-            self.channel.protocol.sandbox_api_base
-            if self.channel.settings.sandbox
-            else self.channel.protocol.api_base
-        )
-        return await self.client.request_json(
-            method, base + path, token=token, body=body, params=params
-        )
+        return result or None
 
     @staticmethod
     def _group_path(group_openid: str, suffix: str = "") -> str:

@@ -8,6 +8,7 @@ import anyio
 import httpx
 import pytest
 
+
 from opsmesh.plugins.channels import (
     Attachment,
     AttachmentCollection,
@@ -32,6 +33,21 @@ from opsmesh.plugins.channels.qq.errors import QQSendError
 from opsmesh.plugins.channels.qq.events import parse_callback as qq_event
 from opsmesh.plugins.channels.qq.sending import QQSender
 from opsmesh.plugins.channels.sending import prepare
+
+
+@pytest.fixture(autouse=True)
+def qq_token_transport(monkeypatch):
+    """Keep the SDK's synchronous token HTTP request off the network."""
+
+    def respond(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"access_token": "token", "expires_in": 7200},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", respond)
+
 
 PNG = b"\x89PNG\r\n\x1a\nimage"
 MP4 = b"\x00\x00\x00\x18ftypmp42"
@@ -219,8 +235,8 @@ async def test_qq_uploads_bytes_then_sends_native_media(
         ).send(event, segment)
     assert result == {"id": "sent"}
     expected = "/v2/groups/group" if group else "/v2/users/user"
-    assert str(calls[1][0]).endswith(expected + "/files")
-    assert str(calls[2][0]).endswith(expected + "/messages")
+    assert str(calls[0][0]).endswith(expected + "/files")
+    assert str(calls[1][0]).endswith(expected + "/messages")
     assert sequences == ["incoming"]
 
 
@@ -389,7 +405,9 @@ async def test_prepare_keeps_order_and_rejects_invalid_duration():
     with pytest.raises(AttachmentError, match="duration"):
         await prepare(message, files, 10)
     parts = await prepare(
-        Message("a") + Message("b") + MessageSegment.attachment(data), files, 10
+        Message("a") + Message("b") + MessageSegment.attachment(data),
+        files,
+        10,
     )
     assert parts[0] == "ab"
     assert parts[1].attachment.id == data.id
@@ -428,7 +446,7 @@ async def test_cancelled_upload_never_starts_send(monkeypatch, protocol):
         with anyio.move_on_after(0.05) as scope:
             await sender.send(event, Message("before") + add_file(event))
     assert scope.cancel_called
-    assert len(calls) == 2
+    assert len(calls) == (1 if protocol == "qq" else 2)
     assert calls[-1].endswith(("/files", "/media/upload"))
 
 

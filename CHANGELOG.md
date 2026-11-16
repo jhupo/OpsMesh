@@ -4,6 +4,14 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.4 — 2026-11-16
+
+- Replace the QQ protocol implementation with Tencent qqbot-agent-sdk 1.2.2.
+- Use native token management, gateway lifecycle, message parsing, and message/media requests.
+- Preserve configured intents, complete notice frames, incremental message identities, safe operation errors, and plugin shutdown cleanup.
+- Configure QQ endpoints with QQ_API_BASE and QQ_TOKEN_URL before host startup. Remove obsolete QQ endpoint, reconnect-delay, and sandbox configuration fields.
+- Pin the SDK in development and Linux plugin runtime bundles.
+
 ## 0.5.3 — 2026-11-15
 
 - Add QQ ordinary-group operations for group information, bot state, member lookup, member mute changes, and join-request approval.

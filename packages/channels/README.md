@@ -29,10 +29,15 @@ under `config.api`. FastAPI Depends authenticates requests; handlers run through
 framework Events, Messages, UserContext, Matchers and Dependent. Native Starlette
 responses are used, with managed cleanup for streamed dependency resources.
 
-QQ uses the official Bot API v2 Gateway WebSocket under `config.qq`. Consumer
-plugins declare accounts; the QQ module obtains the Gateway URL, performs the
-official identify/resume handshake, sends heartbeats, reconnects, and converts
-Gateway dispatches into framework events.
+QQ uses Tencent's qqbot-agent-sdk==1.2.2 under config.qq.
+Consumer plugins declare accounts; the native SDK manages tokens, Gateway
+handshakes, heartbeats, reconnects and message/media requests. OpsMesh adapts
+events and plugin lifecycle, retaining notices and configured intents.
+Set QQ_API_BASE=https://api.bot.qq.com and
+QQ_TOKEN_URL=https://api.bot.qq.com/app/getAppAccessToken before starting
+the host to select the current endpoints; otherwise SDK defaults apply.
+The removed protocol fields api_base, sandbox_api_base, token_url,
+reconnect_delay and account field sandbox are not accepted.
 DingTalk owns its official Stream SDK connection and needs no local listener.
 The API listener owns Uvicorn. QQ does not open a local HTTP listener.
 
