@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import importlib
 import inspect
-import json
 import logging
 import os
 import signal
@@ -22,7 +21,8 @@ from opsmesh.plugins import (
     get_loaded_plugins,
     get_plugin_by_module_name,
 )
-from opsmesh.plugins.storage import PluginRecord
+from opsmesh.plugins.config import validate_dependency_config
+from opsmesh.plugins.storage import PluginConfiguration, PluginRecord
 from opsmesh.utils import run_sync
 
 logger = logging.getLogger(__name__)
@@ -41,10 +41,18 @@ async def _plugins(args) -> None:
             return
         if not args.module:
             raise ValueError("A plugin module is required")
+        configuration = (
+            PluginConfiguration.model_validate_json(
+                args.config.read_text(encoding="utf-8")
+            )
+            if args.config is not None
+            else PluginConfiguration()
+        )
         if args.plugin_action == "register":
             await host.register(
                 PluginRecord(
                     module=args.module,
+                    **configuration.model_dump(),
                     enabled=args.enabled,
                     autoload=args.autoload,
                     required=args.required,
@@ -63,10 +71,11 @@ async def _plugins(args) -> None:
         elif args.plugin_action == "configure":
             if args.config is None:
                 raise ValueError("A JSON configuration file is required")
-            values = json.loads(args.config.read_text(encoding="utf-8"))
-            if not isinstance(values, dict):
-                raise ValueError("Plugin configuration must be a JSON object")
-            await host.save_config(args.module, values)
+            await host.save_config(
+                args.module,
+                configuration.config,
+                dependencies=configuration.dependencies,
+            )
 
 
 async def _maintenance(manifest_path: Path, command: str | None) -> None:
@@ -74,6 +83,7 @@ async def _maintenance(manifest_path: Path, command: str | None) -> None:
     manifest = load_manifest(manifest_path)
     async with load_host(manifest, manifest_dir=manifest_path.parent):
         for plugin in get_loaded_plugins():
+            validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
                     plugin.config_values or {}
@@ -183,7 +193,9 @@ def main(argv: list[str] | None = None) -> int:
         "--directory", type=Path, help="Existing plugin import directory"
     )
     parser.add_argument(
-        "--config", type=Path, help="JSON values for the selected plugin"
+        "--config",
+        type=Path,
+        help="JSON object containing config and dependencies",
     )
     parser.add_argument(
         "--log-level",

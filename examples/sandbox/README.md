@@ -17,8 +17,13 @@ Configure channels API authentication, PostgreSQL and the filesystem root.
 Save this plugin's settings through the host plugin configuration command:
 
 ```json
-{"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}
+{"config": {"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}, "dependencies": {}}
 ```
+
+For robots, fill `dependencies.channels.qq.<name>` or
+`dependencies.channels.dingtalk.<name>` with the account and secret reference.
+Channels opens and closes these connections with this plugin; the sandbox
+plugin does not duplicate channel settings or declare connections in code.
 
 The SDK reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`. Execution owns
 tracing configuration. Settings take effect when plugin resources start.

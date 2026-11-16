@@ -7,7 +7,8 @@
 | 位置 | 内容 |
 |---|---|
 | host.json | environment、framework、data_dir；仅框架和宿主基础配置 |
-| PluginMetadata.config | 插件作者提供的 Pydantic 配置类型，继续使用现有 Metadata |
+| PluginMetadata.config | 插件自己的 Pydantic 配置类型 |
+| PluginMetadata.dependency_config | 提供方定义的依赖配置类型，每个使用方分别填写 |
 | state.sqlite3 | 模块位置、enabled、autoload、required、protected 和 JSON 配置值 |
 | Plugin | 当前模块、运行状态、依赖、活动配置与注册归属 |
 | 外部管理插件 | 安装、下载、解压、发布、删除、权限检查和管理接口 |
@@ -41,6 +42,7 @@ PluginRecord 定义：
 | required | 启动失败是否使宿主启动失败，默认 false |
 | protected | 核心保护，默认 false；必须同时 enabled、autoload、required |
 | config | JSON 对象，由插件自己的模型校验；默认空对象 |
+| dependencies | 按已声明依赖的短名或完整模块名保存的配置对象；默认空对象 |
 
 SQLite 仅有 plugins 表：module 主键、record JSON 文本、updated_at；PRAGMA user_version 标记结构版本。版本 2 增加核心保护，版本 1 记录在事务中补齐 protected=false。失败回滚，未知版本拒绝打开，损坏记录不会自动丢弃。
 
@@ -65,7 +67,7 @@ get_plugin_config(Settings) 保留按定义模块查找归属和返回独立模�
 ## 保存与应用分离
 
 ```text
-save_config(module, values): 校验候选值 → SQLite 提交
+save_config(module, values, dependencies=...): 校验候选值 → SQLite 提交
 apply_config(module):       校验已保存值 → 依赖检查 → 停止资源 → 替换活动配置 → 重新启动
 ```
 
@@ -102,3 +104,46 @@ JSON 文件是 CLI 的一次性输入，保存后不会被运行过程读取。�
 ## 验证范围
 
 单元验证覆盖配置字段校验、SQLite 重新打开、禁用依赖不导入、配置保存与应用分离、声明加载不启动资源、持久启停、并发数据目录锁、核心保护、资源重启与调用排空。Linux 二进制安装和真实服务发布需单独验收。
+
+
+## 使用方的依赖配置
+
+CLI 的 `--config` 文件统一使用以下结构。`register --config` 可以同时导入初始值；
+`configure --config` 替换这两部分完整配置，不合并旧字段。原来直接放置插件参数的
+文件需把参数放入 `config`，不保留两种格式的猜测分支。
+
+```json
+{
+  "config": {"model": "your-model-name"},
+  "dependencies": {
+    "channels": {
+      "dingtalk": {
+        "main": {
+          "client_id": "configured-client-id",
+          "client_secret_ref": "DINGTALK_CLIENT_SECRET"
+        }
+      }
+    }
+  }
+}
+```
+
+使用方代码仍通过 `require("channels")` 声明依赖，不需要在 Settings 中重复定义
+机器人参数，也不调用连接创建函数。框架校验配置键属于已经声明的依赖；配置不会
+触发任意模块导入。短名与完整模块名不能重复配置同一依赖。
+
+提供方通过 `PluginMetadata.dependency_config` 声明模型，用
+`get_dependency_config(Model)` 读取当前使用方的独立副本；需要检查指定使用方时可以
+显式传入 Plugin。提供方自己的 `get_plugin_config` 仍读取自己的全局配置，
+两种配置不会相互覆盖。channels 复用插件加载通知登记启动回调，在每次使用方启动时
+读取当前配置，按声明创建机器人；仅使用的协议会进行具体配置校验。
+
+`Host.save_config(module, values, dependencies=...)` 一起校验并保存。省略这个关键字
+表示只更新插件自己的参数，传入 `{}` 表示清除依赖配置。保存不改变当前运行资源，
+`apply_config` 或重新启用时替换活动值并重建连接。群组和智能体之间的选择写在插件
+的 `on_message/on_command` 与 Rule 中，配置中没有 Agent 路由表。
+
+依赖参数在保存、`--check` 和资源启动前校验，声明加载时只登记启动回调。
+这样已有错误配置的插件仍可加载并修正参数，但不能启动机器人连接。密钥环境变量
+在连接准备时检查，日志只说明缺失的引用名称。同一机器人账号不能由两个使用方
+重复创建；连接随所属插件停止而释放，不影响其他插件持有的连接。

@@ -23,6 +23,7 @@ from opsmesh.plugins import get_plugin as get_plugin
 from opsmesh.plugins import (
     get_plugin_by_module_name as get_plugin_by_module_name,
 )
+from opsmesh.plugins import get_dependency_config as get_dependency_config
 from opsmesh.plugins import get_plugin_config as get_plugin_config
 from opsmesh.plugins import load_all_plugins as load_all_plugins
 from opsmesh.plugins import load_from_json as load_from_json

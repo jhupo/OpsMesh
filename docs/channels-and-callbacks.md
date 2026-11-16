@@ -55,19 +55,28 @@ API 配置存在即准备入口；省略时不启用，有业务路由却没有�
 
 钉钉开发者控制台中，将机器人的消息接收模式切换为 **Stream 模式**，发布相应应用配置。保留消费插件提供的 `client_id` 和 `client_secret_ref`；凭据属于该机器人连接，不属于 API 身份配置。服务器需能出站访问钉钉 HTTPS/WSS 地址，无需对公网开放回调端口。
 
-```python
-from opsmesh.plugins import require
+使用方的配置文件声明连接，由 channels 在使用方就绪后自动启动：
 
-channels = require("channels")
-dingtalk = channels.dingtalk
-robot = dingtalk.declare_connection(
-    dingtalk.DingTalkConnectionSettings(
-        client_id="configured-client-id",
-        client_secret_ref="DINGTALK_CLIENT_SECRET",
-    ),
-    name="support",
-)
+```json
+{
+  "config": {"model": "your-model-name"},
+  "dependencies": {
+    "channels": {
+      "dingtalk": {
+        "main": {
+          "client_id": "configured-client-id",
+          "client_secret_ref": "DINGTALK_CLIENT_SECRET"
+        }
+      }
+    }
+  }
+}
 ```
+
+QQ 使用 `dependencies.channels.qq.<连接名称>`，账号字段为 `app_id`、`secret_ref`。
+使用方只需 `require("channels")`，不定义机器人 Settings，也不调用 `declare_connection`。
+连接归属当前使用方；停止时关闭并移除，重新启用按当前配置重建。不同插件声明同一
+机器人账号会报出已有归属，不隐式共享或创建第二条连接。
 
 channels 的 `config.dingtalk` 只放公共限制，例如 `request_timeout`、`reconnect_delay`、`max_pending_events`。所有消费者就绪后启动 Stream，连接成功才加入 Driver 的在线索引；断线撤出并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
 
@@ -250,3 +259,23 @@ QQ、钉钉通过 Channel.call 暴露已实现的官方操作；连接限制调�
 QQ 频道接口使用 guild ID，支持频道信息、成员、角色查询以及成员和全员禁言。普通 QQ 群接口使用 group openid，支持群信息、机器人状态、成员查询、成员禁言和入群申请查询/审批；普通群踢人、黑名单和自动审批策略未暴露。钉钉支持 Stream 消息、原生事件、群基础信息、互通群成员和群名操作，仍受应用权限和群类型限制。
 
 平台通知保留原生事件类型、ID 和 payload，通过 on_notice/on_type 处理。未知身份不伪造，群业务策略由调用插件决定。准确操作名、接口及官方依据见 [channels 包说明](../packages/channels/README.md#platform-group-operations)。
+
+
+## 在插件代码中选择群组与智能体
+
+`channels.in_group(*groups, connection=None, protocol=None)` 返回框架原生 `Rule`。
+群 ID 使用 QQ 的 `group_openid` 或钉钉的 `conversationId`，不使用群名称。
+Rule 同时校验当前插件归属与事件的连接标识；私聊、通知及其他协议不会命中。
+两个协议存在同名连接时，指定 `protocol="qq"` 或 `protocol="dingtalk"`。
+
+```python
+channels = require("channels")
+sales = on_message(rule=channels.in_group("group-a", connection="main"))
+technical = on_message(rule=channels.in_group("group-b", connection="main"))
+```
+
+处理器分别把自己的原生 Agent 交给 execution，并用 Matcher 回复。相同 Rule 可用于
+`on_command`。一条机器人连接服务多个处理器；没有匹配处理器的消息不会调用模型。
+自定义 Rule 的重叠遵循框架原有优先级与阻断语义，不另建路由系统。机器人能收到哪些
+消息仍受平台权限影响，Rule 不扩大平台推送权限。完整示例见
+[同插件多智能体](../examples/groups/README.md)。

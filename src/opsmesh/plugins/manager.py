@@ -57,12 +57,14 @@ class PluginManager:
         search_path: Iterable[str] | None = None,
         *,
         config: Mapping[str, Any] | None = None,
+        dependencies: Mapping[str, Mapping[str, Any]] | None = None,
         required: bool = False,
         protected: bool = False,
     ):
         self.config_values = (
             deepcopy(dict(config)) if config is not None else None
         )
+        self.dependency_config_values = deepcopy(dict(dependencies or {}))
         self.required = bool(required)
         self.protected = bool(protected)
         self.enabled = True

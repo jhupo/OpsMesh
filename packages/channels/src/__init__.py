@@ -6,10 +6,12 @@ from types import ModuleType
 from opsmesh.plugins import PluginMetadata
 
 from .attachments import Attachment, AttachmentCollection, AttachmentError
-from .config import ChannelsSettings
+from .config import ChannelConnections, ChannelsSettings
 from .context import UserContext
 from .dependencies import Connection
 from .lifecycle import hooks as _lifecycle  # noqa: F401
+from .lifecycle import consumers as _consumers  # noqa: F401
+from .rules import in_group
 from .messages import Message, MessageSegment
 from .operations import (
     OperationError,
@@ -37,6 +39,7 @@ __plugin_meta__ = PluginMetadata(
     ),
     type="channel",
     config=ChannelsSettings,
+    dependency_config=ChannelConnections,
 )
 
 __all__ = [
@@ -51,6 +54,7 @@ __all__ = [
     "OperationRateLimited",
     "UnsupportedOperation",
     "ChannelsSettings",
+    "in_group",
     "Connection",
     "UserContext",
     "api",

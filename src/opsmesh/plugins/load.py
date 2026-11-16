@@ -24,6 +24,7 @@ def load_plugin(
     module_path: str | Path,
     *,
     config: Mapping[str, Any] | None = None,
+    dependencies: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> Plugin | None:
     """Load a local or installed plugin.
 
@@ -31,13 +32,16 @@ def load_plugin(
         module_path: A dotted plugin module name
             or a pathlib.Path identifying the plugin source.
         config: Host-selected installation settings copied before import.
+        dependencies: Settings supplied to dependencies declared by the plugin.
     """
     module_path = (
         path_to_module_name(module_path)
         if isinstance(module_path, Path)
         else module_path
     )
-    manager = PluginManager([module_path], config=config)
+    manager = PluginManager(
+        [module_path], config=config, dependencies=dependencies
+    )
     _managers.append(manager)
     return manager.load_plugin(module_path)
 

@@ -24,6 +24,7 @@ packages/
 examples/
 ├── common/conversation_support/
 ├── chat/example_chat/
+├── groups/group_assistant/        # 一个机器人，通过 Rule 选择多个 Agent
 └── sandbox/example_sandbox/
 tools/                            # 离线数据维护
 ```
@@ -124,3 +125,8 @@ Session 可使用 SDK SQLAlchemySession；会话索引、用户归属和并发�
 ## 验证
 
 定向验证覆盖：调用排空、取消、失败重试、核心保护、响应/流清理、回调归属、原生 SDK 审批、数据库迁移、文件边界和协议映射。确定性模型与模拟协议测试独立于真实 PostgreSQL、机器人、模型供应商、Langfuse、沙箱和 Linux 发行包验收。
+
+依赖配置随使用方插件记录保存，由提供方的 `PluginMetadata.dependency_config` 模型校验。
+channels 根据这些值自动创建所属机器人的连接，使用方不重复定义协议 Settings。
+群组到智能体的选择使用插件代码中的 `channels.in_group()` 与原生 Rule/Matcher。
+配置格式见[插件配置](plugin-configuration-design.md)，示例见[群组智能体](../examples/groups/README.md)。

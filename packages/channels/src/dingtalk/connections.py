@@ -38,7 +38,7 @@ def get_adapter() -> DingTalkAdapter:
     return adapter
 
 
-def declare_connection(
+def _declare_connection(
     settings: DingTalkConnectionSettings,
     *,
     name: str,

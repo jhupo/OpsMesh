@@ -45,6 +45,153 @@ def manifest(directory):
     return host.HostManifest(data_dir=directory / "data")
 
 
+DEPENDENCY_PROVIDER = """
+from pydantic import BaseModel, ConfigDict
+from opsmesh import get_dependency_config
+from opsmesh.drivers import get_driver
+from opsmesh.plugins import PluginMetadata, on_plugin_loaded
+
+class ConsumerSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    accounts: list[str]
+
+__plugin_meta__ = PluginMetadata(
+    "provider", "test provider", "test", dependency_config=ConsumerSettings
+)
+observed = []
+@on_plugin_loaded
+def configure(consumer):
+    if "host_test_provider" not in consumer.dependencies:
+        return
+    def startup():
+        observed.append((consumer.name, get_dependency_config(ConsumerSettings)))
+    get_driver().on_startup(startup)
+"""
+
+
+@pytest.mark.anyio
+async def test_dependency_configuration_is_isolated_persisted_and_reapplied(
+    host_dir,
+):
+    register(host_dir, "host_test_provider", DEPENDENCY_PROVIDER, enabled=True)
+    for name, account in (
+        ("host_test_first", "first"),
+        ("host_test_second", "second"),
+    ):
+        register(
+            host_dir,
+            name,
+            'from opsmesh import require\nprovider = require("host_test_provider")\n',
+            enabled=True,
+            autoload=True,
+            dependencies={"host_test_provider": {"accounts": [account]}},
+        )
+    async with host.load_host(manifest(host_dir)) as driver:
+        manager = host.get_host()
+        first = get_plugin("host_test_first")
+        provider = get_plugin("host_test_provider")
+        async with driver.lifespan():
+            observed = dict(provider.module.observed)
+            assert observed["host_test_first"].accounts == ["first"]
+            assert observed["host_test_second"].accounts == ["second"]
+            observed["host_test_first"].accounts.append("local mutation")
+            assert first.dependency_config_values["host_test_provider"] == {
+                "accounts": ["first"]
+            }
+            updated = {"host_test_provider": {"accounts": ["changed"]}}
+            await manager.save_config(
+                first.module_name,
+                {},
+                dependencies=updated,
+            )
+            updated["host_test_provider"]["accounts"].append("caller mutation")
+            assert manager.records[first.module_name].dependencies == {
+                "host_test_provider": {"accounts": ["changed"]}
+            }
+            assert first.dependency_config_values["host_test_provider"][
+                "accounts"
+            ] == ["first"]
+            await manager.apply_config(first.module_name)
+            assert provider.module.observed[-1][1].accounts == ["changed"]
+            with pytest.raises(ValueError, match="accounts"):
+                await manager.save_config(
+                    first.module_name,
+                    {},
+                    dependencies={"host_test_provider": {}},
+                )
+            assert manager.records[first.module_name].dependencies[
+                "host_test_provider"
+            ] == {"accounts": ["changed"]}
+    with PluginStorage(host_dir / "data") as storage:
+        assert storage.get("host_test_first").dependencies == {
+            "host_test_provider": {"accounts": ["changed"]}
+        }
+
+
+@pytest.mark.anyio
+async def test_invalid_dependency_configuration_can_be_repaired(host_dir):
+    register(host_dir, "host_test_provider", DEPENDENCY_PROVIDER, enabled=True)
+    register(
+        host_dir,
+        "host_test_repairable",
+        'from opsmesh import require\nrequire("host_test_provider")\n',
+        enabled=False,
+        dependencies={"host_test_provider": {}},
+    )
+    async with host.load_host(manifest(host_dir)) as driver:
+        manager = host.get_host()
+        plugin = manager.load("host_test_repairable")
+        assert not plugin.ready
+        await manager.save_config(
+            plugin.module_name,
+            {},
+            dependencies={"host_test_provider": {"accounts": ["repaired"]}},
+        )
+        async with driver.lifespan():
+            await manager.enable(plugin.module_name)
+            assert plugin.ready
+            provider = get_plugin("host_test_provider")
+            assert provider.module.observed[-1][1].accounts == ["repaired"]
+
+
+def test_cli_imports_configuration_and_dependencies_from_one_file(host_dir):
+    from opsmesh.cli import main
+
+    source = host_dir / "host_test_configured.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    host_file = host_dir / "host.json"
+    host_file.write_text(
+        manifest(host_dir).model_dump_json(), encoding="utf-8"
+    )
+    values = {
+        "config": {"value": "saved"},
+        "dependencies": {"provider": {"endpoint": "test"}},
+    }
+    config_file = host_dir / "plugin.json"
+    config_file.write_text(json.dumps(values), encoding="utf-8")
+    assert (
+        main(
+            [
+                "--manifest",
+                str(host_file),
+                "--plugin-action",
+                "register",
+                "--module",
+                "host_test_configured",
+                "--directory",
+                str(host_dir),
+                "--config",
+                str(config_file),
+            ]
+        )
+        == 0
+    )
+    with PluginStorage(host_dir / "data") as storage:
+        record = storage.get("host_test_configured")
+        assert record.config == values["config"]
+        assert record.dependencies == values["dependencies"]
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("register_online", [False, True])
 async def test_external_plugin_namespace_is_discovered_and_restored(
@@ -140,9 +287,12 @@ async def test_protected_plugin_management_preserves_state(host_dir):
             with pytest.raises(PluginProtectedError):
                 registry.revoke_plugin(plugin)
             assert (
-                plugin.ready and manager.storage.get(plugin.module_name).enabled
+                plugin.ready
+                and manager.storage.get(plugin.module_name).enabled
             )
-        assert plugin.cleanup_complete and plugin.status is PluginStatus.STOPPED
+        assert (
+            plugin.cleanup_complete and plugin.status is PluginStatus.STOPPED
+        )
 
 
 @pytest.mark.anyio
@@ -181,7 +331,9 @@ async def test_shutdown_cancels_host_management_startup(host_dir):
             pending = asyncio.create_task(manager.enable(plugin.module_name))
             await plugin.module.entered.wait()
         with anyio.fail_after(1):
-            with pytest.raises(RuntimeError, match="cancelled during shutdown"):
+            with pytest.raises(
+                RuntimeError, match="cancelled during shutdown"
+            ):
                 await pending
         assert plugin.cleanup_complete and plugin.module.closed == [True]
 
@@ -200,7 +352,9 @@ def test_manifest_resolves_only_the_host_data_directory(host_dir):
 
 @pytest.mark.anyio
 async def test_disabled_plugin_is_not_automatically_imported(host_dir):
-    register(host_dir, "host_test_disabled", "raise AssertionError('imported')")
+    register(
+        host_dir, "host_test_disabled", "raise AssertionError('imported')"
+    )
     async with host.load_host(manifest(host_dir)):
         assert "host_test_disabled" not in sys.modules
 

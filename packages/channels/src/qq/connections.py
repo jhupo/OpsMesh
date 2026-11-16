@@ -33,7 +33,7 @@ def get_adapter() -> QQAdapter:
     return adapter
 
 
-def declare_connection(
+def _declare_connection(
     settings: QQConnectionSettings,
     *,
     name: str,

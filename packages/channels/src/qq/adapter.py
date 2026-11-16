@@ -128,12 +128,21 @@ class QQAdapter(Adapter):
         self._declared[self_id] = channel
         track_registration(lambda: self._remove(channel), owner)
         if isinstance(plugin, Plugin):
-            self.driver.on_ready(
-                lambda: self._activate(channel) if self._started else None
-            )
-            self.driver.on_shutdown(lambda: self._deactivate(channel))
-        if self._started and self._accepting:
-            self._activate(channel)
+
+            async def start_connection() -> None:
+                if self._started:
+                    self._activate(channel)
+
+            self.driver.on_started(start_connection)
+
+            async def close_connection() -> None:
+                stream = self._streams.get(channel)
+                if stream is not None:
+                    stream.stop()
+                    await stream.wait_closed()
+                self._deactivate(channel)
+
+            self.driver.on_shutdown(close_connection)
         return channel
 
     async def startup(self) -> None:
@@ -209,7 +218,9 @@ class QQAdapter(Adapter):
         if operation == "stream":
             self._validate_reply(channel, data.get("event"))
             message = await aggregate_stream(data["source"])
-            return await self._send_message(channel, data.get("event"), message)
+            return await self._send_message(
+                channel, data.get("event"), message
+            )
         if operation == "send_message":
             return await self._send_message(
                 channel, data.get("event"), data.get("message")
@@ -223,7 +234,9 @@ class QQAdapter(Adapter):
                 isinstance(channel._owner, Plugin)
                 and get_current_plugin() is not channel._owner
             ):
-                raise PermissionError("QQ connection belongs to another plugin")
+                raise PermissionError(
+                    "QQ connection belongs to another plugin"
+                )
             if not channel.ready:
                 raise QQSendError("QQ connection is not ready")
             operation_type = (
@@ -386,7 +399,9 @@ class QQAdapter(Adapter):
                     admitted_call=item.admitted_call,
                 )
         except Exception:
-            logger.exception("QQ event %s dispatch failed", item.event.event_id)
+            logger.exception(
+                "QQ event %s dispatch failed", item.event.event_id
+            )
             return
         if result.errors:
             logger.error(

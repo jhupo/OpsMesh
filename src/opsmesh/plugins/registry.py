@@ -146,6 +146,7 @@ def _new_plugin(
         manager=manager,
         parent_plugin=parent_plugin,
         config_values=deepcopy(manager.config_values),
+        dependency_config_values=deepcopy(manager.dependency_config_values),
         required=bool(getattr(manager, "required", False)),
         enabled=bool(getattr(manager, "enabled", True)),
         protected=bool(getattr(manager, "protected", False)),
@@ -173,7 +174,9 @@ def revoke_plugin(plugin: "Plugin") -> None:
             "Protected plugin declarations cannot be revoked"
         )
     if any(not item.cleanup_complete or item.calls for item in affected):
-        raise RuntimeError("Plugin resources must be stopped before revocation")
+        raise RuntimeError(
+            "Plugin resources must be stopped before revocation"
+        )
     if any(
         item not in affected
         and any(owner.id_ in item.dependencies for owner in affected)
@@ -315,7 +318,9 @@ def register_hook(group, func, parameters):
 
 def register_callback(group, func):
     """Own one asynchronous channel callback without sharing its identity."""
-    plugin = _current_plugin.get() or get_plugin_by_module_name(func.__module__)
+    plugin = _current_plugin.get() or get_plugin_by_module_name(
+        func.__module__
+    )
 
     @wraps(func)
     async def registered(*args, **kwargs):
@@ -423,7 +428,9 @@ def get_plugins_in_dependency_order() -> list["Plugin"]:
 def get_available_plugin_names() -> set[str]:
     """Return available plugin identifiers, including unloaded plugins."""
     return {
-        *chain.from_iterable(manager.available_plugins for manager in _managers)
+        *chain.from_iterable(
+            manager.available_plugins for manager in _managers
+        )
     }
 
 

@@ -8,6 +8,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
+from copy import deepcopy
 from importlib.metadata import entry_points
 from pathlib import Path
 from pkgutil import extend_path
@@ -68,7 +69,9 @@ class HostManifest(BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", hide_input_in_errors=True
     )
-    environment: str = Field(default="development", pattern=r"^[a-zA-Z0-9_-]+$")
+    environment: str = Field(
+        default="development", pattern=r"^[a-zA-Z0-9_-]+$"
+    )
     framework: Config = Field(default_factory=Config)
     data_dir: Path = Path("./data")
 
@@ -131,6 +134,7 @@ class Host:
         manager = PluginManager(
             [record.module],
             config=record.config,
+            dependencies=record.dependencies,
             required=record.required,
             protected=record.protected,
         )
@@ -158,7 +162,10 @@ class Host:
     def load(self, module: str) -> Plugin:
         """Load declarations, including those of a disabled plugin."""
         record = self.records[module]
-        if record.directory is not None and not Path(record.directory).is_dir():
+        if (
+            record.directory is not None
+            and not Path(record.directory).is_dir()
+        ):
             raise ValueError(
                 f"Plugin import directory does not exist: {module}"
             )
@@ -187,20 +194,27 @@ class Host:
             import opsmesh.plugins
 
             original_namespaces = (
-                list(opsmesh.__path__), list(opsmesh.plugins.__path__)
+                list(opsmesh.__path__),
+                list(opsmesh.plugins.__path__),
             )
             try:
                 self._manager(record)
                 _refresh_plugin_namespace()
             except BaseException:
                 sys.path[:] = original_path
-                opsmesh.__path__, opsmesh.plugins.__path__ = original_namespaces
+                opsmesh.__path__, opsmesh.plugins.__path__ = (
+                    original_namespaces
+                )
                 self.records.pop(record.module)
                 await run_sync(self.storage.delete)(record.module)
                 raise
 
     async def save_config(
-        self, module: str, values: dict[str, JsonValue]
+        self,
+        module: str,
+        values: dict[str, JsonValue],
+        *,
+        dependencies: dict[str, dict[str, JsonValue]] | None = None,
     ) -> None:
         """Validate and persist configuration without restarting a plugin."""
         async with self._change():
@@ -210,11 +224,29 @@ class Host:
                 raise ValueError("The plugin has no configuration schema")
             if schema is not None:
                 schema.model_validate(values)
+            from opsmesh.plugins.config import validate_dependency_config
+
+            dependency_values = (
+                self.records[module].dependencies
+                if dependencies is None
+                else dependencies
+            )
+            validate_dependency_config(plugin, dependency_values)
             record = self.records[module].model_copy(
-                update={"config": values}, deep=True
+                update=deepcopy(
+                    {"config": values, "dependencies": dependency_values}
+                ),
+                deep=True,
             )
             await run_sync(self.storage.save)(record)
             self.records[module] = record
+
+    def _use_configuration(self, plugin: Plugin, record: PluginRecord) -> None:
+        """Replace runtime values with independently owned saved snapshots."""
+        for target in (plugin, self.managers[record.module]):
+            snapshot = record.model_copy(deep=True)
+            target.config_values = snapshot.config
+            target.dependency_config_values = snapshot.dependencies
 
     async def apply_config(self, module: str) -> None:
         """Apply saved values, restarting only an already running plugin."""
@@ -226,6 +258,9 @@ class Host:
             record = self.records[module]
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(record.config)
+            from opsmesh.plugins.config import validate_dependency_config
+
+            validate_dependency_config(plugin, record.dependencies)
             was_running = plugin.ready
             if plugin.protected:
                 from opsmesh.plugins.errors import PluginProtectedError
@@ -238,8 +273,7 @@ class Host:
             elif not plugin.cleanup_complete:
                 raise RuntimeError("Plugin cleanup has not completed")
             record = self.records[module]
-            plugin.config_values = record.model_copy(deep=True).config
-            self.managers[module].config_values = plugin.config_values.copy()
+            self._use_configuration(plugin, record)
             if was_running:
                 await self.managers[module].start_plugin(module)
 
@@ -254,10 +288,7 @@ class Host:
             self.managers[module].enabled = True
             plugin = self.load(module)
             if not plugin.ready and plugin.cleanup_complete:
-                plugin.config_values = record.model_copy(deep=True).config
-                self.managers[module].config_values = record.model_copy(
-                    deep=True
-                ).config
+                self._use_configuration(plugin, record)
             if self.driver.started:
                 await self.managers[module].start_plugin(module)
 
@@ -344,7 +375,9 @@ async def load_host(
                     except Exception:
                         if record.required:
                             raise
-                        logger.error("Plugin could not load: %s", record.module)
+                        logger.error(
+                            "Plugin could not load: %s", record.module
+                        )
         yield driver
     finally:
         with anyio.CancelScope(shield=True):

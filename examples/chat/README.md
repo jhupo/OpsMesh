@@ -16,12 +16,16 @@ The host SQLite database stores plugin records and values. Configure API
 authentication and PostgreSQL before enabling the example.
 
 ```json
-{"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}
+{"config": {"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}, "dependencies": {}}
 ```
 
 Save settings with `--plugin-action configure --module example_chat --config PATH`
 while the host is stopped, then enable its entry. Optional settings include
-`name`, `instructions`, `qq`, `dingtalk`, `mcp_url` and `mcp_token_ref`.
+`name`, `instructions`, `mcp_url` and `mcp_token_ref`.
+Robot accounts belong in `dependencies.channels.qq.<name>` or
+`dependencies.channels.dingtalk.<name>`; channels validates and starts them
+automatically. See [group assistants](../groups/README.md) for code-defined
+group rules and multiple agents on one robot.
 The SDK reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`. Tracing follows
 execution's configuration. Configuration changes require a resource restart.
 

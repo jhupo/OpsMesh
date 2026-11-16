@@ -24,10 +24,14 @@ for module, values in {
     "example_chat": {
         "model": "gpt-4o-mini",
         "reasoning": {"effort": "medium"},
-        "qq": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"},
     },
 }.items():
-    manager = PluginManager([module], config=values)
+    manager = PluginManager(
+        [module], config=values, dependencies=(
+            {"channels": {"qq": {"primary": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"}}}}
+            if module == "example_chat" else {}
+        ),
+    )
     registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
@@ -110,6 +114,8 @@ def test_example_chat_declares_an_inactive_route():
 
 BEHAVIOR_SCRIPT = """
 import asyncio
+import os
+os.environ["QQ_TEST_SECRET"] = "test-secret"
 from example_chat import connections as chat_connections
 asyncio.run(definition.startup())
 assert definition.agent.model == "gpt-4o-mini"
@@ -117,6 +123,9 @@ assert definition.agent.model_settings.reasoning.effort == "medium"
 token = registry._current_plugin.set(plugin)
 try:
     asyncio.run(chat_connections.connect_mcp())
+    for entry in driver_state.get_driver()._lifespan._startup_funcs:
+        if entry.plugin is plugin and entry.func.__module__ == "opsmesh.plugins.channels.lifecycle.consumers":
+            asyncio.run(entry.func())
 finally:
     registry._current_plugin.reset(token)
 import runpy

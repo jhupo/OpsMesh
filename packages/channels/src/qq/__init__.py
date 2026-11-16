@@ -12,7 +12,7 @@ from .channel import (
     QQChannel,
 )
 from .config import QQConnectionSettings, QQSettings
-from .connections import declare_connection, get_adapter
+from .connections import get_adapter
 from .errors import (
     QQConfigurationError,
     QQError,
@@ -54,7 +54,6 @@ __all__ = [
     "QQSendError",
     "QQSettings",
     "READY",
-    "declare_connection",
     "get_adapter",
     "parse_callback",
 ]

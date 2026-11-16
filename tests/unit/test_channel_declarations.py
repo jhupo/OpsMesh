@@ -142,15 +142,14 @@ def test_qq_declaration_needs_no_api_or_dingtalk_configuration(tmp_path):
     (tmp_path / "consumer.py").write_text("""
 from opsmesh.plugins import require
 channels = require("opsmesh.plugins.channels")
-qq = channels.qq
-connection = qq.declare_connection(
-    qq.QQConnectionSettings(app_id="12345", secret_ref="QQ_SECRET"),
-    name="primary",
-)
+
 """)
     run_script(
         tmp_path,
         """
+manager.dependency_config_values = {"channels": {"qq": {"primary": {
+    "app_id": "12345", "secret_ref": "QQ_SECRET"
+}}}}
 settings["qq"] = {"enabled": False, "concurrency": 2}
 settings.pop("api")
 channels.config_values = settings
@@ -160,10 +159,11 @@ assert "opsmesh.plugins.channels.api" not in sys.modules
 assert "opsmesh.plugins.channels.dingtalk" not in sys.modules
 async def main():
     async with driver.lifespan():
-        assert not consumer.module.connection.ready
+        connection = driver.get_adapter("qq").declarations[0]
+        assert not connection.ready
         assert len(transports._started) == 1
         assert driver.get_adapter("qq").started
-    assert not consumer.module.connection.ready
+    assert not connection.ready
     assert not hasattr(channel_lifecycle, "http")
 asyncio.run(main())
 registry.revoke_plugin(consumer)
@@ -205,19 +205,16 @@ def test_dingtalk_stream_needs_no_http_or_api(tmp_path):
     (tmp_path / "consumer.py").write_text("""
 from opsmesh.plugins import require
 channels = require("opsmesh.plugins.channels")
-dingtalk = channels.dingtalk
-connection = dingtalk.declare_connection(
-    dingtalk.DingTalkConnectionSettings(
-        client_id="test", client_secret_ref="DINGTALK_SECRET"
-    ),
-    name="primary",
-)
+
 """)
     run_script(
         tmp_path,
         """
 import os
 os.environ["DINGTALK_SECRET"] = "test-secret"
+manager.dependency_config_values = {"channels": {"dingtalk": {"primary": {
+    "client_id": "test", "client_secret_ref": "DINGTALK_SECRET"
+}}}}
 settings.clear()
 
 channels.config_values = settings
@@ -231,16 +228,17 @@ async def receive(stream):
 DingTalkStream._receive = receive
 async def main():
     async with driver.lifespan():
+        connection = driver.get_adapter("dingtalk").declarations[0]
         for _ in range(100):
-            if consumer.module.connection.ready:
+            if connection.ready:
                 break
             await asyncio.sleep(0)
-        assert consumer.module.connection.ready
+        assert connection.ready
         assert not hasattr(channel_lifecycle, "http")
         assert "uvicorn" not in sys.modules
         from inspect import getattr_static
-        assert getattr_static(consumer.module.connection, "path", None) is None
-    assert consumer.module.connection.state == "closed"
+        assert getattr_static(connection, "path", None) is None
+    assert connection.state == "closed"
     assert not driver.channels
 asyncio.run(main())
 """,
