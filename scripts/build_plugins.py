@@ -109,6 +109,7 @@ def main() -> None:
             "--no-compile",
             "--no-deps",
             "--only-binary=:all:",
+            "--no-binary=alibabacloud-endpoint-util",
             "--target",
             str(site),
             "-r",

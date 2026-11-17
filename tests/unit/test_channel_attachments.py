@@ -561,7 +561,7 @@ def test_rejected_origin_log_omits_signed_url_and_credentials(caplog):
             "private-path?Signature=private-signature",
             ("dingtalk.com",),
         )
-    assert "media.dingtalk.com" in caplog.text
+    assert caplog.records[0].args == ("http", "media.dingtalk.com", None)
     assert "private" not in caplog.text
 
 
