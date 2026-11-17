@@ -5,26 +5,16 @@ from __future__ import annotations
 import logging
 import os
 from functools import partial
-from types import ModuleType
 from typing import Any
 
-import anyio
 import httpx
 
-from opsmesh.adapters import Adapter
 from opsmesh.drivers import Driver
-from opsmesh.plugins.channels._queue import EventQueue
-from opsmesh.plugins.channels._validation import connection_segment
-from opsmesh.plugins.channels._work import QueuedEvent, dispatch_queued
+from opsmesh.plugins.channels._work import enqueue
 from opsmesh.plugins.channels.context import UserContext
-from opsmesh.plugins.invocation import PluginUnavailable
-from opsmesh.plugins.model import Plugin, PluginStatus
-from opsmesh.plugins.registry import (
-    _current_plugin,
-    get_plugin_by_module_name,
-    track_registration,
-)
+from opsmesh.plugins.model import Plugin
 
+from ..adapter import RobotAdapter
 from ..attachments import AttachmentCollection, AttachmentError
 from ..operations import UnsupportedOperation
 from ..receipts import Delivery
@@ -32,7 +22,7 @@ from ..streaming import send_stream
 from .attachments import read as read_attachment
 from .channel import QQChannel
 from .client import QQClient
-from .config import QQConnectionSettings, QQSettings
+from .config import QQConnectionSettings, QQSettings, get_settings
 from .errors import (
     QQConfigurationError,
     QQError,
@@ -40,16 +30,21 @@ from .errors import (
     QQSendError,
 )
 from .events import QQMessageEvent, parse_callback
-from .groups import QQGroupOperations
-from .guilds import QQGuildOperations
+from .operations import QQOperations
 from .sending import QQSender
 from .stream import QQStream
 
 logger = logging.getLogger(__name__)
 
 
-class QQAdapter(Adapter):
+class QQAdapter(RobotAdapter[QQChannel]):
     """Manage QQ Bot API v2 Gateway connections for one runtime."""
+
+    settings_factory = staticmethod(get_settings)
+    channel_type = QQChannel
+    configuration_error = QQConfigurationError
+    message_event_type = QQMessageEvent
+    send_error = QQSendError
 
     def __init__(
         self,
@@ -59,26 +54,9 @@ class QQAdapter(Adapter):
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """Create the adapter without opening vendor resources."""
-        super().__init__(driver)
-        self.settings = settings
         self._client = QQClient(settings, http_client)
-        self._declared: dict[str, QQChannel] = {}
-        self._streams: dict[QQChannel, QQStream] = {}
         self._secrets: dict[str, str] = {}
-        self._accepting = False
-        self._queue = EventQueue(
-            capacity=settings.max_pending_events,
-            concurrency=settings.concurrency,
-            shutdown_timeout=settings.shutdown_timeout,
-            handle=dispatch_queued,
-            scope=lambda item: (
-                item.event.get_session_id()
-                if isinstance(item.event, QQMessageEvent)
-                else None
-            ),
-            release=QueuedEvent.close,
-        )
-        self._started = False
+        super().__init__(driver, settings=settings)
 
     @classmethod
     def get_name(cls) -> str:
@@ -90,125 +68,11 @@ class QQAdapter(Adapter):
         """Return the adapter-owned HTTP API client."""
         return self._client
 
-    @property
-    def started(self) -> bool:
-        """Whether the adapter owns initialized resources."""
-        return self._started
-
-    @property
-    def declarations(self) -> tuple[QQChannel, ...]:
-        """Return all declared QQ connections."""
-        return tuple(self._declared.values())
-
-    def declare(
-        self,
-        settings: QQConnectionSettings,
-        *,
-        name: str,
-        owner: Any = None,
-    ) -> QQChannel:
-        """Declare a bot connection without performing network I/O."""
-        plugin = self._resolve_owner(owner)
-        owner_id = plugin.id_
-        connection_segment(owner_id, "QQ connection owner")
-        connection_segment(name, "QQ connection name")
-        self_id = f"qq:{owner_id}:{name}"
-        if self_id in self._declared:
-            raise QQConfigurationError(f"Duplicate QQ connection {self_id}")
-
-        channel = QQChannel(
-            self,
-            self_id,
-            owner_id=owner_id,
-            owner=plugin,
-            connection_name=name,
-            settings=settings,
-            protocol=self.settings,
-        )
-        self._declared[self_id] = channel
-        track_registration(lambda: self._remove(channel), owner)
-        if isinstance(plugin, Plugin):
-
-            async def start_connection() -> None:
-                if self._started:
-                    self._activate(channel)
-
-            self.driver.on_started(start_connection)
-
-            async def close_connection() -> None:
-                stream = self._streams.get(channel)
-                if stream is not None:
-                    stream.stop()
-                    await stream.wait_closed()
-                self._deactivate(channel)
-
-            self.driver.on_shutdown(close_connection)
-        return channel
-
-    async def startup(self) -> None:
-        """Open shared HTTP resources and the bounded event queue."""
-        if self._started:
-            return
-        if get_plugin_by_module_name(__name__) is not None:
-            from .config import get_settings
-
-            if self.settings != get_settings():
-                raise QQConfigurationError(
-                    "Shared QQ protocol settings changed; restart the host"
-                )
-        if not self.driver.started:
-            raise QQConfigurationError(
-                "The QQ channel requires a running runtime lifespan"
-            )
-        self._started = True
-        self._client.open()
-        try:
-            await self._queue.start(self.driver.task_group)
-        except BaseException:
-            with anyio.CancelScope(shield=True):
-                await self.shutdown()
-            raise
-
     async def start_accepting(self) -> None:
         """Start Gateway streams after all consumer plugins are ready."""
         if self._accepting or not self.settings.enabled:
             return
-        self._accepting = True
-        for channel in self._declared.values():
-            self._activate(channel)
-
-    def stop_accepting(self) -> None:
-        """Stop new Gateway deliveries while keeping API replies available."""
-        self._accepting = False
-        self._queue.stop_accepting()
-        for stream in tuple(self._streams.values()):
-            stream.stop()
-
-    async def drain(self) -> None:
-        """Drain accepted events and wait for Gateway tasks to finish."""
-        await self._queue.stop()
-        for stream in tuple(self._streams.values()):
-            await stream.wait_closed()
-
-    async def shutdown(self) -> None:
-        """Stop streams, disconnect channels, and release HTTP resources."""
-        if not self._started:
-            return
-        self.stop_accepting()
-        await self.drain()
-        for channel in list(self._declared.values()):
-            if channel.self_id in self.channels:
-                try:
-                    self.disconnect(channel)
-                except Exception:
-                    logger.exception(
-                        "Failed to disconnect QQ connection %s",
-                        channel.self_id,
-                    )
-            channel.mark_closed()
-        self._secrets.clear()
-        await self._client.close()
-        self._started = False
+        await super().start_accepting()
 
     async def _call(
         self, channel: QQChannel, operation: str, **data: Any
@@ -239,9 +103,7 @@ class QQAdapter(Adapter):
                 data.get("message"),
                 delivery=data.get("delivery"),
             )
-        if operation in (
-            QQGuildOperations.operations | QQGroupOperations.operations
-        ):
+        if operation in (QQOperations.operations):
             from opsmesh.plugins.registry import get_current_plugin
 
             if (
@@ -251,74 +113,13 @@ class QQAdapter(Adapter):
                 raise PermissionError("QQ connection belongs to another plugin")
             if not channel.ready:
                 raise QQSendError("QQ connection is not ready")
-            operation_type = (
-                QQGuildOperations
-                if operation in QQGuildOperations.operations
-                else QQGroupOperations
-            )
-            groups = operation_type(
+            groups = QQOperations(
                 self._client, channel, self._read_secret(channel)
             )
             return await getattr(groups, operation)(**data)
         raise UnsupportedOperation(
             f"Unsupported QQ channel operation: {operation}"
         )
-
-    def _resolve_owner(self, owner: Any) -> Plugin:
-        plugin = _current_plugin.get()
-        if plugin is None and owner is not None:
-            module_name = (
-                owner.__name__
-                if isinstance(owner, ModuleType)
-                else getattr(owner, "__module__", "")
-            )
-            plugin = get_plugin_by_module_name(module_name)
-        if plugin is None:
-            raise QQConfigurationError(
-                "A QQ connection must be declared by a loaded plugin"
-            )
-        return plugin
-
-    def _activate(self, channel: QQChannel) -> None:
-        if not self._accepting or channel in self._streams:
-            return
-        owner = channel._owner
-        if isinstance(owner, Plugin) and owner.status not in (
-            PluginStatus.STARTING,
-            PluginStatus.READY,
-        ):
-            return
-        try:
-            secret = self._read_secret(channel)
-        except QQConfigurationError as error:
-            channel.mark_failed(str(error))
-            logger.error("QQ connection %s: %s", channel.self_id, error)
-            return
-        self._secrets[channel.self_id] = secret
-        stream = QQStream(channel, secret)
-        self._streams[channel] = stream
-        self.driver.task_group.start_soon(stream.run)
-
-    def stream_finished(self, channel: QQChannel) -> None:
-        """Release a stream after its socket and task have closed."""
-        self._streams.pop(channel, None)
-
-    def stream_connected(self, channel: QQChannel) -> None:
-        """Publish the channel only after the Gateway handshake succeeds."""
-        if self._declared.get(channel.self_id) is not channel:
-            return
-        channel.mark_ready()
-        if channel.self_id not in self.channels:
-            self.connect(channel)
-
-    def stream_disconnected(self, channel: QQChannel) -> None:
-        """Withdraw a channel until its Gateway reconnects."""
-        if self._declared.get(channel.self_id) is not channel:
-            return
-        if channel.self_id in self.channels:
-            self.disconnect(channel)
-        if channel.state != "closed":
-            channel.mark_disconnected()
 
     async def accept_event(
         self, channel: QQChannel, payload: dict[str, Any]
@@ -340,50 +141,22 @@ class QQAdapter(Adapter):
             return False
         if event is None:
             return False
-        if not channel.first_delivery(event.event_id):
-            return True
         caller = (
             UserContext(
                 id=event.get_user_id(),
                 name=event.user_name or event.get_user_id(),
-                groups=event.group_ids,
             )
             if isinstance(event, QQMessageEvent)
             else None
         )
-        try:
-            item = QueuedEvent(channel, event, caller)
-        except PluginUnavailable:
-            channel.release_delivery(event.event_id)
-            return False
-        accepted = False
-        try:
-            accepted = self._queue.put_nowait(item)
-        finally:
-            if not accepted:
-                channel.release_delivery(event.event_id)
-                await item.close()
-        if not accepted:
-            logger.warning(
-                "Rejecting QQ event %s for %s: queue is full",
-                event.event_id,
-                channel.self_id,
-            )
-        return accepted
-
-    def _remove(self, channel: QQChannel) -> None:
-        self._declared.pop(channel.self_id, None)
-        self._deactivate(channel)
-
-    def _deactivate(self, channel: QQChannel) -> None:
-        stream = self._streams.get(channel)
-        if stream is not None:
-            stream.stop()
-        self._secrets.pop(channel.self_id, None)
-        self._client.forget(channel.self_id)
-        if channel.self_id in self.channels:
-            self.disconnect(channel)
-        channel.mark_closed()
+        result = await enqueue(
+            self._queue,
+            channel,
+            event,
+            delivery_id=event.event_id,
+            caller=caller,
+        )
+        return result in {"ok", "duplicate"}
 
     def _read_secret(self, channel: QQChannel) -> str:
         reference = channel.settings.secret_ref
@@ -402,10 +175,37 @@ class QQAdapter(Adapter):
             self._client, channel, self._secrets[channel.self_id]
         ).send(event, message, **options)
 
-    def _validate_reply(self, channel: QQChannel, event: Any) -> None:
-        if not channel.ready:
-            raise QQSendError(f"QQ connection {channel.self_id} is not ready")
-        if not isinstance(event, QQMessageEvent):
-            raise QQSendError("QQ replies require a QQMessageEvent")
-        if event.connection_id != channel.self_id:
-            raise QQSendError("QQ reply event belongs to another connection")
+    def _forget(self, channel: QQChannel) -> None:
+        self._secrets.pop(channel.self_id, None)
+        self._client.forget(channel.self_id)
+
+    def _create_stream(self, channel: QQChannel, secret: str) -> QQStream:
+        self._secrets[channel.self_id] = secret
+        return QQStream(channel, secret)
+
+    def configure(
+        self,
+        settings: QQConnectionSettings,
+        *,
+        name: str,
+    ) -> QQChannel:
+        """Validate and declare an account from dependency configuration."""
+        if (
+            self.settings.enabled
+            and not os.environ.get(settings.secret_ref, "").strip()
+        ):
+            raise ValueError(
+                f"qq.{name}: missing credential environment variable "
+                f"{settings.secret_ref}"
+            )
+        for declared in self.declarations:
+            if declared.settings.app_id == settings.app_id:
+                raise ValueError(
+                    f"qq.{name}: robot account already belongs to "
+                    f"{declared.owner_id}"
+                )
+        from ..lifecycle.hooks import transports
+
+        channel = self.declare(settings, name=name)
+        transports.use(self)
+        return channel

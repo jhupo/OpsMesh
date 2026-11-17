@@ -12,16 +12,31 @@ Install channels, execution and database independently. Register `example_chat`
 with the absolute `examples/chat` import root and `conversation_support` with
 the absolute `examples/common` import root. Frozen hosts also register the
 official bundle's `site/` root; see [Linux deployment](../../docs/linux-deployment.md).
-The host SQLite database stores plugin records and values. Configure API
-authentication and PostgreSQL before enabling the example.
+The host SQLite database stores plugin records and values. Configure this example's HTTP
+identity and PostgreSQL before enabling the example.
 
 ```json
-{"config": {"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}, "dependencies": {}}
+{
+  "config": {
+    "model": "your-model-name",
+    "reasoning": {"effort": "medium"},
+    "max_turns": 8,
+    "http_token_ref": "OPSMESH_API_TOKEN",
+    "http_user_id": "operator"
+  },
+  "dependencies": {
+    "channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}
+  }
+}
 ```
 
 Save settings with `--plugin-action configure --module example_chat --config PATH`
 while the host is stopped, then enable its entry. Optional settings include
 `name`, `instructions`, `mcp_url` and `mcp_token_ref`.
+HTTP identity validation belongs to this example; channels only calls its resolver.
+Set the referenced token in the service environment. Omit the API dependency for
+a bot-only setup.
+
 Robot accounts belong in `dependencies.channels.qq.<name>` or
 `dependencies.channels.dingtalk.<name>`; channels validates and starts them
 automatically. See [group assistants](../groups/README.md) for code-defined

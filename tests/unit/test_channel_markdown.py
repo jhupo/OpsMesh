@@ -27,7 +27,6 @@ from opsmesh.plugins.channels.dingtalk.events import parse_callback
 from opsmesh.plugins.channels.dingtalk.sending import DingTalkSender
 from opsmesh.plugins.channels.sending import (
     OutgoingMarkdown,
-    normalize,
     prepare,
 )
 
@@ -48,7 +47,13 @@ async def test_preflight_does_not_merge_plain_text_into_markdown():
             MessageSegment.markdown("**bold**", title="Answer"),
         ]
     )
-    assert await prepare(normalize(message), AttachmentCollection(), 100) == [
+    result = await prepare(
+        message,
+        AttachmentCollection(),
+        100,
+        supported=DingTalkChannel.send_types,
+    )
+    assert result.parts == [
         "*literal*",
         OutgoingMarkdown("**bold**", "Answer"),
     ]
@@ -59,7 +64,10 @@ async def test_preflight_does_not_merge_plain_text_into_markdown():
 async def test_markdown_uses_existing_empty_and_size_checks(text):
     with pytest.raises(ValueError):
         await prepare(
-            normalize(MessageSegment.markdown(text)), AttachmentCollection(), 10
+            MessageSegment.markdown(text),
+            AttachmentCollection(),
+            10,
+            supported=DingTalkChannel.send_types,
         )
 
 
@@ -246,6 +254,7 @@ async def test_dingtalk_stream_without_template_rejects_incremental_output():
         send_types=DingTalkChannel.send_types,
         self_id="bot",
         ready=True,
+        replies_available=True,
         settings=DingTalkConnectionSettings(
             client_id="robot", client_secret_ref="SECRET"
         ),
@@ -274,3 +283,6 @@ async def test_dingtalk_stream_without_template_rejects_incremental_output():
         await adapter._call(channel, "stream", event=event, source=source())
     assert sent == []
     assert closed == [True]
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

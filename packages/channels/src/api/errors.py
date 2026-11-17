@@ -13,12 +13,8 @@ class APIConfigurationError(APIError, ValueError):
     """The API channel cannot start with the supplied configuration."""
 
 
-class RouteRegistrationError(APIError, ValueError):
-    """A plugin route declaration is invalid or cannot be installed."""
-
-
-class RouteConflict(RouteRegistrationError):
-    """A route declaration conflicts with an existing registration."""
+class EntranceError(APIError, ValueError):
+    """A plugin's message entrance declaration is invalid."""
 
 
 class HTTPError(APIError):
@@ -40,3 +36,49 @@ class HTTPError(APIError):
         self.status_code = status_code
         self.message = message
         self.headers = dict(headers or {})
+
+
+def request_error(error: BaseException) -> HTTPError:
+    """Classify JSON and SSE failures without exposing internal details."""
+    import logging
+
+    import anyio
+    from pydantic import ValidationError
+    from starlette.exceptions import HTTPException
+    from starlette.requests import ClientDisconnect
+
+    from opsmesh.plugins.invocation import PluginUnavailable
+    from opsmesh.utils import flatten_exception_group
+
+    from ..attachments import AttachmentError
+
+    leaves = (
+        list(flatten_exception_group(error))
+        if isinstance(error, BaseExceptionGroup)
+        else [error]
+    )
+    for leaf in leaves:
+        if isinstance(
+            leaf, (anyio.get_cancelled_exc_class(), ClientDisconnect)
+        ):
+            raise leaf
+    if len(leaves) == 1:
+        error = leaves[0]
+    if isinstance(error, HTTPError):
+        return error
+    if isinstance(error, HTTPException):
+        return HTTPError(
+            error.status_code, str(error.detail), headers=error.headers
+        )
+    if isinstance(error, (AttachmentError, ValidationError)):
+        return HTTPError(422, "Invalid message attachments")
+    if isinstance(error, PluginUnavailable):
+        return HTTPError(503, "route is not ready")
+    if isinstance(error, TimeoutError):
+        return HTTPError(504, "request timed out")
+    if isinstance(error, PermissionError):
+        return HTTPError(403, "request is not permitted")
+    logging.getLogger(__name__).error(
+        "API request failed", exc_info=(type(error), error, error.__traceback__)
+    )
+    return HTTPError(500, "internal server error")

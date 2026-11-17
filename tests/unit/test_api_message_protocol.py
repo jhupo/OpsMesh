@@ -11,6 +11,8 @@ import pytest
 
 from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
+from opsmesh.dependencies import Dependent
+from opsmesh.dependencies.context import ContextParam
 from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
@@ -26,37 +28,44 @@ from opsmesh.plugins.channels import (
 )
 from opsmesh.plugins.channels.api import (
     APIChannel,
-    APIRouter,
     HTTPError,
-    IdentitySettings,
+    MessageEntrances,
     MessageRequest,
     Settings,
-    routing,
+    entrances,
 )
+from opsmesh.plugins.channels.api.entrances import MessageEntrance
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.utils import flatten_exception_group
+from tests.fixtures.http_identity import protocol_caller
 
 
 class ProtocolHarness:
     def __init__(self, monkeypatch):
-        self.router = APIRouter()
+        self.router = MessageEntrances()
         self.owners = {}
+        self.channels = {}
         monkeypatch.setenv("MESSAGE_TOKEN", "secret")
         monkeypatch.setenv("OTHER_MESSAGE_TOKEN", "other")
-        monkeypatch.setattr(routing, "_router", self.router)
+        monkeypatch.setattr(entrances, "_entrances", self.router)
         monkeypatch.setattr(registry, "get_plugin", self.owners.get)
         monkeypatch.setattr(driver_state, "_driver", Driver(Env(), Config()))
-        self.channel = APIChannel(
-            Settings(
-                enabled=False,
-                identities=(
-                    IdentitySettings(id="alice", token_ref="MESSAGE_TOKEN"),
-                    IdentitySettings(id="bob", token_ref="OTHER_MESSAGE_TOKEN"),
-                ),
-            ),
-            self.router,
+        owner = Plugin(
+            name="support",
+            module=ModuleType("support"),
+            module_name="support",
+            manager=PluginManager(),
+            status=PluginStatus.READY,
         )
+        entrance = MessageEntrance(
+            owner,
+            (),
+            Dependent.parse(call=protocol_caller, allow_types=(ContextParam,)),
+            "main",
+            "test",
+        )
+        self.channel = APIChannel(Settings(enabled=False), entrance)
 
     def bind(self, handler, owner_id="support"):
         owner = Plugin(
@@ -76,7 +85,15 @@ class ProtocolHarness:
                 handlers=[handler],
                 source=MatcherSource(plugin_id=owner_id),
             )
-            routing.message(handlers=(matcher,))
+            entrance = entrances.message(
+                handlers=(matcher,), identity=protocol_caller
+            )
+            if owner_id == "support":
+                self.channel.entrance = entrance
+            else:
+                self.channels[owner_id] = APIChannel(
+                    Settings(enabled=False), entrance
+                )
             return matcher
         finally:
             registry._current_plugin.reset(token)
@@ -85,6 +102,18 @@ class ProtocolHarness:
         owner = options.pop("owner", "support")
         token = options.pop("token", "secret")
         body = {"message": message, **options.pop("fields", {})}
+        if owner in self.channels:
+            channel = self.channels[owner]
+            await channel.startup()
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=channel.app),
+                base_url="http://test",
+            ) as client:
+                return await client.post(
+                    f"/plugins/{owner}/messages",
+                    json=body,
+                    headers={"authorization": f"Bearer {token}", **options},
+                )
         return await self.client.post(
             f"/plugins/{owner}/messages",
             json=body,
@@ -106,6 +135,8 @@ async def protocol(monkeypatch):
         try:
             yield harness
         finally:
+            for channel in harness.channels.values():
+                await channel.shutdown()
             await harness.channel.shutdown()
             matchers.clear()
             matchers.update(saved)
@@ -173,9 +204,9 @@ async def test_public_message_binding_has_one_fixed_path_and_body(protocol):
         await protocol.client.post("/plugins/support/chat")
     ).status_code == 404
     with pytest.raises(TypeError):
-        routing.message("/chat", handlers=())
+        entrances.message("/chat", handlers=())
     with pytest.raises(TypeError):
-        routing.message(handlers=(), body=MessageRequest)
+        entrances.message(handlers=(), body=MessageRequest)
 
 
 @pytest.mark.anyio
@@ -734,12 +765,12 @@ async def test_nonstream_timeout_returns_failed_envelope_after_cleanup(
 async def test_sse_uses_the_same_request_timeout_as_json(protocol):
     protocol.channel.settings = protocol.channel.settings.model_copy(
         update={
-            "request_timeout_seconds": 0.001,
+            "request_timeout_seconds": 0.02,
         }
     )
 
     async def answer(matcher: Matcher):
-        await anyio.sleep(0.01)
+        await anyio.sleep_forever()
         await matcher.finish("answer")
 
     protocol.bind(answer)

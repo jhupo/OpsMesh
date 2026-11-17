@@ -3,19 +3,11 @@
 from __future__ import annotations
 
 from .adapter import DingTalkAdapter
-from .channel import (
-    CLOSED,
-    CONNECTING,
-    DISCONNECTED,
-    FAILED,
-    READY,
-    DingTalkChannel,
-)
+from .channel import DingTalkChannel
 from .config import (
     DingTalkConnectionSettings,
     DingTalkSettings,
 )
-from .connections import get_adapter
 from .errors import (
     DingTalkConfigurationError,
     DingTalkError,
@@ -29,9 +21,6 @@ from .events import (
 )
 
 __all__ = [
-    "CLOSED",
-    "CONNECTING",
-    "DISCONNECTED",
     "DingTalkAdapter",
     "DingTalkChannel",
     "DingTalkConfigurationError",
@@ -42,8 +31,5 @@ __all__ = [
     "DingTalkProtocolError",
     "DingTalkSendError",
     "DingTalkSettings",
-    "FAILED",
-    "READY",
-    "get_adapter",
     "parse_callback",
 ]

@@ -18,16 +18,31 @@ chat = on_message(priority=10, block=True)
 async def answer(matcher: Matcher) -> None:
     await matcher.finish("Ready.")
 
-channels.api.message(handlers=(chat,))
+channels.api.message(handlers=(chat,), identity=resolve_user)
 ```
 
 The host allowlist uses `opsmesh.plugins.channels`. The source lives directly in
 `packages/channels/src/`; setuptools maps it to the installed namespace.
 
-API owns its FastAPI application, token authentication and listener, configured
-under `config.api`. FastAPI Depends authenticates requests; handlers run through
-framework Events, Messages, UserContext, Matchers and Dependent. Native Starlette
-responses are used, with managed cleanup for streamed dependency resources.
+API owns a FastAPI listener per consumer connection, configured under
+`dependencies.channels.api.<name>`. Consumers provide `identity=resolve_user`
+on their message binding. The resolver uses framework `Context()` / `Depends()`
+and returns `UserContext`; messages and attachment transfers share this resolver.
+Channels has no token directory or business permission policy. An explicitly
+anonymous identity is allowed. Handlers use framework Events, Messages, Matchers
+and Dependent. Each connection stops and restarts with its owning plugin.
+
+```json
+{"dependencies": {"channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}}}
+```
+
+`resolve_user` is a consumer-defined function, not a channels export. It may
+receive `Annotated[InstanceOf[Request], Context()]` and resolve the caller using
+the consumer's authentication system. Raise `channels.api.HTTPError` to reject
+a request. No identity is read from the message body. Different listeners must
+use different sockets; omission of the API connection leaves its binding dormant.
+QQ/DingTalk platform user identities remain available; business groups and roles
+are not inferred from chat IDs. SDK protocol authentication remains enabled.
 
 QQ uses Tencent's qqbot-agent-sdk==1.2.2 under config.qq.
 Consumer plugins declare accounts; the native SDK manages tokens, Gateway
@@ -71,7 +86,7 @@ chat = on_message(priority=10, block=True)
 async def answer(channel: Channel, event: Event):
     await channel.send(event, "Received: " + event.get_plaintext())
 
-channels.api.message(handlers=(chat,))
+channels.api.message(handlers=(chat,), identity=resolve_user)
 ```
 
 The only business message endpoint is `POST /plugins/{plugin_id}/messages`.
@@ -308,5 +323,55 @@ Plugins choose their presentation before calling `Matcher.send`,
 `Matcher.finish`, or `channel.call("stream", ...)`. Channels validates messages
 once at the send boundary, checks platform restrictions, and performs transport
 I/O. It does not select artifacts, convert model results, silently downgrade
-formats, or retry uncertain sends. HTTP route declarations and message entrances
-share ownership tracking but have distinct contracts.
+formats, or retry uncertain sends. Each plugin binds existing framework matchers
+to one fixed message entrance. FastAPI handles HTTP routing.
+
+
+DingTalk service APIs use `alibabacloud_dingtalk==2.2.67` asynchronous
+clients for tokens, groups, robot messages, attachment links and cards.
+`dingtalk-stream` handles incoming protocol messages and acknowledgements.
+Session webhooks, legacy media uploads and cancellable Stream admission retain
+HTTP transport because the pinned SDKs do not provide equivalent asynchronous
+operations. SDK automatic retries are disabled for delivery operations.
+
+
+Robot connection ownership, readiness and deduplication live in `channel.py`.
+QQ and DingTalk senders share message preparation from `sending.py`; their
+`media.py` modules contain protocol conversion functions without per-send
+wrapper objects. QQ group and guild operations share `qq/operations.py`.
+Import `QQOperations` from that module for direct operation access. Connection
+state constants are defined in `opsmesh.plugins.channels.channel`.
+
+
+### Connection and request lifecycle
+
+`RobotAdapter` shares declaration ownership, callback admission, startup and
+shutdown for QQ and DingTalk. Protocol modules retain native event parsing,
+ACKs and SDK operations. Inbound `ready` is separate from `replies_available`:
+disconnecting intake does not discard accepted events or close their reply
+client. Shutdown drains or cancels accepted work before closing outbound
+resources. Plugin generation checks remain in force.
+
+QQ private messages and explicit group mentions satisfy `to_me`; ordinary
+group messages do not. Consumers choose group listening through framework rules.
+
+HTTP body ingestion and dispatch share `request_timeout_seconds`, including
+standard JSON and SSE messages. Upload ingestion also has this timeout. JSON
+and SSE use the same safe error classification; an error after SSE begins is
+reported as an error frame. Request cancellation and client disconnects release
+admission and handler dependencies.
+
+
+### Native HTTP integration
+
+For additional HTTP endpoints, use `channels.api.get_app()` during the consumer
+`on_started` callback and mount a native FastAPI router or sub-application. The consuming
+plugin owns authentication, request admission, cleanup and removal on shutdown
+for those routes. They do not inherit message authentication or framework
+dispatch. Conversation commands use the fixed message entrance instead.
+
+Message bindings do not create additional matchers or dynamic HTTP routes.
+Stopping a consumer makes its entrance unavailable; revoking it removes the
+binding without restarting the shared listener. Robot dependency configuration
+is validated by the corresponding adapter, with lifecycle ownership registered
+once per consuming plugin and protocol.

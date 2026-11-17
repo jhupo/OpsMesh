@@ -66,21 +66,30 @@ def operation_response(response: httpx.Response) -> JsonValue:
         else None
     )
     if not 200 <= response.status_code < 300 or code not in (None, 0, "0"):
-        safe_code = str(code or "unknown")
-        if re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", safe_code) is None:
-            safe_code = "unknown"
-        request_id = response.headers.get(
-            "x-acs-request-id"
-        ) or response.headers.get("x-tps-trace-id")
-        if (
-            request_id
-            and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", request_id) is None
-        ):
-            request_id = None
-        error_type = OperationError
-        if response.status_code in (401, 403):
-            error_type = OperationPermissionDenied
-        elif response.status_code == 429:
-            error_type = OperationRateLimited
-        raise error_type(response.status_code, safe_code, request_id)
+        raise operation_error(
+            response.status_code,
+            code,
+            response.headers.get("x-acs-request-id")
+            or response.headers.get("x-tps-trace-id"),
+        )
     return data
+
+
+def operation_error(
+    status: int, code: object, request_id: object = None
+) -> OperationError:
+    """Normalize safe vendor identifiers after transport-specific decoding."""
+    safe_code = str(code or "unknown")
+    if re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", safe_code) is None:
+        safe_code = "unknown"
+    if (
+        not isinstance(request_id, str)
+        or re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", request_id) is None
+    ):
+        request_id = None
+    error_type = OperationError
+    if status in (401, 403):
+        error_type = OperationPermissionDenied
+    elif status == 429:
+        error_type = OperationRateLimited
+    return error_type(status, safe_code, request_id)

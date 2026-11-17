@@ -18,9 +18,7 @@ from opsmesh.plugins.manager import PluginManager
 
 driver_state.set_driver(Driver(Env(), Config(command_start={"/", "!"})))
 for module, values in {
-    "opsmesh.plugins.channels": {"api": {"identities": [
-        {"id": "smoke-user", "token_ref": "SMOKE_TOKEN"}
-    ]}},
+    "opsmesh.plugins.channels": {},
     "example_chat": {
         "model": "gpt-4o-mini",
         "reasoning": {"effort": "medium"},
@@ -28,7 +26,9 @@ for module, values in {
 }.items():
     manager = PluginManager(
         [module], config=values, dependencies=(
-            {"channels": {"qq": {"primary": {"app_id": "12345", "secret_ref": "QQ_TEST_SECRET"}}}}
+            {"channels": {"qq": {"primary": {
+                "app_id": "12345", "secret_ref": "QQ_TEST_SECRET"
+            }}}}
             if module == "example_chat" else {}
         ),
     )
@@ -52,7 +52,6 @@ try:
 finally:
     registry._current_plugin.reset(token)
 plugin.config_values = saved_values
-from opsmesh.plugins.channels.qq import connections
 assert "qq" not in driver_state.get_driver().adapters
 owned_startups = [
     entry
@@ -61,19 +60,18 @@ owned_startups = [
 ]
 assert len(owned_startups) == 1, owned_startups
 
-from opsmesh.plugins.channels.api import get_router
+from opsmesh.plugins.channels.api import get_entrances
 
 routes = [
     route
-    for route in get_router().registrations
+    for route in get_entrances().entries
     if route.installation_id == "example_chat"
 ]
 assert len(routes) == 1, routes
-route = next(item for item in routes if item.relative_path == "/messages")
-assert route.method == "POST"
+route = routes[0]
+
 assert route.path == "/plugins/example_chat/messages"
 assert route.active is False, "the route must wait for plugin readiness"
-assert route.body_model.__name__ == "MessageRequest"
 assert route.message_handlers
 assert not hasattr(route, "matcher")
 
@@ -124,13 +122,14 @@ token = registry._current_plugin.set(plugin)
 try:
     asyncio.run(chat_connections.connect_mcp())
     for entry in driver_state.get_driver()._lifespan._startup_funcs:
-        if entry.plugin is plugin and entry.func.__module__ == "opsmesh.plugins.channels.lifecycle.consumers":
+        if (entry.plugin is plugin and entry.func.__module__
+                == "opsmesh.plugins.channels.lifecycle.consumers"):
             asyncio.run(entry.func())
 finally:
     registry._current_plugin.reset(token)
 import runpy
 scenario = runpy.run_path("tests/fixtures/chat_scenario.py")["run_scenario"]
-scenario(plugin, routes, connections)
+scenario(plugin, routes)
 """
 
 

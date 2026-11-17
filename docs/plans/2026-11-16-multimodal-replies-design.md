@@ -452,7 +452,7 @@ conversation_support 仅共享仓库内两个示例的代码。生产智能体�
 - Deliverables 位于智能体示例的 files.py；SDK 输出解析、产物持久化、格式选择和缓冲由示例负责。
 - channels 的 sending.py 做公共预检，各平台做协议限制校验和编码。完整消息不再经过多层重复规范化。
 - HTTP 的 server.py、requests.py 位于 api/；MessageExchange 负责一次消息请求，MessageOutput 负责消息编码与预算，响应对象负责实际 ASGI 写出。
-- 普通 HTTPRoute 与 MessageRoute 分别保存所需契约，共用归属、路由冲突和撤销机制。
+- HTTP 只保留固定消息入口绑定，由 FastAPI 路由，框架 Matcher 处理消息和命令；额外 HTTP 接口由调用插件通过原生 FastAPI 管理。
 - 文件预算检查通过后才提交下载缓存。内容预算在 JSON/SSE 中使用相同口径，附件字节另有限额。
 - JSON/SSE 使用相同执行期限，流使用空闲期限，网络请求使用协议客户端期限，不再给机器人文本块硬编码整体 60 秒上限。
 - 有界队列只让可执行的会话队首占用工作槽；QQ、钉钉共用事件消费代码。

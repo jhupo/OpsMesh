@@ -31,7 +31,13 @@ async def test_bot_output_omits_structured_data_without_turning_it_into_text():
             MessageSegment.structured({"session_id": "session-123"}),
         ]
     )
-    assert await prepare(message, AttachmentCollection(), 2000) == [
+    prepared = await prepare(
+        message,
+        AttachmentCollection(),
+        2000,
+        supported=frozenset({"text", "data"}),
+    )
+    assert prepared.parts == [
         "Selected session",
     ]
 
@@ -52,7 +58,12 @@ async def test_structured_output_requires_readable_content_and_one_data_segment(
     segments,
 ):
     with pytest.raises(ValueError):
-        await prepare(Message(segments), AttachmentCollection(), 2000)
+        await prepare(
+            Message(segments),
+            AttachmentCollection(),
+            2000,
+            supported=frozenset({"text", "data"}),
+        )
 
 
 @pytest.mark.parametrize(
@@ -98,7 +109,10 @@ async def test_bot_stream_without_native_support_rejects_and_closes_source(
             raw={},
         )
     channel = SimpleNamespace(
-        self_id="bot", ready=True, settings=SimpleNamespace(card=None)
+        self_id="bot",
+        ready=True,
+        replies_available=True,
+        settings=SimpleNamespace(card=None),
     )
     adapter._declared = {"bot": channel}
     stages = []

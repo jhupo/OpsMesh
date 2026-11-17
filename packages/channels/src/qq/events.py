@@ -103,6 +103,7 @@ class QQMessageEvent(Event):
     event_id: str
     timestamp: str | int | None = None
     content: str
+    to_me: bool = False
     message: Message | None = None
     attachments: AttachmentCollection = Field(
         default_factory=AttachmentCollection, exclude=True
@@ -145,8 +146,8 @@ class QQMessageEvent(Event):
         )
 
     def is_tome(self) -> bool:
-        """QQ message events are always delivered to this bot."""
-        return True
+        """Identify private messages and explicit mentions of this bot."""
+        return self.to_me
 
     @property
     def group_ids(self) -> tuple[str, ...]:
@@ -265,6 +266,7 @@ def parse_callback(
         event_id=event_id if isinstance(event_id, str) else message_id,
         timestamp=timestamp,
         content=content,
+        to_me=event_type in {C2C_MESSAGE, GROUP_MESSAGE},
         message=message,
         attachments=attachments,
         raw=payload,

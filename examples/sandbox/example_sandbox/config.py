@@ -2,11 +2,12 @@
 
 from typing import Literal
 
+from conversation_support.identity import HTTPIdentitySettings
 from openai.types.shared import Reasoning
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class SandboxSettings(BaseModel):
+class SandboxSettings(HTTPIdentitySettings):
     """Configure the native model without mirroring SDK sandbox options."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

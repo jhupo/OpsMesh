@@ -18,8 +18,9 @@ from starlette.requests import Request
 
 from opsmesh.drivers import base as driver_state
 from opsmesh.plugins.channels import UserContext
-from opsmesh.plugins.channels.api import APIChannel, APIRouter, Settings
+from opsmesh.plugins.channels.api import APIChannel, Settings
 from opsmesh.plugins.channels.api.adapter import APIAdapter
+from opsmesh.plugins.channels.api.exchange import MessageExchange
 from opsmesh.plugins.model import PluginStatus
 
 
@@ -29,8 +30,8 @@ class MessageHarness:
         self.caller = caller
         self.conversation_id = str(uuid4())
         self.channel = APIChannel(
-            Settings(identities=[{"id": "test", "token_ref": "TEST_TOKEN"}]),
-            APIRouter(),
+            Settings(),
+            registration,
         )
         self.channel.adapter = APIAdapter(driver_state.get_driver())
 
@@ -68,11 +69,15 @@ class MessageHarness:
             },
             receive,
         )
-        response = await self.channel._invoke_request(
+
+        async def resolve(request, stack):
+            return options.get("owner", self.caller)
+
+        self.channel.resolve_caller = resolve
+        response = await MessageExchange(
+            self.channel,
             self.registration,
-            request,
-            SimpleNamespace(caller=options.get("owner", self.caller)),
-        )
+        ).respond(request)
         chunks = []
 
         async def send(message):
@@ -121,7 +126,7 @@ def migrate(connection):
         namespace["upgrade"]()
 
 
-def run_scenario(plugin, routes, connections):
+def run_scenario(plugin, routes):
     from example_chat import agent as definition
     from example_chat import connections as chat_connections
     from example_chat import handlers, lifecycle
@@ -180,6 +185,7 @@ def run_scenario(plugin, routes, connections):
             message_id="message",
             event_id="event",
             content=content,
+            to_me=True,
             raw={},
         )
         outcome = await dispatch_event(
@@ -272,9 +278,9 @@ def run_scenario(plugin, routes, connections):
             api.post("/session", owner=UserContext(id="other")), 409
         )
         assert (
-            data_of(
-                await api.post("/sessions", owner=UserContext(id="other"))
-            )["sessions"]
+            data_of(await api.post("/sessions", owner=UserContext(id="other")))[
+                "sessions"
+            ]
             == []
         )
         await api.post("/use " + sid, conversation_id=other_window)
@@ -398,8 +404,7 @@ def run_scenario(plugin, routes, connections):
         with tempfile.TemporaryDirectory() as directory:
             engine = create_async_engine(
                 os.environ.get("OPSMESH_TEST_DATABASE_URL")
-                or "sqlite+aiosqlite:///"
-                + str(Path(directory) / "chat.sqlite")
+                or "sqlite+aiosqlite:///" + str(Path(directory) / "chat.sqlite")
             )
             try:
                 await verify(engine)

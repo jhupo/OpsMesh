@@ -181,9 +181,7 @@ driver = Driver(Env(), Config())
 driver_state.set_driver(driver)
 for module, values in {
     "opsmesh.plugins.filesystem": {"root": sys.argv[1]},
-    "opsmesh.plugins.channels": {"api": {"enabled": False, "identities": [
-        {"id": "smoke", "token_ref": "OPSMESH_SMOKE_TOKEN"}
-    ]}},
+    "opsmesh.plugins.channels": {},
 }.items():
     registry.register_plugin_manager(
         PluginManager([module], config=values)

@@ -1,11 +1,11 @@
 """Verify QQ Bot API v2 Gateway and message behavior."""
 
+import asyncio
 import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 
 import anyio
-import asyncio
 import httpx
 import pytest
 
@@ -120,6 +120,7 @@ def test_gateway_notice_uses_sequence_when_outer_id_is_absent():
 @pytest.mark.anyio
 async def test_native_token_cache_is_shared_with_gateway(monkeypatch):
     from qqbot_agent_sdk.api_client import API_BASE, TOKEN_URL
+
     from opsmesh.plugins.channels.qq.client import QQClient
 
     calls = []
@@ -223,7 +224,10 @@ async def test_stream_stop_before_start_never_opens_network():
 
 
 @pytest.mark.anyio
-async def test_adapter_admits_gateway_event_once(monkeypatch):
+@pytest.mark.parametrize(
+    "event_type", ["C2C_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE"]
+)
+async def test_adapter_admits_gateway_event_once(monkeypatch, event_type):
     monkeypatch.setenv("QQ_SECRET", SECRET)
     adapter = make_adapter(enabled=False, concurrency=1)
     channel = declare(adapter, FakePlugin("support"))
@@ -240,11 +244,16 @@ async def test_adapter_admits_gateway_event_once(monkeypatch):
     )
     async with adapter.driver.lifespan():
         await adapter.startup()
-        await adapter.accept_event(channel, message_payload())
+        await adapter.accept_event(channel, message_payload(event_type))
         with anyio.fail_after(2):
             while not dispatched:
                 await anyio.sleep(0)
-        assert dispatched[0][1].get_plaintext() == "hello"
+        _, event, caller = dispatched[0]
+        assert event.get_plaintext() == "hello"
+        assert caller.groups == frozenset()
+        assert caller.roles == frozenset()
+        if event_type == "GROUP_AT_MESSAGE_CREATE":
+            assert event.group_id == "group-1"
         await adapter.shutdown()
 
 
@@ -414,6 +423,7 @@ async def test_stream_cancellation_closes_sdk_session(monkeypatch):
 @pytest.mark.anyio
 async def test_native_api_preserves_safe_operation_errors(monkeypatch, caplog):
     from qqbot_agent_sdk import QQApiClient
+
     from opsmesh.plugins.channels.operations import OperationPermissionDenied
     from opsmesh.plugins.channels.qq.client import QQClient
 
@@ -438,3 +448,18 @@ async def test_native_api_preserves_safe_operation_errors(monkeypatch, caplog):
         assert caught.value.status == 403
         assert caught.value.code == "123"
         assert "private-response-secret" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "event_type, addressed",
+    [
+        ("C2C_MESSAGE_CREATE", True),
+        ("GROUP_AT_MESSAGE_CREATE", True),
+        ("GROUP_MESSAGE_CREATE", False),
+    ],
+)
+def test_native_message_target_controls_to_me(event_type, addressed):
+    event = parse_callback(
+        message_payload(event_type), connection_id="qq:owner:bot"
+    )
+    assert event.is_tome() is addressed

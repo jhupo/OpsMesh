@@ -50,7 +50,7 @@ API 上传是有期限的内存缓存，不是文件资产中心：默认单文�
 缓存满时拒绝新增；过期、停机、重启后引用失效。多进程部署需保证上传与引用落到同一实例。
 这不影响已经写入 SDK 历史或沙箱工作区的内容。
 
-限制配置放在 `channels.config.api.attachments`、`qq.attachments` 或
+限制配置放在 消费插件的 `dependencies.channels.api.<name>.attachments`、`qq.attachments` 或
 `dingtalk.attachments`，均由所属协议校验。下载默认超时 30 秒，限制实际读取字节数，
 不跟随重定向，只允许 HTTPS 官方媒体域名，不向媒体下载地址转发 API 凭据。
 API 文件正文仍有服务端边界限制；附件大小与普通 JSON 请求大小分别配置。
@@ -106,7 +106,7 @@ sampleAudio / sampleVideo；群聊与私聊分别走 groupMessages/send 与 oToM
 企业机器人需要开通对应单聊、群聊及素材接口权限。纯文本继续使用现有 sessionWebhook。
 
 协议转换位于各通道的 sending.py / media.py；连接、接收和事件分发留在 adapter.py。
-现有异步客户端承接 HTTP，框架和 execution 不新增发送引擎。当前锁定的 dingtalk-stream
+服务端消息和卡片请求由 alibabacloud_dingtalk 原生异步客户端执行，框架和 execution 不新增发送引擎。当前锁定的 dingtalk-stream
 上传方法使用无 timeout 参数的同步 requests，媒体路径因此沿用相同官方协议的异步调用，
 没有套用可遗留后台线程的同步包装。QQ 接收使用官方 Bot API v2 Gateway WebSocket，
 出站媒体调用官方 OpenAPI 的 file_data/file_info 流程；WebSocket 连接和 OpenAPI

@@ -21,7 +21,6 @@ class ChannelsSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    api: Any = None
     qq: Any = None
     dingtalk: Any = None
 
@@ -33,16 +32,17 @@ def protocol_settings(name: str) -> Any:
 
 
 class ChannelConnections(BaseModel):
-    """Named robot accounts belonging to one consuming plugin."""
+    """Named HTTP listeners and robot accounts owned by one plugin."""
 
     model_config = ConfigDict(
         extra="forbid", frozen=True, hide_input_in_errors=True
     )
 
+    api: dict[str, SerializeAsAny[BaseModel]] = Field(default_factory=dict)
     qq: dict[str, SerializeAsAny[BaseModel]] = Field(default_factory=dict)
     dingtalk: dict[str, SerializeAsAny[BaseModel]] = Field(default_factory=dict)
 
-    @field_validator("qq", "dingtalk", mode="before")
+    @field_validator("api", "qq", "dingtalk", mode="before")
     @classmethod
     def validate_accounts(
         cls, values: dict, info: ValidationInfo
@@ -58,10 +58,13 @@ class ChannelConnections(BaseModel):
 
         protocol = info.field_name
         module = import_module(f"{__package__}.{protocol}.config")
-        schema = (
-            module.QQConnectionSettings
-            if protocol == "qq"
-            else module.DingTalkConnectionSettings
+        schema = getattr(
+            module,
+            {
+                "api": "Settings",
+                "qq": "QQConnectionSettings",
+                "dingtalk": "DingTalkConnectionSettings",
+            }[protocol],
         )
         accounts: set[str] = set()
         parsed = {}
@@ -77,6 +80,9 @@ class ChannelConnections(BaseModel):
                 raise ValueError(
                     f"{protocol}.{name}: invalid {fields}"
                 ) from None
+            if protocol == "api":
+                parsed[name] = settings
+                continue
             account = (
                 settings.app_id if protocol == "qq" else settings.client_id
             )

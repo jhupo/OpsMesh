@@ -41,3 +41,23 @@ logs without download codes, tokens, response bodies, or signed URLs.
 
 The original file must be resent to confirm the real robot download after
 deployment. No unsolicited robot test message was sent.
+
+## Follow-up — 2026-11-17
+
+The user resent the file after enabling the robot plugin. Origin diagnostics
+identified an HTTP URL from `lippi-space-sh.oss-cn-shanghai.aliyuncs.com`.
+The existing HTTPS-only check rejected that URL before downloading it; the
+Markdown MIME type was valid. Redirect handling alone did not fix this case.
+
+The DingTalk adapter now upgrades native OSS bucket HTTP URLs to HTTPS before
+calling the shared downloader, preserving the signed path and query verbatim.
+Unknown HTTP origins, embedded credentials, and nonstandard ports are not
+upgraded. The shared downloader remains HTTPS-only. Rejection logs include only
+scheme, host, and port, without paths, signatures, or credentials.
+
+All 39 attachment tests passed. The server validated TLS for the observed host.
+After deployment, the user's resend at 01:35:44 UTC passed attachment reading
+and sandbox upload storage and reached successful model calls. Final agent
+response delivery was still in progress when this evidence was recorded.
+This follow-up was applied as a server plugin hotfix after v0.5.6 publication;
+the existing v0.5.6 release artifacts were not modified.

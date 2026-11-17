@@ -7,3 +7,4 @@ websockets==16.1.1
 yarl>=1.7.2,<2.0.0
 fastapi==0.162.5
 qqbot-agent-sdk==1.2.2
+alibabacloud_dingtalk==2.2.67

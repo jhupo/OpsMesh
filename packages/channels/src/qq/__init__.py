@@ -3,16 +3,8 @@
 from __future__ import annotations
 
 from .adapter import QQAdapter
-from .channel import (
-    CLOSED,
-    CONNECTING,
-    DISCONNECTED,
-    FAILED,
-    READY,
-    QQChannel,
-)
+from .channel import QQChannel
 from .config import QQConnectionSettings, QQSettings
-from .connections import get_adapter
 from .errors import (
     QQConfigurationError,
     QQError,
@@ -28,15 +20,10 @@ from .events import (
     QQNoticeEvent,
     parse_callback,
 )
-from .groups import QQGroupMuteChange, QQGroupOperations
-from .guilds import QQGuildOperations
+from .operations import QQGroupMuteChange, QQOperations
 
 __all__ = [
     "C2C_MESSAGE",
-    "CLOSED",
-    "CONNECTING",
-    "DISCONNECTED",
-    "FAILED",
     "GROUP_MESSAGE",
     "GROUP_MESSAGE_CREATE",
     "GROUP_JOIN_REQUEST",
@@ -46,14 +33,11 @@ __all__ = [
     "QQConnectionSettings",
     "QQError",
     "QQGroupMuteChange",
-    "QQGroupOperations",
-    "QQGuildOperations",
+    "QQOperations",
     "QQMessageEvent",
     "QQNoticeEvent",
     "QQProtocolError",
     "QQSendError",
     "QQSettings",
-    "READY",
-    "get_adapter",
     "parse_callback",
 ]

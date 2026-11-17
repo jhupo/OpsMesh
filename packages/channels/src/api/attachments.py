@@ -1,6 +1,7 @@
 """Authenticated, bounded uploads scoped to a consuming plugin and user."""
 
 import time
+from contextlib import AsyncExitStack
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Annotated
 from urllib.parse import quote
@@ -16,15 +17,15 @@ from ..attachments import (
     AttachmentError,
     AttachmentSettings,
 )
+from ..context import UserContext
 from ..sending import prepare_attachment
-from .auth import Authenticator, Principal
-from .errors import HTTPError
-from .requests import read_body
+from .errors import HTTPError, request_error
+from .requests import RequestResources, RequestScope, read_body
 from .responses import json_response
 
 if TYPE_CHECKING:
     from .channel import APIChannel
-    from .events import HTTPEvent
+    from .events import APIMessageEvent
 
 
 @dataclass(frozen=True)
@@ -114,40 +115,52 @@ class AttachmentUploads:
 def mount(channel: "APIChannel") -> None:
     """Expose file transfer separately from plugin-owned chat operations."""
 
-    async def authorize(request: Request) -> Principal:
-        from opsmesh.plugins.registry import get_plugin
-
-        if not channel.started or channel._authenticator is None:
-            raise HTTPError(503, "channel is not ready")
-        principal = channel._authenticator.authenticate(request)
-        Authenticator.authorize(principal, "invoke")
-        plugin = get_plugin(request.path_params["plugin_id"])
-        if plugin is None or not plugin.ready:
-            raise HTTPError(404, "Plugin not available")
-        return principal
+    async def caller_context(request: Request):
+        channel.check_request(request)
+        stack = AsyncExitStack()
+        resources = RequestResources(stack)
+        scope = RequestScope(
+            channel.entrance.owner,
+            stack,
+            channel.settings.request_timeout_seconds,
+        )
+        error = None
+        try:
+            with scope.activate(), scope.budget():
+                caller = await channel.resolve_caller(request, stack)
+                yield caller
+        except BaseException as caught:
+            error = caught
+            raise request_error(caught) from caught
+        finally:
+            with scope.activate():
+                await resources.close(error)
 
     async def upload(
-        request: Request, principal: Annotated[Principal, Depends(authorize)]
+        request: Request,
+        caller: Annotated[
+            UserContext, Depends(caller_context, scope="function")
+        ],
     ) -> Response:
-        with_scope = (request.path_params["plugin_id"], principal.caller.id)
-        try:
-            content = await read_body(
-                request, channel.settings.attachments.max_file_bytes
-            )
-            attachment = Attachment.create(
-                request.query_params.get("name", "attachment"),
-                request.headers.get("content-type", "application/octet-stream"),
-                len(content),
-            )
-            channel.uploads.put(with_scope, attachment, content)
-        except AttachmentError as error:
-            raise HTTPError(422, str(error)) from None
+        with_scope = (request.path_params["plugin_id"], caller.id)
+        content = await read_body(
+            request, channel.settings.attachments.max_file_bytes
+        )
+        attachment = Attachment.create(
+            request.query_params.get("name", "attachment"),
+            request.headers.get("content-type", "application/octet-stream"),
+            len(content),
+        )
+        channel.uploads.put(with_scope, attachment, content)
         return json_response(asdict(attachment), status_code=201)
 
     async def download(
-        request: Request, principal: Annotated[Principal, Depends(authorize)]
+        request: Request,
+        caller: Annotated[
+            UserContext, Depends(caller_context, scope="function")
+        ],
     ) -> Response:
-        scope = (request.path_params["plugin_id"], principal.caller.id)
+        scope = (request.path_params["plugin_id"], caller.id)
         upload = channel.uploads.get(
             scope, request.path_params["attachment_id"]
         )
@@ -171,7 +184,7 @@ def mount(channel: "APIChannel") -> None:
 
 
 async def prepare_message(
-    channel: "APIChannel", event: "HTTPEvent", message: Message
+    channel: "APIChannel", event: "APIMessageEvent", message: Message
 ) -> tuple[list[dict], list[tuple[Attachment, bytes]]]:
     """Prepare download references without publishing files to the cache."""
     if not event.installation_id:

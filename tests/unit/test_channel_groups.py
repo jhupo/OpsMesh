@@ -6,7 +6,6 @@ from types import ModuleType, SimpleNamespace
 import httpx
 import pytest
 
-
 from opsmesh.plugins.channels import (
     OperationPermissionDenied,
     OperationRateLimited,
@@ -21,11 +20,10 @@ from opsmesh.plugins.channels.operations import operation_response
 from opsmesh.plugins.channels.qq.client import QQClient
 from opsmesh.plugins.channels.qq.config import QQConnectionSettings, QQSettings
 from opsmesh.plugins.channels.qq.events import QQNoticeEvent, parse_callback
-from opsmesh.plugins.channels.qq.groups import (
+from opsmesh.plugins.channels.qq.operations import (
     QQGroupMuteChange,
-    QQGroupOperations,
+    QQOperations,
 )
-from opsmesh.plugins.channels.qq.guilds import QQGuildOperations
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import plugin_scope
@@ -114,12 +112,10 @@ async def test_qq_guild_operation_wire_contract(
         settings = QQSettings()
         account = SimpleNamespace(
             self_id="owner:qq",
-            settings=QQConnectionSettings(
-                app_id="123", secret_ref="QQ_SECRET"
-            ),
+            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
             protocol=settings,
         )
-        groups = QQGuildOperations(QQClient(settings, http), account, "secret")
+        groups = QQOperations(QQClient(settings, http), account, "secret")
         assert await getattr(groups, operation)(**arguments) is None
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
@@ -224,12 +220,10 @@ async def test_qq_group_operation_wire_contract(
         settings = QQSettings()
         account = SimpleNamespace(
             self_id="owner:qq",
-            settings=QQConnectionSettings(
-                app_id="123", secret_ref="QQ_SECRET"
-            ),
+            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
             protocol=settings,
         )
-        groups = QQGroupOperations(QQClient(settings, http), account, "secret")
+        groups = QQOperations(QQClient(settings, http), account, "secret")
         assert await getattr(groups, operation)(**arguments) is None
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
@@ -292,12 +286,16 @@ async def test_dingtalk_group_operation_wire_contract(
 ):
     monkeypatch.setenv("DT_SECRET", "secret")
     requests = []
+    expected = {
+        "query_open_group_base_info": {"success": True},
+        "query_group_member": {"groupMembers": []},
+    }.get(operation, {})
 
     def respond(request):
         if request.url.path.endswith("accessToken"):
             return httpx.Response(200, json={"accessToken": "token"})
         requests.append(request)
-        return httpx.Response(200, json={"success": True})
+        return httpx.Response(200, json=expected)
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
@@ -308,9 +306,12 @@ async def test_dingtalk_group_operation_wire_contract(
                 client_id="app", client_secret_ref="DT_SECRET"
             )
         )
-        assert await getattr(DingTalkGroups(client, account), operation)(
-            **arguments
-        ) == {"success": True}
+        assert (
+            await getattr(DingTalkGroups(client, account), operation)(
+                **arguments
+            )
+            == expected
+        )
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
     assert request.headers["x-acs-dingtalk-access-token"] == "token"
@@ -488,3 +489,6 @@ async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
     )
     assert queued[0].caller is None
     assert acknowledgements[0]["headers"]["messageId"] == "frame"
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

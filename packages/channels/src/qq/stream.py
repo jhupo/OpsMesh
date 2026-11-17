@@ -88,8 +88,6 @@ class QQStream:
             self.channel.mark_failed("QQ SDK connection failed")
         finally:
             self._scope = None
-            if self.channel.ready:
-                self.adapter.stream_disconnected(self.channel)
             self.adapter.stream_finished(self.channel)
             self._finished.set()
 
