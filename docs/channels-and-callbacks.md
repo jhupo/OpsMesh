@@ -50,7 +50,7 @@ API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 Me
 }
 ```
 
-`config.http_token_ref` 和 `config.http_user_id` 是 chat/sandbox 示例自己的认证配置，其他插件自行定义身份策略。channels 只校验 `dependencies.channels.api.<连接名>` 的传输参数。连接名默认 `main`，与 `channels.api.message(connection="main", handlers=(...), identity=resolve_user)` 一致。
+示例的 `config.http_token_ref` 和 `config.http_user_id` 只属于 chat/sandbox 自己的身份解析配置，其他插件自行定义身份策略。channels 只校验 `dependencies.channels.api.<连接名>` 的传输参数。连接名默认 `main`，与 `channels.api.message(connection="main", handlers=(...), identity=resolve_user)` 一致。
 
 每个 HTTP 连接拥有独立监听器及所属插件的消息入口；不同连接使用不同端口，不隐式共享端口。未配置 HTTP 连接时不监听，已声明的消息绑定可以保持未启用。配置了连接但未绑定处理器及身份解析函数时启动失败。插件停止会关闭自己的监听器，再启用时按当前配置重建。
 
@@ -79,7 +79,7 @@ QQ 使用官方 Gateway WebSocket，钉钉使用官方 Stream 长连接；两者
 ```
 
 QQ 使用 `dependencies.channels.qq.<连接名称>`，账号字段为 `app_id`、`secret_ref`。
-使用方只需 `require("channels")`，不定义机器人 Settings，也不调用 `declare_connection`。
+使用方只需 `require("channels")`，机器人连接参数直接放在该插件的依赖配置中。
 连接归属当前使用方；停止时关闭并移除，重新启用按当前配置重建。不同插件声明同一
 机器人账号会报出已有归属，不隐式共享或创建第二条连接。
 
@@ -165,7 +165,9 @@ async def chat_reply(matcher: Matcher, event: Event) -> None:
 channels.api.message(handlers=(help_command, chat_message), identity=resolve_user)
 ```
 
-这里省略 path 是目标统一消息入口的接口；当前源码仍要求显式 path，实施时需要同步修改 channels、chat/sandbox 示例和客户端，不保留每个业务的旧 REST 路由兼容分支。
+消息入口不提供业务 path，固定使用 `POST /plugins/{plugin_id}/messages`。
+调用方按统一消息协议提交内容，消费插件提供 `identity` 解析器；请求随后转换为框架
+Event、Message 或命令并进入统一分发，不保留每个业务的 REST 路由。
 
 消息请求是 `{"message": "hello"}` 或有序消息段数组。插件不再通过 `body` 子类扩展业务 HTTP 字段；需要业务参数时使用命令参数、消息段或插件自己的数据库对象。`APIMessageEvent` 的类型固定为 message，包括纯附件输入；`payload` 保留 channels 的验证模型。EventMessage、EventPlainText 和 CommandArg 使用同一份 Message。
 

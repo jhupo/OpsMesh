@@ -24,7 +24,7 @@
 
 ```bash
 sudo bash install.sh \
-  --archive opsmesh-0.5.6-linux-x86_64.tar.gz \
+  --archive opsmesh-0.5.7-linux-x86_64.tar.gz \
   --checksums SHA256SUMS
 ```
 
@@ -52,9 +52,9 @@ sudo bash install.sh \
 基础插件运行包的 `site/` 包含 channels、execution、filesystem、database、cron 及其额外依赖。knowledge 使用单独构建的完整插件运行包和预先准备的模型目录，见[发布说明](releases.md)。管理员验证校验和后，解压到独立的版本目录，例如：
 
 ```bash
-sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.5.6
-sudo tar -xzf opsmesh-plugins-0.5.6-linux-x86_64.tar.gz \
-  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.6
+sudo install -d -m 0755 /var/lib/opsmesh/plugins/official-0.5.7
+sudo tar -xzf opsmesh-plugins-0.5.7-linux-x86_64.tar.gz \
+  --strip-components=1 -C /var/lib/opsmesh/plugins/official-0.5.7
 ```
 
 host.json 只保存宿主基础配置：
@@ -76,7 +76,7 @@ host.json 只保存宿主基础配置：
 sudo systemctl stop opsmesh
 sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
   --plugin-action register --module opsmesh.plugins.filesystem \
-  --directory /var/lib/opsmesh/plugins/official-0.5.6/site
+  --directory /var/lib/opsmesh/plugins/official-0.5.7/site
 sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
   --plugin-action configure --module opsmesh.plugins.filesystem \
   --config /etc/opsmesh/filesystem.json
@@ -88,7 +88,9 @@ sudo systemctl start opsmesh
 
 filesystem.json 是 CLI 配置输入，例如 `{"root":"/var/lib/opsmesh/files"}`；配置写入 SQLite 后以数据库为准。登记的 site 中其他已安装入口点在下一次宿主准备时发现，默认允许依赖使用，不主动启动；显式禁用记录不会覆盖。
 
-需要 HTTP 入口时给 channels 保存其 API 配置，再启用入口插件。插件模型、凭据引用和端口都由插件自己定义。详见[插件配置](plugin-configuration-design.md)和[通道配置](channels-and-callbacks.md)。
+需要 HTTP 入口时，由消费插件在自己的依赖配置中声明
+`dependencies.channels.api.<name>`，并提供身份解析器；channels 只负责传输、协议转换和框架分发。
+插件模型、凭据引用和端口仍由消费插件定义。详见[插件配置](plugin-configuration-design.md)和[通道配置](channels-and-callbacks.md)。
 
 运行中的服务独占宿主数据目录；离线 CLI、检查和迁移操作需停止服务，在线入口由管理插件提供。
 

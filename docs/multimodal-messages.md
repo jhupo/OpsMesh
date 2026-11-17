@@ -11,7 +11,8 @@ QQ、钉钉仍保留协议 Event；插件使用 `event.get_message()` 读取有�
 chat 和 sandbox 示例使用低优先级 `on_message` 处理私聊与群内发给机器人的消息。
 无需 `/chat`；`/chat`、`/help`、`/session`、`/history`、`/clear` 命令优先处理。
 未识别的命令返回提示，不触发模型。API 消息入口绑定相同的命令和消息 Matcher，
-普通 HTTP 路由保留自己的业务 payload。入口写法见[通道与执行回调](channels-and-callbacks.md)。
+HTTP 入口只接受固定的消息协议，并转换为同一套框架 Event、Message 和命令；
+业务插件不定义自己的 HTTP body 或业务路由。入口写法见[通道与执行回调](channels-and-callbacks.md)。
 群会话仍按机器人连接、群、用户隔离，不自动合并成全群共享历史。
 
 QQ 解析 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE 中的 attachments；

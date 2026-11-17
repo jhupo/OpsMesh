@@ -4,12 +4,16 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+## 0.5.7 — 2026-11-17
+
 - Move HTTP listener settings to each consumer plugin's
-  `dependencies.channels.api.<name>` section. Consumer plugins must provide an
-  `identity` resolver to `channels.api.message`; channels no longer owns a
-  global token directory or business permission policy. The resolver is also
-  used for attachment uploads and downloads. QQ and DingTalk platform
-  authentication remains owned by their protocol SDK adapters.
+  `dependencies.channels.api.<name>` section. Consumer plugins provide an
+  `identity` resolver; channels owns transport, protocol conversion and
+  framework dispatch, while consumer plugins own business permissions.
+- Remove obsolete API route, authentication and routing modules. HTTP, QQ and
+  DingTalk inputs now use the same framework Event, Message and command path.
+- Release the channel lifecycle cleanup and response ownership fixes, including
+  correct hot restart ownership removal and independent response state.
 
 ## 0.5.6 — 2026-11-16
 
@@ -69,11 +73,10 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ### Upgrade notes
 
-Update `opsmesh.framework.*` imports to `opsmesh.*`, plugin module names to
-`opsmesh.plugins.<name>`, and move API listener settings from `config.http` into
-`config.api`. QQ has its own listener configuration under `config.qq` (default
-port 8081). DingTalk requires Stream mode. No legacy import aliases or old HTTP
-configuration parsing are retained.
+Update `opsmesh.framework.*` imports to `opsmesh.*` and plugin module names to
+`opsmesh.plugins.<name>`. HTTP settings now belong to the consuming plugin's
+`dependencies.channels.api.<name>` configuration. There are no legacy import
+aliases or old HTTP configuration paths.
 
 ## 0.4.0 — 2026-11-12
 
