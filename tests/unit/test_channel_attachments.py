@@ -3,6 +3,7 @@
 import json
 from functools import partial
 
+import httpx
 import pytest
 
 from opsmesh.plugins.channels.api.attachments import AttachmentUploads
@@ -318,7 +319,17 @@ def test_metadata_rejects_invalid_header_values(media_type):
 
 
 @pytest.mark.anyio
-async def test_dingtalk_media_exchanges_credentials_only_at_api(monkeypatch):
+@pytest.mark.parametrize(
+    "download_url",
+    [
+        "https://media.dingtalk.com/object",
+        "http://lippi-space-sh.oss-cn-shanghai.aliyuncs.com/path%2Ffile.md"
+        "?Signature=a%2Bb%2Fc%3D&Expires=123&response-content-type=text%2Fmarkdown",
+    ],
+)
+async def test_dingtalk_media_exchanges_credentials_only_at_api(
+    monkeypatch, download_url
+):
     import opsmesh.plugins.channels.dingtalk.attachments as media
     from opsmesh.plugins.channels.dingtalk.attachments import (
         DingTalkAttachments,
@@ -332,27 +343,32 @@ async def test_dingtalk_media_exchanges_credentials_only_at_api(monkeypatch):
 
     from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 
-    class Client(DingTalkClient):
-        def __init__(self):
-            from opsmesh.plugins.channels.dingtalk.config import (
-                DingTalkSettings,
+    def reply(request):
+        import json
+
+        calls.append(
+            (
+                str(request.url),
+                json.loads(request.content),
+                dict(request.headers),
             )
+        )
+        if request.url.path.endswith("accessToken"):
+            return httpx.Response(200, json={"accessToken": "token"})
+        return httpx.Response(200, json={"downloadUrl": download_url})
 
-            super().__init__(DingTalkSettings(), None)
+    from opsmesh.plugins.channels.dingtalk.config import DingTalkSettings
 
-        async def post_json(self, url, body, **options):
-            calls.append((url, body, options))
-            if url.endswith("accessToken"):
-                return {"accessToken": "token"}
-            return {"downloadUrl": "https://media.dingtalk.com/object"}
+    http = httpx.AsyncClient(transport=httpx.MockTransport(reply))
+    client = DingTalkClient(DingTalkSettings(), http)
 
     async def fetch(url, settings, domains):
-        assert url == "https://media.dingtalk.com/object"
+        assert url == download_url.replace("http://", "https://", 1)
         return b"file"
 
     monkeypatch.setattr(media, "download", fetch)
     reader = DingTalkAttachments(
-        Client(),
+        client,
         DingTalkConnectionSettings(
             client_id="robot", client_secret_ref="MEDIA_TEST_SECRET"
         ),
@@ -364,7 +380,8 @@ async def test_dingtalk_media_exchanges_credentials_only_at_api(monkeypatch):
         "downloadCode": "download-code",
         "robotCode": "robot",
     }
-    assert calls[1][2] == {"headers": {"x-acs-dingtalk-access-token": "token"}}
+    assert calls[1][2]["x-acs-dingtalk-access-token"] == "token"
+    await http.aclose()
 
 
 @pytest.mark.anyio
@@ -500,19 +517,58 @@ async def test_dingtalk_link_failure_is_a_safe_attachment_error(caplog):
     from opsmesh.plugins.channels.dingtalk.attachments import (
         DingTalkAttachments,
     )
+    from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
+    from opsmesh.plugins.channels.dingtalk.config import DingTalkSettings
     from opsmesh.plugins.channels.operations import OperationPermissionDenied
 
-    class Client:
+    class Client(DingTalkClient):
         async def access_token(self, connection):
-            return "private-token"
-
-        async def post_json(self, *args, **kwargs):
             raise OperationPermissionDenied(403, "Forbidden.AccessDenied")
 
     reader = DingTalkAttachments(
-        Client(), SimpleNamespace(client_id="robot"), AttachmentSettings()
+        Client(DingTalkSettings(), None),
+        SimpleNamespace(client_id="robot"),
+        AttachmentSettings(),
     )
     with pytest.raises(AttachmentError, match="403, Forbidden.AccessDenied"):
         await reader.read("private-code")
     assert "link exchange failed" in caplog.text
     assert "private" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://lippi-space-sh.oss-cn-shanghai.aliyuncs.com.evil.test/file",
+        "http://user:secret@lippi-space-sh.oss-cn-shanghai.aliyuncs.com/file",
+        "http://lippi-space-sh.oss-cn-shanghai.aliyuncs.com:8080/file",
+        "http://127.0.0.1/file",
+        "http://media.dingtalk.com/file",
+    ],
+)
+def test_dingtalk_does_not_upgrade_unrecognized_http_origins(url):
+    from opsmesh.plugins.channels.attachments.download import _validate_origin
+    from opsmesh.plugins.channels.dingtalk.attachments import (
+        _secure_download_url,
+    )
+
+    resolved = _secure_download_url(url)
+    assert resolved == url
+    with pytest.raises(AttachmentError, match="not allowed"):
+        _validate_origin(resolved, ("dingtalk.com", "aliyuncs.com"))
+
+
+def test_rejected_origin_log_omits_signed_url_and_credentials(caplog):
+    from opsmesh.plugins.channels.attachments.download import _validate_origin
+
+    with pytest.raises(AttachmentError):
+        _validate_origin(
+            "http://private-user:private-password@media.dingtalk.com/"
+            "private-path?Signature=private-signature",
+            ("dingtalk.com",),
+        )
+    assert "media.dingtalk.com" in caplog.text
+    assert "private" not in caplog.text
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

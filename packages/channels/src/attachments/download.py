@@ -1,5 +1,6 @@
 """Bound downloads from explicitly allowed vendor media domains."""
 
+import logging
 from urllib.parse import urljoin, urlsplit
 
 import anyio
@@ -9,6 +10,7 @@ from .models import AttachmentError, AttachmentSettings
 
 _MAX_REDIRECTS = 3
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+logger = logging.getLogger(__name__)
 
 
 def _validate_origin(url: str, domains: tuple[str, ...]) -> None:
@@ -30,6 +32,12 @@ def _validate_origin(url: str, domains: tuple[str, ...]) -> None:
             host == domain or host.endswith("." + domain) for domain in domains
         )
     ):
+        logger.warning(
+            "Attachment origin rejected (scheme=%r, host=%r, port=%r)",
+            parsed.scheme[:16],
+            host[:253],
+            port,
+        )
         raise AttachmentError("Attachment download origin is not allowed")
 
 

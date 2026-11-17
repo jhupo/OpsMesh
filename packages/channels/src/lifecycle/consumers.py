@@ -1,4 +1,4 @@
-"""Create consumer-owned robot connections from dependency configuration."""
+"""Create consumer-owned protocol connections from dependency configuration."""
 
 from importlib import import_module
 
@@ -21,7 +21,7 @@ def configure_connections(plugin: Plugin) -> None:
 
     async def prepare() -> None:
         settings = get_dependency_config(ChannelConnections)
-        for protocol in ("qq", "dingtalk"):
+        for protocol in ("api", "qq", "dingtalk"):
             accounts = getattr(settings, protocol)
             if accounts:
                 _configure_protocol(protocol, accounts)
@@ -31,6 +31,28 @@ def configure_connections(plugin: Plugin) -> None:
 
 def _configure_protocol(protocol: str, accounts: dict[str, BaseModel]) -> None:
     """Let the protocol validate credentials and acquire its connections."""
-    module = import_module(f"opsmesh.plugins.channels.{protocol}.connections")
+    if protocol == "api":
+        from opsmesh.plugins import get_current_plugin
+
+        from ..api import APIChannel, get_entrances
+        from ..api.errors import APIConfigurationError
+        from .hooks import transports
+
+        owner = get_current_plugin()
+        for name, settings in accounts.items():
+            entrance = get_entrances().get(owner.id_, name)
+            if entrance is None:
+                raise APIConfigurationError(
+                    f"HTTP connection {name} requires message handlers "
+                    "and identity"
+                )
+            channel = APIChannel(settings, entrance)
+            transports.use(channel)
+        return
+    module = import_module(f"opsmesh.plugins.channels.{protocol}.adapter")
+    adapter_type = (
+        module.QQAdapter if protocol == "qq" else module.DingTalkAdapter
+    )
+    adapter = adapter_type.configured()
     for name, settings in accounts.items():
-        module._declare_connection(settings, name=name)
+        adapter.configure(settings, name=name)

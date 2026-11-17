@@ -1,7 +1,8 @@
-"""DingTalk IM operations using the official im_1.0 SDK wire contract."""
+"""DingTalk IM operations using the native asynchronous SDK."""
 
 from typing import TYPE_CHECKING
 
+from alibabacloud_dingtalk.im_1_0 import models
 from pydantic import JsonValue
 
 from .client import DingTalkClient
@@ -28,30 +29,36 @@ class DingTalkGroups:
         self.client = client
         self.channel = channel
 
-    async def _request(
-        self, method: str, path: str, *, body=None, params=None
-    ) -> JsonValue:
-        token = await self.client.access_token(self.channel.settings)
-        return await self.client.request_json(
-            method, path, token=token, body=body, params=params
-        )
-
     async def query_open_group_base_info(
         self, open_conversation_id: str
     ) -> JsonValue:
         """Read group base information available to the application."""
-        return await self._request(
-            "POST",
-            "/v1.0/im/groups/baseInfos/query",
-            body={"openConversationId": open_conversation_id},
+        token = await self.client.access_token(self.channel.settings)
+        return await self.client.invoke(
+            self.client.im.query_open_group_base_info_with_options_async(
+                models.QueryOpenGroupBaseInfoRequest(
+                    open_conversation_id=open_conversation_id
+                ),
+                models.QueryOpenGroupBaseInfoHeaders(
+                    x_acs_dingtalk_access_token=token
+                ),
+                self.client.options,
+            )
         )
 
     async def query_group_member(self, open_conversation_id: str) -> JsonValue:
         """Query interconnection group members using their native ID scope."""
-        return await self._request(
-            "GET",
-            "/v1.0/im/interconnections/conversations/members",
-            params={"openConversationId": open_conversation_id},
+        token = await self.client.access_token(self.channel.settings)
+        return await self.client.invoke(
+            self.client.im.query_group_member_with_options_async(
+                models.QueryGroupMemberRequest(
+                    open_conversation_id=open_conversation_id
+                ),
+                models.QueryGroupMemberHeaders(
+                    x_acs_dingtalk_access_token=token
+                ),
+                self.client.options,
+            )
         )
 
     async def update_group_name(
@@ -60,13 +67,18 @@ class DingTalkGroups:
         """Rename an interconnection group when the app has permission."""
         if not group_name.strip():
             raise ValueError("Group name must not be empty")
-        return await self._request(
-            "PUT",
-            "/v1.0/im/interconnections/groups/names",
-            body={
-                "openConversationId": open_conversation_id,
-                "groupName": group_name,
-            },
+        token = await self.client.access_token(self.channel.settings)
+        return await self.client.invoke(
+            self.client.im.update_group_name_with_options_async(
+                models.UpdateGroupNameRequest(
+                    open_conversation_id=open_conversation_id,
+                    group_name=group_name,
+                ),
+                models.UpdateGroupNameHeaders(
+                    x_acs_dingtalk_access_token=token
+                ),
+                self.client.options,
+            )
         )
 
     async def add_group_member(
@@ -75,14 +87,17 @@ class DingTalkGroups:
         """Add organization users to an interconnection group."""
         if not user_ids or not all(user_ids):
             raise ValueError("Group members must not be empty")
-        return await self._request(
-            "POST",
-            "/v1.0/im/interconnections/groups/members",
-            body={
-                "openConversationId": open_conversation_id,
-                "operatorId": operator_id,
-                "userIds": user_ids,
-            },
+        token = await self.client.access_token(self.channel.settings)
+        return await self.client.invoke(
+            self.client.im.add_group_member_with_options_async(
+                models.AddGroupMemberRequest(
+                    open_conversation_id=open_conversation_id,
+                    operator_id=operator_id,
+                    user_ids=user_ids,
+                ),
+                models.AddGroupMemberHeaders(x_acs_dingtalk_access_token=token),
+                self.client.options,
+            )
         )
 
     async def remove_group_member(
@@ -91,12 +106,17 @@ class DingTalkGroups:
         """Remove organization users from an interconnection group."""
         if not user_ids or not all(user_ids):
             raise ValueError("Group members must not be empty")
-        return await self._request(
-            "POST",
-            "/v1.0/im/interconnections/groups/members/remove",
-            body={
-                "openConversationId": open_conversation_id,
-                "operatorId": operator_id,
-                "userIds": user_ids,
-            },
+        token = await self.client.access_token(self.channel.settings)
+        return await self.client.invoke(
+            self.client.im.remove_group_member_with_options_async(
+                models.RemoveGroupMemberRequest(
+                    open_conversation_id=open_conversation_id,
+                    operator_id=operator_id,
+                    user_ids=user_ids,
+                ),
+                models.RemoveGroupMemberHeaders(
+                    x_acs_dingtalk_access_token=token
+                ),
+                self.client.options,
+            )
         )

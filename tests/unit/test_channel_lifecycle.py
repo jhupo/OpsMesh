@@ -202,7 +202,7 @@ async def test_channels_drain_before_consumers_and_transports_close(
     async def handle(item):
         await release.wait()
         assert consumer.ready
-        assert dingtalk_channel.ready
+        assert dingtalk_channel.replies_available
         assert dingtalk.started
         assert not dingtalk._queue.running
         assert not dingtalk._queue.put_nowait("late")
@@ -221,7 +221,7 @@ async def test_channels_drain_before_consumers_and_transports_close(
 
     async def close_consumer():
         assert handled == ["dingtalk"]
-        assert dingtalk_channel.ready
+        assert dingtalk_channel.replies_available
         consumer.ready = False
 
     driver.on_startup(transports.startup)
@@ -251,6 +251,9 @@ class ProbeTransport:
         if self.start_error:
             raise self.start_error
 
+    async def start_accepting(self):
+        pass
+
     def stop_accepting(self):
         self.events.append((self.name, "stop"))
 
@@ -272,6 +275,12 @@ async def test_dynamic_operations_are_not_used_as_lifecycle_hooks():
     class DynamicTransport:
         async def startup(self):
             events.append("start")
+
+        async def start_accepting(self):
+            pass
+
+        async def drain(self):
+            pass
 
         def stop_accepting(self):
             events.append("stop")
@@ -322,6 +331,7 @@ async def test_partial_startup_closes_every_acquired_transport():
     await lifecycle.shutdown()
     assert events[-1] == ("failing", "close")
     assert not lifecycle._started
+    assert not lifecycle._owners
 
 
 @pytest.mark.anyio
@@ -393,6 +403,8 @@ async def test_shared_transport_restarts_after_last_consumer_stops(monkeypatch):
     resources = ChannelTransports()
     with owned_by(first):
         resources.use(transport)
+        resources.use(transport)
+    assert resources._declared[transport] == 1
     with owned_by(second):
         resources.use(transport)
     async with driver.lifespan():
@@ -479,6 +491,8 @@ async def test_failed_shared_transport_cannot_accept_a_new_consumer(
     second = Plugin("second", ModuleType("second"), "second", PluginManager())
     with owned_by(first):
         resources.use(transport)
+        resources.use(transport)
+    assert resources._declared[transport] == 1
     await hooks.ready[0]()
     await hooks.started[0]()
     transport.close_error = RuntimeError("Injected cleanup failure")
@@ -509,3 +523,200 @@ async def test_failed_shared_transport_cannot_accept_a_new_consumer(
         ("shared", "accept"),
     ]
     await hooks.shutdown[1]()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
+async def test_disconnect_preserves_accepted_work_until_outbound_closes(
+    monkeypatch,
+    protocol,
+):
+    from types import ModuleType, SimpleNamespace
+
+    from opsmesh.plugins.channels import _work
+    from opsmesh.plugins.channels._work import QueuedEvent, dispatch_queued
+    from opsmesh.plugins.channels.dingtalk.events import DingTalkMessageEvent
+    from opsmesh.plugins.channels.qq.events import QQMessageEvent
+    from opsmesh.plugins.model import Plugin
+
+    driver = make_runtime()
+    owner = Plugin(
+        name="consumer",
+        module=ModuleType("consumer"),
+        module_name="consumer",
+        manager=PluginManager(),
+        status=PluginStatus.READY,
+    )
+    if protocol == "qq":
+        adapter = QQAdapter(driver, settings=QQSettings(enabled=False))
+        settings = QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET")
+        event_type = QQMessageEvent
+        extra = {"event_id": "event"}
+    else:
+        adapter = DingTalkAdapter(driver, settings=DingTalkSettings())
+        settings = DingTalkConnectionSettings(
+            client_id="123",
+            client_secret_ref="DINGTALK_SECRET",
+        )
+        event_type = DingTalkMessageEvent
+        extra = {"conversation_id": "conversation"}
+    with owned_by(owner):
+        channel = adapter.declare(settings, name="bot")
+    adapter.stream_connected(channel)
+    event = event_type(
+        connection_id=channel.self_id,
+        user_id="user",
+        message_id="message",
+        content="hello",
+        raw={},
+        **extra,
+    )
+    item = QueuedEvent(channel, event, None)
+    observed = []
+
+    async def dispatch(channel, event, **kwargs):
+        adapter._validate_reply(channel, event)
+        observed.append(kwargs["admitted_call"])
+        return SimpleNamespace(errors=[])
+
+    monkeypatch.setattr(_work, "dispatch_event", dispatch)
+    try:
+        adapter.stream_disconnected(channel)
+        owner.status = PluginStatus.STOPPING
+        await dispatch_queued(item)
+        assert observed == [item.admitted_call]
+        assert not channel.ready and channel.replies_available
+        assert owner.calls
+        adapter._deactivate(channel)
+        await dispatch_queued(item)
+        assert len(observed) == 1
+        assert not channel.replies_available
+    finally:
+        await item.close()
+    assert not owner.calls
+
+
+@pytest.mark.anyio
+async def test_queued_delivery_cannot_enter_another_plugin_generation(
+    monkeypatch,
+):
+    from types import ModuleType
+
+    from opsmesh.plugins.channels import _work
+    from opsmesh.plugins.channels._work import QueuedEvent, dispatch_queued
+    from opsmesh.plugins.channels.qq.events import parse_callback
+    from opsmesh.plugins.model import Plugin
+
+    owner = Plugin(
+        name="consumer",
+        module=ModuleType("consumer"),
+        module_name="consumer",
+        manager=PluginManager(),
+        status=PluginStatus.READY,
+    )
+    adapter = QQAdapter(make_runtime(), settings=QQSettings(enabled=False))
+    with owned_by(owner):
+        channel = adapter.declare(
+            QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            name="bot",
+        )
+    channel.mark_ready()
+    event = parse_callback(
+        {
+            "t": "C2C_MESSAGE_CREATE",
+            "d": {
+                "id": "one",
+                "content": "hello",
+                "author": {"user_openid": "user"},
+            },
+        },
+        connection_id=channel.self_id,
+    )
+    item = QueuedEvent(channel, event, None)
+
+    async def unexpected(*args, **kwargs):
+        pytest.fail("An expired delivery entered a new plugin generation")
+
+    monkeypatch.setattr(_work, "dispatch_event", unexpected)
+    owner.generation += 1
+    try:
+        await dispatch_queued(item)
+    finally:
+        await item.close()
+    assert not owner.calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
+async def test_stop_intake_drains_queue_before_closing_replies(
+    monkeypatch, protocol
+):
+    from types import SimpleNamespace
+
+    from opsmesh.plugins.channels import _work
+    from opsmesh.plugins.channels._work import enqueue
+    from opsmesh.plugins.channels.dingtalk.events import DingTalkMessageEvent
+    from opsmesh.plugins.channels.qq.events import QQMessageEvent
+
+    if protocol == "qq":
+        adapter = QQAdapter(make_runtime(), settings=QQSettings(enabled=False))
+        channel = declare_qq(adapter)
+        event = QQMessageEvent(
+            connection_id=channel.self_id,
+            user_id="user",
+            message_id="message",
+            event_id="delivery",
+            content="hello",
+            raw={},
+        )
+    else:
+        adapter = DingTalkAdapter(make_runtime(), settings=DingTalkSettings())
+        channel = declare_dingtalk(adapter)
+        event = DingTalkMessageEvent(
+            connection_id=channel.self_id,
+            user_id="user",
+            message_id="message",
+            conversation_id="conversation",
+            content="hello",
+            raw={},
+        )
+    handled = []
+
+    class InboundStream:
+        def stop(self):
+            adapter.stream_disconnected(channel)
+
+        async def wait_closed(self):
+            adapter.stream_finished(channel)
+
+    async def dispatch(channel, event, **kwargs):
+        assert not adapter._accepting
+        adapter._validate_reply(channel, event)
+        handled.append(event.message_id)
+        return SimpleNamespace(errors=[])
+
+    monkeypatch.setattr(_work, "dispatch_event", dispatch)
+    adapter.client.open()
+    adapter._started = adapter._accepting = True
+    adapter.stream_connected(channel)
+    adapter._streams[channel] = InboundStream()
+    async with anyio.create_task_group() as tasks:
+        try:
+            await adapter._queue.start(tasks)
+            assert (
+                await enqueue(
+                    adapter._queue,
+                    channel,
+                    event,
+                    delivery_id="delivery",
+                )
+                == "ok"
+            )
+            adapter.stop_accepting()
+            await adapter.drain()
+            assert handled == ["message"]
+            assert channel.replies_available
+            assert not channel.ready
+        finally:
+            await adapter.shutdown()
+    assert not channel.replies_available

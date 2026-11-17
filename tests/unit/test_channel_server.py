@@ -14,8 +14,8 @@ from websockets.asyncio.client import connect
 
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.plugins.channels.api.streaming import ManagedStreamingResponse
 from opsmesh.plugins.channels.api.server import ListenerSettings, Server
+from opsmesh.plugins.channels.api.streaming import MessageStreamingResponse
 
 
 def new_server(**options):
@@ -161,8 +161,12 @@ async def test_shutdown_cancels_an_endless_stream_at_the_deadline():
     host.on_shutdown(lambda: plugin_closed.append("closed"))
 
     async def handler(request: Request):
-        return ManagedStreamingResponse(
-            stream, on_close=lambda error: stream.aclose()
+        async def produce(emit):
+            async for chunk in stream:
+                await emit(chunk)
+
+        return MessageStreamingResponse(
+            produce, capacity=1, on_close=lambda error: stream.aclose()
         )
 
     server.app.add_api_route("/stream", handler, methods=["GET"])

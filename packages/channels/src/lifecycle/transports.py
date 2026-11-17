@@ -1,11 +1,10 @@
 """Track consumer-owned bot adapters and coordinate their lifecycle."""
 
-from inspect import getattr_static
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import anyio
 
-from opsmesh.plugins.registry import track_registration
+from opsmesh.plugins.registry import plugin_scope, track_registration
 
 
 class ChannelTransport(Protocol):
@@ -20,16 +19,8 @@ class ChannelTransport(Protocol):
     async def shutdown(self) -> None:
         """Release resources, including partially initialized ones."""
 
-
-class BufferedTransport(ChannelTransport, Protocol):
-    """A transport that owns work beyond the HTTP request lifetime."""
-
     async def drain(self) -> None:
         """Complete or cancel accepted work before consumers close."""
-
-
-class StreamingTransport(ChannelTransport, Protocol):
-    """A transport whose inbound connections open after consumer readiness."""
 
     async def start_accepting(self) -> None:
         """Start receiving from a remote service."""
@@ -45,7 +36,7 @@ class ChannelTransports:
         self._dirty: set[ChannelTransport] = set()
         self._running = False
         self._owners: dict[ChannelTransport, set[str]] = {}
-        self._managed: set[ChannelTransport] = set()
+        self._managed: dict[ChannelTransport, set[str]] = {}
 
     @property
     def has_declarations(self) -> bool:
@@ -56,16 +47,15 @@ class ChannelTransports:
         """Attach one declaration to the framework's owning plugin scope."""
         from opsmesh.drivers import get_driver
         from opsmesh.plugins.model import Plugin
-        from opsmesh.plugins.registry import (
-            _current_plugin,
-            get_plugin_by_module_name,
-        )
 
-        plugin = _current_plugin.get()
-        if plugin is None and owner is not None:
-            plugin = get_plugin_by_module_name(getattr(owner, "__module__", ""))
+        from .._validation import connection_owner
+
+        plugin = connection_owner(owner)
         if isinstance(plugin, Plugin):
-            self._managed.add(transport)
+            managed = self._managed.setdefault(transport, set())
+            if plugin.id_ in managed:
+                return
+            managed.add(plugin.id_)
             driver = get_driver()
 
             async def prepare() -> None:
@@ -76,11 +66,7 @@ class ChannelTransports:
 
             async def start() -> None:
                 self._check_clean(transport)
-                if (
-                    getattr_static(transport, "start_accepting", None)
-                    is not None
-                ):
-                    await cast(StreamingTransport, transport).start_accepting()
+                await transport.start_accepting()
 
             async def close() -> None:
                 owners = self._owners.get(transport, set())
@@ -88,12 +74,18 @@ class ChannelTransports:
                 if not owners and transport in self._started:
                     await self._close_transport(transport)
 
-            driver.on_ready(prepare)
-            driver.on_started(start)
-            driver.on_shutdown(close)
+            with plugin_scope(plugin):
+                driver.on_ready(prepare)
+                driver.on_started(start)
+                driver.on_shutdown(close)
         self._declared[transport] = self._declared.get(transport, 0) + 1
 
         def remove() -> None:
+            if isinstance(plugin, Plugin):
+                managed = self._managed.get(transport, set())
+                managed.discard(plugin.id_)
+                if not managed:
+                    self._managed.pop(transport, None)
             remaining = self._declared.get(transport, 0) - 1
             if remaining > 0:
                 self._declared[transport] = remaining
@@ -130,8 +122,7 @@ class ChannelTransports:
         """Open remote inputs after all consumers have initialized."""
         for transport in self._started:
             self._check_clean(transport)
-            if getattr_static(transport, "start_accepting", None) is not None:
-                await cast(StreamingTransport, transport).start_accepting()
+            await transport.start_accepting()
 
     async def stopping(self) -> None:
         """Stop every entrance before draining accepted work."""
@@ -142,11 +133,8 @@ class ChannelTransports:
             except Exception as error:
                 errors.append(error)
         for transport in reversed(self._started):
-            # Channel.__getattr__ exposes RPC methods, not lifecycle hooks.
-            if getattr_static(transport, "drain", None) is None:
-                continue
             try:
-                await cast(BufferedTransport, transport).drain()
+                await transport.drain()
             except Exception as error:
                 errors.append(error)
         if errors:
@@ -183,3 +171,4 @@ class ChannelTransports:
         await transport.shutdown()
         self._started.remove(transport)
         self._dirty.discard(transport)
+        self._owners.pop(transport, None)

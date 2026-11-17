@@ -10,14 +10,12 @@ from ..receipts import Delivery
 from ..sending import (
     MessageSendError,
     OutgoingAttachment,
-    normalize,
     prepare,
-    require_supported,
 )
 from .client import QQClient
 from .errors import QQSendError
 from .events import QQMessageEvent
-from .media import QQMedia, media_type
+from .media import media_type, upload
 
 if TYPE_CHECKING:
     from .channel import QQChannel
@@ -46,18 +44,13 @@ class QQSender:
         delivery = delivery or Delivery()
         delivery.check_owner()
         message_id = message_id or uuid4().hex
-        original = normalize(message)
-        require_supported(original, self.channel.send_types)
-        kinds = [
-            part.type
-            for part in original
-            if part.type != "data" and (not part.is_text() or str(part).strip())
-        ]
-        parts = await prepare(
-            original,
+        prepared = await prepare(
+            message,
             event.attachments,
             self.channel.settings.max_message_length,
+            supported=self.channel.send_types,
         )
+        parts, kinds = prepared.parts, prepared.kinds
         for part in parts:
             if isinstance(part, OutgoingAttachment):
                 media_type(part)
@@ -86,15 +79,17 @@ class QQSender:
             else ("c2c", event.user_id)
         )
         target = quote(recipient[1], safe="")
-        media = QQMedia(api, (recipient[0], target))
+        upload_file = (
+            api.upload_group_file if event.group_id else api.upload_c2c_file
+        )
         uploaded: dict[tuple[str, str], str] = {}
         for part in parts:
             if (
                 isinstance(part, OutgoingAttachment)
                 and (part.kind, part.attachment.id) not in uploaded
             ):
-                uploaded[(part.kind, part.attachment.id)] = await media.upload(
-                    part
+                uploaded[(part.kind, part.attachment.id)] = await upload(
+                    upload_file, target, part
                 )
         responses: list[dict[str, Any]] = []
         for index, part in enumerate(parts):

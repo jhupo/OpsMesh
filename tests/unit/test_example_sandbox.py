@@ -21,8 +21,8 @@ plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None
 assert get_plugin("channels") is not None
 assert get_plugin("example_sandbox") is plugin
-from opsmesh.plugins.channels.api import get_router
-routes = [route for route in get_router().registrations
+from opsmesh.plugins.channels.api import get_entrances
+routes = [route for route in get_entrances().entries
           if route.installation_id == plugin.id_]
 assert len(routes) == 1
 assert routes[0].path == "/plugins/example_sandbox/messages"

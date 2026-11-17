@@ -13,12 +13,28 @@ Install channels, execution, database and filesystem separately. Register
 Frozen hosts also register the official bundle's `site/` root; see
 [Linux deployment](../../docs/linux-deployment.md).
 
-Configure channels API authentication, PostgreSQL and the filesystem root.
+Configure this example's HTTP identity, PostgreSQL and the filesystem root.
 Save this plugin's settings through the host plugin configuration command:
 
 ```json
-{"config": {"model": "your-model-name", "reasoning": {"effort": "medium"}, "max_turns": 8}, "dependencies": {}}
+{
+  "config": {
+    "model": "your-model-name",
+    "reasoning": {"effort": "medium"},
+    "max_turns": 8,
+    "http_token_ref": "OPSMESH_API_TOKEN",
+    "http_user_id": "operator"
+  },
+  "dependencies": {
+    "channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}
+  }
+}
 ```
+
+HTTP identity validation belongs to this example; channels only calls its resolver.
+Set the referenced token in the service environment. Use different ports when
+running chat and sandbox HTTP connections together. Omit the API dependency for
+a bot-only setup.
 
 For robots, fill `dependencies.channels.qq.<name>` or
 `dependencies.channels.dingtalk.<name>` with the account and secret reference.

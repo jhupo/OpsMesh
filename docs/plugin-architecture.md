@@ -37,7 +37,7 @@ tools/                            # 离线数据维护
 |---|---|---|
 | 核心 | 插件加载、依赖、配置记录、生命周期、调用排空、事件分发 | 下载和安装包、业务数据、业务策略 |
 | Driver | 适配器注册、逻辑连接索引、任务组和阶段回调 | 网络服务与协议实现 |
-| channels | 认证、协议收发、事件转换、附件传输与平台群操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
+| channels | SDK 协议认证、协议收发、事件转换、附件传输与平台群操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
 | execution | 原生 Runner、流清理、SDK 回调与 Trace | Agent/MCP/沙箱构造、Session、审批、用量存储 |
 | database | PostgreSQL engine、会话工厂、事务和插件迁移 | ORM 模型、业务查询与事务边界 |
 | filesystem | 插件文件空间、文件操作、ZIP 与原子发布 | 技能/工具/Agent 元数据、资源索引与安装 |
@@ -62,7 +62,7 @@ host.json 保存 framework、environment 和 data_dir。宿主的 SQLite 保存�
 
 ```text
 HTTP / QQ / 钉钉
-→ 通道认证与统一消息协议解析
+→ SDK 协议认证或调用插件身份解析、统一消息协议解析
 → Event + Message + 可信调用者 Context
 → Framework Permission / Rule / Matcher / Dependent
 → on_message / on_command 处理器
@@ -70,7 +70,7 @@ HTTP / QQ / 钉钉
 → 原 Channel 编码回复
 ```
 
-channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 认证身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
+channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 调用消费插件的 HTTP 身份解析函数或读取 SDK 平台身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
 
 框架仍保留通道内部健康检查和明确的非消息管理路由能力，但这类路由不承载智能体会话、知识库或 cron 业务。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
 
@@ -132,3 +132,14 @@ Session 可使用 SDK SQLAlchemySession；会话索引、用户归属和并发�
 channels 根据这些值自动创建所属机器人的连接，使用方不重复定义协议 Settings。
 群组到智能体的选择使用插件代码中的 `channels.in_group()` 与原生 Rule/Matcher。
 配置格式见[插件配置](plugin-configuration-design.md)，示例见[群组智能体](../examples/groups/README.md)。
+
+
+### 消费插件的通道连接与身份
+
+HTTP、QQ、钉钉连接统一由消费插件的 `dependencies.channels` 声明。HTTP 使用
+`api.<name>` 配置监听参数，由同名 `api.message(..., identity=resolver)` 绑定已有
+Matcher 和调用插件的身份解析函数。channels 不维护用户目录、token 列表或业务权限。
+解析函数复用框架 `Dependent/Context/Depends`，同样作用于附件上传与下载。
+机器人 SDK 认证仍属于传输职责；平台群 ID 保留在 Event，不自动映射到业务用户组。
+连接和调用准入随所属插件启停，业务权限由调用插件处理。详见
+[通道与执行回调](channels-and-callbacks.md)。

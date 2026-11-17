@@ -2,8 +2,12 @@
 
 import logging
 import mimetypes
+import re
 from functools import partial
 from typing import Any
+from urllib.parse import urlsplit
+
+from alibabacloud_dingtalk.robot_1_0 import models
 
 from ..attachments import (
     Attachment,
@@ -19,6 +23,20 @@ from .client import DingTalkClient
 from .config import DingTalkConnectionSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _secure_download_url(url: str) -> str:
+    """Upgrade native OSS links without rewriting signed paths or queries."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        raise AttachmentError("Invalid DingTalk download URL") from None
+    if parsed.scheme == "http" and re.fullmatch(
+        r"[a-z0-9][a-z0-9-]*\.oss-[a-z0-9-]+\.aliyuncs\.com",
+        parsed.netloc,
+    ):
+        return "https" + url[url.index(":") :]
+    return url
 
 
 async def unavailable() -> bytes:
@@ -116,16 +134,22 @@ class DingTalkAttachments:
     async def _download(self, code: str) -> bytes:
         """Exchange the temporary code before downloading bounded content."""
         access_token = await self.client.access_token(self.connection)
-        result = await self.client.post_json(
-            "https://api.dingtalk.com/v1.0/robot/messageFiles/download",
-            {"downloadCode": code, "robotCode": self.connection.client_id},
-            headers={"x-acs-dingtalk-access-token": access_token},
+        result = await self.client.invoke(
+            self.client.robot.robot_message_file_download_with_options_async(
+                models.RobotMessageFileDownloadRequest(
+                    download_code=code, robot_code=self.connection.client_id
+                ),
+                models.RobotMessageFileDownloadHeaders(
+                    x_acs_dingtalk_access_token=access_token
+                ),
+                self.client.options,
+            )
         )
         url = result.get("downloadUrl")
         if not isinstance(url, str) or not url:
             raise AttachmentError("DingTalk download URL is unavailable")
         return await download(
-            url,
+            _secure_download_url(url),
             self.settings,
             ("dingtalk.com", "alicdn.com", "aliyuncs.com", "ddurl.cn"),
         )

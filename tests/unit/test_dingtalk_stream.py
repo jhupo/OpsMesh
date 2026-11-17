@@ -180,3 +180,6 @@ async def test_invalid_connection_response_is_rejected(response):
         stream, _, _ = make_stream(http)
         with pytest.raises(DingTalkProtocolError):
             await stream._connection_uri()
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

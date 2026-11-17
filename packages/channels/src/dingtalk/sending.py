@@ -5,6 +5,7 @@ import time
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from alibabacloud_dingtalk.robot_1_0 import models
 from yarl import URL
 
 from ..receipts import Delivery
@@ -12,14 +13,12 @@ from ..sending import (
     MessageSendError,
     OutgoingAttachment,
     OutgoingMarkdown,
-    normalize,
     prepare,
-    require_supported,
 )
 from .client import DingTalkClient
 from .errors import DingTalkSendError
 from .events import DingTalkMessageEvent
-from .media import DingTalkMedia, validate
+from .media import upload, validate
 
 if TYPE_CHECKING:
     from .channel import DingTalkChannel
@@ -49,18 +48,13 @@ class DingTalkSender:
         delivery = delivery or Delivery()
         delivery.check_owner()
         message_id = message_id or uuid4().hex
-        original = normalize(message)
-        require_supported(original, self.channel.send_types)
-        kinds = [
-            part.type
-            for part in original
-            if part.type != "data" and (not part.is_text() or str(part).strip())
-        ]
-        parts = await prepare(
-            original,
+        prepared = await prepare(
+            message,
             event.attachments,
             self.channel.settings.max_message_length,
+            supported=self.channel.send_types,
         )
+        parts, kinds = prepared.parts, prepared.kinds
         if len(parts) == 1 and isinstance(parts[0], (str, OutgoingMarkdown)):
             webhook = self._webhook_url(event)
             async with delivery.operation(
@@ -77,7 +71,6 @@ class DingTalkSender:
             if isinstance(part, OutgoingAttachment):
                 validate(part)
         token = await self.client.access_token(self.channel.settings)
-        media = DingTalkMedia(self.client, token)
         templates = []
         for part in parts:
             if isinstance(part, OutgoingMarkdown):
@@ -90,7 +83,7 @@ class DingTalkSender:
             elif isinstance(part, str):
                 templates.append(("sampleText", {"content": part}))
             else:
-                templates.append(await media.upload(part))
+                templates.append(await upload(self.client, token, part))
         responses: list[dict[str, Any]] = []
         endpoint, recipient = target
         for index, (key, params) in enumerate(templates):
@@ -103,16 +96,33 @@ class DingTalkSender:
                     if key == "sampleMarkdown"
                     else ("text" if key == "sampleText" else kinds[index]),
                 ) as operation:
-                    response = await self.client.post_json(
-                        "https://api.dingtalk.com/v1.0/robot/" + endpoint,
-                        {
-                            **recipient,
-                            "robotCode": self.channel.settings.client_id,
-                            "msgKey": key,
-                            "msgParam": json.dumps(params),
-                        },
-                        headers={"x-acs-dingtalk-access-token": token},
+                    payload = dict(
+                        **recipient,
+                        robot_code=self.channel.settings.client_id,
+                        msg_key=key,
+                        msg_param=json.dumps(params),
                     )
+                    if endpoint == "group":
+                        request = (
+                            self.client.robot.org_group_send_with_options_async(
+                                models.OrgGroupSendRequest(**payload),
+                                models.OrgGroupSendHeaders(
+                                    x_acs_dingtalk_access_token=token
+                                ),
+                                self.client.options,
+                            )
+                        )
+                    else:
+                        request = (
+                            self.client.robot.batch_send_otowith_options_async(
+                                models.BatchSendOTORequest(**payload),
+                                models.BatchSendOTOHeaders(
+                                    x_acs_dingtalk_access_token=token
+                                ),
+                                self.client.options,
+                            )
+                        )
+                    response = await self.client.invoke(request)
                     if not response.get("processQueryKey"):
                         raise DingTalkSendError(
                             "DingTalk did not confirm the send"
@@ -159,9 +169,7 @@ class DingTalkSender:
     @staticmethod
     def _target(event: DingTalkMessageEvent) -> tuple[str, dict]:
         if event.conversation_type == "2":
-            return "groupMessages/send", {
-                "openConversationId": event.conversation_id
-            }
+            return "group", {"open_conversation_id": event.conversation_id}
         staff_id = event.raw.get("senderStaffId")
         if (
             event.conversation_type != "1"
@@ -171,4 +179,4 @@ class DingTalkSender:
             raise DingTalkSendError(
                 "DingTalk media replies require a staff user ID"
             )
-        return "oToMessages/batchSend", {"userIds": [staff_id]}
+        return "private", {"user_ids": [staff_id]}

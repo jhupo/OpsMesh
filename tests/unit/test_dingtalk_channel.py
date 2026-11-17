@@ -249,11 +249,14 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_sdk_callback_dispatches_once(monkeypatch):
+@pytest.mark.parametrize("conversation_type", ["1", "2"])
+async def test_sdk_callback_dispatches_once(monkeypatch, conversation_type):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
     plugin = FakePlugin("support")
     channel = declare(adapter, plugin)
+    payload = direct_payload()
+    payload["conversationType"] = conversation_type
     dispatched = []
     received = anyio.Event()
 
@@ -279,7 +282,7 @@ async def test_sdk_callback_dispatches_once(monkeypatch):
     async with driver.lifespan():
         await adapter.startup()
         await open_streams(adapter)
-        messages = await callback(adapter, channel, direct_payload())
+        messages = await callback(adapter, channel, payload)
         assert messages["code"] == 200
         with anyio.fail_after(2):
             await received.wait()
@@ -290,8 +293,11 @@ async def test_sdk_callback_dispatches_once(monkeypatch):
         assert caller.id == "dingtalk:support:internal:sender-1"
         assert caller.name == "Tester"
         assert caller.groups == frozenset()
+        assert caller.roles == frozenset()
+        if conversation_type == "2":
+            assert event.group_ids
 
-        duplicate = await callback(adapter, channel, direct_payload())
+        duplicate = await callback(adapter, channel, payload)
         assert json.loads(duplicate["data"]) == {"response": "duplicate"}
         assert len(dispatched) == 1
         await adapter.shutdown()
@@ -521,3 +527,6 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
     finally:
         selected.destroy()
         unrelated.destroy()
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

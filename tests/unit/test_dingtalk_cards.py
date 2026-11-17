@@ -174,7 +174,7 @@ async def test_nested_delivery_rejection_is_not_reported_as_success():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(transport)
     ) as http:
-        with pytest.raises(DingTalkSendError, match="rejected"):
+        with pytest.raises(DingTalkSendError, match="rejected|did not confirm"):
             await DingTalkCardStream(
                 DingTalkClient(channel.protocol, http), channel
             ).send(event, source())
@@ -235,9 +235,7 @@ async def test_card_updates_while_source_is_running_and_keeps_one_card():
             DingTalkClient(channel.protocol, http), channel
         ).send(event, source())
     updates = [
-        body
-        for _, path, body in transport.calls
-        if path.endswith("/streaming")
+        body for _, path, body in transport.calls if path.endswith("/streaming")
     ]
     assert [(body["content"], body["isFinalize"]) for body in updates] == [
         ("one two", False),
@@ -273,3 +271,6 @@ async def test_update_error_survives_failed_cleanup():
             ).send(event, source())
     assert (closed, caught.value.status) == ([True], 403)
     assert "Card failure notification failed" in caught.value.__notes__[0]
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")

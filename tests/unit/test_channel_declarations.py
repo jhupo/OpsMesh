@@ -5,8 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 BOOTSTRAP = """
 import asyncio
 import sys
@@ -17,8 +15,6 @@ from opsmesh.plugins import registry
 from opsmesh.plugins.manager import PluginManager
 
 settings = {
-    "api": {"enabled": False, "identities": [
-        {"id": "test", "token_ref": "API_TEST_TOKEN"}]},
     "qq": {"concurrency": "invalid-unused-setting"},
     "dingtalk": "invalid-unused-section",
 }
@@ -58,30 +54,10 @@ def run_script(tmp_path, script):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_configured_api_starts_without_business_routes(tmp_path):
-    run_script(
-        tmp_path,
-        """
-async def main():
-    async with driver.lifespan():
-        assert len(transports._started) == 1
-        entrance = transports._started[0]
-        assert entrance.started
-        assert ("GET", "/healthz") in entrance._mounted
-        assert not entrance._router.registrations
-        assert driver.get_channel("api") is entrance
-    assert not entrance.started
-    assert not entrance._mounted
-asyncio.run(main())
-""",
-    )
-
-
 def test_no_config_or_declarations_starts_no_transports(tmp_path):
     run_script(
         tmp_path,
         """
-settings.pop("api")
 channels.config_values = settings
 async def main():
     async with driver.lifespan():
@@ -96,9 +72,16 @@ def test_api_declaration_ignores_unused_settings_and_rolls_back(tmp_path):
     source = """
 from opsmesh.plugins import require
 channels = require("opsmesh.plugins.channels")
-@channels.api.get("/hello")
-async def hello() -> str:
-    return "hello"
+from opsmesh import on_message
+hello = on_message(block=True)
+from opsmesh.plugins.channels import UserContext
+async def identity():
+    return UserContext("anonymous")
+channels.api.message(handlers=(hello,), identity=identity)
+
+@hello.handle()
+async def reply():
+    await hello.finish("hello")
 """
     (tmp_path / "consumer.py").write_text(source)
     (tmp_path / "failed.py").write_text(
@@ -107,14 +90,17 @@ async def hello() -> str:
     run_script(
         tmp_path,
         """
+manager.dependency_config_values = {
+    "channels": {"api": {"main": {"enabled": False}}}
+}
 consumer = manager.load_plugin("consumer")
 assert consumer is not None
 assert manager.load_plugin("failed") is None
 assert not transports._declared
 assert "opsmesh.plugins.channels.qq" not in sys.modules
 assert "opsmesh.plugins.channels.dingtalk" not in sys.modules
-from opsmesh.plugins.channels.api import get_router
-assert len(get_router().registrations) == 1
+from opsmesh.plugins.channels.api import get_entrances
+assert len(get_entrances().entries) == 1
 async def main():
     async with driver.lifespan():
         entrance = transports._started[0]
@@ -127,12 +113,12 @@ async def main():
             raise AssertionError("Running plugin revocation was accepted")
         await manager.stop_plugin("consumer")
         registry.revoke_plugin(consumer)
-        assert not get_router().registrations
-        assert entrance.started
-        assert ("GET", "/healthz") in entrance._mounted
+        assert not get_entrances().entries
+        assert not entrance.started
+        assert not entrance._mounted
 asyncio.run(main())
 assert not transports._declared
-assert not get_router().registrations
+assert not get_entrances().entries
 """,
     )
 
@@ -150,7 +136,6 @@ manager.dependency_config_values = {"channels": {"qq": {"primary": {
     "app_id": "12345", "secret_ref": "QQ_SECRET"
 }}}}
 settings["qq"] = {"enabled": False, "concurrency": 2}
-settings.pop("api")
 channels.config_values = settings
 consumer = manager.load_plugin("consumer")
 assert consumer is not None
@@ -170,28 +155,23 @@ assert not transports._declared
     )
 
 
-@pytest.mark.parametrize("section", [None, {"identities": []}])
-def test_declared_api_requires_valid_authentication(tmp_path, section):
-    (tmp_path / "consumer.py").write_text("""
-from opsmesh.plugins import require
-channels = require("opsmesh.plugins.channels")
-@channels.api.get("/hello")
-async def hello() -> str:
-    return "hello"
-""")
+def test_configured_http_requires_consumer_message_binding(tmp_path):
+    (tmp_path / "consumer.py").write_text(
+        "from opsmesh import require\nrequire('channels')\n"
+    )
     run_script(
         tmp_path,
-        f"""
-settings["api"] = {section!r}
-channels.config_values = settings
-channels.required = True
-assert manager.load_plugin("consumer") is not None
-from opsmesh.plugins.channels.api.errors import APIConfigurationError
+        """
+manager.dependency_config_values = {
+    "channels": {"api": {"main": {"enabled": False}}}
+}
+consumer = manager.load_plugin("consumer")
+consumer.required = True
 async def main():
     try:
         async with driver.lifespan():
-            raise AssertionError("Invalid API settings were accepted")
-    except (ValueError, APIConfigurationError):
+            raise AssertionError("Missing message binding was accepted")
+    except ValueError:
         pass
     assert not transports._started
 asyncio.run(main())
@@ -236,6 +216,65 @@ async def main():
         from inspect import getattr_static
         assert getattr_static(connection, "path", None) is None
     assert connection.state == "closed"
+    assert not driver.channels
+asyncio.run(main())
+""",
+    )
+
+
+def test_consumer_http_listeners_restart_independently(tmp_path):
+    source = """
+from opsmesh import on_message, require
+channels = require("channels")
+hello = on_message(block=True)
+async def identity():
+    return channels.UserContext(__name__)
+@hello.handle()
+async def reply():
+    await hello.finish(__name__)
+channels.api.message(handlers=(hello,), identity=identity)
+"""
+    for name in ("consumer", "second"):
+        (tmp_path / f"{name}.py").write_text(source)
+    run_script(
+        tmp_path,
+        """
+import httpx
+manager.dependency_config_values = {
+    "channels": {"api": {"main": {"port": 0}}}
+}
+consumer = manager.load_plugin("consumer")
+second_manager = PluginManager(["second"], dependencies={
+    "channels": {"api": {"main": {"port": 0}}}
+})
+registry.register_plugin_manager(second_manager)
+second = second_manager.load_plugin("second")
+assert consumer is not None and second is not None
+async def request(channel, plugin_id):
+    async with httpx.AsyncClient(
+        base_url=f"http://127.0.0.1:{channel.server.bound_port}",
+        trust_env=False,
+    ) as client:
+        return await client.post(f"/plugins/{plugin_id}/messages",
+                                 json={"message": "hello"})
+async def main():
+    async with driver.lifespan():
+        first = driver.get_channel("api:consumer:main")
+        other = driver.get_channel("api:second:main")
+        assert first is not other
+        assert first.server.bound_port != other.server.bound_port
+        assert (await request(first, "consumer")).status_code == 200
+        assert (await request(first, "second")).status_code == 404
+        assert (await request(other, "second")).status_code == 200
+        await manager.stop_plugin("consumer")
+        assert not first.started
+        assert other.started
+        assert (await request(other, "second")).status_code == 200
+        await manager.start_plugin("consumer")
+        restarted = driver.get_channel("api:consumer:main")
+        assert restarted is not first
+        assert (await request(restarted, "consumer")).status_code == 200
+        assert len(transports._started) == 2
     assert not driver.channels
 asyncio.run(main())
 """,

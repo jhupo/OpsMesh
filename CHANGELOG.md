@@ -4,6 +4,13 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## Unreleased
 
+- Move HTTP listener settings to each consumer plugin's
+  `dependencies.channels.api.<name>` section. Consumer plugins must provide an
+  `identity` resolver to `channels.api.message`; channels no longer owns a
+  global token directory or business permission policy. The resolver is also
+  used for attachment uploads and downloads. QQ and DingTalk platform
+  authentication remains owned by their protocol SDK adapters.
+
 ## 0.5.6 — 2026-11-16
 
 - Add typed multimodal replies, Markdown, native DingTalk card streaming, and delivery observations. Agent plugins select and persist output files; channels transport supported message types.

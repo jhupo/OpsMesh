@@ -35,6 +35,14 @@ class OutgoingAttachment:
     thumbnail_content: bytes | None = None
 
 
+@dataclass(frozen=True)
+class PreparedMessage:
+    """Resolved send parts and their original framework segment types."""
+
+    parts: list[str | OutgoingMarkdown | OutgoingAttachment]
+    kinds: list[str]
+
+
 class MessageSendError(RuntimeError):
     """A split send stopped; completed parts must not be sent again."""
 
@@ -175,11 +183,20 @@ async def prepare_attachment(
 
 
 async def prepare(
-    message: Message,
+    message: str | FrameworkMessage | FrameworkSegment,
     files: AttachmentCollection,
     text_limit: int,
-) -> list[str | OutgoingMarkdown | OutgoingAttachment]:
+    *,
+    supported: frozenset[str],
+) -> PreparedMessage:
     """Resolve every file before visible sends; preserve text/media order."""
+    message = normalize(message)
+    require_supported(message, supported)
+    kinds = [
+        part.type
+        for part in message
+        if part.type != "data" and (not part.is_text() or str(part).strip())
+    ]
     segments, _ = split_data(message)
     parts: list[str | OutgoingMarkdown | OutgoingAttachment] = []
     attachment_ids: set[str] = set()
@@ -216,4 +233,4 @@ async def prepare(
         if isinstance(part, (str, OutgoingMarkdown))
     ):
         raise ValueError(f"Text parts are limited to {text_limit} characters")
-    return parts
+    return PreparedMessage(parts, kinds)

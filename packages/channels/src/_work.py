@@ -8,12 +8,19 @@ from dataclasses import dataclass, field
 
 import anyio
 
-from opsmesh.adapters import Channel, Event
+from opsmesh.adapters import Event
 from opsmesh.dispatch import dispatch_event
-from opsmesh.plugins.invocation import PluginCall, hold_plugin, invocation_scope
+from opsmesh.plugins.invocation import (
+    PluginCall,
+    PluginUnavailable,
+    hold_plugin,
+    invocation_scope,
+)
 from opsmesh.plugins.model import Plugin
 from opsmesh.plugins.registry import plugin_scope
 
+from ._queue import EventQueue
+from .channel import RobotChannel
 from .context import UserContext
 
 
@@ -21,7 +28,7 @@ from .context import UserContext
 class QueuedEvent:
     """A verified event with transferable plugin and dependency admission."""
 
-    channel: Channel
+    channel: RobotChannel
     event: Event
     caller: UserContext | None
     generation: int = field(init=False)
@@ -59,7 +66,7 @@ class QueuedEvent:
 
 async def dispatch_queued(item: QueuedEvent) -> None:
     """Dispatch one admitted bot event through the framework exactly once."""
-    if item.expired or not item.channel.ready:
+    if item.expired or not item.channel.replies_available:
         logging.getLogger(__name__).info(
             "Cancelled queued event: owner stopped"
         )
@@ -76,3 +83,33 @@ async def dispatch_queued(item: QueuedEvent) -> None:
         logging.getLogger(__name__).error(
             "Channel event dispatch produced %d error(s)", len(result.errors)
         )
+
+
+async def enqueue(
+    queue: EventQueue,
+    channel: RobotChannel,
+    event: Event,
+    *,
+    delivery_id: str,
+    caller: UserContext | None = None,
+) -> str:
+    """Deduplicate and retain admission until dispatch or queue rejection."""
+    if not channel.first_delivery(delivery_id):
+        return "duplicate"
+    try:
+        item = QueuedEvent(channel, event, caller)
+    except PluginUnavailable:
+        channel.release_delivery(delivery_id)
+        return "plugin unavailable"
+    accepted = False
+    try:
+        accepted = queue.put_nowait(item)
+    finally:
+        if not accepted:
+            channel.release_delivery(delivery_id)
+            await item.close()
+    if not accepted:
+        logging.getLogger(__name__).warning(
+            "Rejecting callback for %s: queue is full", channel.self_id
+        )
+    return "ok" if accepted else "queue is full"

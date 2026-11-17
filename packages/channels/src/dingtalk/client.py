@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Awaitable
 from typing import Any
 
+import aiohttp
 import anyio
 import httpx
-from pydantic import JsonValue
+from alibabacloud_dingtalk.card_1_0.client import Client as CardClient
+from alibabacloud_dingtalk.im_1_0.client import Client as IMClient
+from alibabacloud_dingtalk.oauth2_1_0.client import Client as OAuthClient
+from alibabacloud_dingtalk.oauth2_1_0.models import GetAccessTokenRequest
+from alibabacloud_dingtalk.robot_1_0.client import Client as RobotClient
+from alibabacloud_tea_openapi.models import Config
+from alibabacloud_tea_util.models import RuntimeOptions
+from Tea.exceptions import TeaException, UnretryableException
+from Tea.model import TeaModel
 from yarl import URL
 
 from ..attachments import Attachment
-from ..operations import OperationError, operation_response
+from ..operations import OperationError, operation_error, operation_response
 from .config import DingTalkConnectionSettings, DingTalkSettings
 from .errors import DingTalkSendError
 
@@ -26,6 +36,16 @@ class DingTalkClient:
         self, settings: DingTalkSettings, http: httpx.AsyncClient | None
     ) -> None:
         """Keep injectable transport ownership explicit."""
+        config = Config(protocol="https", region_id="central")
+        self.oauth = OAuthClient(config)
+        self.robot = RobotClient(config)
+        self.im = IMClient(config)
+        self.cards = CardClient(config)
+        self.options = RuntimeOptions(
+            autoretry=False,
+            read_timeout=int(settings.request_timeout * 1000),
+            connect_timeout=int(settings.request_timeout * 1000),
+        )
         self.settings = settings
         self._http = http
         self._owns_http = http is None
@@ -87,9 +107,14 @@ class DingTalkClient:
             secret = os.environ.get(connection.client_secret_ref)
             if not secret:
                 raise DingTalkSendError("DingTalk credentials are unavailable")
-            result = await self.post_json(
-                "https://api.dingtalk.com/v1.0/oauth2/accessToken",
-                {"appKey": connection.client_id, "appSecret": secret},
+            result = await self.invoke(
+                self.oauth.get_access_token_with_options_async(
+                    GetAccessTokenRequest(
+                        app_key=connection.client_id, app_secret=secret
+                    ),
+                    {},
+                    self.options,
+                )
             )
             token = result.get("accessToken")
             if not isinstance(token, str) or not token:
@@ -102,31 +127,25 @@ class DingTalkClient:
                 self._tokens[key] = (token, time.monotonic() + remaining)
             return token
 
-    async def request_json(
-        self,
-        method: str,
-        path: str,
-        *,
-        token: str,
-        body: dict[str, JsonValue] | None = None,
-        params: dict[str, str | int] | None = None,
-    ) -> JsonValue:
-        """Use the account transport for fixed official operation paths."""
-        if self._http is None:
-            raise DingTalkSendError("The DingTalk HTTP client is not open")
+    async def invoke(self, operation: Awaitable[TeaModel]) -> dict[str, Any]:
+        """Await the SDK and expose only safe error identifiers."""
         try:
-            response = await self._http.request(
-                method,
-                "https://api.dingtalk.com" + path,
-                json=body,
-                params=params,
-                headers={"x-acs-dingtalk-access-token": token},
-                timeout=self.settings.request_timeout,
-                follow_redirects=False,
-            )
-        except httpx.HTTPError:
+            with anyio.fail_after(self.settings.request_timeout):
+                response = await operation
+        except TeaException as error:
+            if isinstance(error, UnretryableException) and not error.code:
+                raise OperationError(0, "transport_error") from None
+            data = error.data or {}
+            status = data.get("statusCode", 0)
+            raise operation_error(
+                status,
+                error.code,
+                data.get("requestId"),
+            ) from None
+        except (aiohttp.ClientError, httpx.HTTPError, TimeoutError, OSError):
             raise OperationError(0, "transport_error") from None
-        return operation_response(response)
+        body = response.body
+        return body.to_map() if body is not None else {}
 
     async def upload_media(
         self,
@@ -136,7 +155,7 @@ class DingTalkClient:
         *,
         kind: str,
     ) -> str:
-        """Use the SDK's multipart upload protocol with cancellable I/O."""
+        """Upload through the legacy endpoint absent from the service SDK."""
         if self._http is None:
             raise DingTalkSendError("The DingTalk HTTP client is not open")
         try:

@@ -19,7 +19,10 @@ PLUGIN = """from importlib.resources import files
 from agents import Agent, RunConfig
 from agents.testing import ScriptedModel, ModelStep, assistant_message
 from agents.usage import Usage
-from pydantic import BaseModel
+from typing import Annotated
+from pydantic import InstanceOf
+from starlette.requests import Request
+from opsmesh.params import Context
 from opsmesh import on_command
 from opsmesh.matchers import Matcher
 from opsmesh.plugins import require
@@ -29,8 +32,15 @@ api = channels.api
 filesystem = require("filesystem")
 execution = require("execution")
 
-class ProbeRequest(BaseModel):
-    value: str
+async def caller(request: Annotated[InstanceOf[Request], Context()]):
+    import hmac
+    import os
+    if not hmac.compare_digest(
+        request.headers.get("authorization", ""),
+        "Bearer " + os.environ["OPSMESH_SMOKE_TOKEN"],
+    ):
+        raise api.HTTPError(401, "authentication required")
+    return channels.UserContext("probe")
 
 async def verify():
     from agents.extensions.memory import SQLAlchemySession
@@ -78,11 +88,8 @@ async def reply(matcher: Matcher) -> None:
         channels.MessageSegment.structured({"probe": True}),
     ]))
 
-api.message(handlers=(message_probe,))
+api.message(handlers=(message_probe,), identity=caller)
 
-@api.post("/validated", body=ProbeRequest)
-async def validated() -> dict[str, str]:
-    return {"status": "accepted"}
 """
 
 DATABASE_PLUGIN = """from pathlib import Path
@@ -208,24 +215,28 @@ def exercise(
         plugin_entry(
             "opsmesh.plugins.filesystem", {"root": str(directory / "data")}
         ),
-        plugin_entry(
-            "opsmesh.plugins.channels",
-            {
-                "api": {
-                    "host": "127.0.0.1",
-                    "port": port,
-                    "identities": [
-                        {"id": "probe", "token_ref": "OPSMESH_SMOKE_TOKEN"}
-                    ],
-                },
-            },
-        ),
+        plugin_entry("opsmesh.plugins.channels", {}),
         plugin_entry("opsmesh.plugins.execution", {}),
     ]
     dsn = os.environ.get("OPSMESH_TEST_DSN")
     if dsn:
         plugins.extend(database_plugins(directory, dsn))
-    plugins.append({"module": "release_probe", "required": True})
+    plugins.append(
+        {
+            "module": "release_probe",
+            "required": True,
+            "dependencies": {
+                "channels": {
+                    "api": {
+                        "main": {
+                            "host": "127.0.0.1",
+                            "port": port,
+                        }
+                    }
+                }
+            },
+        }
+    )
     manifest = directory / "host.json"
     manifest.write_text(json.dumps({"data_dir": str(directory / "host-state")}))
     with PluginStorage(directory / "host-state") as storage:
@@ -305,17 +316,6 @@ def exercise(
                         {"type": "text", "text": "ok"}
                     ]
                     assert envelope["messages"][1]["data"] == {"probe": True}
-                validated = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/plugins/release_probe/validated",
-                    data=b'{"value":"ok"}',
-                    headers={
-                        "Authorization": "Bearer release-probe-token",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST",
-                )
-                with opener.open(validated, timeout=15) as response:
-                    assert json.load(response) == {"status": "accepted"}
                 process.send_signal(signal.SIGTERM)
                 assert process.wait(timeout=30) == 0
             except BaseException:

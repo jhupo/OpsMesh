@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import anyio
+from alibabacloud_dingtalk.card_1_0 import models
 from dingtalk_stream import ChatbotMessage
 from dingtalk_stream.card_replier import AICardStatus, CardReplier
 
@@ -19,11 +20,7 @@ if TYPE_CHECKING:
 
 
 class DingTalkCardStream:
-    """Keep card delivery, updates and cancellation in the caller's scope.
-
-    SDK card helpers suppress HTTP failures. Use its identities and statuses
-    with the shared checked transport so uncertain sends are never replayed.
-    """
+    """Keep native SDK card operations within the caller's delivery scope."""
 
     def __init__(
         self, client: DingTalkClient, channel: "DingTalkChannel"
@@ -140,8 +137,7 @@ class DingTalkCardStream:
             ChatbotMessage.from_dict(event.raw)
         )
         await self._request(
-            "POST",
-            "/v1.0/card/instances/createAndDeliver",
+            "card_create",
             {
                 "cardTemplateId": self.settings.template_id,
                 "outTrackId": self.card_id,
@@ -171,8 +167,7 @@ class DingTalkCardStream:
         )
         if not self._finalized:
             await self._request(
-                "PUT",
-                "/v1.0/card/streaming",
+                "card_update",
                 {
                     "outTrackId": self.card_id,
                     "guid": uuid4().hex,
@@ -187,8 +182,7 @@ class DingTalkCardStream:
             self._last_update = anyio.current_time()
         if status != AICardStatus.INPUTING:
             await self._request(
-                "PUT",
-                "/v1.0/card/instances",
+                "card_end",
                 {
                     "outTrackId": self.card_id,
                     "cardData": {
@@ -201,12 +195,7 @@ class DingTalkCardStream:
                 },
             )
 
-    async def _request(self, method: str, path: str, body: dict) -> None:
-        kind = (
-            "card_create"
-            if method == "POST"
-            else ("card_update" if path.endswith("streaming") else "card_end")
-        )
+    async def _request(self, kind: str, body: dict) -> None:
         async with self.delivery.operation(
             self.message_id,
             kind=kind,
@@ -214,12 +203,36 @@ class DingTalkCardStream:
             original_type="markdown",
             actual_type="card",
         ) as operation:
-            result = await self.client.request_json(
-                method, path, token=self.token, body=body
-            )
+            if kind == "card_create":
+                pending = (
+                    self.client.cards.create_and_deliver_with_options_async(
+                        models.CreateAndDeliverRequest().from_map(body),
+                        models.CreateAndDeliverHeaders(
+                            x_acs_dingtalk_access_token=self.token
+                        ),
+                        self.client.options,
+                    )
+                )
+            elif kind == "card_update":
+                pending = self.client.cards.streaming_update_with_options_async(
+                    models.StreamingUpdateRequest().from_map(body),
+                    models.StreamingUpdateHeaders(
+                        x_acs_dingtalk_access_token=self.token
+                    ),
+                    self.client.options,
+                )
+            else:
+                pending = self.client.cards.update_card_with_options_async(
+                    models.UpdateCardRequest().from_map(body),
+                    models.UpdateCardHeaders(
+                        x_acs_dingtalk_access_token=self.token
+                    ),
+                    self.client.options,
+                )
+            result = await self.client.invoke(pending)
             if _rejected(result):
                 raise DingTalkSendError("DingTalk rejected the card operation")
-            if method == "POST" and (
+            if kind == "card_create" and (
                 not isinstance(result, dict) or not result
             ):
                 raise DingTalkSendError(

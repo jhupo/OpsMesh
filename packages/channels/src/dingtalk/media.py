@@ -46,47 +46,38 @@ def validate(part: OutgoingAttachment) -> None:
             raise AttachmentError("DingTalk files require a filename extension")
 
 
-class DingTalkMedia:
-    """Upload bounded event bytes without exposing tokens to plugins."""
-
-    def __init__(self, client: DingTalkClient, token: str) -> None:
-        """Borrow a token for this complete send operation."""
-        self.client = client
-        self.token = token
-
-    async def upload(
-        self, part: OutgoingAttachment
-    ) -> tuple[str, dict[str, str]]:
-        """Return the official msgKey and msgParam after materialization."""
-        validate(part)
-        media_id = await self.client.upload_media(
-            self.token,
-            part.attachment,
-            part.content,
-            kind="voice" if part.kind == "audio" else part.kind,
-        )
-        if part.kind == "image":
-            return "sampleImageMsg", {"photoURL": media_id}
-        if part.kind == "file":
-            return "sampleFile", {
-                "mediaId": media_id,
-                "fileName": part.attachment.name,
-                "fileType": PurePosixPath(part.attachment.name).suffix[1:],
-            }
-        if part.kind == "audio":
-            return "sampleAudio", {
-                "mediaId": media_id,
-                "duration": str(part.duration_ms),
-            }
-        thumbnail = await self.client.upload_media(
-            self.token,
-            part.thumbnail,
-            part.thumbnail_content,
-            kind="image",
-        )
-        return "sampleVideo", {
-            "videoMediaId": media_id,
-            "videoType": "mp4",
-            "duration": str(part.duration_ms),
-            "picMediaId": thumbnail,
+async def upload(
+    client: DingTalkClient, token: str, part: OutgoingAttachment
+) -> tuple[str, dict[str, str]]:
+    """Return the official msgKey and msgParam after materialization."""
+    media_id = await client.upload_media(
+        token,
+        part.attachment,
+        part.content,
+        kind="voice" if part.kind == "audio" else part.kind,
+    )
+    if part.kind == "image":
+        return "sampleImageMsg", {"photoURL": media_id}
+    if part.kind == "file":
+        return "sampleFile", {
+            "mediaId": media_id,
+            "fileName": part.attachment.name,
+            "fileType": PurePosixPath(part.attachment.name).suffix[1:],
         }
+    if part.kind == "audio":
+        return "sampleAudio", {
+            "mediaId": media_id,
+            "duration": str(part.duration_ms),
+        }
+    thumbnail = await client.upload_media(
+        token,
+        part.thumbnail,
+        part.thumbnail_content,
+        kind="image",
+    )
+    return "sampleVideo", {
+        "videoMediaId": media_id,
+        "videoType": "mp4",
+        "duration": str(part.duration_ms),
+        "picMediaId": thumbnail,
+    }

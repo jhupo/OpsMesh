@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import anyio
 import httpx
 import pytest
+from alibabacloud_dingtalk.oauth2_1_0.models import GetAccessTokenRequest
 
 from opsmesh.plugins.channels import (
     Attachment,
@@ -405,14 +406,16 @@ async def test_prepare_keeps_order_and_rejects_invalid_duration():
         + MessageSegment.attachment(data, duration_ms=True)
     )
     with pytest.raises(AttachmentError, match="duration"):
-        await prepare(normalize(message), files, 10)
+        await prepare(message, files, 10, supported=DingTalkChannel.send_types)
     parts = await prepare(
         normalize(
             Message("a") + Message("b") + MessageSegment.attachment(data)
         ),
         files,
         10,
+        supported=DingTalkChannel.send_types,
     )
+    parts = parts.parts
     assert parts[:2] == ["a", "b"]
     assert parts[2].attachment.id == data.id
 
@@ -569,8 +572,10 @@ async def test_dingtalk_does_not_invent_duration_or_cover(kind):
 async def test_vendor_image_guess_is_corrected_before_upload():
     event, _ = ding_context(False)
     part = add_file(event, "attachment", "image/jpeg", PNG)
-    prepared = await prepare(normalize(part), event.attachments, 100)
-    assert prepared[0].attachment.media_type == "image/png"
+    prepared = await prepare(
+        part, event.attachments, 100, supported=DingTalkChannel.send_types
+    )
+    assert prepared.parts[0].attachment.media_type == "image/png"
 
 
 @pytest.mark.anyio
@@ -676,7 +681,13 @@ async def test_dingtalk_send_and_operation_share_rate_limit_errors():
         with pytest.raises(OperationRateLimited):
             await client.post_json("https://api.dingtalk.com/v1.0/test", {})
         with pytest.raises(OperationRateLimited):
-            await client.request_json("POST", "/v1.0/test", token="token")
+            await client.invoke(
+                client.oauth.get_access_token_with_options_async(
+                    GetAccessTokenRequest(app_key="app", app_secret="secret"),
+                    {},
+                    client.options,
+                )
+            )
 
 
 @pytest.mark.anyio
@@ -693,3 +704,42 @@ async def test_qq_rejects_markdown_without_implicit_text_conversion():
             await QQSender(
                 QQClient(channel.protocol, http), channel, "secret"
             ).send(event, MessageSegment.markdown("**hello**"))
+
+
+pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")
+
+
+@pytest.mark.anyio
+async def test_dingtalk_native_sdk_transport_failure_is_not_retried():
+    from opsmesh.plugins.channels.operations import OperationError
+
+    calls = []
+
+    def fail(request):
+        calls.append(request)
+        raise httpx.ConnectError("private transport detail", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fail)) as http:
+        client = DingTalkClient(DingTalkSettings(), http)
+        with pytest.raises(OperationError, match="transport_error") as caught:
+            await client.invoke(
+                client.oauth.get_access_token_with_options_async(
+                    GetAccessTokenRequest(app_key="app", app_secret="secret"),
+                    {},
+                    client.options,
+                )
+            )
+    assert len(calls) == 1
+    assert "private" not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_dingtalk_native_sdk_cancellation_propagates():
+    import asyncio
+
+    async def cancelled():
+        raise asyncio.CancelledError
+
+    client = DingTalkClient(DingTalkSettings(), None)
+    with pytest.raises(asyncio.CancelledError):
+        await client.invoke(cancelled())

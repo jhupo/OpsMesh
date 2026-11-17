@@ -12,44 +12,49 @@ packages/channels/
 ├── requirements.txt
 └── src/                       # 构建时映射到 opsmesh.plugins.channels
     ├── __init__.py            # 元数据与懒加载协议入口
-    ├── config.py              # api/qq/dingtalk 独立配置分区
+    ├── config.py              # 依赖方连接配置与机器人公共传输限制
     ├── context.py            # UserContext
     ├── dependencies.py       # Connection(handle)
-    ├── server.py             # Uvicorn 启停；不解析业务或持有适配器
-    ├── requests.py           # 原生请求正文大小限制
+    ├── adapter.py            # 机器人连接归属、生命周期与有界队列
+    ├── channel.py            # 机器人状态、去重与 Matcher 归属过滤
     ├── lifecycle/            # 仅编排生命周期，不创建协议连接
-    ├── api/                  # FastAPI、认证、路由到框架事件的转换
+    ├── api/                  # FastAPI、调用者身份入口与框架事件转换
     │   ├── channel.py        # 自己持有 FastAPI 和监听器
-    │   ├── auth.py           # FastAPI Depends 使用的可信身份校验
-    │   ├── routing.py        # 插件路由装饰器
-    │   ├── routes.py         # 插件归属、Matcher、输入输出契约
-    │   ├── events.py         # HTTPEvent / APIMessageEvent
-    │   ├── streaming.py      # 原生流式响应的依赖关闭作用域
+    │   ├── entrances.py      # 插件与已有 Matcher 的消息入口绑定
+    │   ├── events.py         # APIMessageEvent
+    │   ├── exchange.py       # 单次请求、框架分发及响应生命周期
+    │   ├── requests.py       # 固定协议解析、总截止时间与依赖清理
+    │   ├── server.py         # Uvicorn 监听器启停
+    │   ├── streaming.py      # SSE 背压、断开取消与实际写出清理
     │   └── config/messages/responses/errors/adapter.py
     ├── qq/                   # 自己持有 Gateway WebSocket、事件和回复客户端
     └── dingtalk/             # 自己持有官方 Stream SDK 连接和回复客户端
 ```
 
-API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 MessageRequest 协议。认证与入口权限检查完成后，channels 构造框架 Event、Message、可信 UserContext 和附件引用，再进入 Rule、Permission、Matcher、Dependent 链路。命令由框架的 `on_command` 处理，普通消息由 `on_message` 处理。FastAPI 类型不进入业务插件。
+API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 MessageRequest 协议。调用插件的身份解析完成后，channels 构造框架 Event、Message、可信 UserContext 和附件引用，再进入 Rule、Permission、Matcher、Dependent 链路。命令由框架的 `on_command` 处理，普通消息由 `on_message` 处理。FastAPI Request 只进入调用插件的 HTTP 身份解析函数，业务 Matcher 接收统一的 Event、Message 和 UserContext。
 
-连接由所属模块管理：API 自己读取 `config.api` 并创建监听；QQ 自己读取 `config.qq` 并建立官方 Gateway WebSocket；钉钉自己建立 Stream 长连接。QQ 不创建本地 HTTP 监听，也不复用 API 的 Uvicorn 服务器。QQ 通过 `/gateway` 获取 `wss://api.bot.qq.com/websocket/`，在连接后发送 `QQBot` token、intents 和心跳，并在允许时使用 session_id/sequence 恢复。
+连接由使用方的依赖配置声明，各协议模块创建并管理连接。HTTP 监听、QQ 机器人和钉钉机器人均归属声明它的插件。channels 不保存业务用户目录，不定义 token 策略或管理员权限。
 
 ```json
 {
-  "module": "opsmesh.plugins.channels",
-  "required": true,
   "config": {
-    "api": {
-      "host": "127.0.0.1",
-      "port": 8080,
-      "identities": [{"id": "operator", "token_ref": "OPSMESH_API_TOKEN"}]
-    },
-    "qq": {"enabled": true}
+    "model": "your-model-name",
+    "http_token_ref": "OPSMESH_API_TOKEN",
+    "http_user_id": "operator"
+  },
+  "dependencies": {
+    "channels": {
+      "api": {"main": {"host": "127.0.0.1", "port": 8080}}
+    }
   }
 }
 ```
 
-API 配置存在即准备入口；省略时不启用，有业务路由却没有身份配置时启动失败。`qq.enabled=false` 表示不建立 QQ Gateway；机器人账号由使用它的功能插件声明，建立、重连和关闭由 QQ 协议模块完成。
+`config.http_token_ref` 和 `config.http_user_id` 是 chat/sandbox 示例自己的认证配置，其他插件自行定义身份策略。channels 只校验 `dependencies.channels.api.<连接名>` 的传输参数。连接名默认 `main`，与 `channels.api.message(connection="main", handlers=(...), identity=resolve_user)` 一致。
+
+每个 HTTP 连接拥有独立监听器及所属插件的消息入口；不同连接使用不同端口，不隐式共享端口。未配置 HTTP 连接时不监听，已声明的消息绑定可以保持未启用。配置了连接但未绑定处理器及身份解析函数时启动失败。插件停止会关闭自己的监听器，再启用时按当前配置重建。
+
+QQ 使用官方 Gateway WebSocket，钉钉使用官方 Stream 长连接；两者不依赖 API 监听器。SDK 的 token、签名、握手与 ACK 属于协议认证，继续由通道管理。
 
 ### 钉钉 Stream 配置
 
@@ -88,15 +93,21 @@ SDK 的端点来自进程环境变量，在首次导入前设置。推荐在服�
 
 SDK 1.2.2 没有完整通知回调及可配置 intents；gateway.py 补这两个入口、原始事件 ID/序列保留及任务清理，并将正常断线返回转为 SDK 重连，避免原生监听空转。业务事件由框架在入队时去重，避免 SDK 仅按消息 ID 去重而丢失连续消息。原生 SDK 在宿主事件循环中运行，不额外启动网关线程。该版本 SDK 的内部钩子已纳入契约测试，升级依赖时必须验证。原生 EventParser 负责消息身份解析，GROUP_MESSAGE_CREATE 按相同的群消息结构补充解析。群消息使用 `GROUP_AT_MESSAGE_CREATE` 或 `GROUP_MESSAGE_CREATE` 的 `group_openid`，C2C 消息使用 `C2C_MESSAGE_CREATE` 的 `user_openid`；三者都先转换成 Framework Event，再进入有界队列和 Matcher 分发。被动回复按官方限制执行：单聊最多 4 次，群聊最多 5 次。
 
-channels 自己只维护消息入口、健康检查和传输生命周期。目标架构中业务插件不使用 `@channels.api.get/post/...` 声明会话、知识库或 cron 路由；它们声明 `on_message/on_command` Matcher，并由统一消息入口按插件归属开放。撤销一个业务插件只撤销它的消息入口，不关闭其他消费者共享的 API。
+channels 自己只维护消息入口、健康检查和传输生命周期。业务插件通过框架处理会话、知识库或 cron 操作；它们声明 `on_message/on_command` Matcher，并由统一消息入口按插件归属开放。停止一个业务插件会关闭它自己的 HTTP 连接，不影响其他插件的监听器。
+
+### 原生 HTTP 接口
+
+确需额外 HTTP 接口时，调用插件在 `on_started` 中通过 `channels.api.get_app(connection="main")` 获取已启动的 FastAPI 应用，使用原生 FastAPI 路由或挂载独立子应用。调用插件自行负责该接口的认证、请求准入、资源清理和 `on_shutdown` 撤销；这些原生接口不会自动转成消息或继承消息入口的身份校验。普通对话与命令继续使用 `channels.api.message(handlers=(...), identity=resolve_user)`，不需要原生 HTTP 接口。
+
+一个命名连接仅绑定一个消息入口，绑定对象保存插件归属、已有 Matcher 和身份解析依赖；端点固定为 `/plugins/{plugin_id}/messages`。插件启用、停止和撤销通过查询框架状态及清理绑定生效，不动态生成 URL 路由，不注册额外 Matcher。
 
 ## 统一消息与身份
 
-统一消息入口使用下面的请求、回复和续接契约。chat/sandbox 示例和客户端已采用该入口；通道内部的非消息管理路由仍可单独声明。
+统一消息入口使用下面的请求、回复和续接契约。chat/sandbox 示例和客户端采用该入口。channels 只提供固定消息、附件及健康检查端点。
 
 ```text
 FastAPI 请求 / QQ Gateway Dispatch / 钉钉 Stream 消息
-→ 通道认证与协议解析
+→ 协议解析、SDK 认证或调用插件的 HTTP 身份解析
 → Event + UserContext，消息事件另有 Message
 → dispatch_event
 → Permission / Rule / Matcher / Dependent
@@ -109,6 +120,24 @@ FastAPI 请求 / QQ Gateway Dispatch / 钉钉 Stream 消息
 统一 HTTP 消息入口固定为 `POST /plugins/{plugin_id}/messages`。请求体为 `MessageRequest`：`message` 可以是纯文本，也可以是有序文本/图片/文件/音频/视频消息段；附件必须引用 channels 已校验的 `attachment_id`。调用者必须遵守这个协议，不能在正文传入用户、组、角色、Matcher ID、Python 函数名或任意本地路径。未知字段、空文本、非法附件和超限请求在进入框架前拒绝。
 
 业务插件不为每个操作定义 HTTP body 或业务 REST 路由。`/new`、`/sessions`、`/use`、`/clear`、知识库查询、计划管理等都以命令或普通消息进入 Matcher；参数通过命令参数和消息段提供，业务插件负责校验资源归属。HTTP、QQ、钉钉的外部请求都转换成相同的 Event/Message/Context，避免每个通道维护不同的业务入口。
+
+HTTP 身份函数由调用插件提供，签名通过框架 `Dependent` 解析，可使用 `Context()` 获取原生请求、`Depends()` 获取调用插件的资源。身份函数在所属插件的调用准入和依赖作用域内执行，返回 `UserContext`；同一个函数用于消息、附件上传及下载。拒绝请求可抛出 `HTTPError`；channels 没有默认 token 或匿名身份。若需要公开入口，调用插件显式返回匿名身份；该身份的请求会共享用户级会话与附件范围。
+
+```python
+from typing import Annotated
+from pydantic import InstanceOf
+from starlette.requests import Request
+from opsmesh.params import Context
+from opsmesh.plugins.channels import UserContext
+
+async def resolve_user(
+    request: Annotated[InstanceOf[Request], Context()],
+) -> UserContext:
+    # authenticate_request is implemented by the consuming plugin.
+    return await authenticate_request(request)
+```
+
+业务权限在调用插件的 Rule、Permission、Depends 或处理函数中检查。QQ、钉钉只从 SDK 事件提取平台用户 ID 和显示名，不将聊天群 ID 当成业务用户组；群路由使用事件的群信息。角色、业务组及资源访问权限由调用插件决定。
 
 标准消息入口通过 `channels.api.message` 绑定同插件已有的 Matcher：
 
@@ -133,7 +162,7 @@ async def chat_reply(matcher: Matcher, event: Event) -> None:
     await matcher.finish("Received: " + event.get_plaintext())
 
 
-channels.api.message(handlers=(help_command, chat_message))
+channels.api.message(handlers=(help_command, chat_message), identity=resolve_user)
 ```
 
 这里省略 path 是目标统一消息入口的接口；当前源码仍要求显式 path，实施时需要同步修改 channels、chat/sandbox 示例和客户端，不保留每个业务的旧 REST 路由兼容分支。
@@ -158,7 +187,7 @@ API Event 的 `get_session_id()` 返回由协议、连接、目标插件、认�
 
 ### 回复协议
 
-HTTP 的“一次响应”可以承载多条消息，不能沿用当前 HTTPEvent 单次 reply 槽。API Channel 按调用顺序收集已发送消息；QQ/钉钉仍逐条发送。非流式请求在框架分发与清理完成后返回一个 JSON envelope：
+HTTP 的一次响应可以承载多条消息。API Channel 按调用顺序收集已发送消息；QQ/钉钉仍逐条发送。非流式请求在框架分发与清理完成后返回一个 JSON envelope：
 
 ```json
 {
@@ -295,3 +324,31 @@ QQ 不支持增量格式及 Markdown 消息段；钉钉配置卡片后支持 Mar
 示例共享的 files.py 保存产物选择，outputs.py 决定输出格式与缓冲，deliveries.py 处理持久化。
 channels 只管理事件附件访问、协议转换、临时下载引用和实际传输结果。
 HTTP 内容预算不含 JSON/SSE 外层编码，文件字节使用附件限额；处理期限同时适用于 JSON 与 SSE。
+
+
+钉钉服务端接口使用 `alibabacloud_dingtalk==2.2.67` 原生异步客户端：
+OAuth 令牌、IM 群操作、机器人消息、附件下载地址及卡片创建和更新。
+请求模型、响应模型和协议序列化由 SDK 提供；channels 保留消息转换、令牌缓存、
+超时、取消和交付记录。SDK 自动重试关闭，避免重复发送。
+会话 Webhook、旧版素材上传以及 Stream 异步握手保留独立 HTTP 调用；
+前两项在当前服务端 SDK 中未发现对应封装，Stream SDK 的握手仍为同步调用。
+附件接口仅返回下载地址，实际字节读取仍受大小、超时及地址检查限制。
+
+
+## 接收、排空与回复资源
+
+QQ、钉钉的连接声明与生命周期由 channels 内部的 `RobotAdapter` 统一管理。
+框架仍负责 Driver、插件生命周期、Matcher、Dependent、PluginCall 和事件分发。
+协议适配器负责解析事件、调用各自 SDK 和编码平台 ACK。
+
+`ready` 表示接收连接已就绪；`replies_available` 表示出站资源仍可使用。
+长连接断开或停止接收不会撤销已经受理的事件。停机先拒绝新事件，排空或取消已有工作，
+再关闭出站客户端。旧插件代次的事件不能进入重新启用后的处理器。
+
+QQ 私聊和明确 @ 机器人的群消息满足 `to_me`；普通群消息不满足。
+持续监听群消息应由调用插件的 Matcher/Rule 选择，不通过改变 `to_me` 实现。
+
+普通 HTTP 路由及标准消息入口的 `request_timeout_seconds` 从读取请求体前开始计算，
+读取与处理共用截止时间；附件上传读取也受该超时约束。SSE 的响应任务使用剩余预算，
+客户端断开会取消处理并释放依赖。权限拒绝统一为 403、插件不可用为 503、超时为 504；
+SSE 已开始时通过 error 帧表达，不能再改变 HTTP 状态码。

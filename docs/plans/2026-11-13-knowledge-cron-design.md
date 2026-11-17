@@ -302,7 +302,7 @@ HTTP、QQ、钉钉都转换成相同的 Framework `Event`、`Message`、可信 `
 
 NoneBot2 的设计适合作为这里的参考：`on_*` 返回 Matcher，处理器通过当前 Matcher 的 `send()` 回复；`finish()` 发送可选消息后抛出结束控制异常；`pause()` 和 `reject()` 发送提示并改变后续事件的处理位置。处理器的 Python 返回值不是回复协议，不能依赖隐式返回值形成通道响应。
 
-OpsMesh 当前 Matcher 已提供 `send/finish/pause/reject`，通过 Channel ContextVar 发送，并由现有控制异常改变流程。但当前 HTTPEvent 只有一次 reply 槽，APIMessageEvent 没有可用的 get_session_id，入口只接受显式绑定的 Matcher。这三处必须修改，不能只换示例的调用名称。不增加 MessageReply 返回值中心，也不扫描 handler 返回值。
+OpsMesh 当前 Matcher 已提供 `send/finish/pause/reject`，通过 Channel ContextVar 发送，并由现有控制异常改变流程。APIMessageEvent 提供隔离后的 get_session_id，消息输出支持多条回复，入口接受绑定 Matcher 及其原生续接 Matcher。不增加 MessageReply 返回值中心，也不扫描 handler 返回值。
 
 ```python
 from typing import Annotated
@@ -436,7 +436,7 @@ example_chat/
 └── ...
 ```
 
-`handlers.py` 不再判断 HTTPEvent，不读取 request.path_params/query_params，不抛 HTTPError；通道将协议输入转成公共消息与经校验的插件数据，聊天依赖负责会话选择和归属。命令和普通消息处理器通过注入的 `Matcher` 调用 `send/finish/pause/reject`，不依赖 handler 返回值，也不通过 `respond/reject` 按 HTTP/机器人分别判断。
+`handlers.py` 不依赖 HTTP 请求类型，不读取 request.path_params/query_params，不抛 HTTPError；通道将协议输入转成公共消息与经校验的插件数据，聊天依赖负责会话选择和归属。命令和普通消息处理器通过注入的 `Matcher` 调用 `send/finish/pause/reject`，不依赖 handler 返回值，也不通过 `respond/reject` 按 HTTP/机器人分别判断。
 
 本地客户端的新建、列表、选择和删除均向统一 messages 地址发命令，并读取结构化 data，不解析人类可读文本。删除旧 `/chat` 和 `/sessions` 路径依赖；上传继续调用 channels 通用附件接口。chat、sandbox、客户端、文档及定向测试一并更新，避免示例之间接口不同。
 
