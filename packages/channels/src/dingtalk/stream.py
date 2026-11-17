@@ -114,16 +114,16 @@ class DingTalkStream(DingTalkStreamClient):
                         )
                     finally:
                         if not self._stopping:
-                            self.adapter.stream_disconnected(self.channel)
-                    await anyio.sleep(self.channel.protocol.reconnect_delay)
+                            self.channel.inbound_task_disconnected()
+                    await anyio.sleep(self.channel.settings.reconnect_delay)
         finally:
             self._scope = None
             self._finished.set()
-            self.adapter.stream_finished(self.channel)
+            self.channel.inbound_task_finished()
 
     async def _receive(self) -> None:
         uri = await self._connection_uri()
-        settings = self.channel.protocol
+        settings = self.channel.settings
         socket = await connect(
             uri,
             open_timeout=settings.request_timeout,
@@ -134,7 +134,7 @@ class DingTalkStream(DingTalkStreamClient):
         )
         self.websocket = socket
         try:
-            self.adapter.stream_connected(self.channel)
+            self.channel.inbound_task_connected()
             async for raw in socket:
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
@@ -154,7 +154,7 @@ class DingTalkStream(DingTalkStreamClient):
         subscriptions = [{"type": "CALLBACK", "topic": ChatbotMessage.TOPIC}]
         if self._is_event_required:
             subscriptions.insert(0, {"type": "EVENT", "topic": "*"})
-        connection = await self.adapter.client.post_json(
+        connection = await self.channel.client.post_json(
             self.OPEN_CONNECTION_API,
             {
                 "clientId": self.credential.client_id,

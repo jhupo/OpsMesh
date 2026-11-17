@@ -11,7 +11,6 @@ from opsmesh.plugins.channels.dingtalk.cards import DingTalkCardStream
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 from opsmesh.plugins.channels.dingtalk.config import (
     DingTalkConnectionSettings,
-    DingTalkSettings,
 )
 from opsmesh.plugins.channels.dingtalk.errors import DingTalkSendError
 from opsmesh.plugins.channels.dingtalk.events import parse_callback
@@ -36,14 +35,15 @@ def context(group=True):
             client_secret_ref="CARD_SECRET",
             card={"template_id": "published.schema", "update_interval": 0.5},
         ),
-        protocol=DingTalkSettings(),
     )
     return event, channel
 
 
-@pytest.fixture(autouse=True)
-def credentials(monkeypatch):
-    monkeypatch.setenv("CARD_SECRET", "test-secret")
+def card_stream(channel, http):
+    channel.client = DingTalkClient(
+        channel.settings, "test-secret", http=http
+    )
+    return DingTalkCardStream(channel)
 
 
 class Transport:
@@ -81,9 +81,7 @@ async def test_card_stream_uses_one_identity_and_finalizes_after_cleanup(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(transport)
     ) as http:
-        result = await DingTalkCardStream(
-            DingTalkClient(channel.protocol, http), channel
-        ).send(event, source())
+        result = await card_stream(channel, http).send(event, source())
     assert len(transport.calls) == 3
     creation, final, state = [body for _, _, body in transport.calls]
     assert creation["openSpaceId"] == (
@@ -119,9 +117,7 @@ async def test_source_failure_closes_and_marks_existing_card_failed():
         transport=httpx.MockTransport(transport)
     ) as http:
         with pytest.raises(RuntimeError, match="model disconnected"):
-            await DingTalkCardStream(
-                DingTalkClient(channel.protocol, http), channel
-            ).send(event, source())
+            await card_stream(channel, http).send(event, source())
     assert closed == [True]
     assert transport.calls[-1][2]["cardData"]["cardParamMap"] == {
         "msgContent": "partial",
@@ -147,9 +143,7 @@ async def test_cancellation_shields_cleanup_without_another_reply():
         transport=httpx.MockTransport(transport)
     ) as http:
         with anyio.move_on_after(0.05) as scope:
-            await DingTalkCardStream(
-                DingTalkClient(channel.protocol, http), channel
-            ).send(event, source())
+            await card_stream(channel, http).send(event, source())
     assert (scope.cancel_called, closed) == (True, [True])
     assert [path for _, path, _ in transport.calls] == [
         "/v1.0/card/instances/createAndDeliver",
@@ -175,9 +169,7 @@ async def test_nested_delivery_rejection_is_not_reported_as_success():
         transport=httpx.MockTransport(transport)
     ) as http:
         with pytest.raises(DingTalkSendError, match="rejected|did not confirm"):
-            await DingTalkCardStream(
-                DingTalkClient(channel.protocol, http), channel
-            ).send(event, source())
+            await card_stream(channel, http).send(event, source())
     assert len([call for call in transport.calls if call[0] == "POST"]) == 1
 
 
@@ -198,9 +190,7 @@ async def test_invalid_stream_does_not_create_card(chunks):
         transport=httpx.MockTransport(transport)
     ) as http:
         with pytest.raises((ValueError, TypeError)):
-            await DingTalkCardStream(
-                DingTalkClient(channel.protocol, http), channel
-            ).send(event, source())
+            await card_stream(channel, http).send(event, source())
     assert transport.calls == []
 
 
@@ -231,9 +221,7 @@ async def test_card_updates_while_source_is_running_and_keeps_one_card():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(transport)
     ) as http:
-        await DingTalkCardStream(
-            DingTalkClient(channel.protocol, http), channel
-        ).send(event, source())
+        await card_stream(channel, http).send(event, source())
     updates = [
         body for _, path, body in transport.calls if path.endswith("/streaming")
     ]
@@ -266,9 +254,7 @@ async def test_update_error_survives_failed_cleanup():
         transport=httpx.MockTransport(respond)
     ) as http:
         with pytest.raises(OperationPermissionDenied) as caught:
-            await DingTalkCardStream(
-                DingTalkClient(channel.protocol, http), channel
-            ).send(event, source())
+            await card_stream(channel, http).send(event, source())
     assert (closed, caught.value.status) == ([True], 403)
     assert "Card failure notification failed" in caught.value.__notes__[0]
 

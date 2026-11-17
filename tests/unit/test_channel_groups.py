@@ -1,24 +1,25 @@
 """Verify official platform operation mappings using isolated transports."""
 
 import json
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import httpx
 import pytest
 
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
 from opsmesh.plugins.channels import (
     OperationPermissionDenied,
     OperationRateLimited,
 )
+from opsmesh.plugins.channels.dingtalk import DingTalkAdapter
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
-from opsmesh.plugins.channels.dingtalk.config import (
-    DingTalkConnectionSettings,
-    DingTalkSettings,
-)
+from opsmesh.plugins.channels.dingtalk.config import DingTalkConnectionSettings
 from opsmesh.plugins.channels.dingtalk.groups import DingTalkGroups
 from opsmesh.plugins.channels.operations import operation_response
+from opsmesh.plugins.channels.qq import QQAdapter
 from opsmesh.plugins.channels.qq.client import QQClient
-from opsmesh.plugins.channels.qq.config import QQConnectionSettings, QQSettings
+from opsmesh.plugins.channels.qq.config import QQConnectionSettings
 from opsmesh.plugins.channels.qq.events import QQNoticeEvent, parse_callback
 from opsmesh.plugins.channels.qq.operations import (
     QQGroupMuteChange,
@@ -27,6 +28,42 @@ from opsmesh.plugins.channels.qq.operations import (
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.plugins.registry import plugin_scope
+
+
+def make_plugin(name="owner"):
+    return Plugin(
+        name,
+        ModuleType(name),
+        name,
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
+
+
+def qq_operations(http):
+    adapter = QQAdapter(Driver(Env(), Config()))
+    with plugin_scope(make_plugin()):
+        channel = adapter.declare(
+            QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            name="bot",
+        )
+    channel._client = QQClient(
+        channel.settings, "secret", name=channel.self_id, http=http
+    )
+    return QQOperations(channel)
+
+
+def dingtalk_groups(http):
+    adapter = DingTalkAdapter(Driver(Env(), Config()))
+    with plugin_scope(make_plugin()):
+        channel = adapter.declare(
+            DingTalkConnectionSettings(
+                client_id="app", client_secret_ref="DT_SECRET"
+            ),
+            name="bot",
+        )
+    channel._client = DingTalkClient(channel.settings, "secret", http=http)
+    return DingTalkGroups(channel)
 
 
 @pytest.fixture(autouse=True)
@@ -109,13 +146,7 @@ async def test_qq_guild_operation_wire_contract(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        settings = QQSettings()
-        account = SimpleNamespace(
-            self_id="owner:qq",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
-            protocol=settings,
-        )
-        groups = QQOperations(QQClient(settings, http), account, "secret")
+        groups = qq_operations(http)
         assert await getattr(groups, operation)(**arguments) is None
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
@@ -217,13 +248,7 @@ async def test_qq_group_operation_wire_contract(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        settings = QQSettings()
-        account = SimpleNamespace(
-            self_id="owner:qq",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
-            protocol=settings,
-        )
-        groups = QQOperations(QQClient(settings, http), account, "secret")
+        groups = qq_operations(http)
         assert await getattr(groups, operation)(**arguments) is None
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
@@ -300,26 +325,14 @@ async def test_dingtalk_group_operation_wire_contract(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        client = DingTalkClient(DingTalkSettings(), http)
-        account = SimpleNamespace(
-            settings=DingTalkConnectionSettings(
-                client_id="app", client_secret_ref="DT_SECRET"
-            )
-        )
-        assert (
-            await getattr(DingTalkGroups(client, account), operation)(
-                **arguments
-            )
-            == expected
-        )
+        groups = dingtalk_groups(http)
+        assert await getattr(groups, operation)(**arguments) == expected
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
     assert request.headers["x-acs-dingtalk-access-token"] == "token"
     if operation == "query_group_member":
         assert dict(request.url.params) == {"openConversationId": "cid"}
     else:
-        import json
-
         body = json.loads(request.content)
         assert body["openConversationId"] == "cid"
         if "user_ids" in arguments:
@@ -384,32 +397,15 @@ def test_qq_group_join_request_notice_exposes_group_and_member():
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
 async def test_group_operations_reject_foreign_connection_owner(protocol):
-    from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver
-    from opsmesh.plugins.channels.dingtalk import DingTalkAdapter
-    from opsmesh.plugins.channels.qq import QQAdapter
-
-    owner = Plugin(
-        name="owner",
-        module=ModuleType("owner"),
-        module_name="owner",
-        manager=PluginManager(),
-        status=PluginStatus.READY,
-    )
-    other = Plugin(
-        name="other",
-        module=ModuleType("other"),
-        module_name="other",
-        manager=PluginManager(),
-        status=PluginStatus.READY,
-    )
+    owner = make_plugin("owner")
+    other = make_plugin("other")
     driver = Driver(Env(), Config())
     if protocol == "qq":
-        adapter = QQAdapter(driver, settings=QQSettings())
+        adapter = QQAdapter(driver)
         settings = QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET")
         operation, arguments = "get_guild", {"guild_id": "g"}
     else:
-        adapter = DingTalkAdapter(driver, settings=DingTalkSettings())
+        adapter = DingTalkAdapter(driver)
         settings = DingTalkConnectionSettings(
             client_id="app", client_secret_ref="DT_SECRET"
         )
@@ -431,31 +427,20 @@ async def test_group_operations_reject_foreign_connection_owner(protocol):
 async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
     monkeypatch,
 ):
-    from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver
-    from opsmesh.plugins.channels.dingtalk import DingTalkAdapter
     from opsmesh.plugins.channels.dingtalk.events import DingTalkNoticeEvent
     from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
 
-    adapter = DingTalkAdapter(
-        Driver(Env(), Config()), settings=DingTalkSettings()
-    )
-    owner = Plugin(
-        name="owner",
-        module=ModuleType("owner"),
-        module_name="owner",
-        manager=PluginManager(),
-        status=PluginStatus.READY,
-    )
-    with plugin_scope(owner):
+    adapter = DingTalkAdapter(Driver(Env(), Config()))
+    with plugin_scope(make_plugin()):
         channel = adapter.declare(
             DingTalkConnectionSettings(
                 client_id="app", client_secret_ref="DT_SECRET"
             ),
             name="bot",
         )
+    channel._prepared = True
     channel.mark_ready()
-    adapter._accepting = True
+    channel._queue._accepting = True
     queued, acknowledgements = [], []
 
     def enqueue(item):
@@ -466,7 +451,7 @@ async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
         async def send(self, frame):
             acknowledgements.append(json.loads(frame))
 
-    monkeypatch.setattr(adapter._queue, "put_nowait", enqueue)
+    monkeypatch.setattr(channel._queue, "put_nowait", enqueue)
     stream = DingTalkStream(channel, "secret")
     stream.websocket = Socket()
     await stream.route_message(
@@ -482,12 +467,15 @@ async def test_dingtalk_native_event_uses_notice_queue_and_sdk_ack(
     )
     event = queued[0].event
     assert isinstance(event, DingTalkNoticeEvent)
-    assert (event.get_type(), event.event_type, event.get_session_id()) == (
+    assert (event.get_type(), event.event_type) == (
         "notice",
         "chat_update_title",
-        f"{channel.self_id}:chat:chat",
     )
-    assert queued[0].caller is None
+    assert json.loads(event.get_session_id()) == [
+        channel.self_id,
+        "chat",
+        "chat",
+    ]
     assert acknowledgements[0]["headers"]["messageId"] == "frame"
 
 

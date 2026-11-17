@@ -18,12 +18,10 @@ from opsmesh.plugins import registry
 from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
     DingTalkConnectionSettings,
-    DingTalkSettings,
 )
 from opsmesh.plugins.channels.qq import (
     QQAdapter,
     QQConnectionSettings,
-    QQSettings,
 )
 from opsmesh.plugins.invocation import plugin_call
 from opsmesh.plugins.manager import PluginManager
@@ -60,39 +58,33 @@ class BotHarness:
         token = registry._current_plugin.set(self.owner)
         try:
             if protocol == "qq":
-                self.adapter = QQAdapter(
-                    self.driver,
-                    settings=QQSettings(
-                        enabled=False,
+                self.adapter = QQAdapter(self.driver)
+                self.channel = self.adapter.declare(
+                    QQConnectionSettings(
+                        app_id="123",
+                        secret_ref="BOT_SECRET",
                         concurrency=2,
                         max_pending_events=4,
                         shutdown_timeout=0.02,
                     ),
-                )
-                self.channel = self.adapter.declare(
-                    QQConnectionSettings(app_id="123", secret_ref="BOT_SECRET"),
                     name="bot",
                 )
-                self.adapter._accepting = True
             else:
-                self.adapter = DingTalkAdapter(
-                    self.driver,
-                    settings=DingTalkSettings(
-                        concurrency=2,
-                        max_pending_events=4,
-                        shutdown_timeout=0.02,
-                    ),
-                )
+                self.adapter = DingTalkAdapter(self.driver)
                 self.channel = self.adapter.declare(
                     DingTalkConnectionSettings(
                         client_id="123",
                         client_secret_ref="BOT_SECRET",
+                        concurrency=2,
+                        max_pending_events=4,
+                        shutdown_timeout=0.02,
                     ),
                     name="bot",
                 )
-                self.adapter._accepting = True
         finally:
             registry._current_plugin.reset(token)
+        self.channel._prepared = True
+        self.channel._client = object()
         self.channel.mark_ready()
 
     async def admit(self, message_id):
@@ -171,13 +163,13 @@ async def test_acknowledged_queue_drains_stopping_plugins_and_finalizers(bot):
 
     bot.bind(handle)
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         assert await bot.admit("one") == 200
         assert await bot.admit("two") == 200
         assert len(bot.owner.calls) == len(bot.provider.calls) == 2
         bot.stop_owners()
-        bot.adapter.stop_accepting()
-        await bot.adapter._queue.stop()
+        bot.channel.stop()
+        await bot.channel._queue.stop()
         expected = 503 if bot.protocol == "qq" else 500
         assert await bot.admit("late") == expected
     assert stages == [
@@ -204,11 +196,11 @@ async def test_permissions_are_checked_when_dequeued_after_acknowledgement(bot):
 
     bot.bind(handle, permission=Permission(deny))
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         assert await bot.admit("one") == 200
         assert permissions == []
         bot.stop_owners()
-        await bot.adapter._queue.stop()
+        await bot.channel._queue.stop()
     assert permissions == ["one"]
     assert handled == []
     assert not bot.owner.calls and not bot.provider.calls
@@ -226,20 +218,21 @@ async def test_failed_enqueue_releases_admission_and_allows_redelivery(
             raise RuntimeError("enqueue failed")
         return False
 
-    original = bot.adapter._queue.put_nowait
-    monkeypatch.setattr(bot.adapter._queue, "put_nowait", reject)
+    original = bot.channel._queue.put_nowait
+    bot.channel._queue._accepting = True
+    monkeypatch.setattr(bot.channel._queue, "put_nowait", reject)
     if failure == "exception":
         with pytest.raises(RuntimeError, match="enqueue failed"):
             await bot.admit("retry")
     else:
         assert await bot.admit("retry") in {500, 503}
     assert not bot.owner.calls and not bot.provider.calls
-    monkeypatch.setattr(bot.adapter._queue, "put_nowait", original)
+    monkeypatch.setattr(bot.channel._queue, "put_nowait", original)
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         assert await bot.admit("retry") == 200
         assert bot.owner.calls
-        await bot.adapter._queue.stop()
+        await bot.channel._queue.stop()
     assert not bot.owner.calls and not bot.provider.calls
 
 
@@ -254,11 +247,11 @@ async def test_expired_activation_drops_event_and_releases_admission(
 
     bot.bind(handle)
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         assert await bot.admit("old") == 200
         bot.owner.generation += 1
         with caplog.at_level("INFO"):
-            await bot.adapter._queue.stop()
+            await bot.channel._queue.stop()
     assert handled == []
     assert "Cancelled queued" in caplog.text
     assert not bot.owner.calls and not bot.provider.calls
@@ -278,18 +271,18 @@ async def test_timeout_releases_active_locked_and_pending_items_once(bot):
         await item.close()
 
     bot.bind(handle)
-    bot.adapter._queue._release_item = release
+    bot.channel._queue._release_item = release
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         for number in range(4):
             assert await bot.admit(str(number)) == 200
         await entered.wait()
         bot.stop_owners()
-        await bot.adapter._queue.stop()
-        await bot.adapter._queue.stop()
+        await bot.channel._queue.stop()
+        await bot.channel._queue.stop()
     assert sorted(cleaned) == ["0", "1", "2", "3"]
     assert not bot.owner.calls and not bot.provider.calls
-    assert not bot.adapter._queue._active
+    assert not bot.channel._queue._active
 
 
 @pytest.mark.anyio
@@ -308,10 +301,10 @@ async def test_native_handler_failure_still_releases_dependencies(bot):
 
     bot.bind(handle)
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         assert await bot.admit("fail") == 200
         bot.stop_owners()
-        await bot.adapter._queue.stop()
+        await bot.channel._queue.stop()
     assert finalized == [True]
     assert not bot.owner.calls and not bot.provider.calls
 
@@ -319,13 +312,13 @@ async def test_native_handler_failure_still_releases_dependencies(bot):
 @pytest.mark.anyio
 async def test_delivery_keeps_its_own_admission_when_callback_inherits_one(bot):
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         async with plugin_call("support") as original:
             assert await bot.admit("one") == 200
             calls = set(bot.owner.calls.values())
             assert original in calls and len(calls) == 2
         assert len(bot.owner.calls) == 1
-        await bot.adapter._queue.stop()
+        await bot.channel._queue.stop()
     assert not bot.owner.calls and not bot.provider.calls
 
 
@@ -351,7 +344,7 @@ async def test_host_task_cancellation_releases_unconsumed_deliveries(bot):
 
     bot.bind(handle)
     async with anyio.create_task_group() as tasks:
-        await bot.adapter._queue.start(tasks)
+        await bot.channel._queue.start(tasks)
         for number in range(4):
             assert await bot.admit(str(number)) == 200
         await entered.wait()
@@ -359,5 +352,5 @@ async def test_host_task_cancellation_releases_unconsumed_deliveries(bot):
         tasks.cancel_scope.cancel()
     assert closed == ["cancelled", "closed"]
     assert not bot.owner.calls and not bot.provider.calls
-    assert not bot.adapter._queue.running
-    assert not bot.adapter._queue._active
+    assert not bot.channel._queue.running
+    assert not bot.channel._queue._active

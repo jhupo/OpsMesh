@@ -40,6 +40,7 @@ class EventQueue:
         scope: Callable[[Any], str | None] | None = None,
         release: Callable[[Any], Awaitable[None]] | None = None,
     ) -> None:
+        """Create admission state; workers start later on the driver loop."""
         self._capacity = capacity
         self._concurrency = concurrency
         self._shutdown_timeout = shutdown_timeout

@@ -3,12 +3,11 @@
 import os
 from typing import Literal
 
-from conversation_support.identity import HTTPIdentitySettings
 from openai.types.shared import Reasoning
-from pydantic import ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
-class ChatSettings(HTTPIdentitySettings):
+class ChatSettings(BaseModel):
     """Declare model and optional MCP connection settings."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")

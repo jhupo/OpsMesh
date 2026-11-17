@@ -11,8 +11,8 @@ from ..receipts import Delivery
 from ..sending import message_size, normalize, split_data
 from ..streaming import TextBlock, message_stream
 from .attachments import prepare_message
+from .codec import sse_event
 from .errors import HTTPError
-from .responses import sse_event
 
 
 @dataclass(frozen=True)
@@ -101,9 +101,7 @@ class MessageOutput:
         )
         item = {"message_id": identifier, "content": parts, "data": data}
         if uploads:
-            self.channel.uploads.put_many(
-                (self.event.installation_id, self.event.user_id), uploads
-            )
+            self.channel.uploads.put_many(self.channel.self_id, uploads)
         if identifier in self._pending:
             self._pending[identifier].materialized = True
         if self.emit is None:

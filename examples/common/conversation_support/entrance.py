@@ -16,7 +16,6 @@ from opsmesh.params import Command, CommandArg, Context, Depends
 from opsmesh.rules import to_me
 
 from . import channels
-from .identity import caller
 from .schemas import ConversationView
 from .store import ConversationError, ConversationStore
 
@@ -154,18 +153,6 @@ class ConversationEntrance:
         )
         command.handle()(self.handle_command)
         self.extra_commands.append(command)
-
-    def bind(self) -> None:
-        """Expose only these matchers through the unified API entrance."""
-        channels.api.message(
-            identity=caller,
-            handlers=(
-                *self.commands,
-                *self.extra_commands,
-                self.fallback,
-                self.message,
-            ),
-        )
 
     def forget_selections(self) -> None:
         """Discard transient mappings when the consuming plugin stops."""

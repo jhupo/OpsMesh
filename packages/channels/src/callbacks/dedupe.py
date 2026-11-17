@@ -18,6 +18,7 @@ class EventDeduplicator:
     """
 
     def __init__(self, *, ttl: float, capacity: int) -> None:
+        """Validate the retention window and its bounded capacity."""
         if ttl <= 0:
             raise ValueError("Deduplication TTL must be positive")
         if capacity <= 0:

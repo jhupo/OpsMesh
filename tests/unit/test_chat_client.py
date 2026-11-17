@@ -267,6 +267,7 @@ def test_terminal_restore_uses_new_channel_scope_and_structured_selection(
     assert "test-token" not in (tmp_path / "state.json").read_text()
     assert restored.execute("/clear") == "reply:/clear"
     assert requests[-1][2] == {
+        "user": {"id": "chat-client", "name": ""},
         "message": "/clear",
         "conversation_id": restored.client.conversation_id,
     }
@@ -317,7 +318,12 @@ def test_new_client_windows_do_not_switch_each_other(
 
 
 @pytest.mark.parametrize(
-    "overrides", [{"token": "different-token"}, {"plugin": "example_sandbox"}]
+    "overrides",
+    [
+        {"token": "different-token"},
+        {"plugin": "example_sandbox"},
+        {"user_id": "different-user"},
+    ],
 )
 def test_profiles_do_not_restore_other_identity_or_plugin(
     client_modules, chat_server, tmp_path, overrides
@@ -373,7 +379,7 @@ def test_upload_precedes_unified_message_with_ordered_segments(
     message = requests[-1][2]["message"]
     assert message[0] == {"type": "text", "text": "Read this"}
     assert message[1]["type"] == "file"
-    assert set(requests[-1][2]) == {"message", "conversation_id"}
+    assert set(requests[-1][2]) == {"user", "message", "conversation_id"}
 
 
 def test_sse_collects_deltas_and_preserves_complete_messages(

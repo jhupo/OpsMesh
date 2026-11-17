@@ -12,7 +12,6 @@ from ..sending import (
     OutgoingAttachment,
     prepare,
 )
-from .client import QQClient
 from .errors import QQSendError
 from .events import QQMessageEvent
 from .media import media_type, upload
@@ -22,15 +21,12 @@ if TYPE_CHECKING:
 
 
 class QQSender:
-    """Bind one sender to an existing connection and authenticated client."""
+    """Send through the outbound client owned by one connection."""
 
-    def __init__(
-        self, client: QQClient, channel: "QQChannel", secret: str
-    ) -> None:
+    def __init__(self, channel: "QQChannel") -> None:
         """Borrow the connection resources for one send operation."""
-        self.client = client
         self.channel = channel
-        self.secret = secret
+        self.api = channel.client.api
 
     async def send(
         self,
@@ -72,7 +68,7 @@ class QQSender:
         kinds: list[str],
     ) -> Any:
         """Upload and send within the connection's reserved reply scope."""
-        api = self.client.account(self.channel, self.secret)
+        api = self.api
         recipient = (
             ("group", event.group_id)
             if event.group_id

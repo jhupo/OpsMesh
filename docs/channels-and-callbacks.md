@@ -14,33 +14,29 @@ packages/channels/
     ├── __init__.py            # 元数据与懒加载协议入口
     ├── config.py              # 依赖方连接配置与机器人公共传输限制
     ├── context.py            # UserContext
-    ├── dependencies.py       # Connection(handle)
-    ├── adapter.py            # 机器人连接归属、生命周期与有界队列
-    ├── channel.py            # 机器人状态、去重与 Matcher 归属过滤
-    ├── lifecycle/            # 仅编排生命周期，不创建协议连接
-    ├── api/                  # FastAPI、调用者身份入口与框架事件转换
-    │   ├── channel.py        # 自己持有 FastAPI 和监听器
-    │   ├── entrances.py      # 插件与已有 Matcher 的消息入口绑定
-    │   ├── events.py         # APIMessageEvent
-    │   ├── exchange.py       # 单次请求、框架分发及响应生命周期
-    │   ├── requests.py       # 固定协议解析、总截止时间与依赖清理
-    │   ├── server.py         # Uvicorn 监听器启停
-    │   ├── streaming.py      # SSE 背压、断开取消与实际写出清理
-    │   └── config/messages/responses/errors/adapter.py
+    ├── adapter.py             # 连接归属、操作准入与清理
+    ├── channel.py             # 连接状态、回复可用性、统一 send
+    ├── lifecycle.py           # 按消费插件注册框架生命周期回调
+    ├── callbacks/             # 每连接的队列、去重与分发
+    ├── api/                   # FastAPI、固定消息协议与框架事件转换
+    │   ├── channel.py         # 自己持有 FastAPI 和监听器
+    │   ├── exchange.py        # 单次请求、框架分发及响应生命周期
+    │   ├── requests.py        # 固定协议解析、总截止时间与依赖清理
+    │   ├── server.py          # Uvicorn 监听器启停
+    │   ├── streaming.py       # SSE 背压、断开取消与实际写出清理
+    │   └── codec/schemas/output/attachments/errors/adapter.py
     ├── qq/                   # 自己持有 Gateway WebSocket、事件和回复客户端
     └── dingtalk/             # 自己持有官方 Stream SDK 连接和回复客户端
 ```
 
-API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 MessageRequest 协议。调用插件的身份解析完成后，channels 构造框架 Event、Message、可信 UserContext 和附件引用，再进入 Rule、Permission、Matcher、Dependent 链路。命令由框架的 `on_command` 处理，普通消息由 `on_message` 处理。FastAPI Request 只进入调用插件的 HTTP 身份解析函数，业务 Matcher 接收统一的 Event、Message 和 UserContext。
+API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 MessageRequest 协议。channels 校验请求结构后，把 `user` 资料转换为 UserContext，并构造框架 Event、Message 和附件引用，再进入 Rule、Permission、Matcher、Dependent 链路。命令由框架的 `on_command` 处理，普通消息由 `on_message` 处理。业务 Matcher 接收统一的 Event、Message 和 UserContext；HTTP 认证由消费插件自己的中间件或外部网关完成。
 
 连接由使用方的依赖配置声明，各协议模块创建并管理连接。HTTP 监听、QQ 机器人和钉钉机器人均归属声明它的插件。channels 不保存业务用户目录，不定义 token 策略或管理员权限。
 
 ```json
 {
   "config": {
-    "model": "your-model-name",
-    "http_token_ref": "OPSMESH_API_TOKEN",
-    "http_user_id": "operator"
+    "model": "your-model-name"
   },
   "dependencies": {
     "channels": {
@@ -50,9 +46,15 @@ API 使用 FastAPI/Starlette 作为传输实现，但业务请求统一遵循 Me
 }
 ```
 
-示例的 `config.http_token_ref` 和 `config.http_user_id` 只属于 chat/sandbox 自己的身份解析配置，其他插件自行定义身份策略。channels 只校验 `dependencies.channels.api.<连接名>` 的传输参数。连接名默认 `main`，与 `channels.api.message(connection="main", handlers=(...), identity=resolve_user)` 一致。
+消费插件只配置 `dependencies.channels.api.<连接名>` 的传输参数，不注册处理器或身份函数。连接名默认 `main`；channels 自动收集该插件的框架 Matcher，并把固定 HTTP 消息请求转换成框架 Event、Message 和 UserContext。
 
-每个 HTTP 连接拥有独立监听器及所属插件的消息入口；不同连接使用不同端口，不隐式共享端口。未配置 HTTP 连接时不监听，已声明的消息绑定可以保持未启用。配置了连接但未绑定处理器及身份解析函数时启动失败。插件停止会关闭自己的监听器，再启用时按当前配置重建。
+API 调用必须在正文提供 `user` 资料：`id` 必填，`name`、`groups`、`roles`
+可选。该资料只是输入声明，不代表认证结果；需要认证时由消费插件在自己的
+API 应用上安装中间件，或依赖外部网关，channels 不读取请求头或认证对象来替代正文。
+正文中的用户 ID、组和角色均可由请求方伪造，授权必须依据独立验证的身份和权限。
+附件缓存仅按连接隔离，不按正文用户隔离；需要用户隔离时由消费插件或网关实施。
+
+每个 HTTP 连接拥有独立监听器及所属插件的消息入口；不同连接使用不同端口，不隐式共享端口。未配置 HTTP 连接时不监听。插件停止会关闭自己的监听器，再启用时按当前配置重建。
 
 QQ 使用官方 Gateway WebSocket，钉钉使用官方 Stream 长连接；两者不依赖 API 监听器。SDK 的 token、签名、握手与 ACK 属于协议认证，继续由通道管理。
 
@@ -79,11 +81,12 @@ QQ 使用官方 Gateway WebSocket，钉钉使用官方 Stream 长连接；两者
 ```
 
 QQ 使用 `dependencies.channels.qq.<连接名称>`，账号字段为 `app_id`、`secret_ref`。
-使用方只需 `require("channels")`，机器人连接参数直接放在该插件的依赖配置中。
+使用方只需 `require("channels")`，机器人连接参数直接放在该插件的依赖配置中；
+通道自动将消息交给该插件的 `on_message`、`on_command` 和其他框架 Matcher。
 连接归属当前使用方；停止时关闭并移除，重新启用按当前配置重建。不同插件声明同一
 机器人账号会报出已有归属，不隐式共享或创建第二条连接。
 
-channels 的 `config.dingtalk` 只放公共限制，例如 `request_timeout`、`reconnect_delay`、`max_pending_events`。所有消费者就绪后启动 Stream，连接成功才加入 Driver 的在线索引；断线撤出并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
+连接限制只来自消费插件的依赖配置，不再有 channels 自身的协议配置。所有消费者就绪后启动 Stream，连接成功才加入 Driver 的在线索引；断线撤出并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
 
 固定使用 [官方 dingtalk-stream 0.24.3](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。消息解析、回调及 ACK 使用 SDK 原生实现。该版本原生启动循环会吞掉取消，握手和回复请求使用无超时的同步 HTTP；因此 `stream.py` 只接管异步握手、连接任务和关闭，复用 SDK 协议逻辑。日志不输出握手 ticket、secret 或完整协议帧。回复继续使用钉钉返回的 session webhook（这是出站回复地址，不是本地 Webhook 接收端点）。
 
@@ -97,9 +100,9 @@ channels 自己只维护消息入口、健康检查和传输生命周期。业�
 
 ### 原生 HTTP 接口
 
-确需额外 HTTP 接口时，调用插件在 `on_started` 中通过 `channels.api.get_app(connection="main")` 获取已启动的 FastAPI 应用，使用原生 FastAPI 路由或挂载独立子应用。调用插件自行负责该接口的认证、请求准入、资源清理和 `on_shutdown` 撤销；这些原生接口不会自动转成消息或继承消息入口的身份校验。普通对话与命令继续使用 `channels.api.message(handlers=(...), identity=resolve_user)`，不需要原生 HTTP 接口。
+确需额外 HTTP 接口时，调用插件在 `on_ready` 中通过 `channels.api.get_app(connection="main")` 获取已准备但尚未监听的 FastAPI 应用，使用原生 FastAPI 路由、中间件或挂载独立子应用。监听在 `on_started` 阶段由 channels 完成，此后不再支持修改中间件。业务对话和命令不使用这些自定义路由，统一走固定消息入口。
 
-一个命名连接仅绑定一个消息入口，绑定对象保存插件归属、已有 Matcher 和身份解析依赖；端点固定为 `/plugins/{plugin_id}/messages`。插件启用、停止和撤销通过查询框架状态及清理绑定生效，不动态生成 URL 路由，不注册额外 Matcher。
+一个命名连接自动归属声明它的消费插件，并收集该插件的框架 Matcher；端点固定为 `/plugins/{plugin_id}/messages`。插件启用、停止和撤销通过框架生命周期生效，不动态生成业务 URL 路由。
 
 ## 统一消息与身份
 
@@ -107,7 +110,7 @@ channels 自己只维护消息入口、健康检查和传输生命周期。业�
 
 ```text
 FastAPI 请求 / QQ Gateway Dispatch / 钉钉 Stream 消息
-→ 协议解析、SDK 认证或调用插件的 HTTP 身份解析
+→ 协议解析、SDK 认证或 HTTP 正文 user 资料转换
 → Event + UserContext，消息事件另有 Message
 → dispatch_event
 → Permission / Rule / Matcher / Dependent
@@ -115,71 +118,49 @@ FastAPI 请求 / QQ Gateway Dispatch / 钉钉 Stream 消息
 → Channel 回复
 ```
 
-`UserContext(id, name, groups, roles)` 只携带可信用户信息，字段冻结，组与角色是 frozenset。`Context()` 注入原对象，使用 `user.id` 访问。HTTP 正文中的身份字段不能覆盖认证结果。SDK Session/执行 ID 由调用插件管理；Framework `permissions.User` 是权限匹配器。
+`UserContext(id, name, groups, roles)` 只携带调用方声明的用户资料，字段冻结，组与角色是 frozenset。`Context()` 注入原对象，使用 `user.id` 访问。它的存在不代表身份已认证；消费插件按业务需要检查 Permission、Rule、Depends 或自己的 HTTP 中间件。SDK Session/执行 ID 由调用插件管理；Framework `permissions.User` 是权限匹配器。
 
-统一 HTTP 消息入口固定为 `POST /plugins/{plugin_id}/messages`。请求体为 `MessageRequest`：`message` 可以是纯文本，也可以是有序文本/图片/文件/音频/视频消息段；附件必须引用 channels 已校验的 `attachment_id`。调用者必须遵守这个协议，不能在正文传入用户、组、角色、Matcher ID、Python 函数名或任意本地路径。未知字段、空文本、非法附件和超限请求在进入框架前拒绝。
+统一 HTTP 消息入口固定为 `POST /plugins/{plugin_id}/messages`。请求体为 `MessageRequest`：`user` 必填，`message` 可以是纯文本，也可以是有序文本/图片/文件/音频/视频消息段；附件必须引用 channels 已校验的 `attachment_id`。调用者不能传入 Matcher ID、Python 函数名或任意本地路径。未知字段、空文本、非法附件和超限请求在进入框架前拒绝。
 
 业务插件不为每个操作定义 HTTP body 或业务 REST 路由。`/new`、`/sessions`、`/use`、`/clear`、知识库查询、计划管理等都以命令或普通消息进入 Matcher；参数通过命令参数和消息段提供，业务插件负责校验资源归属。HTTP、QQ、钉钉的外部请求都转换成相同的 Event/Message/Context，避免每个通道维护不同的业务入口。
 
-HTTP 身份函数由调用插件提供，签名通过框架 `Dependent` 解析，可使用 `Context()` 获取原生请求、`Depends()` 获取调用插件的资源。身份函数在所属插件的调用准入和依赖作用域内执行，返回 `UserContext`；同一个函数用于消息、附件上传及下载。拒绝请求可抛出 `HTTPError`；channels 没有默认 token 或匿名身份。若需要公开入口，调用插件显式返回匿名身份；该身份的请求会共享用户级会话与附件范围。
-
-```python
-from typing import Annotated
-from pydantic import InstanceOf
-from starlette.requests import Request
-from opsmesh.params import Context
-from opsmesh.plugins.channels import UserContext
-
-async def resolve_user(
-    request: Annotated[InstanceOf[Request], Context()],
-) -> UserContext:
-    # authenticate_request is implemented by the consuming plugin.
-    return await authenticate_request(request)
-```
+HTTP 请求必须在正文提供 `user`，其中 `id` 必填，name、groups 和 roles 可选。channels 只负责把资料转换成冻结的 `UserContext`，不实现业务权限；认证由消费插件自己的中间件或外部网关完成。QQ、钉钉从官方 SDK 事件提取平台用户信息。
 
 业务权限在调用插件的 Rule、Permission、Depends 或处理函数中检查。QQ、钉钉只从 SDK 事件提取平台用户 ID 和显示名，不将聊天群 ID 当成业务用户组；群路由使用事件的群信息。角色、业务组及资源访问权限由调用插件决定。
 
-标准消息入口通过 `channels.api.message` 绑定同插件已有的 Matcher：
+标准消息入口不需要显式绑定函数。消费插件只声明 `dependencies.channels.api.<name>`，照常使用框架的 `on_command`、`on_message` 和其他 Matcher；channels 自动按插件归属收集它们：
 
 ```python
-from opsmesh import on_command, on_message
-from opsmesh.adapters import Event
+from opsmesh import on_message
 from opsmesh.matchers import Matcher
-from opsmesh.plugins import require
 
-channels = require("channels")
-help_command = on_command("help", priority=1, block=True)
-chat_message = on_message(priority=10, block=True)
-
-
-@help_command.handle()
-async def help_reply(matcher: Matcher) -> None:
-    await matcher.finish("Send a message to start a conversation.")
+chat_message = on_message()
 
 
 @chat_message.handle()
-async def chat_reply(matcher: Matcher, event: Event) -> None:
-    await matcher.finish("Received: " + event.get_plaintext())
-
-
-channels.api.message(handlers=(help_command, chat_message), identity=resolve_user)
+async def chat_reply(matcher: Matcher) -> None:
+    await matcher.finish("Received.")
 ```
 
 消息入口不提供业务 path，固定使用 `POST /plugins/{plugin_id}/messages`。
-调用方按统一消息协议提交内容，消费插件提供 `identity` 解析器；请求随后转换为框架
+调用方按统一消息协议提交内容；请求随后转换为框架
 Event、Message 或命令并进入统一分发，不保留每个业务的 REST 路由。
 
-消息请求是 `{"message": "hello"}` 或有序消息段数组。插件不再通过 `body` 子类扩展业务 HTTP 字段；需要业务参数时使用命令参数、消息段或插件自己的数据库对象。`APIMessageEvent` 的类型固定为 message，包括纯附件输入；`payload` 保留 channels 的验证模型。EventMessage、EventPlainText 和 CommandArg 使用同一份 Message。
+消息请求是含 `user` 的纯文本或有序消息段数组，可声明 `conversation_type`；群消息还需提供 `group_id`，例如
+`{"user": {"id": "alice"}, "conversation_type": "private", "message": "hello"}`。未声明时按 private 处理。插件不再通过 `body` 子类扩展
+业务 HTTP 字段；需要业务参数时使用命令参数、消息段或插件自己的数据库对象。
+`APIMessageEvent` 的类型固定为 message，包括纯附件输入；`payload` 保留 channels
+的验证模型。EventMessage、EventPlainText 和 CommandArg 使用同一份 Message。
 
-入口显式绑定同插件的持久、阻断式 Matcher，优先级互不相同；运行时还允许这些 Matcher 派生且通过作用域校验的临时续接 Matcher。不能仅按绑定对象的身份过滤，也不能放行同插件的所有临时 Matcher。框架全局事件钩子继续承担策略和日志。
+入口按插件归属接收该插件的全部 Matcher，包括运行时派生且通过作用域校验的临时续接 Matcher；不要求 `block=True`，也不过早过滤临时 Matcher。框架全局事件钩子继续承担策略和日志。
 
 `Matcher.send/finish` 通过当前事件绑定的 Channel 工作，handler 的普通返回值被忽略。`send()` 可调用多次；`finish(message)` 发送可选消息并结束当前 Matcher，不额外发送“最终消息”标记，也不直接关闭 HTTP。`pause/reject` 改变下一条事件的处理位置，不把当前请求一直挂起等待用户。
 
 ### 通道对话标识与多轮续接
 
-MessageRequest 增加可选的 `conversation_id`，值为客户端生成的规范 UUID 字符串。例：`{"conversation_id":"d250759b-8d9a-4c3a-a1af-397292fc835d","message":"hello"}`。它只是客户端的对话区分符，不是身份凭据或 SDK Session ID。未传时 channels 为本次请求生成新值并在响应中返回；客户端要继续同一对话必须保留该值，不同窗口默认生成不同值。
+MessageRequest 接受可选的 `conversation_id`，值为规范 UUID 字符串。例：`{"user":{"id":"alice"},"conversation_id":"d250759b-8d9a-4c3a-a1af-397292fc835d","message":"hello"}`。它只是客户端的对话区分符，不是身份凭据或 SDK Session ID。私聊未传时生成新 UUID；群聊未传时根据 group_id 生成稳定 UUID。响应返回该值，客户端可保存并在后续请求中传回。
 
-API Event 的 `get_session_id()` 返回由协议、连接、目标插件、认证用户及 conversation_id 共同构成的无歧义标识。机器人使用平台验证的账号、对话及用户构造等价范围。正文不能指定这些可信前缀；相同 conversation_id 在不同用户或插件下不共享状态。该标识用于框架续接和调用插件的映射，不进入 UserContext，也不要求 channels 建立会话数据库。
+API Event 的 `get_session_id()` 返回由连接、对话类型、conversation_id 及用户 ID 共同构成的无歧义标识；连接标识本身包含协议、所属插件和连接名。机器人使用平台账号、对话及用户构造等价范围。相同 conversation_id 在不同用户、连接或插件下不共享状态。该标识用于框架续接和调用插件的映射，不进入 UserContext，也不要求 channels 建立会话数据库。
 
 聊天插件按上述范围保存当前 SDK Session 的选择。`/new`、`/use <id>` 修改该范围的映射并回复 session_id；后续普通消息只携带 conversation_id。访问 SDK Session 仍由聊天插件校验，知道通道标识不授予业务访问权。同一范围的 HTTP 请求同时只接纳一个，忙时返回 409，不积压请求；机器人消费也按同一范围串行。跨范围选中同一个 SDK Session 时的执行并发仍由聊天插件管理。
 
@@ -203,7 +184,7 @@ HTTP 的一次响应可以承载多条消息。API Channel 按调用顺序收集
 }
 ```
 
-status 为 completed、waiting 或 failed；它描述本次消息处理，不代表 Agent 运行或持久任务状态。无回复和无匹配也返回 200、completed、空 messages，不使用 204，确保客户端拿到 conversation_id。已通过认证的处理失败返回安全的 error（code、message）及已收集消息；HTTP 使用对应 4xx/5xx，不将未知异常原文返回。协议校验和认证失败可在进入分发前直接返回通道错误。
+status 为 completed、unhandled、waiting 或 failed；它描述本次消息处理，不代表 Agent 运行或持久任务状态。没有处理器实际处理，或事件被忽略且无错误时返回 200 和 unhandled、空 messages；命中处理器但没有回复时为 completed、空 messages。两者都不使用 204，确保客户端拿到 conversation_id。已通过认证的处理失败返回安全的 error（code、message）及已收集消息；HTTP 使用对应 4xx/5xx，不将未知异常原文返回。协议校验和认证失败可在进入分发前直接返回通道错误。
 
 结构化结果复用 channels.Message/MessageSegment：拟新增 `MessageSegment.structured(value)`，只接受可 JSON 序列化的对象，并受输出大小限制；同一条 Message 最多含一个 data 段，有 data 时必须同时提供可读内容。HTTP 将 data 段提取为 envelope 中该消息的 data，其余段编码到 content；机器人只发送可读内容，不把 data 拼成文本。业务插件负责数据字段和序列化，不允许直接放 ORM 对象、连接或密钥。data 为出站专用段，HTTP 输入不能利用它注入业务对象。
 
@@ -259,6 +240,7 @@ logger = logging.getLogger(__name__)
 async def check_run(
     user: Annotated[channels.UserContext, Context()],
 ) -> None:
+    # Only use this profile for authorization after independently verifying it.
     if "suspended" in user.roles:
         raise PermissionError("The user cannot start a model run")
 
@@ -299,9 +281,9 @@ QQ 频道接口使用 guild ID，支持频道信息、成员、角色查询以�
 ## 在插件代码中选择群组与智能体
 
 `channels.in_group(*groups, connection=None, protocol=None)` 返回框架原生 `Rule`。
-群 ID 使用 QQ 的 `group_openid` 或钉钉的 `conversationId`，不使用群名称。
-Rule 同时校验当前插件归属与事件的连接标识；私聊、通知及其他协议不会命中。
-两个协议存在同名连接时，指定 `protocol="qq"` 或 `protocol="dingtalk"`。
+群 ID 使用 API 请求的 `group_id`、QQ 的 `group_openid` 或钉钉的 `conversationId`，不使用群名称。
+Rule 同时校验当前插件归属、事件的连接标识和 `conversation_type == "group"`；API、QQ、钉钉都可以命中。
+两个协议存在同名连接时，指定 `protocol="api"`、`protocol="qq"` 或 `protocol="dingtalk"`。
 
 ```python
 channels = require("channels")
@@ -339,9 +321,9 @@ OAuth 令牌、IM 群操作、机器人消息、附件下载地址及卡片创�
 
 ## 接收、排空与回复资源
 
-QQ、钉钉的连接声明与生命周期由 channels 内部的 `RobotAdapter` 统一管理。
+QQ、钉钉的每一条连接由 channels 内部的 `ChannelAdapter` 管理归属与操作准入；由 `Channel` 持有本连接的去重、队列、SDK client 和连接任务。
 框架仍负责 Driver、插件生命周期、Matcher、Dependent、PluginCall 和事件分发。
-协议适配器负责解析事件、调用各自 SDK 和编码平台 ACK。
+协议适配器负责解析事件、调用各自 SDK 和编码平台 ACK。连接资源按连接独立，不存在跨消费者共享的 client 或队列。
 
 `ready` 表示接收连接已就绪；`replies_available` 表示出站资源仍可使用。
 长连接断开或停止接收不会撤销已经受理的事件。停机先拒绝新事件，排空或取消已有工作，

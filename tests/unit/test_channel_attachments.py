@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 from opsmesh.plugins.channels.api.attachments import AttachmentUploads
+from opsmesh.plugins.channels.api.codec import from_request
 from opsmesh.plugins.channels.api.errors import HTTPError
-from opsmesh.plugins.channels.api.messages import MessageRequest, from_request
+from opsmesh.plugins.channels.api.schemas import MessageRequest
 from opsmesh.plugins.channels.attachments import (
     Attachment,
     AttachmentCollection,
@@ -73,9 +74,13 @@ async def test_failed_api_reply_does_not_publish_partial_uploads(failure):
     first = files.add_bytes(Attachment.create("a.txt", "text/plain"), b"a")
     second = files.add_bytes(Attachment.create("b.txt", "text/plain"), b"b")
     cache = AttachmentUploads(AttachmentSettings(max_cache_entries=1))
-    event = SimpleNamespace(
-        attachments=files, installation_id="chat", user_id="user"
+    channel = SimpleNamespace(
+        uploads=cache,
+        owner_id="chat",
+        self_id="api:chat:main",
+        settings=SimpleNamespace(max_output_bytes=1024, max_output_messages=8),
     )
+    event = SimpleNamespace(attachments=files)
     message = Message(
         [
             MessageSegment.attachment(first),
@@ -84,20 +89,12 @@ async def test_failed_api_reply_does_not_publish_partial_uploads(failure):
             else MessageSegment("unknown", {}),
         ]
     )
-    output = MessageOutput(
-        SimpleNamespace(
-            uploads=cache,
-            settings=SimpleNamespace(
-                max_output_bytes=1024, max_output_messages=8
-            ),
-        ),
-        event,
-    )
+    output = MessageOutput(channel, event)
     with pytest.raises((HTTPError, ValueError)):
         await output.send(message)
     assert not cache._uploads
-    cache.put(("chat", "user"), first, b"a")
-    assert cache.get(("chat", "user"), first.id).content == b"a"
+    cache.put("api:chat:main", first, b"a")
+    assert cache.get("api:chat:main", first.id).content == b"a"
 
 
 @pytest.mark.anyio
@@ -228,11 +225,12 @@ def test_api_message_references_cannot_override_metadata_or_scope():
     attachment = Attachment.create("pic.png", "image/png", 3)
     cache.put(("agent", "alice"), attachment, b"png")
     payload = {
+        "user": {"id": "alice"},
         "message": [
             {"type": "text", "text": "look"},
             {"type": "image", "attachment_id": attachment.id},
             {"type": "image", "attachment_id": attachment.id},
-        ]
+        ],
     }
     message = from_request(
         MessageRequest.model_validate(payload),
@@ -357,23 +355,18 @@ async def test_dingtalk_media_exchanges_credentials_only_at_api(
             return httpx.Response(200, json={"accessToken": "token"})
         return httpx.Response(200, json={"downloadUrl": download_url})
 
-    from opsmesh.plugins.channels.dingtalk.config import DingTalkSettings
-
     http = httpx.AsyncClient(transport=httpx.MockTransport(reply))
-    client = DingTalkClient(DingTalkSettings(), http)
+    settings = DingTalkConnectionSettings(
+        client_id="robot", client_secret_ref="MEDIA_TEST_SECRET"
+    )
+    client = DingTalkClient(settings, "secret", http=http)
 
     async def fetch(url, settings, domains):
         assert url == download_url.replace("http://", "https://", 1)
         return b"file"
 
     monkeypatch.setattr(media, "download", fetch)
-    reader = DingTalkAttachments(
-        client,
-        DingTalkConnectionSettings(
-            client_id="robot", client_secret_ref="MEDIA_TEST_SECRET"
-        ),
-        AttachmentSettings(),
-    )
+    reader = DingTalkAttachments(client, AttachmentSettings())
     assert await reader.read("download-code") == b"file"
     assert calls[0][1] == {"appKey": "robot", "appSecret": "secret"}
     assert calls[1][1] == {
@@ -512,23 +505,24 @@ async def test_download_redirect_boundaries(
 
 @pytest.mark.anyio
 async def test_dingtalk_link_failure_is_a_safe_attachment_error(caplog):
-    from types import SimpleNamespace
-
     from opsmesh.plugins.channels.dingtalk.attachments import (
         DingTalkAttachments,
     )
     from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
-    from opsmesh.plugins.channels.dingtalk.config import DingTalkSettings
+    from opsmesh.plugins.channels.dingtalk.config import (
+        DingTalkConnectionSettings,
+    )
     from opsmesh.plugins.channels.operations import OperationPermissionDenied
 
     class Client(DingTalkClient):
-        async def access_token(self, connection):
+        async def access_token(self):
             raise OperationPermissionDenied(403, "Forbidden.AccessDenied")
 
+    settings = DingTalkConnectionSettings(
+        client_id="robot", client_secret_ref="MEDIA_TEST_SECRET"
+    )
     reader = DingTalkAttachments(
-        Client(DingTalkSettings(), None),
-        SimpleNamespace(client_id="robot"),
-        AttachmentSettings(),
+        Client(settings, "secret"), AttachmentSettings()
     )
     with pytest.raises(AttachmentError, match="403, Forbidden.AccessDenied"):
         await reader.read("private-code")

@@ -19,8 +19,8 @@ def dingtalk_sdk_transport(monkeypatch):
     transport = ContextVar("dingtalk_test_transport")
     initialize = DingTalkClient.__init__
 
-    def initialize_client(self, settings, http):
-        initialize(self, settings, http)
+    def initialize_client(self, settings, secret, *, http=None):
+        initialize(self, settings, secret, http=http)
         transport.set(http)
 
     async def send(request, runtime_option=None):

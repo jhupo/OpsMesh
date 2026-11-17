@@ -1,10 +1,13 @@
 """Verify shared structured replies and bounded bot message consumption."""
 
-from types import SimpleNamespace
+from types import ModuleType
 
 import anyio
 import pytest
 
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
 from opsmesh.plugins.channels import (
     AttachmentCollection,
     Message,
@@ -13,14 +16,83 @@ from opsmesh.plugins.channels import (
     StreamMessageStart,
     StreamTextDelta,
     UnsupportedOperation,
+    UserContext,
 )
-from opsmesh.plugins.channels._queue import EventQueue
-from opsmesh.plugins.channels.dingtalk.adapter import DingTalkAdapter
+from opsmesh.plugins.channels.callbacks import EventQueue
+from opsmesh.plugins.channels.dingtalk import (
+    DingTalkAdapter,
+    DingTalkConnectionSettings,
+)
 from opsmesh.plugins.channels.dingtalk.events import DingTalkMessageEvent
-from opsmesh.plugins.channels.qq.adapter import QQAdapter
+from opsmesh.plugins.channels.qq import QQAdapter, QQConnectionSettings
 from opsmesh.plugins.channels.qq.events import QQMessageEvent
 from opsmesh.plugins.channels.sending import prepare
 from opsmesh.plugins.channels.streaming import message_stream
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import Plugin, PluginStatus
+
+
+class BotConnection:
+    """One declared bot connection built by the real adapter contract."""
+
+    def __init__(self, protocol):
+        self.protocol = protocol
+        self.driver = Driver(Env(), Config())
+        self.owner = Plugin(
+            "consumer",
+            ModuleType("consumer"),
+            "consumer",
+            PluginManager(),
+            status=PluginStatus.READY,
+        )
+        token = registry._current_plugin.set(self.owner)
+        try:
+            if protocol == "qq":
+                self.adapter = QQAdapter(self.driver)
+                self.channel = self.adapter.declare(
+                    QQConnectionSettings(
+                        app_id="123", secret_ref="BOT_SECRET"
+                    ),
+                    name="bot",
+                )
+            else:
+                self.adapter = DingTalkAdapter(self.driver)
+                self.channel = self.adapter.declare(
+                    DingTalkConnectionSettings(
+                        client_id="123", client_secret_ref="BOT_SECRET"
+                    ),
+                    name="bot",
+                )
+        finally:
+            registry._current_plugin.reset(token)
+        self.channel.mark_ready()
+
+    def message_event(self):
+        user = UserContext.scoped(self.channel.self_id, "user")
+        if self.protocol == "qq":
+            return QQMessageEvent(
+                connection_id=self.channel.self_id,
+                message_id="message",
+                user=user,
+                conversation_id="conversation",
+                conversation_type="private",
+                message=Message("hello"),
+                to_me=True,
+                user_id="user",
+                event_id="event",
+                raw={},
+            )
+        return DingTalkMessageEvent(
+            connection_id=self.channel.self_id,
+            message_id="message",
+            user=user,
+            conversation_id="conversation",
+            conversation_type="private",
+            message=Message("hello"),
+            to_me=True,
+            user_id="user",
+            raw={},
+        )
 
 
 @pytest.mark.anyio
@@ -88,33 +160,7 @@ def test_structured_data_has_a_shared_size_limit(monkeypatch):
 async def test_bot_stream_without_native_support_rejects_and_closes_source(
     protocol,
 ):
-    if protocol == "qq":
-        adapter = object.__new__(QQAdapter)
-        event = QQMessageEvent(
-            connection_id="bot",
-            user_id="user",
-            message_id="message",
-            event_id="event",
-            content="hello",
-            raw={},
-        )
-    else:
-        adapter = object.__new__(DingTalkAdapter)
-        event = DingTalkMessageEvent(
-            connection_id="bot",
-            user_id="user",
-            message_id="message",
-            conversation_id="conversation",
-            content="hello",
-            raw={},
-        )
-    channel = SimpleNamespace(
-        self_id="bot",
-        ready=True,
-        replies_available=True,
-        settings=SimpleNamespace(card=None),
-    )
-    adapter._declared = {"bot": channel}
+    bot = BotConnection(protocol)
     stages = []
 
     async def source():
@@ -131,9 +177,15 @@ async def test_bot_stream_without_native_support_rejects_and_closes_source(
         assert stages == []
         stages.append(str(message))
 
-    adapter._send_message = send
-    with pytest.raises(UnsupportedOperation):
-        await adapter._call(channel, "stream", event=event, source=source())
+    bot.adapter._send_message = send
+    with registry.plugin_scope(bot.owner):
+        with pytest.raises(UnsupportedOperation):
+            await bot.adapter._call(
+                bot.channel,
+                "stream",
+                event=bot.message_event(),
+                source=source(),
+            )
     assert stages == ["source closed"]
 
 

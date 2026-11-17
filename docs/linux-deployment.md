@@ -89,7 +89,8 @@ sudo systemctl start opsmesh
 filesystem.json 是 CLI 配置输入，例如 `{"root":"/var/lib/opsmesh/files"}`；配置写入 SQLite 后以数据库为准。登记的 site 中其他已安装入口点在下一次宿主准备时发现，默认允许依赖使用，不主动启动；显式禁用记录不会覆盖。
 
 需要 HTTP 入口时，由消费插件在自己的依赖配置中声明
-`dependencies.channels.api.<name>`，并提供身份解析器；channels 只负责传输、协议转换和框架分发。
+`dependencies.channels.api.<name>`，并在自己的 HTTP 应用中完成所需的认证；
+channels 只负责传输、正文 `user` 转换和框架分发。
 插件模型、凭据引用和端口仍由消费插件定义。详见[插件配置](plugin-configuration-design.md)和[通道配置](channels-and-callbacks.md)。
 
 运行中的服务独占宿主数据目录；离线 CLI、检查和迁移操作需停止服务，在线入口由管理插件提供。

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from pydantic import ConfigDict, Field
 from qqbot_agent_sdk import EventParser
 
 from opsmesh.adapters import Event
 
 from ..attachments import AttachmentCollection
 from ..attachments.transfer import AttachmentReader
+from ..context import UserContext, encode_scope
+from ..events import MessageEvent
 from ..messages import Message
 from .attachments import parse_message
 from .errors import QQProtocolError
@@ -71,14 +71,14 @@ class QQNoticeEvent(Event):
         """Expose the actual actor only when the platform identifies one."""
         if self.operator_id is None:
             raise ValueError("This notice does not identify an actor")
-        return f"{self.connection_id}:{self.operator_id}"
+        return encode_scope(self.operator_id, self.connection_id)
 
     def get_session_id(self) -> str:
         """Keep guild IDs distinct from ordinary group openids."""
         if self.group_id is not None:
-            return f"{self.connection_id}:group:{self.group_id}"
+            return encode_scope(self.connection_id, "group", self.group_id)
         if self.guild_id is not None:
-            return f"{self.connection_id}:guild:{self.guild_id}"
+            return encode_scope(self.connection_id, "guild", self.guild_id)
         raise ValueError("This notice has no conversation")
 
     def get_message(self) -> Message:
@@ -90,71 +90,16 @@ class QQNoticeEvent(Event):
         return True
 
 
-class QQMessageEvent(Event):
+class QQMessageEvent(MessageEvent):
     """A QQ direct or group message callback."""
 
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+    EVENT_NAME = "qq.message"
 
-    connection_id: str
     user_id: str
     user_name: str | None = None
-    group_id: str | None = None
-    message_id: str
     event_id: str
     timestamp: str | int | None = None
-    content: str
-    to_me: bool = False
-    message: Message | None = None
-    attachments: AttachmentCollection = Field(
-        default_factory=AttachmentCollection, exclude=True
-    )
     raw: dict[str, Any]
-
-    def get_type(self) -> str:
-        """Return the framework message event type."""
-        return "message"
-
-    def get_event_name(self) -> str:
-        """Return the QQ message event name."""
-        return "qq.message"
-
-    def get_event_description(self) -> str:
-        """Describe the event without logging its message content."""
-        return f"message {self.message_id} from {self.get_user_id()}"
-
-    def get_user_id(self) -> str:
-        """Return the caller identifier scoped by connection."""
-        return f"{self.connection_id}:{self.user_id}"
-
-    def get_session_id(self) -> str:
-        """Return the conversation identifier scoped by connection."""
-        return json.dumps(
-            [
-                "qq",
-                self.connection_id,
-                "group" if self.group_id else "private",
-                self.group_id,
-                self.user_id,
-            ],
-            separators=(",", ":"),
-        )
-
-    def get_message(self) -> Message:
-        """Return the message content as QQ segments."""
-        return (
-            self.message if self.message is not None else Message(self.content)
-        )
-
-    def is_tome(self) -> bool:
-        """Identify private messages and explicit mentions of this bot."""
-        return self.to_me
-
-    @property
-    def group_ids(self) -> tuple[str, ...]:
-        """Return verified group identifiers for the caller mapping."""
-        if self.group_id is None:
-            return ()
-        return (f"{self.connection_id}:group:{self.group_id}",)
 
 
 def parse_callback(
@@ -243,11 +188,6 @@ def parse_callback(
         raise QQProtocolError("QQ message data is invalid") from None
     if native is None or not native.user_id or not native.chat_id:
         raise QQProtocolError("QQ message has no conversation or user")
-    group_id = native.chat_id if native.chat_scope == "group" else None
-    user_id = native.user_id
-
-    attachments = attachments or AttachmentCollection()
-    message = parse_message(data, attachments, reader)
     timestamp = data.get("timestamp")
     if not isinstance(timestamp, (str, int)):
         timestamp = None
@@ -256,18 +196,29 @@ def parse_callback(
         event_id = f"{message_id}:{message_sequence}"
     else:
         event_id = payload.get("id")
+    if not isinstance(event_id, str) or not event_id:
+        event_id = message_id
     user_name = author.get("username")
+    user_name = user_name if isinstance(user_name, str) else None
+    group_id = native.chat_id if native.chat_scope == "group" else None
+    collected = attachments or AttachmentCollection()
     return QQMessageEvent(
         connection_id=connection_id,
-        user_id=user_id,
-        user_name=user_name if isinstance(user_name, str) else None,
-        group_id=group_id,
         message_id=message_id,
-        event_id=event_id if isinstance(event_id, str) else message_id,
-        timestamp=timestamp,
-        content=content,
+        event_id=event_id,
+        user=UserContext.scoped(
+            connection_id,
+            native.user_id,
+            name=user_name or "",
+        ),
+        user_id=native.user_id,
+        user_name=user_name,
+        conversation_id=native.chat_id,
+        conversation_type="group" if group_id else "private",
+        group_id=group_id,
+        message=parse_message(data, collected, reader),
+        attachments=collected,
         to_me=event_type in {C2C_MESSAGE, GROUP_MESSAGE},
-        message=message,
-        attachments=attachments,
+        timestamp=timestamp,
         raw=payload,
     )

@@ -19,28 +19,13 @@ PLUGIN = """from importlib.resources import files
 from agents import Agent, RunConfig
 from agents.testing import ScriptedModel, ModelStep, assistant_message
 from agents.usage import Usage
-from typing import Annotated
-from pydantic import InstanceOf
-from starlette.requests import Request
-from opsmesh.params import Context
 from opsmesh import on_command
 from opsmesh.matchers import Matcher
 from opsmesh.plugins import require
 
 channels = require("channels")
-api = channels.api
 filesystem = require("filesystem")
 execution = require("execution")
-
-async def caller(request: Annotated[InstanceOf[Request], Context()]):
-    import hmac
-    import os
-    if not hmac.compare_digest(
-        request.headers.get("authorization", ""),
-        "Bearer " + os.environ["OPSMESH_SMOKE_TOKEN"],
-    ):
-        raise api.HTTPError(401, "authentication required")
-    return channels.UserContext("probe")
 
 async def verify():
     from agents.extensions.memory import SQLAlchemySession
@@ -87,8 +72,6 @@ async def reply(matcher: Matcher) -> None:
         channels.MessageSegment.text(await probe()),
         channels.MessageSegment.structured({"probe": True}),
     ]))
-
-api.message(handlers=(message_probe,), identity=caller)
 
 """
 
@@ -254,7 +237,7 @@ def exercise(
                     autoload=True,
                 )
             )
-    environment = {**os.environ, "OPSMESH_SMOKE_TOKEN": "release-probe-token"}
+    environment = dict(os.environ)
     command = [str(executable), "--manifest", str(manifest)]
     subprocess.run(
         [*command, "--check"], env=environment, check=True, timeout=30
@@ -298,11 +281,13 @@ def exercise(
                 assert notify.recv(4096) == b"READY=1"
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/plugins/release_probe/messages",
-                    data=b'{"message":"/probe"}',
-                    headers={
-                        "Authorization": "Bearer release-probe-token",
-                        "Content-Type": "application/json",
-                    },
+                    data=json.dumps(
+                        {
+                            "user": {"id": "release-probe"},
+                            "message": "/probe",
+                        }
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
                     method="POST",
                 )
                 opener = urllib.request.build_opener(

@@ -11,7 +11,6 @@ from dingtalk_stream.card_replier import AICardStatus, CardReplier
 
 from ..receipts import Delivery
 from ..sending import MAX_STREAM_BYTES, close_source
-from .client import DingTalkClient
 from .errors import DingTalkSendError
 from .events import DingTalkMessageEvent
 
@@ -22,12 +21,10 @@ if TYPE_CHECKING:
 class DingTalkCardStream:
     """Keep native SDK card operations within the caller's delivery scope."""
 
-    def __init__(
-        self, client: DingTalkClient, channel: "DingTalkChannel"
-    ) -> None:
+    def __init__(self, channel: "DingTalkChannel") -> None:
         """Borrow the connection without retaining a background task."""
-        self.client = client
         self.channel = channel
+        self.client = channel.client
         self.settings = channel.settings.card
         self.card_id: str | None = None
         self.token = ""
@@ -100,7 +97,7 @@ class DingTalkCardStream:
             if self.card_id is not None:
                 try:
                     with anyio.fail_after(
-                        self.channel.protocol.request_timeout, shield=True
+                        self.channel.settings.request_timeout, shield=True
                     ):
                         await self._update(AICardStatus.FAILED)
                 except BaseException as error:
@@ -112,7 +109,7 @@ class DingTalkCardStream:
         return {"outTrackId": self.card_id}
 
     def _target(self, event: DingTalkMessageEvent) -> dict:
-        if event.conversation_type == "2" and event.conversation_id:
+        if event.conversation_type == "group" and event.conversation_id:
             return {
                 "openSpaceId": f"dtv1.card//IM_GROUP.{event.conversation_id}",
                 "imGroupOpenDeliverModel": {
@@ -121,7 +118,7 @@ class DingTalkCardStream:
             }
         staff_id = event.raw.get("senderStaffId")
         if (
-            event.conversation_type != "1"
+            event.conversation_type != "private"
             or not isinstance(staff_id, str)
             or not staff_id
         ):
@@ -132,7 +129,7 @@ class DingTalkCardStream:
         }
 
     async def _create(self, event: DingTalkMessageEvent, target: dict) -> None:
-        self.token = await self.client.access_token(self.channel.settings)
+        self.token = await self.client.access_token()
         self.card_id = CardReplier.gen_card_id(
             ChatbotMessage.from_dict(event.raw)
         )

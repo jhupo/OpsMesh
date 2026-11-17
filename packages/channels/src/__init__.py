@@ -1,16 +1,16 @@
-"""Plugin-owned HTTP and bot entrances over framework event dispatch."""
+"""Plugin-owned HTTP, QQ and DingTalk connections over framework dispatch."""
 
 from importlib import import_module
 from types import ModuleType
 
 from opsmesh.plugins import PluginMetadata
 
+from . import lifecycle as _lifecycle  # noqa: F401
 from .attachments import Attachment, AttachmentCollection, AttachmentError
-from .config import ChannelConnections, ChannelsSettings
+from .channel import Channel
+from .config import ChannelConnections
 from .context import UserContext
-from .dependencies import Connection
-from .lifecycle import consumers as _consumers  # noqa: F401
-from .lifecycle import hooks as _lifecycle  # noqa: F401
+from .events import MessageEvent
 from .messages import (
     Message,
     MessageSegment,
@@ -42,10 +42,10 @@ __plugin_meta__ = PluginMetadata(
     name="channels",
     description="HTTP, QQ and DingTalk transports for plugin-owned events",
     usage=(
-        "Depend on channels, declare entrances and handle framework events."
+        "Depend on channels, declare connections and handle framework events."
     ),
     type="channel",
-    config=ChannelsSettings,
+    config=None,
     dependency_config=ChannelConnections,
 )
 
@@ -53,23 +53,23 @@ __all__ = [
     "Attachment",
     "AttachmentCollection",
     "AttachmentError",
+    "Channel",
     "Delivery",
     "DeliveryReceipt",
-    "StreamMessageStart",
-    "StreamTextDelta",
-    "StreamMessageEnd",
     "Message",
+    "MessageEvent",
     "MessageSegment",
     "MessageSendError",
     "OperationError",
     "OperationPermissionDenied",
     "OperationRateLimited",
+    "StreamMessageEnd",
+    "StreamMessageStart",
+    "StreamTextDelta",
     "UnsupportedOperation",
-    "ChannelsSettings",
-    "in_group",
-    "Connection",
     "UserContext",
     "api",
     "dingtalk",
+    "in_group",
     "qq",
 ]

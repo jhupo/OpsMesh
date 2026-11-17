@@ -12,40 +12,38 @@ channels = require("channels")
 from opsmesh import on_message
 from opsmesh.matchers import Matcher
 
-chat = on_message(priority=10, block=True)
+chat = on_message()
 
 @chat.handle()
 async def answer(matcher: Matcher) -> None:
     await matcher.finish("Ready.")
 
-channels.api.message(handlers=(chat,), identity=resolve_user)
 ```
 
 The host allowlist uses `opsmesh.plugins.channels`. The source lives directly in
 `packages/channels/src/`; setuptools maps it to the installed namespace.
 
 API owns a FastAPI listener per consumer connection, configured under
-`dependencies.channels.api.<name>`. Consumers provide `identity=resolve_user`
-on their message binding. The resolver uses framework `Context()` / `Depends()`
-and returns `UserContext`; messages and attachment transfers share this resolver.
-Channels has no token directory or business permission policy. An explicitly
-anonymous identity is allowed. Handlers use framework Events, Messages, Matchers
-and Dependent. Each connection stops and restarts with its owning plugin.
+`dependencies.channels.api.<name>`. The channel automatically dispatches the
+consumer plugin's framework matchers and converts the request's `user` profile
+into `UserContext`. The profile is input data, not proof of identity: the
+consuming plugin installs or inherits whatever HTTP authentication it needs.
+Handlers use framework Events, Messages, Matchers and Dependent. Each connection
+stops and restarts with its owning plugin.
 
 ```json
 {"dependencies": {"channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}}}
 ```
 
-`resolve_user` is a consumer-defined function, not a channels export. It may
-receive `Annotated[InstanceOf[Request], Context()]` and resolve the caller using
-the consumer's authentication system. Raise `channels.api.HTTPError` to reject
-a request. No identity is read from the message body. Different listeners must
-use different sockets; omission of the API connection leaves its binding dormant.
+`MessageRequest.user` requires an `id` and accepts optional `name`, `groups` and
+`roles`; no separate identity headers are read. Different listeners must use
+different sockets; omission of the API connection leaves its listener dormant.
 QQ/DingTalk platform user identities remain available; business groups and roles
 are not inferred from chat IDs. SDK protocol authentication remains enabled.
 
-QQ uses Tencent's qqbot-agent-sdk==1.2.2 under config.qq.
-Consumer plugins declare accounts; the native SDK manages tokens, Gateway
+QQ uses Tencent's qqbot-agent-sdk==1.2.2 under
+`dependencies.channels.qq.<name>`. Consumer plugins declare accounts; the native
+SDK manages tokens, Gateway
 handshakes, heartbeats, reconnects and message/media requests. OpsMesh adapts
 events and plugin lifecycle, retaining notices and configured intents.
 Set QQ_API_BASE=https://api.bot.qq.com and
@@ -68,39 +66,53 @@ MIT; see LICENSE.
 API, QQ and DingTalk share framework message segments for text and attachments.
 Attachment bytes are fetched lazily under transfer limits; user context contains
 no file handles or download credentials. API uploads and downloads are scoped to
-the authenticated user and consuming plugin. API, QQ and DingTalk support media replies with transport-specific formats.
+one consumer connection and use temporary, bearer-style references, not the
+declared user ID. API, QQ and DingTalk support media replies with transport-specific formats.
 QQ uses inline media uploads; DingTalk uses official media IDs and robot templates. See the [attachment guide](../../docs/multimodal-messages.md)
 for formats, authenticated endpoints, temporary cache limits and example usage.
 
 ## Message protocol
 
-Bind the standard message entrance to existing framework matchers:
+Use standard framework matchers through the consumer plugin dependency configuration:
 
 ```python
 from opsmesh import on_message
 from opsmesh.adapters import Channel, Event
 
-chat = on_message(priority=10, block=True)
+chat = on_message()
 
 @chat.handle()
 async def answer(channel: Channel, event: Event):
     await channel.send(event, "Received: " + event.get_plaintext())
 
-channels.api.message(handlers=(chat,), identity=resolve_user)
 ```
 
 The only business message endpoint is `POST /plugins/{plugin_id}/messages`.
-`MessageRequest` accepts `message` and an optional canonical UUID
-`conversation_id`. Message content is text or an ordered list of text and
-validated attachment references. Unknown fields and custom body models are
-rejected. Keep the returned conversation ID to continue the same conversation;
-each user, plugin, connection and conversation has a separate framework scope.
-Concurrent requests in that scope receive 409.
+`MessageRequest` requires a `user` profile and a `message`, and accepts an
+optional canonical UUID `conversation_id`:
 
-The API binds persistent, blocking matchers with distinct priorities and their
-scoped framework continuations. Handlers may send multiple complete messages.
-JSON replies contain `conversation_id`, `status` (`completed`, `waiting`, or
-`failed`), `messages`, and a safe `error`. Empty results return 200 with no
+```json
+{"user": {"id": "operator"}, "conversation_id": "d250759b-8d9a-4c3a-a1af-397292fc835d", "message": "hello"}
+```
+
+Message content is text or an ordered list of text and validated attachment
+references. Unknown fields and custom body models are rejected. Keep the
+returned conversation ID to continue the same conversation; the framework scope
+includes the connection, conversation and declared user ID. Concurrent requests
+in that scope receive 409.
+
+The user profile is supplied by the caller and is not authentication. Protect
+the listener with consumer-provided middleware or an authenticated gateway;
+authorization must use independently verified identity and permissions. Uploads
+are scoped to the connection, not to the declared user.
+
+The API dispatches the owning plugin's framework matchers without imposing
+`block`, priority uniqueness, or temporary-matcher restrictions. `block` and
+`priority` remain framework controls chosen by the consumer; use
+`force_whitespace=True` only for commands whose argument boundary must be
+explicit. Handlers may send multiple complete messages.
+JSON replies contain `conversation_id`, `status` (`completed`, `unhandled`,
+`waiting`, or `failed`), `messages`, and a safe `error`. Empty results return 200 with no
 messages. Add one `MessageSegment.structured({...})` alongside readable content
 to populate an API message's `data`. Bot plugins select readable content
 without a data segment before sending; unsupported segments are rejected.
@@ -152,9 +164,9 @@ The API preserves Markdown source; clients sanitize rendered HTML themselves.
 `MessageSegment.table(columns, rows, caption="")` accepts rectangular scalar
 rows (up to 32 columns, 200 rows and 64 KiB). API output preserves the table.
 Bot transports reject native tables; QQ also rejects Markdown segments.
-The calling plugin explicitly chooses text, Markdown or a file. The pure
-`channels.rendering.table_text()` helper is available for a chosen text
-conversion, but sends never invoke it automatically.
+The calling plugin explicitly chooses text, Markdown or a file. Channels never
+converts a table to text automatically; presentation fallback belongs to the
+calling plugin.
 DingTalk uses native Markdown replies or `sampleMarkdown` in mixed replies.
 
 For incremental DingTalk replies, add a published AI card template to the
@@ -323,8 +335,9 @@ Plugins choose their presentation before calling `Matcher.send`,
 `Matcher.finish`, or `channel.call("stream", ...)`. Channels validates messages
 once at the send boundary, checks platform restrictions, and performs transport
 I/O. It does not select artifacts, convert model results, silently downgrade
-formats, or retry uncertain sends. Each plugin binds existing framework matchers
-to one fixed message entrance. FastAPI handles HTTP routing.
+formats, or retry uncertain sends. Connections dispatch the owning plugin's
+existing framework matchers without an explicit binding. FastAPI handles HTTP
+routing.
 
 
 DingTalk service APIs use `alibabacloud_dingtalk==2.2.67` asynchronous
@@ -335,19 +348,24 @@ HTTP transport because the pinned SDKs do not provide equivalent asynchronous
 operations. SDK automatic retries are disabled for delivery operations.
 
 
-Robot connection ownership, readiness and deduplication live in `channel.py`.
-QQ and DingTalk senders share message preparation from `sending.py`; their
-`media.py` modules contain protocol conversion functions without per-send
-wrapper objects. QQ group and guild operations share `qq/operations.py`.
-Import `QQOperations` from that module for direct operation access. Connection
-state constants are defined in `opsmesh.plugins.channels.channel`.
+Channel ownership, readiness and per-connection deduplication live in
+`channel.py`; `adapter.py` owns declaration, lifecycle registration and call
+admission. Each robot connection owns its own SDK client, token state and
+worker queue. QQ and DingTalk senders share message preparation from
+`sending.py`; their `media.py` modules contain protocol conversion functions
+without per-send wrapper objects. QQ group and guild operations share
+`qq/operations.py`. Import `QQOperations` from that module for direct operation
+access. Connection state constants are defined in
+`opsmesh.plugins.channels.channel`.
 
 
 ### Connection and request lifecycle
 
-`RobotAdapter` shares declaration ownership, callback admission, startup and
-shutdown for QQ and DingTalk. Protocol modules retain native event parsing,
-ACKs and SDK operations. Inbound `ready` is separate from `replies_available`:
+`ChannelAdapter` registers one prepared connection per declared name and
+coordinates startup, quiescing and shutdown for all protocols. `CallbackChannel`
+adds the per-connection inbound queue, deduplication and stream task; API owns
+its listener directly. Protocol modules retain native event parsing, ACKs and
+SDK operations. Inbound `ready` is separate from `replies_available`:
 disconnecting intake does not discard accepted events or close their reply
 client. Shutdown drains or cancels accepted work before closing outbound
 resources. Plugin generation checks remain in force.
@@ -368,10 +386,10 @@ For additional HTTP endpoints, use `channels.api.get_app()` during the consumer
 `on_started` callback and mount a native FastAPI router or sub-application. The consuming
 plugin owns authentication, request admission, cleanup and removal on shutdown
 for those routes. They do not inherit message authentication or framework
-dispatch. Conversation commands use the fixed message entrance instead.
+dispatch. Conversation commands use the fixed message endpoint instead.
 
-Message bindings do not create additional matchers or dynamic HTTP routes.
-Stopping a consumer makes its entrance unavailable; revoking it removes the
-binding without restarting the shared listener. Robot dependency configuration
-is validated by the corresponding adapter, with lifecycle ownership registered
-once per consuming plugin and protocol.
+Standard messages need no explicit matcher binding or dynamic HTTP route.
+Stopping a consumer closes only its own connections; other consumers keep
+running. Each consumer's dependency configuration is validated when its
+connection is declared, with lifecycle ownership registered once per
+consumer and connection.

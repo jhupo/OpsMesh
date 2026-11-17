@@ -15,7 +15,6 @@ from ..sending import (
     OutgoingMarkdown,
     prepare,
 )
-from .client import DingTalkClient
 from .errors import DingTalkSendError
 from .events import DingTalkMessageEvent
 from .media import upload, validate
@@ -29,12 +28,10 @@ _WEBHOOK_SAFETY_MS = 5000
 class DingTalkSender:
     """Own one ordered send without adding retries around SDK operations."""
 
-    def __init__(
-        self, client: DingTalkClient, channel: "DingTalkChannel"
-    ) -> None:
+    def __init__(self, channel: "DingTalkChannel") -> None:
         """Borrow the connection resources for one send operation."""
-        self.client = client
         self.channel = channel
+        self.client = channel.client
 
     async def send(
         self,
@@ -70,7 +67,7 @@ class DingTalkSender:
         for part in parts:
             if isinstance(part, OutgoingAttachment):
                 validate(part)
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         templates = []
         for part in parts:
             if isinstance(part, OutgoingMarkdown):
@@ -168,11 +165,11 @@ class DingTalkSender:
 
     @staticmethod
     def _target(event: DingTalkMessageEvent) -> tuple[str, dict]:
-        if event.conversation_type == "2":
+        if event.conversation_type == "group":
             return "group", {"open_conversation_id": event.conversation_id}
         staff_id = event.raw.get("senderStaffId")
         if (
-            event.conversation_type != "1"
+            event.conversation_type != "private"
             or not isinstance(staff_id, str)
             or not staff_id
         ):
