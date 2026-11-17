@@ -82,7 +82,6 @@ async def files(turn: ConversationTurn, argument: str) -> None:
 
 entrance.add_command("files", files)
 entrance.add_command("reset_workspace", reset_workspace)
-entrance.bind()
 
 
 @on_shutdown

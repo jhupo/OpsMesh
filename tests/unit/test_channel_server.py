@@ -14,12 +14,13 @@ from websockets.asyncio.client import connect
 
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.plugins.channels.api.server import ListenerSettings, Server
+from opsmesh.plugins.channels.api.config import APIConnectionSettings
+from opsmesh.plugins.channels.api.server import Server
 from opsmesh.plugins.channels.api.streaming import MessageStreamingResponse
 
 
 def new_server(**options):
-    return Server(FastAPI(), ListenerSettings(**options))
+    return Server(FastAPI(), APIConnectionSettings(**options))
 
 
 @pytest.mark.anyio

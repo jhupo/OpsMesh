@@ -6,8 +6,6 @@ from urllib.parse import quote, urlencode
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from .client import QQClient
-
 if TYPE_CHECKING:
     from .channel import QQChannel
 
@@ -48,20 +46,18 @@ class QQOperations:
         }
     )
 
-    def __init__(self, client: QQClient, channel: "QQChannel", secret: str):
-        """Borrow one declared account without creating network resources."""
-        self.client = client
+    def __init__(self, channel: "QQChannel"):
+        """Borrow one connection's authenticated client."""
         self.channel = channel
-        self.secret = secret
 
     async def _request(
         self, method: str, path: str, *, body=None, params=None
     ) -> JsonValue:
-        api = self.client.account(self.channel, self.secret)
+        api = self.channel.client.api
         if params:
             path += "?" + urlencode(params)
         result = await api.request(
-            method, path, body, timeout=self.channel.protocol.request_timeout
+            method, path, body, timeout=self.channel.settings.request_timeout
         )
         return result or None
 

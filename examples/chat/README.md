@@ -12,17 +12,15 @@ Install channels, execution and database independently. Register `example_chat`
 with the absolute `examples/chat` import root and `conversation_support` with
 the absolute `examples/common` import root. Frozen hosts also register the
 official bundle's `site/` root; see [Linux deployment](../../docs/linux-deployment.md).
-The host SQLite database stores plugin records and values. Configure this example's HTTP
-identity and PostgreSQL before enabling the example.
+The host SQLite database stores plugin records and values. Configure
+PostgreSQL before enabling the example.
 
 ```json
 {
   "config": {
     "model": "your-model-name",
     "reasoning": {"effort": "medium"},
-    "max_turns": 8,
-    "http_token_ref": "OPSMESH_API_TOKEN",
-    "http_user_id": "operator"
+    "max_turns": 8
   },
   "dependencies": {
     "channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}
@@ -33,9 +31,11 @@ identity and PostgreSQL before enabling the example.
 Save settings with `--plugin-action configure --module example_chat --config PATH`
 while the host is stopped, then enable its entry. Optional settings include
 `name`, `instructions`, `mcp_url` and `mcp_token_ref`.
-HTTP identity validation belongs to this example; channels only calls its resolver.
-Set the referenced token in the service environment. Omit the API dependency for
-a bot-only setup.
+Channels converts the request's `user` profile into `UserContext`; it does not
+authenticate it. This example treats the profile as an identity claim and leaves
+HTTP authentication to the plugin: install your own middleware or an external
+gateway when requests must be verified. Omit the API dependency for a bot-only
+setup.
 
 Robot accounts belong in `dependencies.channels.qq.<name>` or
 `dependencies.channels.dingtalk.<name>`; channels validates and starts them
@@ -58,10 +58,14 @@ tables, models and migrations.
 
 ## Messages and commands
 
-Send authenticated requests to `POST /plugins/example_chat/messages`:
+Send requests to `POST /plugins/example_chat/messages`:
 
 ```json
-{"conversation_id":"d250759b-8d9a-4c3a-a1af-397292fc835d","message":"/new Research"}
+{
+  "user": {"id": "operator", "name": "Operator"},
+  "conversation_id": "d250759b-8d9a-4c3a-a1af-397292fc835d",
+  "message": "/new Research"
+}
 ```
 
 The response envelope contains `conversation_id`, `status`, ordered `messages`
@@ -69,7 +73,8 @@ and `error`. Each message has readable `content` and optional structured `data`.
 `/new` and `/use` return `data.session_id` and `data.session`. The SDK session
 ID is distinct from `conversation_id`. Subsequent text reuses only the channel
 UUID, with the selection stored by the plugin under `Event.get_session_id()`.
-The scope includes the trusted protocol, connection, plugin and caller.
+The scope includes the connection, conversation type, conversation and the
+scoped user ID; the client-supplied profile is not proof of identity.
 
 | Message | Result |
 |---|---|
@@ -123,13 +128,17 @@ python examples/chat/client.py --file ./report.pdf --message "Summarize this doc
 ```
 
 Enter the API token at the hidden prompt or set `OPSMESH_API_TOKEN`.
-`OPSMESH_URL` also sets the server address. Every client instance generates
-a fresh conversation UUID. All server commands use the unified messages
-endpoint; only `/exit` remains local. IDs come from structured data, never
-readable text. `--stream` displays SSE increments as they arrive.
+`OPSMESH_URL` also sets the server address. Every request carries `user` in
+the body; `--user` or `OPSMESH_USER_ID` supplies its ID and defaults to
+`chat-client`. This profile is input data, not a credential. The client sends
+the token as `Authorization: Bearer`, and the consuming plugin decides whether
+to verify it. Every client instance generates a fresh conversation UUID. All
+server commands use the unified messages endpoint; only `/exit` remains local.
+IDs come from structured data, never readable text. `--stream` displays SSE
+increments as they arrive.
 
 `--new` creates a session; `--plugin example_sandbox` selects the sandbox
-example. The client saves only the SDK session ID and a server/plugin/token
+example. The client saves only the SDK session ID and a server/plugin/user/token
 fingerprint under `~/.opsmesh/chat/`. `--state-file` selects another file.
 On launch it uses `/use` to revalidate the saved ID in the new window scope.
 It never saves credentials, history or a reusable channel UUID. Requests do

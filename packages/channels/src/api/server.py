@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 
 import anyio
 from anyio.abc import TaskGroup, TaskStatus
-from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp
+
+from .config import APIConnectionSettings
 
 if TYPE_CHECKING:
     import uvicorn
@@ -18,22 +19,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ListenerSettings(BaseModel):
-    """Network limits inherited by each listening channel's settings."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    host: str = "127.0.0.1"
-    port: int = Field(default=8080, ge=0, le=65535)
-    enabled: bool = True
-    access_log: bool = False
-    max_request_body: int = Field(default=1024 * 1024, ge=0)
-    shutdown_timeout: float = Field(default=10.0, gt=0)
-
-
 class Server:
     """Own the listener while the framework owns the process task group."""
 
-    def __init__(self, app: ASGIApp, settings: ListenerSettings) -> None:
+    def __init__(self, app: ASGIApp, settings: APIConnectionSettings) -> None:
         """Prepare protocol state without opening a socket."""
         self.host = settings.host
         self.port = settings.port

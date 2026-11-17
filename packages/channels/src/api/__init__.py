@@ -1,48 +1,74 @@
 """HTTP message transport for framework handlers."""
 
-from fastapi import FastAPI
+from __future__ import annotations
 
-from opsmesh.drivers import get_driver
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-from .channel import APIChannel
-from .config import Settings
-from .entrances import (
-    MessageEntrance,
-    MessageEntrances,
-    get_entrances,
-    message,
-)
-from .errors import APIConfigurationError, APIError, EntranceError, HTTPError
-from .events import APIMessageEvent
-from .messages import MessageInput, MessageRequest
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from .adapter import APIAdapter
+    from .channel import APIChannel
+    from .config import APIConnectionSettings
+    from .errors import APIConfigurationError, APIError, HTTPError
+    from .events import APIMessageEvent
+    from .schemas import MessageInput, MessageRequest
+
+_EXPORTS = {
+    "APIAdapter": ".adapter",
+    "APIChannel": ".channel",
+    "APIConnectionSettings": ".config",
+    "APIConfigurationError": ".errors",
+    "APIError": ".errors",
+    "APIMessageEvent": ".events",
+    "HTTPError": ".errors",
+    "MessageInput": ".schemas",
+    "MessageRequest": ".schemas",
+}
+
+
+def __getattr__(name: str) -> object:
+    """Import protocol classes only when a consumer requests them."""
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"Unknown API channel attribute: {name}")
+    value = getattr(import_module(module_name, __name__), name)
+    globals()[name] = value
+    return value
 
 
 def get_app(connection: str = "main") -> FastAPI:
-    """Return the running FastAPI app for native, caller-owned HTTP routes."""
+    """Return the prepared FastAPI app for caller-owned native routes.
+
+    The app exists from the consumer's startup phase and is listening after
+    all readiness callbacks finish, so middleware can be installed first.
+    """
     from opsmesh.plugins import get_current_plugin
+
+    from ..lifecycle import protocol_adapter
 
     owner = get_current_plugin()
     if owner is None:
         raise RuntimeError("HTTP connections belong to consuming plugins")
-    channel = get_driver().get_channel(f"api:{owner.id_}:{connection}")
-    if not isinstance(channel, APIChannel) or not channel.started:
-        raise RuntimeError("The API channel is not running")
+    try:
+        channel = protocol_adapter("api").get_connection(owner.id_, connection)
+    except LookupError as error:
+        raise RuntimeError(
+            f"API connection {connection!r} is not prepared"
+        ) from error
     return channel.app
 
 
 __all__ = [
+    "APIAdapter",
     "APIChannel",
+    "APIConnectionSettings",
     "APIConfigurationError",
     "APIError",
     "APIMessageEvent",
-    "EntranceError",
     "HTTPError",
-    "MessageEntrance",
-    "MessageEntrances",
     "MessageInput",
     "MessageRequest",
-    "Settings",
     "get_app",
-    "get_entrances",
-    "message",
 ]

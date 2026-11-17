@@ -13,7 +13,7 @@ Install channels, execution, database and filesystem separately. Register
 Frozen hosts also register the official bundle's `site/` root; see
 [Linux deployment](../../docs/linux-deployment.md).
 
-Configure this example's HTTP identity, PostgreSQL and the filesystem root.
+Configure PostgreSQL and the filesystem root before enabling this example.
 Save this plugin's settings through the host plugin configuration command:
 
 ```json
@@ -21,9 +21,7 @@ Save this plugin's settings through the host plugin configuration command:
   "config": {
     "model": "your-model-name",
     "reasoning": {"effort": "medium"},
-    "max_turns": 8,
-    "http_token_ref": "OPSMESH_API_TOKEN",
-    "http_user_id": "operator"
+    "max_turns": 8
   },
   "dependencies": {
     "channels": {"api": {"main": {"host": "127.0.0.1", "port": 8080}}}
@@ -31,10 +29,10 @@ Save this plugin's settings through the host plugin configuration command:
 }
 ```
 
-HTTP identity validation belongs to this example; channels only calls its resolver.
-Set the referenced token in the service environment. Use different ports when
-running chat and sandbox HTTP connections together. Omit the API dependency for
-a bot-only setup.
+The request's `user` profile is converted to `UserContext` but is not
+authenticated; protect the plugin's HTTP routes with your own middleware or an
+external gateway. Use different ports when running chat and sandbox HTTP
+connections together. Omit the API dependency for a bot-only setup.
 
 For robots, fill `dependencies.channels.qq.<name>` or
 `dependencies.channels.dingtalk.<name>` with the account and secret reference.
@@ -56,10 +54,15 @@ Startup checks the migration before initializing resources.
 ## Commands and transport
 
 The only conversation endpoint is `POST /plugins/example_sandbox/messages`.
-Use the common MessageRequest body with a client-generated canonical UUID:
+Use the common MessageRequest body with a user profile and a client-generated
+canonical UUID:
 
 ```json
-{"conversation_id":"d250759b-8d9a-4c3a-a1af-397292fc835d","message":"/new Research"}
+{
+  "user": {"id": "operator"},
+  "conversation_id": "d250759b-8d9a-4c3a-a1af-397292fc835d",
+  "message": "/new Research"
+}
 ```
 
 All commands and JSON/SSE response fields follow the [chat example](../chat/README.md).
@@ -71,8 +74,9 @@ implicitly create a session. Ordinary text and `/chat <question>` start or
 continue the selected session. Unknown and unauthorized commands never reach
 the model. Expected command errors include readable text and `data.error`.
 
-Selection is stored under the verified channel scope, independent of the SDK
-session ID. Ownership is checked when selecting and operating on a session.
+Selection is stored under the channel conversation scope, independent of the
+SDK session ID. Ownership is checked when selecting and operating on a session;
+the scope includes the supplied user ID but does not prove identity.
 `/new` and `/use` expose the ID through structured `data.session_id`; later
 messages only need the same channel `conversation_id`.
 
@@ -84,8 +88,9 @@ python examples/chat/client.py --plugin example_sandbox --file ./report.pdf --me
 ```
 
 Set `--base-url` or `OPSMESH_URL` and provide `OPSMESH_API_TOKEN` or the hidden
-token prompt. Each client window generates its own channel UUID. Saved SDK
-selection is separated by server, plugin and credential fingerprint.
+token prompt. `--user` or `OPSMESH_USER_ID` sets the profile ID sent with each
+request. Each client window generates its own channel UUID. Saved SDK selection
+is separated by server, plugin, user and credential fingerprint.
 
 ## Persistence and lifetime
 

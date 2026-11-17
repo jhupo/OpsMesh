@@ -1,32 +1,43 @@
-"""Framework adapter for the host's HTTP request and response transport."""
+"""HTTP response operations for one API connection."""
+
+from __future__ import annotations
 
 from typing import Any
 
-from opsmesh.adapters import Adapter, Channel
-
+from ..adapter import ChannelAdapter
+from ..operations import UnsupportedOperation
+from .channel import APIChannel
+from .errors import APIConfigurationError, APIError
 from .events import APIMessageEvent
 
 
-class APIAdapter(Adapter):
-    """Expose HTTP responses through the framework channel abstraction."""
+class APIAdapter(ChannelAdapter[APIChannel]):
+    """Expose one request's response through the framework channel contract."""
+
+    channel_type = APIChannel
+    configuration_error = APIConfigurationError
+    send_error = APIError
+    message_event_type = APIMessageEvent
 
     @classmethod
     def get_name(cls) -> str:
         """Return the HTTP channel protocol identifier."""
         return "api"
 
-    async def _call(self, channel: Channel, operation: str, **data: Any) -> Any:
-        event = data["event"]
-        if not isinstance(event, APIMessageEvent):
-            raise TypeError("API operations require an APIMessageEvent")
-        if operation == "reply":
+    async def _perform(
+        self, channel: APIChannel, operation: str, **data: Any
+    ) -> Any:
+        event: APIMessageEvent = data["event"]
+        if operation == "send_message":
             return await event.output.send(
-                data["result"], delivery=data.get("delivery")
+                data["message"], delivery=data.get("delivery")
             )
         if operation == "stream":
             if "format" in data:
-                raise TypeError("Set stream format on StreamMessageStart")
+                raise TypeError("Stream format belongs to StreamMessageStart")
             return await event.output.stream(
                 data["source"], delivery=data.get("delivery")
             )
-        raise ValueError(f"Unsupported API operation: {operation}")
+        raise UnsupportedOperation(
+            f"Unsupported API channel operation: {operation}"
+        )

@@ -13,10 +13,6 @@ class APIConfigurationError(APIError, ValueError):
     """The API channel cannot start with the supplied configuration."""
 
 
-class EntranceError(APIError, ValueError):
-    """A plugin's message entrance declaration is invalid."""
-
-
 class HTTPError(APIError):
     """A request failure that maps directly to an HTTP response.
 
@@ -73,7 +69,7 @@ def request_error(error: BaseException) -> HTTPError:
     if isinstance(error, (AttachmentError, ValidationError)):
         return HTTPError(422, "Invalid message attachments")
     if isinstance(error, PluginUnavailable):
-        return HTTPError(503, "route is not ready")
+        return HTTPError(503, "connection is not ready")
     if isinstance(error, TimeoutError):
         return HTTPError(504, "request timed out")
     if isinstance(error, PermissionError):

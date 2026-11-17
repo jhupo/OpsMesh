@@ -2,9 +2,11 @@
 
 import json
 import time
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+from types import ModuleType
 
 import anyio
+import httpx
 import pytest
 
 from opsmesh.config import Config, Env
@@ -17,25 +19,24 @@ from opsmesh.plugins.channels.dingtalk import (
     DingTalkConnectionSettings,
     DingTalkProtocolError,
     DingTalkSendError,
-    DingTalkSettings,
     parse_callback,
 )
 from opsmesh.plugins.channels.messages import Message
 from opsmesh.plugins.channels.operations import OperationError
 from opsmesh.plugins.manager import PluginManager
-from opsmesh.plugins.model import PluginStatus
+from opsmesh.plugins.model import Plugin, PluginStatus
 
 SECRET = "dingtalk-test-secret"
 
 
-class FakePlugin:
-    """A minimal loaded plugin for declaration ownership."""
-
-    def __init__(self, id_: str) -> None:
-        self.ready = True
-        self.id_ = id_
-        self.cleanups = []
-        self.status = PluginStatus.LOADED
+def make_plugin(name="support"):
+    return Plugin(
+        name,
+        ModuleType(name),
+        name,
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
 
 
 @contextmanager
@@ -47,52 +48,8 @@ def owned_by(plugin):
         registry._current_plugin.reset(token)
 
 
-class FakeResponse:
-    def __init__(self, payload, status_code: int = 200) -> None:
-        self.status_code = status_code
-        self.headers = {}
-        self._payload = payload
-        self.content = json.dumps(payload).encode()
-
-    def json(self):
-        return self._payload
-
-
-class FakeHTTP:
-    def __init__(self, *responses) -> None:
-        self.responses = list(responses)
-        self.calls = []
-        self.closed = False
-
-    async def post(
-        self,
-        url,
-        *,
-        json=None,
-        headers=None,
-        timeout=None,
-        follow_redirects=False,
-    ):
-        self.calls.append({"url": url, "json": json, "headers": headers or {}})
-        if not self.responses:
-            raise AssertionError("unexpected vendor request")
-        return self.responses.pop(0)
-
-    async def aclose(self) -> None:
-        self.closed = True
-
-
-def make_runtime() -> Driver:
-    driver = Driver(Env(), Config())
-    return driver
-
-
-def make_adapter(client=None, **options) -> DingTalkAdapter:
-    return DingTalkAdapter(
-        make_runtime(),
-        settings=DingTalkSettings(**options),
-        http_client=client,
-    )
+def make_adapter() -> DingTalkAdapter:
+    return DingTalkAdapter(Driver(Env(), Config()))
 
 
 def declare(
@@ -105,7 +62,21 @@ def declare(
         client_id="client-1", client_secret_ref=secret_ref
     )
     with owned_by(plugin):
-        return adapter.declare(settings, name=name)
+        channel = adapter.declare(settings, name=name)
+    return channel
+
+
+@asynccontextmanager
+async def running(adapter, channel):
+    """Drive prepare, start and cleanup for a directly declared connection."""
+    await adapter.driver.startup()
+    try:
+        await channel.prepare()
+        await channel.start()
+        yield
+    finally:
+        await channel.close()
+        await adapter.driver.shutdown()
 
 
 @pytest.fixture(autouse=True)
@@ -114,17 +85,23 @@ def connected_stream(monkeypatch):
     from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
 
     async def receive(stream):
-        stream.adapter.stream_connected(stream.channel)
+        stream.channel.inbound_task_connected()
         await anyio.sleep_forever()
 
     monkeypatch.setattr(DingTalkStream, "_receive", receive)
 
 
-async def open_streams(adapter):
-    await adapter.start_accepting()
+async def open_streams(channel):
     with anyio.fail_after(2):
-        while any(c.state == "connecting" for c in adapter.declarations):
+        while not channel.ready:
             await anyio.sleep(0)
+
+
+async def use_transport(channel, http):
+    await channel.client.close()
+    from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
+
+    channel._client = DingTalkClient(channel.settings, SECRET, http=http)
 
 
 async def callback(adapter, channel, payload):
@@ -137,7 +114,7 @@ async def callback(adapter, channel, payload):
         async def send(self, value):
             replies.append(json.loads(value))
 
-    stream = adapter._streams[channel]
+    stream = channel._inbound_task
     stream.websocket = Socket()
     await stream.route_message(
         {
@@ -175,12 +152,12 @@ def test_declaration_requires_an_owning_plugin():
     with pytest.raises(DingTalkConfigurationError, match="loaded plugin"):
         declare(adapter, None)
 
-    plugin = FakePlugin("support")
+    plugin = make_plugin()
     channel = declare(adapter, plugin)
     assert channel.self_id == "dingtalk:support:internal"
     assert channel.ready is False
 
-    with pytest.raises(DingTalkConfigurationError, match="Duplicate"):
+    with pytest.raises(DingTalkConfigurationError, match="cleanup"):
         declare(adapter, plugin)
 
 
@@ -189,15 +166,13 @@ def test_event_mapping_namespaces_callers_and_sessions():
     event = parse_callback(payload, connection_id="dingtalk:s:bot")
     assert event is not None
     assert event.get_plaintext() == "hello"
-    assert event.get_user_id() == "dingtalk:s:bot:sender-1"
-    assert json.loads(event.get_session_id()) == [
-        "dingtalk",
-        "dingtalk:s:bot",
-        "cid-1",
-        "sender-1",
-    ]
+    assert json.loads(event.get_user_id()) == ["sender-1", "dingtalk:s:bot"]
+    session = json.loads(event.get_session_id())
+    assert session[:3] == ["dingtalk:s:bot", "private", "cid-1"]
+    assert json.loads(session[3]) == ["sender-1", "dingtalk:s:bot"]
     assert event.is_tome() is True
-    assert event.group_ids == ()
+    assert event.group_id is None
+    assert event.user.name == "Tester"
 
     group = dict(payload)
     group.update(
@@ -212,7 +187,8 @@ def test_event_mapping_namespaces_callers_and_sessions():
     assert group_event is not None
     assert group_event.is_tome() is False
     assert group_event.get_plaintext() == "group text"
-    assert group_event.group_ids == ("dingtalk:s:bot:conversation:cid-1",)
+    assert group_event.conversation_type == "group"
+    assert group_event.group_id == "cid-1"
 
     assert parse_callback({"msgtype": "image"}, connection_id="x") is None
     with pytest.raises(DingTalkProtocolError):
@@ -225,27 +201,12 @@ def test_message_construction():
 
 
 @pytest.mark.anyio
-async def test_startup_isolates_connections_without_secrets(monkeypatch):
-    monkeypatch.setenv("DINGTALK_SECRET", SECRET)
+async def test_missing_secret_fails_preparation():
     adapter = make_adapter()
-    plugin = FakePlugin("support")
-    good = declare(adapter, plugin)
-    bad = declare(adapter, plugin, name="broken", secret_ref="DINGTALK_MISSING")
-    driver = adapter.driver
-
-    async with driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
-        assert good.ready is True
-        assert bad.ready is False
-        assert "DINGTALK_MISSING" in (bad.error or "")
-        assert good.self_id in driver.channels
-        assert bad.self_id not in driver.channels
-        assert (await adapter.accept_callback(bad, direct_payload()))[0] == 500
-        await adapter.shutdown()
-
-    assert good.state == "closed"
-    assert driver.channels == {}
+    channel = declare(adapter, make_plugin(), secret_ref="DINGTALK_MISSING")
+    with pytest.raises(DingTalkConfigurationError, match="DINGTALK_MISSING"):
+        await channel.prepare()
+    assert channel.ready is False
 
 
 @pytest.mark.anyio
@@ -253,8 +214,7 @@ async def test_startup_isolates_connections_without_secrets(monkeypatch):
 async def test_sdk_callback_dispatches_once(monkeypatch, conversation_type):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    plugin = FakePlugin("support")
-    channel = declare(adapter, plugin)
+    channel = declare(adapter, make_plugin())
     payload = direct_payload()
     payload["conversationType"] = conversation_type
     dispatched = []
@@ -274,14 +234,12 @@ async def test_sdk_callback_dispatches_once(monkeypatch, conversation_type):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels._work.dispatch_event",
+        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event",
         fake_dispatch,
     )
-    driver = adapter.driver
 
-    async with driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
+    async with running(adapter, channel):
+        await open_streams(channel)
         messages = await callback(adapter, channel, payload)
         assert messages["code"] == 200
         with anyio.fail_after(2):
@@ -290,71 +248,74 @@ async def test_sdk_callback_dispatches_once(monkeypatch, conversation_type):
         assert len(dispatched) == 1
         _, event, caller = dispatched[0]
         assert event.get_plaintext() == "hello"
-        assert caller.id == "dingtalk:support:internal:sender-1"
+        assert json.loads(caller.id) == [
+            "sender-1",
+            "dingtalk:support:internal",
+        ]
         assert caller.name == "Tester"
         assert caller.groups == frozenset()
         assert caller.roles == frozenset()
         if conversation_type == "2":
-            assert event.group_ids
+            assert event.group_id == "cid-1"
 
         duplicate = await callback(adapter, channel, payload)
         assert json.loads(duplicate["data"]) == {"response": "duplicate"}
         assert len(dispatched) == 1
-        await adapter.shutdown()
 
 
 @pytest.mark.anyio
 async def test_sdk_callback_rejects_invalid_body_and_unready_owner(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    owner = FakePlugin("support")
+    owner = make_plugin()
     channel = declare(adapter, owner)
-    async with adapter.driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
+    async with running(adapter, channel):
+        await open_streams(channel)
         invalid = await callback(adapter, channel, {"msgtype": "text"})
         assert invalid["code"] == 400
-        owner.ready = False
+        owner.status = PluginStatus.STOPPING
         refused = await callback(adapter, channel, direct_payload())
         assert refused["code"] == 500
-        owner.ready = True
+        owner.status = PluginStatus.READY
         retried = await callback(adapter, channel, direct_payload())
         assert retried["code"] == 200
-        await adapter.shutdown()
 
 
 @pytest.mark.anyio
 async def test_reply_uses_session_webhook(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
-    client = FakeHTTP(FakeResponse({"errcode": 0, "errmsg": "ok"}))
-    adapter = make_adapter(client)
-    plugin = FakePlugin("support")
-    channel = declare(adapter, plugin)
-    driver = adapter.driver
+    calls = []
 
-    async with driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
-        payload = direct_payload()
-        event = parse_callback(payload, connection_id=channel.self_id)
-        assert event is not None
-        await channel.send(event, "reply")
-        call_ = client.calls[0]
-        assert call_["url"] == payload["sessionWebhook"]
-        assert call_["json"] == {
-            "msgtype": "text",
-            "text": {"content": "reply"},
-        }
-        foreign = event.model_copy(update={"connection_id": "other-bot"})
-        with pytest.raises(DingTalkSendError, match="another connection"):
-            await channel.send(foreign, "reply")
-        await adapter.shutdown()
+    def respond(request):
+        calls.append(
+            {"url": str(request.url), "json": json.loads(request.content)}
+        )
+        return httpx.Response(200, json={"errcode": 0, "errmsg": "ok"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        adapter = make_adapter()
+        channel = declare(adapter, make_plugin())
+        async with running(adapter, channel):
+            await open_streams(channel)
+            await use_transport(channel, http)
+            payload = direct_payload()
+            event = parse_callback(payload, connection_id=channel.self_id)
+            assert event is not None
+            await channel.send(event, "reply")
+            assert calls[0]["url"] == payload["sessionWebhook"]
+            assert calls[0]["json"] == {
+                "msgtype": "text",
+                "text": {"content": "reply"},
+            }
+            foreign = event.model_copy(update={"connection_id": "other-bot"})
+            with pytest.raises(DingTalkSendError, match="another connection"):
+                await channel.send(foreign, "reply")
 
 
 @pytest.mark.anyio
 async def test_channel_send_dispatches_attachment_to_media_sender(monkeypatch):
-    import httpx
-
     from opsmesh.plugins.channels import Attachment, MessageSegment
 
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
@@ -372,11 +333,11 @@ async def test_channel_send_dispatches_attachment_to_media_sender(monkeypatch):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        adapter = make_adapter(http)
-        channel = declare(adapter, FakePlugin("support"))
-        async with adapter.driver.lifespan():
-            await adapter.startup()
-            await open_streams(adapter)
+        adapter = make_adapter()
+        channel = declare(adapter, make_plugin())
+        async with running(adapter, channel):
+            await open_streams(channel)
+            await use_transport(channel, http)
             payload = direct_payload()
             payload["senderStaffId"] = "staff"
             event = parse_callback(payload, connection_id=channel.self_id)
@@ -388,61 +349,66 @@ async def test_channel_send_dispatches_attachment_to_media_sender(monkeypatch):
             )
             assert result == {"processQueryKey": "sent-file"}
             assert len(calls) == 3
-            await adapter.shutdown()
 
 
 @pytest.mark.anyio
 async def test_reply_failures_are_explicit(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
-    client = FakeHTTP(FakeResponse({"errcode": 400, "errmsg": "bad"}))
-    adapter = make_adapter(client)
-    plugin = FakePlugin("support")
-    channel = declare(adapter, plugin)
-    driver = adapter.driver
 
-    async with driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
-        payload = direct_payload()
-        expired_payload = dict(payload)
-        expired_payload["sessionWebhookExpiredTime"] = (
-            int(time.time() * 1000) - 1000
-        )
-        expired = parse_callback(expired_payload, connection_id=channel.self_id)
-        assert expired is not None
-        with pytest.raises(DingTalkSendError, match="expired"):
-            await channel.send(expired, "reply")
+    def respond(request):
+        return httpx.Response(200, json={"errcode": 400, "errmsg": "bad"})
 
-        missing_payload = dict(payload)
-        missing_payload.pop("sessionWebhook")
-        missing = parse_callback(missing_payload, connection_id=channel.self_id)
-        assert missing is not None
-        with pytest.raises(DingTalkSendError, match="session webhook"):
-            await channel.send(missing, "reply")
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as http:
+        adapter = make_adapter()
+        channel = declare(adapter, make_plugin())
+        async with running(adapter, channel):
+            await open_streams(channel)
+            await use_transport(channel, http)
+            payload = direct_payload()
+            expired_payload = dict(payload)
+            expired_payload["sessionWebhookExpiredTime"] = (
+                int(time.time() * 1000) - 1000
+            )
+            expired = parse_callback(
+                expired_payload, connection_id=channel.self_id
+            )
+            assert expired is not None
+            with pytest.raises(DingTalkSendError, match="expired"):
+                await channel.send(expired, "reply")
 
-        event = parse_callback(payload, connection_id=channel.self_id)
-        assert event is not None
-        with pytest.raises(ValueError, match="empty"):
-            await channel.send(event, "  ")
-        with pytest.raises(OperationError, match="400"):
-            await channel.send(event, "reply")
-        await adapter.shutdown()
+            missing_payload = dict(payload)
+            missing_payload.pop("sessionWebhook")
+            missing = parse_callback(
+                missing_payload, connection_id=channel.self_id
+            )
+            assert missing is not None
+            with pytest.raises(DingTalkSendError, match="session webhook"):
+                await channel.send(missing, "reply")
+
+            event = parse_callback(payload, connection_id=channel.self_id)
+            assert event is not None
+            with pytest.raises(ValueError, match="empty"):
+                await channel.send(event, "  ")
+            with pytest.raises(OperationError, match="400"):
+                await channel.send(event, "reply")
 
 
 @pytest.mark.anyio
 async def test_shutdown_closes_streams_and_unregisters_channel(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    channel = declare(adapter, FakePlugin("support"))
-    async with adapter.driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
+    channel = declare(adapter, make_plugin())
+    async with running(adapter, channel):
+        await open_streams(channel)
         assert channel.ready
-        await adapter.shutdown()
-        assert adapter._streams == {}
-        result = await adapter.accept_callback(channel, direct_payload())
-        assert result[0] == 500
+        assert channel._inbound_task is not None
     assert channel.state == "closed"
+    assert channel._inbound_task is None
+    result = await adapter.accept_callback(channel, direct_payload())
+    assert result[0] == 500
+    assert adapter.connections == ()
     assert adapter.driver.channels == {}
 
 
@@ -450,7 +416,7 @@ async def test_shutdown_closes_streams_and_unregisters_channel(monkeypatch):
 async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
     monkeypatch.setenv("DINGTALK_SECRET", SECRET)
     adapter = make_adapter()
-    channel = declare(adapter, FakePlugin("support"))
+    channel = declare(adapter, make_plugin())
     accepted = []
     outcomes = iter((False, True))
 
@@ -458,10 +424,9 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
         accepted.append(item)
         return next(outcomes)
 
-    async with adapter.driver.lifespan():
-        await adapter.startup()
-        await open_streams(adapter)
-        monkeypatch.setattr(adapter._queue, "put_nowait", enqueue)
+    async with running(adapter, channel):
+        await open_streams(channel)
+        monkeypatch.setattr(channel._queue, "put_nowait", enqueue)
         first = await callback(adapter, channel, direct_payload())
         retry = await callback(adapter, channel, direct_payload())
         duplicate = await callback(adapter, channel, direct_payload())
@@ -469,25 +434,15 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
         assert retry["code"] == 200
         assert json.loads(duplicate["data"]) == {"response": "duplicate"}
         assert len(accepted) == 2
-        await adapter.shutdown()
 
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
-    from types import ModuleType
-
     from opsmesh.dispatch import dispatch_event
     from opsmesh.matchers import Matcher, MatcherSource
-    from opsmesh.plugins.model import Plugin
 
     adapter = make_adapter()
-    owner = Plugin(
-        name="support",
-        module=ModuleType("support"),
-        module_name="support",
-        manager=PluginManager(),
-        status=PluginStatus.READY,
-    )
+    owner = make_plugin()
     monkeypatch.setattr(
         registry,
         "get_plugin",
@@ -518,12 +473,9 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
             channel, event, matcher_filter=channel.accepts_matcher
         )
         result.raise_for_errors()
-        owner.status = PluginStatus.STOPPING
-        result = await dispatch_event(
-            channel, event, matcher_filter=channel.accepts_matcher
-        )
-        assert result.handled == 0
         assert calls == ["support"]
+        owner.status = PluginStatus.STOPPING
+        assert channel.owner_ready is False
     finally:
         selected.destroy()
         unrelated.destroy()

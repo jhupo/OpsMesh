@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
-
-from pydantic import ConfigDict, Field
 
 from opsmesh.adapters import Event
 
 from ..attachments import AttachmentCollection, AttachmentError
 from ..attachments.transfer import AttachmentReader
+from ..context import UserContext, encode_scope
+from ..events import MessageEvent
 from ..messages import Message
 from .attachments import parse_message
 from .errors import DingTalkProtocolError
@@ -48,17 +47,18 @@ class DingTalkNoticeEvent(Event):
         """Expose an actor only if one was supplied by the platform."""
         if self.operator_id is None:
             raise ValueError("This notice does not identify an actor")
-        return f"{self.connection_id}:{self.operator_id}"
+        return encode_scope(self.operator_id, self.connection_id)
 
     def get_session_id(self) -> str:
         """Return a conversation only for events that identify one."""
         if self.open_conversation_id is not None:
-            return (
-                f"{self.connection_id}:open_conversation:"
-                f"{self.open_conversation_id}"
+            return encode_scope(
+                self.connection_id,
+                "open_conversation",
+                self.open_conversation_id,
             )
         if self.chat_id is not None:
-            return f"{self.connection_id}:chat:{self.chat_id}"
+            return encode_scope(self.connection_id, "chat", self.chat_id)
         raise ValueError("This notice has no conversation")
 
     def get_message(self) -> Message:
@@ -70,72 +70,17 @@ class DingTalkNoticeEvent(Event):
         return True
 
 
-class DingTalkMessageEvent(Event):
+class DingTalkMessageEvent(MessageEvent):
     """A DingTalk robot message callback."""
 
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+    EVENT_NAME = "dingtalk.message"
 
-    connection_id: str
     user_id: str
     user_name: str | None = None
-    conversation_id: str
     conversation_title: str | None = None
-    conversation_type: str | None = None
-    message_id: str
-    content: str
     session_webhook: str | None = None
     session_webhook_expires_at: int | None = None
-    to_me: bool = True
-    message: Message | None = None
-    attachments: AttachmentCollection = Field(
-        default_factory=AttachmentCollection, exclude=True
-    )
     raw: dict[str, Any]
-
-    def get_type(self) -> str:
-        """Return the framework message event type."""
-        return "message"
-
-    def get_event_name(self) -> str:
-        """Return the DingTalk message event name."""
-        return "dingtalk.message"
-
-    def get_event_description(self) -> str:
-        """Describe the event without logging its message content."""
-        return f"message {self.message_id} from {self.get_user_id()}"
-
-    def get_user_id(self) -> str:
-        """Return the caller identifier scoped by connection."""
-        return f"{self.connection_id}:{self.user_id}"
-
-    def get_session_id(self) -> str:
-        """Return the conversation identifier scoped by connection."""
-        return json.dumps(
-            [
-                "dingtalk",
-                self.connection_id,
-                self.conversation_id,
-                self.user_id,
-            ],
-            separators=(",", ":"),
-        )
-
-    def get_message(self) -> Message:
-        """Return the message content as DingTalk segments."""
-        return (
-            self.message if self.message is not None else Message(self.content)
-        )
-
-    def is_tome(self) -> bool:
-        """Whether the robot was addressed in this group or direct chat."""
-        return self.to_me
-
-    @property
-    def group_ids(self) -> tuple[str, ...]:
-        """Return verified group identifiers for the caller mapping."""
-        if self.conversation_type != "2":
-            return ()
-        return (f"{self.connection_id}:conversation:{self.conversation_id}",)
 
 
 def parse_callback(
@@ -166,7 +111,6 @@ def parse_callback(
         raise DingTalkProtocolError(str(error)) from None
     if message is None:
         return None
-    content = message.extract_plain_text()
     conversation_id = payload.get("conversationId")
     message_id = payload.get("msgId")
     user_id = payload.get("senderStaffId") or payload.get("senderId")
@@ -179,22 +123,26 @@ def parse_callback(
             "DingTalk message event is missing its sender"
         )
 
-    conversation_type = payload.get("conversationType")
     session_webhook = payload.get("sessionWebhook")
     expires = payload.get("sessionWebhookExpiredTime")
     title = payload.get("conversationTitle")
     nickname = payload.get("senderNick")
+    nickname = nickname if isinstance(nickname, str) else None
+    is_group = payload.get("conversationType") == "2"
     return DingTalkMessageEvent(
         connection_id=connection_id,
-        user_id=user_id,
-        user_name=nickname if isinstance(nickname, str) else None,
-        conversation_id=conversation_id,
-        conversation_title=title if isinstance(title, str) else None,
-        conversation_type=(
-            conversation_type if isinstance(conversation_type, str) else None
-        ),
         message_id=message_id,
-        content=content,
+        user=UserContext.scoped(
+            connection_id,
+            user_id,
+            name=nickname or "",
+        ),
+        user_id=user_id,
+        user_name=nickname,
+        conversation_id=conversation_id,
+        conversation_type="group" if is_group else "private",
+        group_id=conversation_id if is_group else None,
+        conversation_title=title if isinstance(title, str) else None,
         message=message,
         attachments=attachments,
         session_webhook=(
@@ -203,6 +151,6 @@ def parse_callback(
         session_webhook_expires_at=(
             expires if isinstance(expires, int) else None
         ),
-        to_me=(conversation_type != "2" or bool(payload.get("isInAtList"))),
+        to_me=not is_group or bool(payload.get("isInAtList")),
         raw=payload,
     )

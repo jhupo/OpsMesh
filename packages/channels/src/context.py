@@ -1,24 +1,48 @@
-"""Trusted user information shared by all channel protocols."""
+"""Caller profile supplied by a channel protocol."""
 
+import json
+from collections.abc import Iterable
 from dataclasses import dataclass
+
+
+def encode_scope(*parts: str) -> str:
+    """Encode identifier parts without delimiter ambiguity."""
+    return json.dumps(parts, separators=(",", ":"), ensure_ascii=True)
 
 
 @dataclass(frozen=True, slots=True)
 class UserContext:
-    """Carry verified identity only, without credentials or runtime services."""
+    """A protocol-provided profile, not a verified principal."""
 
     id: str
     name: str = ""
     groups: frozenset[str] = frozenset()
     roles: frozenset[str] = frozenset()
 
+    @classmethod
+    def scoped(
+        cls,
+        connection_id: str,
+        user_id: str,
+        *,
+        name: str = "",
+        groups: Iterable[str] = (),
+        roles: Iterable[str] = (),
+    ) -> "UserContext":
+        """Key a native user identifier to the connection that named it."""
+        return cls(
+            id=encode_scope(user_id, connection_id),
+            name=name,
+            groups=frozenset(groups),
+            roles=frozenset(roles),
+        )
+
     def __post_init__(self) -> None:
-        """Validate identity fields and freeze user-owned collections."""
+        """Validate profile fields and freeze user-owned collections."""
         if not isinstance(self.id, str) or not self.id:
             raise ValueError("User id must be a nonempty string")
         if not isinstance(self.name, str):
             raise TypeError("User name must be a string")
-        object.__setattr__(self, "name", self.name or self.id)
         for field in ("groups", "roles"):
             values = getattr(self, field)
             if isinstance(values, str):

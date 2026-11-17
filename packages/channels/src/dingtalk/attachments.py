@@ -20,7 +20,6 @@ from ..attachments.transfer import AttachmentReader
 from ..messages import Message, MessageSegment
 from ..operations import OperationError
 from .client import DingTalkClient
-from .config import DingTalkConnectionSettings
 
 logger = logging.getLogger(__name__)
 
@@ -107,12 +106,10 @@ class DingTalkAttachments:
     def __init__(
         self,
         client: DingTalkClient,
-        connection: DingTalkConnectionSettings,
         settings: AttachmentSettings,
     ) -> None:
-        """Borrow the transport and trusted connection configuration."""
+        """Borrow the connection transport and trusted configuration."""
         self.client = client
-        self.connection = connection
         self.settings = settings
 
     async def read(self, code: str) -> bytes:
@@ -133,11 +130,12 @@ class DingTalkAttachments:
 
     async def _download(self, code: str) -> bytes:
         """Exchange the temporary code before downloading bounded content."""
-        access_token = await self.client.access_token(self.connection)
+        access_token = await self.client.access_token()
         result = await self.client.invoke(
             self.client.robot.robot_message_file_download_with_options_async(
                 models.RobotMessageFileDownloadRequest(
-                    download_code=code, robot_code=self.connection.client_id
+                    download_code=code,
+                    robot_code=self.client.settings.client_id,
                 ),
                 models.RobotMessageFileDownloadHeaders(
                     x_acs_dingtalk_access_token=access_token

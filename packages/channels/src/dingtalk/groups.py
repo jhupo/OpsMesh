@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 from alibabacloud_dingtalk.im_1_0 import models
 from pydantic import JsonValue
 
-from .client import DingTalkClient
-
 if TYPE_CHECKING:
     from .channel import DingTalkChannel
 
@@ -24,16 +22,16 @@ class DingTalkGroups:
         }
     )
 
-    def __init__(self, client: DingTalkClient, channel: "DingTalkChannel"):
-        """Borrow the existing account transport and credentials."""
-        self.client = client
+    def __init__(self, channel: "DingTalkChannel"):
+        """Borrow the existing connection transport and credentials."""
         self.channel = channel
+        self.client = channel.client
 
     async def query_open_group_base_info(
         self, open_conversation_id: str
     ) -> JsonValue:
         """Read group base information available to the application."""
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         return await self.client.invoke(
             self.client.im.query_open_group_base_info_with_options_async(
                 models.QueryOpenGroupBaseInfoRequest(
@@ -48,7 +46,7 @@ class DingTalkGroups:
 
     async def query_group_member(self, open_conversation_id: str) -> JsonValue:
         """Query interconnection group members using their native ID scope."""
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         return await self.client.invoke(
             self.client.im.query_group_member_with_options_async(
                 models.QueryGroupMemberRequest(
@@ -67,7 +65,7 @@ class DingTalkGroups:
         """Rename an interconnection group when the app has permission."""
         if not group_name.strip():
             raise ValueError("Group name must not be empty")
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         return await self.client.invoke(
             self.client.im.update_group_name_with_options_async(
                 models.UpdateGroupNameRequest(
@@ -87,7 +85,7 @@ class DingTalkGroups:
         """Add organization users to an interconnection group."""
         if not user_ids or not all(user_ids):
             raise ValueError("Group members must not be empty")
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         return await self.client.invoke(
             self.client.im.add_group_member_with_options_async(
                 models.AddGroupMemberRequest(
@@ -106,7 +104,7 @@ class DingTalkGroups:
         """Remove organization users from an interconnection group."""
         if not user_ids or not all(user_ids):
             raise ValueError("Group members must not be empty")
-        token = await self.client.access_token(self.channel.settings)
+        token = await self.client.access_token()
         return await self.client.invoke(
             self.client.im.remove_group_member_with_options_async(
                 models.RemoveGroupMemberRequest(

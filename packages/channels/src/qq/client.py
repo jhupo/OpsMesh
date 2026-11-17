@@ -1,18 +1,14 @@
-"""Own native QQ SDK clients and their shared HTTP transport."""
+"""Own one QQ connection's native API client and HTTP transport."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 from qqbot_agent_sdk import QQApiClient
 
 from ..operations import OperationError, operation_response
-from .config import QQSettings
-from .errors import QQSendError
-
-if TYPE_CHECKING:
-    from .channel import QQChannel
+from .config import QQConnectionSettings
 
 
 class _APITransport:
@@ -38,49 +34,29 @@ class _APITransport:
 
 
 class QQClient:
-    """Keep one native API client and token cache per declared connection."""
+    """Keep one native API client and token cache for a connection."""
 
     def __init__(
-        self, settings: QQSettings, http: httpx.AsyncClient | None
+        self,
+        settings: QQConnectionSettings,
+        secret: str,
+        *,
+        name: str,
+        http: httpx.AsyncClient | None = None,
     ) -> None:
-        """Borrow HTTP transport and own per-connection native API clients."""
+        """Bind the account to its credentials and transport."""
         self.settings = settings
-        self._http = http
+        self._http = http or httpx.AsyncClient(trust_env=False)
         self._owns_http = http is None
-        self._accounts: dict[str, QQApiClient] = {}
-
-    def open(self) -> None:
-        """Open the shared HTTP transport on adapter startup."""
-        if self._http is None:
-            self._http = httpx.AsyncClient(trust_env=False)
-
-    def account(self, channel: QQChannel, secret: str) -> QQApiClient:
-        """Return the SDK client bound to this connection's credentials."""
-        if self._http is None:
-            raise QQSendError("The QQ HTTP client is not open")
-        client = self._accounts.get(channel.self_id)
-        if client is None:
-            client = QQApiClient(
-                app_id=channel.settings.app_id,
-                client_secret=secret,
-                log_tag=channel.self_id,
-            )
-            client.setup(
-                _APITransport(self._http, self.settings.request_timeout)
-            )
-            self._accounts[channel.self_id] = client
-        return client
-
-    def forget(self, connection_id: str) -> None:
-        """Release one account after its gateway has stopped."""
-        client = self._accounts.pop(connection_id, None)
-        if client is not None:
-            client.clear_token()
+        self.api = QQApiClient(
+            app_id=settings.app_id,
+            client_secret=secret,
+            log_tag=name,
+        )
+        self.api.setup(_APITransport(self._http, settings.request_timeout))
 
     async def close(self) -> None:
-        """Discard SDK clients and close the owned HTTP transport."""
-        for connection_id in tuple(self._accounts):
-            self.forget(connection_id)
-        if self._owns_http and self._http is not None:
+        """Discard the account token and close an owned transport."""
+        self.api.clear_token()
+        if self._owns_http:
             await self._http.aclose()
-            self._http = None

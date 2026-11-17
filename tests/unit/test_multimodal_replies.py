@@ -19,7 +19,6 @@ from opsmesh.plugins.channels import (
     StreamTextDelta,
 )
 from opsmesh.plugins.channels.api.output import MessageOutput
-from opsmesh.plugins.channels.rendering import table_text
 from opsmesh.plugins.channels.sending import normalize
 from opsmesh.plugins.channels.streaming import TextBlock, message_stream
 
@@ -74,7 +73,8 @@ def test_table_shape_and_numeric_values_are_validated():
 
 def test_table_fallback_is_explicit_and_preserves_every_cell():
     table = Message(MessageSegment.table(["Name", "Total"], [["alpha", 3]]))
-    assert table_text(table[0].data) == "1.\nName: alpha\nTotal: 3"
+    outputs = example_module("outputs.py")
+    assert outputs.render_table(table[0].data) == "1.\nName: alpha\nTotal: 3"
 
 
 @pytest.mark.anyio
@@ -159,11 +159,12 @@ async def test_partial_receipts_do_not_overwrite_confirmed_operations():
 @pytest.mark.anyio
 async def test_http_receipt_is_not_generated_when_a_frame_is_only_queued():
     channel = SimpleNamespace(
+        owner_id="owner",
+        self_id="api:owner:main",
         settings=SimpleNamespace(max_output_bytes=4096, max_output_messages=5),
         uploads=SimpleNamespace(put_many=lambda *args: None),
     )
     event = SimpleNamespace(
-        installation_id="owner",
         user_id="u",
         attachments=AttachmentCollection(),
     )
@@ -383,11 +384,10 @@ async def test_api_rejects_mislabeled_media_before_uploading():
     )
     uploaded = []
     channel = SimpleNamespace(
-        uploads=SimpleNamespace(put_many=lambda *args: uploaded.append(args))
+        owner_id="owner",
+        uploads=SimpleNamespace(put_many=lambda *args: uploaded.append(args)),
     )
-    event = SimpleNamespace(
-        installation_id="test", user_id="u", attachments=files
-    )
+    event = SimpleNamespace(user_id="u", attachments=files)
     with pytest.raises(AttachmentError):
         await prepare_message(
             channel,
@@ -513,12 +513,12 @@ async def test_output_budget_rejection_does_not_publish_downloads():
     uploads = AttachmentUploads(AttachmentSettings())
     output = MessageOutput(
         SimpleNamespace(
+            owner_id="owner",
+            self_id="api:owner:main",
             settings=SimpleNamespace(max_output_bytes=1, max_output_messages=4),
             uploads=uploads,
         ),
-        SimpleNamespace(
-            installation_id="owner", user_id="user", attachments=files
-        ),
+        SimpleNamespace(user_id="user", attachments=files),
     )
     with pytest.raises(HTTPError):
         await output.send(Message(MessageSegment.attachment(file)))
@@ -535,12 +535,13 @@ async def test_content_budget_is_independent_of_response_encoding(
 
     output = MessageOutput(
         SimpleNamespace(
+            owner_id="owner",
+            self_id="api:owner:main",
             settings=SimpleNamespace(
                 max_output_bytes=limit, max_output_messages=4
-            )
+            ),
         ),
         SimpleNamespace(
-            installation_id="owner",
             user_id="user",
             attachments=AttachmentCollection(),
         ),

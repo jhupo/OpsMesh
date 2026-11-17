@@ -1,293 +1,139 @@
-"""Robot connection ownership and lifecycle shared by native SDK adapters."""
+"""Prepared connections and the shared operation contract of one protocol."""
 
 from __future__ import annotations
 
-import logging
 from abc import abstractmethod
-from collections.abc import Callable
-from typing import Generic, Protocol, Self, TypeVar
+from typing import Any, Generic, TypeVar
 
-import anyio
+from opsmesh.adapters import Adapter
+from opsmesh.drivers import Driver
+from opsmesh.plugins import get_current_plugin
+from opsmesh.plugins.model import Plugin
+from opsmesh.plugins.registry import plugin_scope, track_registration
 
-from opsmesh.adapters import Adapter, Event
-from opsmesh.drivers import Driver, get_driver
-from opsmesh.plugins.model import Plugin, PluginStatus
-from opsmesh.plugins.registry import (
-    get_plugin_by_module_name,
-    plugin_scope,
-    track_registration,
-)
+from .channel import MESSAGE_OPERATIONS, Channel
+from .config import validate_connection_name
+from .events import MessageEvent
+from .operations import UnsupportedOperation
 
-from ._queue import EventQueue
-from ._validation import connection_owner, connection_segment
-from ._work import QueuedEvent, dispatch_queued
-from .channel import CLOSED, RobotChannel, RobotProtocol
-
-logger = logging.getLogger(__name__)
-ChannelT = TypeVar("ChannelT", bound=RobotChannel)
+ChannelT = TypeVar("ChannelT", bound=Channel)
 
 
-class RobotClient(Protocol):
-    """Resources kept open until all accepted callbacks have drained."""
+class ChannelAdapter(Adapter, Generic[ChannelT]):
+    """Create connections for one protocol and authorize their operations.
 
-    def open(self) -> None:
-        """Open outbound resources."""
+    Every adapter keeps the connections it prepared for the current
+    activation; the driver only indexes connections that are online.
+    """
 
-    async def close(self) -> None:
-        """Close outbound resources."""
-
-
-class RobotStream(Protocol):
-    """Inbound SDK task, independent of outbound API resources."""
-
-    async def run(self) -> None:
-        """Run the inbound connection until stopped."""
-
-    def stop(self) -> None:
-        """Stop accepting SDK deliveries."""
-
-    async def wait_closed(self) -> None:
-        """Wait until the SDK task has closed."""
-
-
-class RobotAdapter(Adapter, Generic[ChannelT]):
-    """Own declarations, admission and draining; delegate vendor I/O."""
-
-    settings_factory: Callable[[], RobotProtocol]
     channel_type: type[ChannelT]
-    configuration_error: type[ValueError]
-    message_event_type: type[Event]
-    send_error: type[Exception]
-    _client: RobotClient
+    configuration_error: type[Exception] = ValueError
+    send_error: type[Exception] = Exception
+    message_event_type: type[MessageEvent]
 
-    def __init__(self, driver: Driver, *, settings: RobotProtocol) -> None:
-        """Initialize declarations and a bounded framework dispatch queue."""
+    def __init__(self, driver: Driver) -> None:
+        """Initialize the prepared connection table."""
         super().__init__(driver)
-        self.settings = settings
-        self._declared: dict[str, ChannelT] = {}
-        self._streams: dict[ChannelT, RobotStream] = {}
-        self._started = False
-        self._accepting = False
-        self._queue = EventQueue(
-            capacity=settings.max_pending_events,
-            concurrency=settings.concurrency,
-            shutdown_timeout=settings.shutdown_timeout,
-            handle=dispatch_queued,
-            scope=lambda item: (
-                item.event.get_session_id()
-                if item.event.get_type() == "message"
-                else None
-            ),
-            release=QueuedEvent.close,
-        )
+        self._connections: dict[tuple[str, str], ChannelT] = {}
 
-    @classmethod
-    def configured(cls) -> Self:
-        """Resolve the driver-owned adapter without opening the network."""
-        driver = get_driver()
+    @property
+    def connections(self) -> tuple[ChannelT, ...]:
+        """The connections prepared by this adapter."""
+        return tuple(self._connections.values())
+
+    def get_connection(self, owner_id: str, name: str = "main") -> ChannelT:
+        """Return a prepared connection without starting or creating it."""
         try:
-            return driver.get_adapter(cls)
+            return self._connections[(owner_id, name)]
         except KeyError:
-            return driver.register_adapter(cls, settings=cls.settings_factory())
+            raise LookupError(
+                f"{self.get_name()} connection {owner_id}/{name} "
+                "is not prepared"
+            ) from None
 
-    @property
-    def started(self) -> bool:
-        """Whether outbound resources and callback workers are open."""
-        return self._started
-
-    @property
-    def declarations(self) -> tuple[ChannelT, ...]:
-        """Return connection declarations owned by this adapter."""
-        return tuple(self._declared.values())
-
-    def declare(self, settings, *, name: str, owner=None) -> ChannelT:
-        """Bind a connection and its cleanup to the declaring plugin."""
-        plugin = connection_owner(owner)
-        protocol = self.get_name()
-        if plugin is None:
+    def declare(self, settings: Any, *, name: str = "main") -> ChannelT:
+        """Bind a configured connection and its cleanup to the caller."""
+        owner = get_current_plugin()
+        if not isinstance(owner, Plugin):
             raise self.configuration_error(
-                f"A {protocol} connection must be declared by a loaded plugin"
+                f"A {self.get_name()} connection must be declared by "
+                "a loaded plugin"
             )
-        connection_segment(plugin.id_, "Connection owner")
-        connection_segment(name, "Connection name")
-        identifier = f"{protocol}:{plugin.id_}:{name}"
-        if identifier in self._declared:
-            raise self.configuration_error(f"Duplicate connection {identifier}")
+        validate_connection_name(name)
+        key = (owner.id_, name)
+        existing = self._connections.get(key)
+        if existing is not None:
+            if existing.dirty:
+                raise self.configuration_error(
+                    f"Connection {existing.self_id} requires successful "
+                    "cleanup before it can be rebuilt"
+                )
+            raise self.configuration_error(
+                f"Duplicate connection {existing.self_id}"
+            )
+        account = self._account_id(settings)
+        if account is not None:
+            for other in self._connections.values():
+                if self._account_id(other.settings) == account:
+                    raise self.configuration_error(
+                        f"{self.get_name()}.{name}: the robot account is "
+                        f"already declared by {other.owner_id}"
+                    )
         channel = self.channel_type(
-            self,
-            identifier,
-            owner_id=plugin.id_,
-            owner=plugin,
-            connection_name=name,
-            settings=settings,
-            protocol=self.settings,
+            self, owner=owner, connection_name=name, settings=settings
         )
-        self._declared[identifier] = channel
-        track_registration(lambda: self._remove(channel), owner)
-        if isinstance(plugin, Plugin):
-
-            async def start_connection() -> None:
-                if self._started:
-                    self._activate(channel)
-
-            async def close_connection() -> None:
-                stream = self._streams.get(channel)
-                if stream is not None:
-                    stream.stop()
-                    await stream.wait_closed()
-                self._deactivate(channel)
-
-            with plugin_scope(plugin):
-                self.driver.on_started(start_connection)
-                self.driver.on_shutdown(close_connection)
+        self._connections[key] = channel
+        with plugin_scope(owner):
+            self.driver.on_started(channel.start)
+            self.driver.on_quiescing(channel.quiesce)
+            self.driver.on_shutdown(channel.close)
+        track_registration(lambda: self.forget(channel), owner)
         return channel
 
-    async def startup(self) -> None:
-        """Open outbound resources and queue workers before inbound streams."""
-        if self._started:
-            return
-        if get_plugin_by_module_name(type(self).__module__) is not None:
-            if self.settings != self.settings_factory():
-                raise self.configuration_error(
-                    f"{self.get_name()} protocol settings changed; "
-                    "restart the host"
+    def forget(self, channel: ChannelT) -> None:
+        """Remove a prepared connection after successful cleanup."""
+        key = (channel.owner_id, channel.connection_name)
+        if self._connections.get(key) is channel:
+            del self._connections[key]
+
+    def _account_id(self, settings: Any) -> str | None:
+        """Identify a vendor robot account shared across declarations."""
+        return None
+
+    async def _call(
+        self, channel: ChannelT, operation: str, **data: Any
+    ) -> Any:
+        """Admit one operation for the connection and the calling plugin."""
+        key = (channel.owner_id, channel.connection_name)
+        if self._connections.get(key) is not channel:
+            raise self.send_error("Channel does not belong to this adapter")
+        current = get_current_plugin()
+        if current is not None and current is not channel.owner:
+            raise PermissionError("Connection belongs to another plugin")
+        if operation not in channel.supported_operations:
+            raise UnsupportedOperation(
+                f"Unsupported {self.get_name()} channel operation: {operation}"
+            )
+        if operation in MESSAGE_OPERATIONS:
+            event = data.get("event")
+            if not isinstance(event, self.message_event_type):
+                raise self.send_error(
+                    f"{self.get_name()} message operations require a "
+                    f"{self.message_event_type.__name__}"
                 )
-        if not self.driver.started:
-            raise self.configuration_error(
-                f"The {self.get_name()} channel requires "
-                "a running runtime lifespan"
-            )
-        self._started = True
-        try:
-            self._client.open()
-            await self._queue.start(self.driver.task_group)
-        except BaseException as error:
-            with anyio.CancelScope(shield=True):
-                try:
-                    await self.shutdown()
-                except BaseException as cleanup_error:
-                    raise BaseExceptionGroup(
-                        "Robot startup and cleanup failed",
-                        [error, cleanup_error],
-                    ) from None
-            raise
-
-    async def start_accepting(self) -> None:
-        """Start SDK intake after consumers are ready."""
-        if self._accepting:
-            return
-        self._accepting = True
-        for channel in self._declared.values():
-            self._activate(channel)
-
-    def stop_accepting(self) -> None:
-        """Stop intake while preserving outbound resources for accepted work."""
-        self._accepting = False
-        self._queue.stop_accepting()
-        for stream in tuple(self._streams.values()):
-            stream.stop()
-
-    async def drain(self) -> None:
-        """Finish or cancel accepted work before closing API clients."""
-        await self._queue.stop()
-        for stream in tuple(self._streams.values()):
-            await stream.wait_closed()
-
-    async def shutdown(self) -> None:
-        """Drain callbacks before closing outbound resources."""
-        if not self._started:
-            return
-        self.stop_accepting()
-        await self.drain()
-        errors: list[Exception] = []
-        for channel in self.declarations:
-            try:
-                self._deactivate(channel)
-            except Exception as error:
-                errors.append(error)
-        try:
-            await self._client.close()
-        except Exception as error:
-            errors.append(error)
-        if errors:
-            raise ExceptionGroup("Robot shutdown failed", errors)
-        self._started = False
-
-    def stream_finished(self, channel: ChannelT) -> None:
-        """Release an inbound task after the SDK has closed its socket."""
-        if channel.ready:
-            self.stream_disconnected(channel)
-        self._streams.pop(channel, None)
-
-    def stream_connected(self, channel: ChannelT) -> None:
-        """Publish readiness after the native SDK handshake."""
-        if self._declared.get(channel.self_id) is not channel:
-            return
-        channel.mark_ready()
-        if channel.self_id not in self.channels:
-            self.connect(channel)
-
-    def stream_disconnected(self, channel: ChannelT) -> None:
-        """Withdraw inbound readiness without invalidating accepted work."""
-        if self._declared.get(channel.self_id) is not channel:
-            return
-        if channel.self_id in self.channels:
-            self.disconnect(channel)
-        if channel.state != CLOSED:
-            channel.mark_disconnected()
-
-    def _remove(self, channel: ChannelT) -> None:
-        self._declared.pop(channel.self_id, None)
-        self._deactivate(channel)
-
-    def _deactivate(self, channel: ChannelT) -> None:
-        stream = self._streams.get(channel)
-        if stream is not None:
-            stream.stop()
-        try:
-            if channel.self_id in self.channels:
-                self.disconnect(channel)
-        finally:
-            channel.mark_closed()
-            self._forget(channel)
-
-    def _activate(self, channel: ChannelT) -> None:
-        if not self._accepting or channel in self._streams:
-            return
-        owner = channel._owner
-        if isinstance(owner, Plugin) and owner.status not in (
-            PluginStatus.STARTING,
-            PluginStatus.READY,
-        ):
-            return
-        try:
-            secret = self._read_secret(channel)
-        except self.configuration_error as error:
-            channel.mark_failed(str(error))
-            logger.error("Connection %s: %s", channel.self_id, error)
-            return
-        stream = self._create_stream(channel, secret)
-        self._streams[channel] = stream
-        self.driver.task_group.start_soon(stream.run)
-
-    def _validate_reply(self, channel: ChannelT, event: object) -> None:
-        if not channel.replies_available:
-            raise self.send_error(f"Connection {channel.self_id} is not ready")
-        if not isinstance(event, self.message_event_type):
-            raise self.send_error(
-                f"Replies require a {self.message_event_type.__name__}"
-            )
-        if event.connection_id != channel.self_id:
-            raise self.send_error("Reply event belongs to another connection")
+            if event.connection_id != channel.self_id:
+                raise self.send_error(
+                    "Reply event belongs to another connection"
+                )
+            if not channel.replies_available:
+                raise self.send_error(
+                    f"Connection {channel.self_id} is not ready"
+                )
+        return await self._perform(channel, operation, **data)
 
     @abstractmethod
-    def _read_secret(self, channel: ChannelT) -> str:
-        """Read the configured credential for this vendor account."""
-
-    @abstractmethod
-    def _create_stream(self, channel: ChannelT, secret: str) -> RobotStream:
-        """Construct the vendor SDK task without starting it."""
-
-    @abstractmethod
-    def _forget(self, channel: ChannelT) -> None:
-        """Release vendor account credentials after accepted work finishes."""
+    async def _perform(
+        self, channel: ChannelT, operation: str, **data: Any
+    ) -> Any:
+        """Execute one admitted protocol operation."""
+        raise NotImplementedError

@@ -8,27 +8,82 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 SCRIPT = """
-from opsmesh.drivers import base as driver_state
+import tempfile
+from pathlib import Path
+
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.plugins import get_plugin, registry
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import get_dependency_config, get_plugin, registry
 from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.registry import plugin_scope
 
-driver_state.set_driver(Driver(Env(), Config()))
-manager = PluginManager(["example_sandbox"], config={"model": "gpt-test"})
+driver = Driver(Env(), Config())
+driver_state.set_driver(driver)
+temporary = tempfile.TemporaryDirectory()
+registry.register_plugin_manager(
+    PluginManager(
+        ["opsmesh.plugins.filesystem"],
+        config={"root": str(Path(temporary.name) / "files")},
+    )
+)
+manager = PluginManager(
+    ["example_sandbox"],
+    config={"model": "gpt-test"},
+    dependencies={"channels": {"api": {"main": {"port": 0}}}},
+)
 registry.register_plugin_manager(manager)
 plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None
 assert get_plugin("channels") is not None
 assert get_plugin("example_sandbox") is plugin
-from opsmesh.plugins.channels.api import get_entrances
-routes = [route for route in get_entrances().entries
-          if route.installation_id == plugin.id_]
-assert len(routes) == 1
-assert routes[0].path == "/plugins/example_sandbox/messages"
+
+from opsmesh.plugins.channels import ChannelConnections
+
+with plugin_scope(plugin):
+    connections = get_dependency_config(ChannelConnections)
+assert sorted(connections.api) == ["main"]
+
+try:
+    driver.get_adapter("api")
+except KeyError:
+    pass
+else:
+    raise AssertionError("connections must wait for plugin startup")
+
 from example_sandbox import agent as definition
 assert not hasattr(definition, "agent")
-print("loaded", plugin.id_, routes[0].path)
+print("loaded", plugin.id_)
+"""
+
+
+SCENARIO = """
+import anyio
+import runpy
+
+from example_sandbox import lifecycle
+
+run = runpy.run_path("tests/fixtures/consumer_lifecycle.py")["run"]
+
+
+async def body():
+    api = driver.get_adapter("api").get_connection(plugin.id_, "main")
+    scenario = runpy.run_path("tests/fixtures/sandbox_scenario.py")
+    await scenario["run_scenario"](plugin, api)
+
+
+def skip(func):
+    return (
+        func is lifecycle.startup
+        or func.__module__ == "opsmesh.plugins.database.schema"
+    )
+
+
+anyio.run(
+    lambda: run(
+        plugin, driver, body, skip=skip, started=("filesystem",)
+    )
+)
 """
 
 
@@ -56,22 +111,10 @@ def run_sandbox_script(script):
 
 
 def test_sandbox_example_loads_without_starting_a_sandbox():
-    assert (
-        run_sandbox_script(SCRIPT)
-        == "loaded example_sandbox /plugins/example_sandbox/messages"
-    )
+    assert run_sandbox_script(SCRIPT) == "loaded example_sandbox"
 
 
 def test_sandbox_sessions_commands_and_workspace_lifetime():
-    scenario = """
-import asyncio
-from agents.sandbox import SandboxAgent
-asyncio.run(definition.startup())
-assert isinstance(definition.agent, SandboxAgent)
-import runpy
-scenario = runpy.run_path("tests/fixtures/sandbox_scenario.py")
-scenario["run_scenario"](plugin, routes)
-"""
-    assert run_sandbox_script(SCRIPT + scenario).endswith(
+    assert run_sandbox_script(SCRIPT + SCENARIO).endswith(
         "sandbox conversations verified"
     )

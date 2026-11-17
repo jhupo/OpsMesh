@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Awaitable
 from typing import Any
@@ -23,19 +22,23 @@ from yarl import URL
 
 from ..attachments import Attachment
 from ..operations import OperationError, operation_error, operation_response
-from .config import DingTalkConnectionSettings, DingTalkSettings
+from .config import DingTalkConnectionSettings
 from .errors import DingTalkSendError
 
 _TOKEN_REFRESH_MARGIN = 60
 
 
 class DingTalkClient:
-    """Own HTTP requests for Stream admission, media and robot replies."""
+    """Own one connection's API clients, token cache and HTTP transport."""
 
     def __init__(
-        self, settings: DingTalkSettings, http: httpx.AsyncClient | None
+        self,
+        settings: DingTalkConnectionSettings,
+        secret: str,
+        *,
+        http: httpx.AsyncClient | None = None,
     ) -> None:
-        """Keep injectable transport ownership explicit."""
+        """Bind the account to its credentials and transport."""
         config = Config(protocol="https", region_id="central")
         self.oauth = OAuthClient(config)
         self.robot = RobotClient(config)
@@ -47,23 +50,17 @@ class DingTalkClient:
             connect_timeout=int(settings.request_timeout * 1000),
         )
         self.settings = settings
-        self._http = http
+        self._secret = secret
+        self._http = http or httpx.AsyncClient(trust_env=False)
         self._owns_http = http is None
-        self._tokens: dict[tuple[str, str], tuple[str, float]] = {}
-        self._token_locks: dict[tuple[str, str], anyio.Lock] = {}
-
-    def open(self) -> None:
-        """Open the HTTP transport on adapter startup."""
-        if self._http is None:
-            self._http = httpx.AsyncClient(trust_env=False)
+        self._token: tuple[str, float] | None = None
+        self._token_lock = anyio.Lock()
 
     async def close(self) -> None:
-        """Close the owned HTTP transport."""
-        self._tokens.clear()
-        self._token_locks.clear()
-        if self._owns_http and self._http is not None:
+        """Discard cached credentials and close an owned transport."""
+        self._token = None
+        if self._owns_http:
             await self._http.aclose()
-            self._http = None
 
     async def post_json(
         self,
@@ -73,11 +70,9 @@ class DingTalkClient:
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Call an official endpoint and validate its JSON object response."""
-        if self._http is None:
-            raise DingTalkSendError("The DingTalk HTTP client is not open")
         parsed = URL(url)
         if parsed.scheme != "https" or not parsed.host:
-            raise DingTalkSendError("The DingTalk reply webhook is invalid")
+            raise DingTalkSendError("The DingTalk endpoint is invalid")
         try:
             response = await self._http.post(
                 url,
@@ -90,27 +85,17 @@ class DingTalkClient:
             raise OperationError(0, "transport_error") from None
         return self._response(response)
 
-    def forget(self, connection: DingTalkConnectionSettings) -> None:
-        """Discard cached credentials when their owning connection stops."""
-        key = (connection.client_id, connection.client_secret_ref)
-        self._tokens.pop(key, None)
-        self._token_locks.pop(key, None)
-
-    async def access_token(self, connection: DingTalkConnectionSettings) -> str:
-        """Reuse a connection token and coalesce concurrent refreshes."""
-        key = (connection.client_id, connection.client_secret_ref)
-        lock = self._token_locks.setdefault(key, anyio.Lock())
-        async with lock:
-            cached = self._tokens.get(key)
+    async def access_token(self) -> str:
+        """Reuse the connection token and coalesce concurrent refreshes."""
+        async with self._token_lock:
+            cached = self._token
             if cached is not None and time.monotonic() < cached[1]:
                 return cached[0]
-            secret = os.environ.get(connection.client_secret_ref)
-            if not secret:
-                raise DingTalkSendError("DingTalk credentials are unavailable")
             result = await self.invoke(
                 self.oauth.get_access_token_with_options_async(
                     GetAccessTokenRequest(
-                        app_key=connection.client_id, app_secret=secret
+                        app_key=self.settings.client_id,
+                        app_secret=self._secret,
                     ),
                     {},
                     self.options,
@@ -124,7 +109,7 @@ class DingTalkClient:
                 remaining = max(
                     0, lifetime - min(_TOKEN_REFRESH_MARGIN, lifetime / 10)
                 )
-                self._tokens[key] = (token, time.monotonic() + remaining)
+                self._token = (token, time.monotonic() + remaining)
             return token
 
     async def invoke(self, operation: Awaitable[TeaModel]) -> dict[str, Any]:
@@ -156,8 +141,6 @@ class DingTalkClient:
         kind: str,
     ) -> str:
         """Upload through the legacy endpoint absent from the service SDK."""
-        if self._http is None:
-            raise DingTalkSendError("The DingTalk HTTP client is not open")
         try:
             response = await self._http.post(
                 "https://oapi.dingtalk.com/media/upload",

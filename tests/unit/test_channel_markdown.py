@@ -1,11 +1,14 @@
 """Verify explicit formatting across bot replies, HTTP and SSE."""
 
 import json
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
 
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
 from opsmesh.plugins.channels import (
     Attachment,
     AttachmentCollection,
@@ -21,7 +24,6 @@ from opsmesh.plugins.channels.dingtalk.channel import DingTalkChannel
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 from opsmesh.plugins.channels.dingtalk.config import (
     DingTalkConnectionSettings,
-    DingTalkSettings,
 )
 from opsmesh.plugins.channels.dingtalk.events import parse_callback
 from opsmesh.plugins.channels.dingtalk.sending import DingTalkSender
@@ -29,6 +31,8 @@ from opsmesh.plugins.channels.sending import (
     OutgoingMarkdown,
     prepare,
 )
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import Plugin, PluginStatus
 
 
 def test_markdown_factory_keeps_raw_text_for_framework_rules():
@@ -106,9 +110,8 @@ async def test_dingtalk_webhook_preserves_explicit_message_type(formatted):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        await DingTalkSender(
-            DingTalkClient(DingTalkSettings(), http), channel
-        ).send(event, content)
+        channel.client = DingTalkClient(channel.settings, "secret", http=http)
+        await DingTalkSender(channel).send(event, content)
     assert sent == (
         [
             {
@@ -126,17 +129,15 @@ async def test_dingtalk_webhook_preserves_explicit_message_type(formatted):
 async def test_api_stream_retains_markdown_format(streamed):
     output = MessageOutput(
         SimpleNamespace(
+            owner_id="consumer",
+            self_id="api:consumer:main",
             settings=SimpleNamespace(
                 max_output_bytes=1024, max_output_messages=5
-            )
+            ),
+            uploads=SimpleNamespace(put_many=lambda *args: None),
         ),
-        SimpleNamespace(
-            installation_id="consumer",
-            user_id="u",
-            attachments=AttachmentCollection(),
-        ),
+        SimpleNamespace(attachments=AttachmentCollection()),
     )
-    output.channel.uploads = SimpleNamespace(put_many=lambda *args: None)
     frames = []
 
     async def emit(frame):
@@ -164,14 +165,12 @@ async def test_api_stream_retains_markdown_format(streamed):
 async def test_api_complete_markdown_keeps_title():
     channel = SimpleNamespace(
         send_types=DingTalkChannel.send_types,
+        owner_id="consumer",
+        self_id="api:consumer:main",
         settings=SimpleNamespace(max_output_bytes=1024, max_output_messages=5),
         uploads=SimpleNamespace(put_many=lambda *args: None),
     )
-    event = SimpleNamespace(
-        installation_id="consumer",
-        user_id="user",
-        attachments=AttachmentCollection(),
-    )
+    event = SimpleNamespace(attachments=AttachmentCollection())
     output = MessageOutput(channel, event)
     await output.send(MessageSegment.markdown("**answer**", title="Answer"))
     assert output.messages[0]["content"] == [
@@ -180,10 +179,7 @@ async def test_api_complete_markdown_keeps_title():
 
 
 @pytest.mark.anyio
-async def test_dingtalk_mixed_markdown_and_file_selects_native_templates(
-    monkeypatch,
-):
-    monkeypatch.setenv("SECRET", "secret")
+async def test_dingtalk_mixed_markdown_and_file_selects_native_templates():
     event = parse_callback(
         {
             "msgtype": "text",
@@ -223,9 +219,8 @@ async def test_dingtalk_mixed_markdown_and_file_selects_native_templates(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        await DingTalkSender(
-            DingTalkClient(DingTalkSettings(), http), channel
-        ).send(event, message)
+        channel.client = DingTalkClient(channel.settings, "secret", http=http)
+        await DingTalkSender(channel).send(event, message)
     assert [item["msgKey"] for item in sent] == [
         "sampleMarkdown",
         "sampleFile",
@@ -238,7 +233,25 @@ async def test_dingtalk_mixed_markdown_and_file_selects_native_templates(
 
 @pytest.mark.anyio
 async def test_dingtalk_stream_without_template_rejects_incremental_output():
-    adapter = object.__new__(DingTalkAdapter)
+    adapter = DingTalkAdapter(Driver(Env(), Config()))
+    owner = Plugin(
+        "consumer",
+        ModuleType("consumer"),
+        "consumer",
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
+    token = registry._current_plugin.set(owner)
+    try:
+        channel = adapter.declare(
+            DingTalkConnectionSettings(
+                client_id="robot", client_secret_ref="SECRET"
+            ),
+            name="bot",
+        )
+    finally:
+        registry._current_plugin.reset(token)
+    channel.mark_ready()
     event = parse_callback(
         {
             "msgtype": "text",
@@ -248,18 +261,8 @@ async def test_dingtalk_stream_without_template_rejects_incremental_output():
             "conversationId": "group",
             "conversationType": "2",
         },
-        connection_id="bot",
+        connection_id=channel.self_id,
     )
-    channel = SimpleNamespace(
-        send_types=DingTalkChannel.send_types,
-        self_id="bot",
-        ready=True,
-        replies_available=True,
-        settings=DingTalkConnectionSettings(
-            client_id="robot", client_secret_ref="SECRET"
-        ),
-    )
-    adapter._declared = {"bot": channel}
     sent = []
     closed = []
 

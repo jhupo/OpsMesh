@@ -24,11 +24,22 @@ from opsmesh.plugins.channels import (
     StreamMessageStart,
     StreamTextDelta,
 )
-from opsmesh.plugins.channels.rendering import table_text
 from opsmesh.plugins.channels.sending import require_supported
 
 OUTPUT_LIMIT = 1024 * 1024
 SEND_TIMEOUT = 60
+
+
+def render_table(data: dict) -> str:
+    """Render a table for channels that do not support table segments."""
+    lines = [data["caption"]] if data.get("caption") else []
+    for index, row in enumerate(data["rows"], 1):
+        lines.append(f"{index}.")
+        for column, value in zip(data["columns"], row, strict=True):
+            lines.append(f"{column}: {value if value is not None else 'null'}")
+    if not data["rows"]:
+        lines.append(" | ".join(data["columns"]))
+    return "\n".join(lines)
 
 
 class ConversationOutput:
@@ -81,7 +92,7 @@ class ConversationOutput:
             if part.type == "data" and "data" not in self.send_types:
                 continue
             if part.type == "table" and "table" not in self.send_types:
-                part = MessageSegment.text(table_text(part.data))
+                part = MessageSegment.text(render_table(part.data))
             elif part.type == "markdown" and "markdown" not in self.send_types:
                 part = MessageSegment.text(str(part))
             content.append(part)

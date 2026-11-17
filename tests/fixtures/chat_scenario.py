@@ -9,89 +9,54 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-import anyio
+import httpx
 from agents.testing import ModelStep, ScriptedModel, assistant_message
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy.ext.asyncio import create_async_engine
-from starlette.requests import Request
 
-from opsmesh.drivers import base as driver_state
+from opsmesh.drivers import get_driver
 from opsmesh.plugins.channels import UserContext
-from opsmesh.plugins.channels.api import APIChannel, Settings
-from opsmesh.plugins.channels.api.adapter import APIAdapter
-from opsmesh.plugins.channels.api.exchange import MessageExchange
-from opsmesh.plugins.model import PluginStatus
+from opsmesh.plugins.channels.qq.events import parse_callback as qq_callback
 
 
 class MessageHarness:
-    def __init__(self, registration, caller):
-        self.registration = registration
-        self.caller = caller
+    def __init__(self, channel, user_id):
+        self.channel = channel
+        self.user_id = user_id
+        self.caller = UserContext.scoped(channel.self_id, user_id)
         self.conversation_id = str(uuid4())
-        self.channel = APIChannel(
-            Settings(),
-            registration,
-        )
-        self.channel.adapter = APIAdapter(driver_state.get_driver())
 
     async def post(self, text, **options):
-        delivered = False
         data = {
+            "user": {"id": options.get("user", self.user_id)},
             "message": text,
             "conversation_id": options.get(
                 "conversation_id", self.conversation_id
             ),
         }
-
-        async def receive():
-            nonlocal delivered
-            if delivered:
-                await anyio.sleep_forever()
-            delivered = True
-            return {
-                "type": "http.request",
-                "more_body": False,
-                "body": json.dumps(data).encode(),
-            }
-
-        request = Request(
-            {
-                "type": "http",
-                "method": "POST",
-                "path": self.registration.path,
-                "headers": [(b"accept", b"text/event-stream")]
-                if options.get("stream")
-                else [],
-                "query_string": b"",
-                "path_params": {},
-                "asgi": {"spec_version": "2.4"},
-            },
-            receive,
+        headers = (
+            {"accept": "text/event-stream"} if options.get("stream") else {}
         )
-
-        async def resolve(request, stack):
-            return options.get("owner", self.caller)
-
-        self.channel.resolve_caller = resolve
-        response = await MessageExchange(
-            self.channel,
-            self.registration,
-        ).respond(request)
-        chunks = []
-
-        async def send(message):
-            if message["type"] == "http.response.body":
-                chunks.append(message.get("body", b""))
-
-        await response(request.scope, receive, send)
+        async with httpx.AsyncClient(
+            base_url=f"http://127.0.0.1:{self.channel.server.bound_port}",
+            trust_env=False,
+        ) as client:
+            response = await client.post(
+                f"/plugins/{self.channel.owner_id}/messages",
+                json=data,
+                headers=headers,
+            )
         if not options.get("stream"):
-            result = json.loads(b"".join(chunks))
-            assert result["status"] == "completed", result
+            result = response.json()
+            assert result.get("status") == "completed", (
+                response.status_code,
+                result,
+            )
             assert result["conversation_id"] == data["conversation_id"]
             return result
         events = []
-        for frame in b"".join(chunks).decode().split("\n\n"):
+        for frame in response.text.split("\n\n"):
             if frame.strip():
                 lines = frame.splitlines()
                 events.append(
@@ -126,7 +91,7 @@ def migrate(connection):
         namespace["upgrade"]()
 
 
-def run_scenario(plugin, routes):
+async def run_scenario(plugin, api_channel):
     from example_chat import agent as definition
     from example_chat import connections as chat_connections
     from example_chat import handlers, lifecycle
@@ -135,16 +100,12 @@ def run_scenario(plugin, routes):
 
     from opsmesh.dispatch import dispatch_event
     from opsmesh.permissions import Permission
-    from opsmesh.plugins import get_loaded_plugins
     from opsmesh.plugins.channels.dingtalk.events import parse_callback
-    from opsmesh.plugins.channels.qq.events import QQMessageEvent
     from opsmesh.plugins.execution import Settings as ExecutionSettings
     from opsmesh.plugins.execution import _lifecycle as execution_lifecycle
 
-    for loaded in get_loaded_plugins():
-        loaded.status = PluginStatus.READY
-    caller = UserContext(id="verified-user")
-    api = MessageHarness(routes[0], caller)
+    api = MessageHarness(api_channel, "verified-user")
+    caller = api.caller
     agent.model = ScriptedModel(
         [
             ModelStep(output=[assistant_message(text)])
@@ -158,7 +119,9 @@ def run_scenario(plugin, routes):
             ]
         ]
     )
-    channel = driver_state.get_driver().get_adapter("qq").declarations[0]
+    channel = (
+        get_driver().get_adapter("qq").get_connection(plugin.id_, "primary")
+    )
     responses = []
 
     async def send(event, message):
@@ -179,14 +142,17 @@ def run_scenario(plugin, routes):
     channel.call = call
 
     async def dispatch(content):
-        event = QQMessageEvent(
+        event = qq_callback(
+            {
+                "op": 0,
+                "t": "C2C_MESSAGE_CREATE",
+                "d": {
+                    "id": "message",
+                    "content": content,
+                    "author": {"user_openid": api.user_id},
+                },
+            },
             connection_id=channel.self_id,
-            user_id=caller.id,
-            message_id="message",
-            event_id="event",
-            content=content,
-            to_me=True,
-            raw={},
         )
         outcome = await dispatch_event(
             channel,
@@ -204,6 +170,7 @@ def run_scenario(plugin, routes):
             await connection.run_sync(migrate)
         store = ChatConversations(engine)
         lifecycle._conversations = store
+
         for command in [
             "/help",
             "/sessions",
@@ -268,20 +235,11 @@ def run_scenario(plugin, routes):
         assert len(agent.model.calls) == 4
         await command_error(api.post("/sessions 0"), 422)
         await command_error(api.post("/session extra"), 422)
-        await command_error(
-            api.post("/use " + sid, owner=UserContext(id="other")), 404
-        )
-        await command_error(
-            api.post("/delete " + sid, owner=UserContext(id="other")), 404
-        )
-        await command_error(
-            api.post("/session", owner=UserContext(id="other")), 409
-        )
+        await command_error(api.post("/use " + sid, user="other"), 404)
+        await command_error(api.post("/delete " + sid, user="other"), 404)
+        await command_error(api.post("/session", user="other"), 409)
         assert (
-            data_of(await api.post("/sessions", owner=UserContext(id="other")))[
-                "sessions"
-            ]
-            == []
+            data_of(await api.post("/sessions", user="other"))["sessions"] == []
         )
         await api.post("/use " + sid, conversation_id=other_window)
         assert (
@@ -413,7 +371,7 @@ def run_scenario(plugin, routes):
                 await engine.dispose()
                 await execution_lifecycle.shutdown()
 
-    asyncio.run(main())
+    await main()
     print("conversations and commands verified")
 
 

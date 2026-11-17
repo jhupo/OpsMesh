@@ -74,12 +74,16 @@ class ChatClient:
     token: str = field(repr=False)
     timeout: float = 300
     plugin: str = "example_chat"
+    user_id: str = "chat-client"
+    user_name: str = ""
     conversation_id: str = field(default_factory=lambda: str(uuid4()))
 
     def __post_init__(self) -> None:
         """Validate destination, identity token and channel UUID."""
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", self.plugin):
             raise ValueError("Invalid plugin identifier")
+        if not 1 <= len(self.user_id) <= 128 or len(self.user_name) > 128:
+            raise ValueError("Use a user ID of 1-128 characters")
         address = urlsplit(self.base_url)
         if (
             address.scheme not in {"http", "https"}
@@ -115,9 +119,7 @@ class ChatClient:
                 message = "Request failed"
             finally:
                 error.close()
-            raise ChatClientError(
-                f"HTTP {status}: {message}", status
-            ) from None
+            raise ChatClientError(f"HTTP {status}: {message}", status) from None
         except (URLError, OSError):
             raise ChatClientError(
                 "Connection failed or timed out; the request was not retried"
@@ -129,12 +131,13 @@ class ChatClient:
 
     def _message_request(self, message, accept: str) -> Request:
         return Request(
-            self.base_url.rstrip("/")
-            + "/plugins/"
-            + self.plugin
-            + "/messages",
+            self.base_url.rstrip("/") + "/plugins/" + self.plugin + "/messages",
             data=json.dumps(
-                {"conversation_id": self.conversation_id, "message": message}
+                {
+                    "user": {"id": self.user_id, "name": self.user_name},
+                    "conversation_id": self.conversation_id,
+                    "message": message,
+                }
             ).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self.token}",
@@ -146,22 +149,16 @@ class ChatClient:
 
     def _validate(self, envelope) -> dict:
         if not isinstance(envelope, dict):
-            raise ChatClientError(
-                "Server returned an invalid message envelope"
-            )
+            raise ChatClientError("Server returned an invalid message envelope")
         failure = envelope.get("error")
         if isinstance(failure, dict):
-            raise ChatClientError(
-                str(failure.get("message", "Request failed"))
-            )
+            raise ChatClientError(str(failure.get("message", "Request failed")))
         if (
             envelope.get("conversation_id") != self.conversation_id
             or envelope.get("status") not in {"completed", "waiting"}
             or not isinstance(envelope.get("messages"), list)
         ):
-            raise ChatClientError(
-                "Server returned an invalid message envelope"
-            )
+            raise ChatClientError("Server returned an invalid message envelope")
         for message in envelope["messages"]:
             if not isinstance(message, dict) or not isinstance(
                 message.get("content"), list
@@ -293,9 +290,7 @@ class ChatClient:
         return self._validate(
             self._request(
                 request,
-                lambda response: collect_stream(
-                    response, on_delta, on_message
-                ),
+                lambda response: collect_stream(response, on_delta, on_message),
             )
         )
 
@@ -344,6 +339,11 @@ def main() -> int:
         default=os.environ.get("OPSMESH_URL", "http://192.168.232.129:8080"),
     )
     parser.add_argument("--plugin", default="example_chat")
+    parser.add_argument(
+        "--user",
+        default=os.environ.get("OPSMESH_USER_ID", "chat-client"),
+        help="Profile supplied to the consuming plugin; not a credential",
+    )
     parser.add_argument("--message", help="Send one question and exit")
     parser.add_argument("--file", type=Path, action="append", default=[])
     parser.add_argument(
@@ -352,9 +352,7 @@ def main() -> int:
         help="Save returned files to this directory",
     )
     parser.add_argument("--timeout", type=float, default=300)
-    parser.add_argument(
-        "--session", help="Select an existing SDK conversation"
-    )
+    parser.add_argument("--session", help="Select an existing SDK conversation")
     parser.add_argument("--new", action="store_true")
     parser.add_argument(
         "--stream", action="store_true", help="Display SSE text increments"
@@ -369,7 +367,13 @@ def main() -> int:
         token = os.environ.get("OPSMESH_API_TOKEN") or getpass.getpass(
             "OpsMesh API token: "
         )
-        client = ChatClient(args.base_url, token, args.timeout, args.plugin)
+        client = ChatClient(
+            args.base_url,
+            token,
+            args.timeout,
+            plugin=args.plugin,
+            user_id=args.user,
+        )
         console = ChatConsole(
             client, args.state_file, download_dir=args.download_dir
         )

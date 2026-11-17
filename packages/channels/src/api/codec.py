@@ -1,11 +1,15 @@
-"""Encode the channel's JSON envelopes and SSE frames."""
+"""Convert request content, and encode JSON envelopes and SSE frames."""
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from starlette.responses import Response
 
+from ..attachments import Attachment, AttachmentCollection
+from ..messages import Message, MessageSegment
 from .errors import HTTPError
+from .schemas import MessageRequest, TextContent
 
 _JSON_TYPE = "application/json; charset=utf-8"
 
@@ -44,3 +48,27 @@ def sse_event(event: str, data: Any) -> bytes:
         raise ValueError("SSE event names must be a single non-empty line")
     payload = encode_json(data)
     return b"event: " + event.encode("utf-8") + b"\ndata: " + payload + b"\n\n"
+
+
+def from_request(
+    request: MessageRequest,
+    files: AttachmentCollection,
+    resolve: Callable[[str, AttachmentCollection], Attachment] | None = None,
+) -> Message:
+    """Resolve each attachment under the receiving connection."""
+    value = request.message
+    if isinstance(value, str):
+        return Message(value)
+    message = Message()
+    for part in value:
+        if isinstance(part, TextContent):
+            message.append(MessageSegment.text(part.text))
+        else:
+            if resolve is None:
+                raise HTTPError(422, "Attachment transfer is unavailable")
+            metadata = resolve(part.attachment_id, files)
+            segment = MessageSegment.attachment(metadata)
+            if segment.type != part.type and part.type != "file":
+                raise HTTPError(422, "Attachment type does not match content")
+            message.append(MessageSegment(part.type, segment.data))
+    return message

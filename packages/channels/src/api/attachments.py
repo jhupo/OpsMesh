@@ -1,12 +1,13 @@
-"""Authenticated, bounded uploads scoped to a consuming plugin and user."""
+"""Bounded temporary uploads scoped to one HTTP connection."""
 
 import time
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from fastapi import Depends, Request
+from fastapi import Request
 from starlette.responses import Response
 
 from opsmesh.messages import Message
@@ -17,11 +18,10 @@ from ..attachments import (
     AttachmentError,
     AttachmentSettings,
 )
-from ..context import UserContext
 from ..sending import prepare_attachment
+from .codec import json_response
 from .errors import HTTPError, request_error
 from .requests import RequestResources, RequestScope, read_body
-from .responses import json_response
 
 if TYPE_CHECKING:
     from .channel import APIChannel
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 class _Upload:
     attachment: Attachment
     content: bytes
-    scope: tuple[str, str]
+    scope: str
     expires_at: float
 
 
@@ -40,7 +40,7 @@ class AttachmentUploads:
     """Keep uploads until expiration or shutdown; no process-wide registry."""
 
     def __init__(self, settings: AttachmentSettings) -> None:
-        """Own the cache within one API listener lifecycle."""
+        """Own the cache within one API connection lifecycle."""
         self.settings = settings
         self._uploads: dict[str, _Upload] = {}
         self._size = 0
@@ -57,15 +57,8 @@ class AttachmentUploads:
                 self._size -= len(value.content)
                 del self._uploads[key]
 
-    def put(
-        self, scope: tuple[str, str], attachment: Attachment, content: bytes
-    ) -> Attachment:
-        """Store an upload without evicting another active upload."""
-        self.put_many(scope, [(attachment, content)])
-        return attachment
-
     def put_many(
-        self, scope: tuple[str, str], files: list[tuple[Attachment, bytes]]
+        self, scope: str, files: list[tuple[Attachment, bytes]]
     ) -> None:
         """Commit an entire reply only after all cache checks pass."""
         self._expire()
@@ -91,8 +84,15 @@ class AttachmentUploads:
             )
             self._size += len(content)
 
-    def get(self, scope: tuple[str, str], attachment_id: str) -> _Upload:
-        """Require both the original principal and consuming plugin."""
+    def put(
+        self, scope: str, attachment: Attachment, content: bytes
+    ) -> Attachment:
+        """Store an upload without evicting another active upload."""
+        self.put_many(scope, [(attachment, content)])
+        return attachment
+
+    def get(self, scope: str, attachment_id: str) -> _Upload:
+        """Require the upload to have arrived through this connection."""
         self._expire()
         upload = self._uploads.get(attachment_id)
         if upload is None or upload.scope != scope:
@@ -101,69 +101,63 @@ class AttachmentUploads:
 
     def resolve(
         self,
-        scope: tuple[str, str],
+        scope: str,
         attachment_id: str,
         files: AttachmentCollection,
     ) -> Attachment:
-        """Pin an authorized upload in the request before dispatch."""
+        """Pin an upload in the request before dispatch."""
         upload = self.get(scope, attachment_id)
         if attachment_id in files:
             return files.get(attachment_id)
         return files.receive_bytes(upload.attachment, upload.content)
 
 
-def mount(channel: "APIChannel") -> None:
-    """Expose file transfer separately from plugin-owned chat operations."""
-
-    async def caller_context(request: Request):
-        channel.check_request(request)
-        stack = AsyncExitStack()
-        resources = RequestResources(stack)
+@asynccontextmanager
+async def _admitted(channel: "APIChannel") -> AsyncIterator[None]:
+    """Run one attachment request inside the connection's admission."""
+    stack = AsyncExitStack()
+    resources = RequestResources(stack)
+    scope = None
+    error = None
+    try:
         scope = RequestScope(
-            channel.entrance.owner,
+            channel.owner,
             stack,
             channel.settings.request_timeout_seconds,
         )
-        error = None
-        try:
-            with scope.activate(), scope.budget():
-                caller = await channel.resolve_caller(request, stack)
-                yield caller
-        except BaseException as caught:
-            error = caught
-            raise request_error(caught) from caught
-        finally:
-            with scope.activate():
-                await resources.close(error)
+        with scope.activate(), scope.budget():
+            yield
+    except BaseException as caught:
+        error = caught
+        raise request_error(caught) from caught
+    finally:
+        with scope.activate() if scope else nullcontext():
+            await resources.close(error)
 
-    async def upload(
-        request: Request,
-        caller: Annotated[
-            UserContext, Depends(caller_context, scope="function")
-        ],
-    ) -> Response:
-        with_scope = (request.path_params["plugin_id"], caller.id)
-        content = await read_body(
-            request, channel.settings.attachments.max_file_bytes
-        )
-        attachment = Attachment.create(
-            request.query_params.get("name", "attachment"),
-            request.headers.get("content-type", "application/octet-stream"),
-            len(content),
-        )
-        channel.uploads.put(with_scope, attachment, content)
+
+def mount(channel: "APIChannel") -> None:
+    """Expose file transfer separately from plugin-owned chat operations."""
+
+    async def upload(request: Request) -> Response:
+        async with _admitted(channel):
+            channel.check_request(request)
+            content = await read_body(
+                request, channel.settings.attachments.max_file_bytes
+            )
+            attachment = Attachment.create(
+                request.query_params.get("name", "attachment"),
+                request.headers.get("content-type", "application/octet-stream"),
+                len(content),
+            )
+            channel.uploads.put(channel.self_id, attachment, content)
         return json_response(asdict(attachment), status_code=201)
 
-    async def download(
-        request: Request,
-        caller: Annotated[
-            UserContext, Depends(caller_context, scope="function")
-        ],
-    ) -> Response:
-        scope = (request.path_params["plugin_id"], caller.id)
-        upload = channel.uploads.get(
-            scope, request.path_params["attachment_id"]
-        )
+    async def download(request: Request) -> Response:
+        async with _admitted(channel):
+            channel.check_request(request)
+            upload = channel.uploads.get(
+                channel.self_id, request.path_params["attachment_id"]
+            )
         return Response(
             upload.content,
             media_type=upload.attachment.media_type,
@@ -180,15 +174,14 @@ def mount(channel: "APIChannel") -> None:
         ("GET", "/attachments/{plugin_id}/{attachment_id}", download),
     ):
         channel.app.add_api_route(path, handler, methods=[method])
-        channel._mounted[(method, path)] = channel.app.router.routes[-1]
+        channel.mounted[(method, path)] = channel.app.router.routes[-1]
 
 
 async def prepare_message(
     channel: "APIChannel", event: "APIMessageEvent", message: Message
 ) -> tuple[list[dict], list[tuple[Attachment, bytes]]]:
     """Prepare download references without publishing files to the cache."""
-    if not event.installation_id:
-        raise HTTPError(422, "Attachment reply requires an owned route")
+    owner_id = channel.owner_id
     parts = []
     uploads: list[tuple[Attachment, bytes]] = []
     identifiers: set[str] = set()
@@ -214,7 +207,7 @@ async def prepare_message(
                     "type": segment.type,
                     "attachment": asdict(attachment),
                     "download_url": (
-                        f"/attachments/{event.installation_id}/{attachment.id}"
+                        f"/attachments/{owner_id}/{attachment.id}"
                     ),
                 }
             )
@@ -230,9 +223,7 @@ async def prepare_message(
                 uploads.append((thumbnail, media.thumbnail_content))
                 parts[-1]["thumbnail"] = {
                     "attachment": asdict(thumbnail),
-                    "download_url": (
-                        f"/attachments/{event.installation_id}/{thumbnail.id}"
-                    ),
+                    "download_url": (f"/attachments/{owner_id}/{thumbnail.id}"),
                 }
         else:
             raise AttachmentError("Unsupported API output segment")

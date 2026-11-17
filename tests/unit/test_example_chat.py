@@ -1,4 +1,4 @@
-"""Load the conversation example as a plugin and inspect its declaration."""
+"""Load the conversation example as a plugin and exercise its connections."""
 
 import os
 import subprocess
@@ -9,14 +9,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 SCRIPT = """
 
-from opsmesh.drivers import base as driver_state
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.plugins import get_plugin, registry
+from opsmesh.drivers import base as driver_state
+from opsmesh.plugins import get_dependency_config, get_plugin, registry
 from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.registry import plugin_scope
 
-
-driver_state.set_driver(Driver(Env(), Config(command_start={"/", "!"})))
+driver = Driver(Env(), Config(command_start={"/", "!"}))
+driver_state.set_driver(driver)
 for module, values in {
     "opsmesh.plugins.channels": {},
     "example_chat": {
@@ -25,10 +26,15 @@ for module, values in {
     },
 }.items():
     manager = PluginManager(
-        [module], config=values, dependencies=(
-            {"channels": {"qq": {"primary": {
-                "app_id": "12345", "secret_ref": "QQ_TEST_SECRET"
-            }}}}
+        [module],
+        config=values,
+        dependencies=(
+            {"channels": {
+                "api": {"main": {"port": 0}},
+                "qq": {"primary": {
+                    "app_id": "12345", "secret_ref": "QQ_TEST_SECRET"
+                }},
+            }}
             if module == "example_chat" else {}
         ),
     )
@@ -37,47 +43,76 @@ plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
 assert plugin.metadata is not None
 assert get_plugin("example_chat") is plugin
-channels = get_plugin("channels")
-assert channels is not None
+assert get_plugin("channels") is not None
 assert get_plugin("api") is None
 assert get_plugin("qq") is None
-# Explicit manifest configuration belongs to channels, not its consumer.
-from opsmesh.plugins.channels.qq.config import get_settings
-channels.config_values = {"qq": {"concurrency": 3}}
-saved_values = plugin.config_values
-plugin.config_values = {"model": "different"}
-token = registry._current_plugin.set(plugin)
-try:
-    assert get_settings().concurrency == 3
-finally:
-    registry._current_plugin.reset(token)
-plugin.config_values = saved_values
-assert "qq" not in driver_state.get_driver().adapters
-owned_startups = [
-    entry
-    for entry in driver_state.get_driver()._lifespan._startup_funcs
-    if entry.plugin is channels
-]
-assert len(owned_startups) == 1, owned_startups
 
-from opsmesh.plugins.channels.api import get_entrances
+from opsmesh.plugins.channels import ChannelConnections
 
-routes = [
-    route
-    for route in get_entrances().entries
-    if route.installation_id == "example_chat"
-]
-assert len(routes) == 1, routes
-route = routes[0]
+with plugin_scope(plugin):
+    connections = get_dependency_config(ChannelConnections)
+assert sorted(connections.api) == ["main"]
+assert sorted(connections.qq) == ["primary"]
 
-assert route.path == "/plugins/example_chat/messages"
-assert route.active is False, "the route must wait for plugin readiness"
-assert route.message_handlers
-assert not hasattr(route, "matcher")
+for protocol in ("api", "qq"):
+    try:
+        driver.get_adapter(protocol)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("connections must wait for plugin startup")
+assert driver.channels == {}
 
 from example_chat import agent as definition
 assert not hasattr(definition, "agent"), "Agent resources start in on_startup"
-print("loaded", plugin.id_, route.path)
+print("loaded", plugin.id_)
+"""
+
+
+BEHAVIOR_SCRIPT = """
+import anyio
+import os
+import runpy
+
+os.environ["QQ_TEST_SECRET"] = "test-secret"
+
+from example_chat import lifecycle
+from opsmesh.plugins.channels.qq.gateway import QQStream
+
+scenario = runpy.run_path("tests/fixtures/chat_scenario.py")["run_scenario"]
+run = runpy.run_path("tests/fixtures/consumer_lifecycle.py")["run"]
+
+
+async def receive(stream):
+    stream.channel.inbound_task_connected()
+    try:
+        with anyio.CancelScope() as scope:
+            stream._scope = scope
+            if stream._stopping:
+                return
+            await anyio.sleep_forever()
+    finally:
+        stream._scope = None
+        stream.channel.inbound_task_finished()
+        stream._finished.set()
+
+
+QQStream.run = receive
+
+
+async def body():
+    api = driver.get_adapter("api").get_connection(plugin.id_, "main")
+    await scenario(plugin, api)
+
+
+def skip(func):
+    return (
+        func is lifecycle.startup
+        or func.__module__ == "opsmesh.plugins.database.schema"
+    )
+
+
+anyio.run(lambda: run(plugin, driver, body, skip=skip))
 """
 
 
@@ -104,33 +139,8 @@ def run_example_script(script):
     return result.stdout.strip()
 
 
-def test_example_chat_declares_an_inactive_route():
-    assert run_example_script(SCRIPT) == (
-        "loaded example_chat /plugins/example_chat/messages"
-    )
-
-
-BEHAVIOR_SCRIPT = """
-import asyncio
-import os
-os.environ["QQ_TEST_SECRET"] = "test-secret"
-from example_chat import connections as chat_connections
-asyncio.run(definition.startup())
-assert definition.agent.model == "gpt-4o-mini"
-assert definition.agent.model_settings.reasoning.effort == "medium"
-token = registry._current_plugin.set(plugin)
-try:
-    asyncio.run(chat_connections.connect_mcp())
-    for entry in driver_state.get_driver()._lifespan._startup_funcs:
-        if (entry.plugin is plugin and entry.func.__module__
-                == "opsmesh.plugins.channels.lifecycle.consumers"):
-            asyncio.run(entry.func())
-finally:
-    registry._current_plugin.reset(token)
-import runpy
-scenario = runpy.run_path("tests/fixtures/chat_scenario.py")["run_scenario"]
-scenario(plugin, routes)
-"""
+def test_example_chat_exposes_connections_after_startup():
+    assert run_example_script(SCRIPT) == "loaded example_chat"
 
 
 def test_example_chat_dispatches_commands_and_http_without_network():

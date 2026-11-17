@@ -2,13 +2,16 @@
 
 import base64
 import json
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import anyio
 import httpx
 import pytest
 from alibabacloud_dingtalk.oauth2_1_0.models import GetAccessTokenRequest
 
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins import registry
 from opsmesh.plugins.channels import (
     Attachment,
     AttachmentCollection,
@@ -21,20 +24,22 @@ from opsmesh.plugins.channels.dingtalk.channel import DingTalkChannel
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 from opsmesh.plugins.channels.dingtalk.config import (
     DingTalkConnectionSettings,
-    DingTalkSettings,
 )
 from opsmesh.plugins.channels.dingtalk.errors import DingTalkSendError
 from opsmesh.plugins.channels.dingtalk.events import (
     parse_callback as ding_event,
 )
 from opsmesh.plugins.channels.dingtalk.sending import DingTalkSender
+from opsmesh.plugins.channels.qq.adapter import QQAdapter
 from opsmesh.plugins.channels.qq.channel import QQChannel
 from opsmesh.plugins.channels.qq.client import QQClient
-from opsmesh.plugins.channels.qq.config import QQConnectionSettings, QQSettings
+from opsmesh.plugins.channels.qq.config import QQConnectionSettings
 from opsmesh.plugins.channels.qq.errors import QQSendError
 from opsmesh.plugins.channels.qq.events import parse_callback as qq_event
 from opsmesh.plugins.channels.qq.sending import QQSender
 from opsmesh.plugins.channels.sending import normalize, prepare
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import Plugin, PluginStatus
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +60,30 @@ PNG = b"\x89PNG\r\n\x1a\nimage"
 MP4 = b"\x00\x00\x00\x18ftypmp42"
 
 
+def new_plugin():
+    return Plugin(
+        "support",
+        ModuleType("support"),
+        "support",
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
+
+
+def qq_sender(channel, http):
+    channel._client = QQClient(
+        channel.settings, "secret", name="bot", http=http
+    )
+    return QQSender(channel)
+
+
+def ding_sender(channel, http):
+    channel.client = DingTalkClient(
+        channel.settings, "secret", http=http
+    )
+    return DingTalkSender(channel)
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("previous,count", [(0, 6), (1, 5)])
 async def test_qq_rejects_excess_replies_before_network_io(previous, count):
@@ -69,7 +98,7 @@ async def test_qq_rejects_excess_replies_before_network_io(previous, count):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(unexpected)
     ) as http:
-        sender = QQSender(QQClient(channel.protocol, http), channel, "secret")
+        sender = qq_sender(channel, http)
         with pytest.raises(QQSendError, match="at most 5 replies"):
             await sender.send(event, message)
     assert len(sequences) == previous
@@ -94,7 +123,7 @@ async def test_qq_concurrent_replies_share_remaining_capacity():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        sender = QQSender(QQClient(channel.protocol, http), channel, "secret")
+        sender = qq_sender(channel, http)
 
         async def send():
             try:
@@ -124,9 +153,7 @@ async def test_qq_cancelled_upload_releases_reply_capacity():
         transport=httpx.MockTransport(respond)
     ) as http:
         with anyio.move_on_after(0.02) as scope:
-            await QQSender(
-                QQClient(channel.protocol, http), channel, "secret"
-            ).send(event, segment)
+            await qq_sender(channel, http).send(event, segment)
     assert scope.cancel_called
     assert not sequences
     async with channel.replies(event.message_id, 5):
@@ -141,6 +168,16 @@ def add_file(event, name="image.png", mime="image/png", data=PNG, **options):
 
 
 def qq_context(group):
+    token = registry._current_plugin.set(new_plugin())
+    try:
+        adapter = QQAdapter(Driver(Env(), Config()))
+        channel = adapter.declare(
+            QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            name="bot",
+        )
+    finally:
+        registry._current_plugin.reset(token)
+    channel.mark_ready()
     event = qq_event(
         {
             "t": "GROUP_AT_MESSAGE_CREATE" if group else "C2C_MESSAGE_CREATE",
@@ -151,7 +188,7 @@ def qq_context(group):
                 "author": {"member_openid": "user", "user_openid": "user"},
             },
         },
-        connection_id="bot",
+        connection_id=channel.self_id,
     )
     sequences = []
 
@@ -159,15 +196,6 @@ def qq_context(group):
         sequences.append(message_id)
         return QQChannel.next_sequence(channel, message_id)
 
-    channel = QQChannel(
-        SimpleNamespace(),
-        self_id="bot",
-        owner_id="support",
-        connection_name="bot",
-        protocol=QQSettings(),
-        settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
-    )
-    channel.mark_ready()
     channel.next_sequence = sequence
     return event, channel, sequences
 
@@ -183,7 +211,7 @@ def ding_context(group):
             "senderStaffId": "staff",
             "isInAtList": True,
         },
-        connection_id="bot",
+        connection_id="dingtalk:support:bot",
     )
     channel = SimpleNamespace(
         send_types=DingTalkChannel.send_types,
@@ -233,9 +261,7 @@ async def test_qq_uploads_bytes_then_sends_native_media(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        result = await QQSender(
-            QQClient(channel.protocol, http), channel, "secret"
-        ).send(event, segment)
+        result = await qq_sender(channel, http).send(event, segment)
     assert result == {"id": "sent"}
     expected = "/v2/groups/group" if group else "/v2/users/user"
     assert str(calls[0][0]).endswith(expected + "/files")
@@ -255,9 +281,8 @@ async def test_qq_uploads_bytes_then_sends_native_media(
     ],
 )
 async def test_dingtalk_uploads_and_uses_recipient_template(
-    monkeypatch, group, kind, mime, data, name, template
+    group, kind, mime, data, name, template
 ):
-    monkeypatch.setenv("DING_MEDIA_SECRET", "secret")
     event, channel = ding_context(group)
     cover = event.attachments.add_bytes(
         Attachment.create("cover.png", "image/png"), PNG
@@ -308,19 +333,14 @@ async def test_dingtalk_uploads_and_uses_recipient_template(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        result = await DingTalkSender(
-            DingTalkClient(DingTalkSettings(), http), channel
-        ).send(event, segment)
+        result = await ding_sender(channel, http).send(event, segment)
     assert result["processQueryKey"] == "sent"
     assert len(calls) == (4 if kind == "video" else 3)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
-async def test_partial_send_reports_receipts_without_replay(
-    monkeypatch, protocol
-):
-    monkeypatch.setenv("DING_MEDIA_SECRET", "secret")
+async def test_partial_send_reports_receipts_without_replay(protocol):
     event, channel, *_ = (
         qq_context(False) if protocol == "qq" else ding_context(False)
     )
@@ -353,11 +373,9 @@ async def test_partial_send_reports_receipts_without_replay(
         transport=httpx.MockTransport(respond)
     ) as http:
         sender = (
-            QQSender(QQClient(QQSettings(), http), channel, "secret")
+            qq_sender(channel, http)
             if protocol == "qq"
-            else DingTalkSender(
-                DingTalkClient(DingTalkSettings(), http), channel
-            )
+            else ding_sender(channel, http)
         )
         with pytest.raises(MessageSendError) as caught:
             await sender.send(event, message)
@@ -383,11 +401,9 @@ async def test_invalid_later_media_prevents_even_initial_text(protocol):
         transport=httpx.MockTransport(respond)
     ) as http:
         sender = (
-            QQSender(QQClient(QQSettings(), http), channel, "secret")
+            qq_sender(channel, http)
             if protocol == "qq"
-            else DingTalkSender(
-                DingTalkClient(DingTalkSettings(), http), channel
-            )
+            else ding_sender(channel, http)
         )
         with pytest.raises(AttachmentError):
             await sender.send(event, message)
@@ -422,8 +438,7 @@ async def test_prepare_keeps_order_and_rejects_invalid_duration():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
-async def test_cancelled_upload_never_starts_send(monkeypatch, protocol):
-    monkeypatch.setenv("DING_MEDIA_SECRET", "secret")
+async def test_cancelled_upload_never_starts_send(protocol):
     event, channel, *_ = (
         qq_context(False) if protocol == "qq" else ding_context(False)
     )
@@ -444,11 +459,9 @@ async def test_cancelled_upload_never_starts_send(monkeypatch, protocol):
         transport=httpx.MockTransport(respond)
     ) as http:
         sender = (
-            QQSender(QQClient(QQSettings(), http), channel, "secret")
+            qq_sender(channel, http)
             if protocol == "qq"
-            else DingTalkSender(
-                DingTalkClient(DingTalkSettings(), http), channel
-            )
+            else ding_sender(channel, http)
         )
         with anyio.move_on_after(0.05) as scope:
             await sender.send(event, Message("before") + add_file(event))
@@ -461,9 +474,8 @@ async def test_cancelled_upload_never_starts_send(monkeypatch, protocol):
 @pytest.mark.parametrize("protocol", ["qq", "dingtalk"])
 @pytest.mark.parametrize("upload_failure", [False, True])
 async def test_mixed_reply_uploads_all_files_before_ordered_sends(
-    monkeypatch, protocol, upload_failure
+    protocol, upload_failure
 ):
-    monkeypatch.setenv("DING_MEDIA_SECRET", "secret")
     event, channel, *_ = (
         qq_context(False) if protocol == "qq" else ding_context(False)
     )
@@ -505,11 +517,9 @@ async def test_mixed_reply_uploads_all_files_before_ordered_sends(
         transport=httpx.MockTransport(respond)
     ) as http:
         sender = (
-            QQSender(QQClient(QQSettings(), http), channel, "secret")
+            qq_sender(channel, http)
             if protocol == "qq"
-            else DingTalkSender(
-                DingTalkClient(DingTalkSettings(), http), channel
-            )
+            else ding_sender(channel, http)
         )
         if protocol == "qq" and not event.group_id:
             with pytest.raises(QQSendError, match="at most 4 replies"):
@@ -543,13 +553,17 @@ async def test_mixed_reply_uploads_all_files_before_ordered_sends(
 
 @pytest.mark.anyio
 async def test_dingtalk_requires_private_staff_id_before_upload():
-
     event, channel = ding_context(False)
     event.raw.pop("senderStaffId")
-    with pytest.raises(DingTalkSendError, match="staff user ID"):
-        await DingTalkSender(
-            DingTalkClient(DingTalkSettings(), None), channel
-        ).send(event, add_file(event))
+
+    def unexpected(request):
+        pytest.fail("Missing recipient must be checked before network I/O")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(unexpected)
+    ) as http:
+        with pytest.raises(DingTalkSendError, match="staff user ID"):
+            await ding_sender(channel, http).send(event, add_file(event))
 
 
 @pytest.mark.anyio
@@ -562,10 +576,15 @@ async def test_dingtalk_does_not_invent_duration_or_cover(kind):
         "video/mp4" if kind == "video" else "audio/amr",
         MP4 if kind == "video" else b"#!AMR\nvoice",
     )
-    with pytest.raises(AttachmentError, match="duration_ms"):
-        await DingTalkSender(
-            DingTalkClient(DingTalkSettings(), None), channel
-        ).send(event, segment)
+
+    def unexpected(request):
+        pytest.fail("Missing media metadata must be rejected before upload")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(unexpected)
+    ) as http:
+        with pytest.raises(AttachmentError, match="duration_ms"):
+            await ding_sender(channel, http).send(event, segment)
 
 
 @pytest.mark.anyio
@@ -591,7 +610,13 @@ async def test_upload_rejects_redirect_without_exposing_token():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(redirect), follow_redirects=True
     ) as http:
-        client = DingTalkClient(DingTalkSettings(), http)
+        client = DingTalkClient(
+            DingTalkConnectionSettings(
+                client_id="app", client_secret_ref="SECRET"
+            ),
+            "secret",
+            http=http,
+        )
         with pytest.raises(OperationError) as caught:
             await client.upload_media(
                 "secret-token",
@@ -604,10 +629,7 @@ async def test_upload_rejects_redirect_without_exposing_token():
 
 
 @pytest.mark.anyio
-async def test_dingtalk_token_refresh_is_shared_by_concurrent_calls(
-    monkeypatch,
-):
-    monkeypatch.setenv("SECRET", "value")
+async def test_dingtalk_token_is_shared_by_concurrent_calls():
     requests = []
 
     async def respond(request):
@@ -624,18 +646,17 @@ async def test_dingtalk_token_refresh_is_shared_by_concurrent_calls(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        client = DingTalkClient(DingTalkSettings(), http)
+        client = DingTalkClient(connection, "value", http=http)
 
         async def read_token():
-            tokens.append(await client.access_token(connection))
+            tokens.append(await client.access_token())
 
         async with anyio.create_task_group() as tasks:
             for _ in range(4):
                 tasks.start_soon(read_token)
         assert len(requests) == 1
-        client.forget(connection)
         await read_token()
-        assert len(requests) == 2
+        assert len(requests) == 1
     assert tokens == ["token"] * 5
 
 
@@ -654,9 +675,7 @@ async def test_dingtalk_preflight_and_rejection_have_distinct_receipts():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        sender = DingTalkSender(
-            DingTalkClient(DingTalkSettings(), http), channel
-        )
+        sender = ding_sender(channel, http)
         with pytest.raises(DingTalkSendError, match="webhook"):
             await sender.send(event, "hello", delivery=delivery)
         assert not calls and not delivery.receipts
@@ -677,7 +696,13 @@ async def test_dingtalk_send_and_operation_share_rate_limit_errors():
             lambda request: httpx.Response(429, json={})
         )
     ) as http:
-        client = DingTalkClient(DingTalkSettings(), http)
+        client = DingTalkClient(
+            DingTalkConnectionSettings(
+                client_id="app", client_secret_ref="SECRET"
+            ),
+            "secret",
+            http=http,
+        )
         with pytest.raises(OperationRateLimited):
             await client.post_json("https://api.dingtalk.com/v1.0/test", {})
         with pytest.raises(OperationRateLimited):
@@ -701,9 +726,9 @@ async def test_qq_rejects_markdown_without_implicit_text_conversion():
         )
     ) as http:
         with pytest.raises(UnsupportedOperation, match="markdown"):
-            await QQSender(
-                QQClient(channel.protocol, http), channel, "secret"
-            ).send(event, MessageSegment.markdown("**hello**"))
+            await qq_sender(channel, http).send(
+                event, MessageSegment.markdown("**hello**")
+            )
 
 
 pytestmark = pytest.mark.usefixtures("dingtalk_sdk_transport")
@@ -720,7 +745,13 @@ async def test_dingtalk_native_sdk_transport_failure_is_not_retried():
         raise httpx.ConnectError("private transport detail", request=request)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(fail)) as http:
-        client = DingTalkClient(DingTalkSettings(), http)
+        client = DingTalkClient(
+            DingTalkConnectionSettings(
+                client_id="app", client_secret_ref="SECRET"
+            ),
+            "secret",
+            http=http,
+        )
         with pytest.raises(OperationError, match="transport_error") as caught:
             await client.invoke(
                 client.oauth.get_access_token_with_options_async(
@@ -740,6 +771,17 @@ async def test_dingtalk_native_sdk_cancellation_propagates():
     async def cancelled():
         raise asyncio.CancelledError
 
-    client = DingTalkClient(DingTalkSettings(), None)
-    with pytest.raises(asyncio.CancelledError):
-        await client.invoke(cancelled())
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: pytest.fail("Cancelled calls must not send")
+        )
+    ) as http:
+        client = DingTalkClient(
+            DingTalkConnectionSettings(
+                client_id="app", client_secret_ref="SECRET"
+            ),
+            "secret",
+            http=http,
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await client.invoke(cancelled())

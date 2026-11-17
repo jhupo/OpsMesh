@@ -2,14 +2,27 @@
 
 Changes are recorded here before publication. A section in this file is not proof that a matching release has been published.
 
-## Unreleased
-
 ## 0.5.7 — 2026-11-17
 
+- Unify API, QQ and DingTalk under one consumer-owned connection model. Every
+  protocol now dispatches `MessageEvent` values to ordinary framework
+  `on_message`, `on_command` and `on_notice` matchers. Remove `MessageEntrances`,
+  handler binding, `installation_id` and the HTTP identity resolver; each
+  connection owns its SDK client, queue and token state.
+- Require a `user` profile in the HTTP `MessageRequest` body and remove the
+  `X-OpsMesh-User-*` headers. The profile is converted to `UserContext` but is
+  not authenticated; consumers decide whether and how to verify requests.
+- Encode session scopes from the connection, conversation and scoped user ID.
+  Behavior and identifier changes are breaking within 0.5.x: there is no
+  compatibility path for old bindings, identity headers, scopes or saved
+  selections.
+
 - Move HTTP listener settings to each consumer plugin's
-  `dependencies.channels.api.<name>` section. Consumer plugins provide an
-  `identity` resolver; channels owns transport, protocol conversion and
-  framework dispatch, while consumer plugins own business permissions.
+  `dependencies.channels.api.<name>` section. Channels owns transport,
+  protocol conversion and framework dispatch, while consumer plugins own
+  business permissions.
+- Create API connections directly from dependency configuration. Consumers no
+  longer bind HTTP handlers or provide an identity callback.
 - Remove obsolete API route, authentication and routing modules. HTTP, QQ and
   DingTalk inputs now use the same framework Event, Message and command path.
 - Release the channel lifecycle cleanup and response ownership fixes, including

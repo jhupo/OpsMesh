@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import AsyncExitStack
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anyio
 from fastapi import FastAPI, Request
@@ -11,24 +10,17 @@ from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 from starlette.routing import BaseRoute
 
-from opsmesh.adapters import Channel
-from opsmesh.drivers import get_driver
-
-from ..context import UserContext
-from .adapter import APIAdapter
+from ..channel import Channel
 from .attachments import AttachmentUploads
 from .attachments import mount as mount_attachments
-from .config import Settings
-from .entrances import MessageEntrance
-from .errors import (
-    APIConfigurationError,
-    HTTPError,
-    request_error,
-)
-from .events import APIMessageEvent
+from .codec import error_response, json_response
+from .config import APIConnectionSettings
+from .errors import HTTPError, request_error
 from .exchange import MessageExchange
-from .responses import error_response, json_response
 from .server import Server
+
+if TYPE_CHECKING:
+    from .adapter import APIAdapter
 
 
 class APIChannel(Channel):
@@ -38,12 +30,22 @@ class APIChannel(Channel):
     send_types = receive_types | {"data", "markdown", "table"}
     stream_formats = frozenset({"text", "markdown"})
 
-    def __init__(self, settings: Settings, entrance: MessageEntrance) -> None:
-        """Create a stopped listener bound to plugin message entrances."""
-        self.self_id = f"api:{entrance.installation_id}:{entrance.connection}"
-        self.settings = settings
+    def __init__(
+        self,
+        adapter: APIAdapter,
+        *,
+        owner: Any,
+        connection_name: str,
+        settings: APIConnectionSettings,
+    ) -> None:
+        """Create an app and listener without opening a socket."""
+        super().__init__(
+            adapter,
+            owner=owner,
+            connection_name=connection_name,
+            settings=settings,
+        )
         self.uploads = AttachmentUploads(settings.attachments)
-        self.entrance = entrance
         self.app = FastAPI(
             docs_url=None,
             redoc_url=None,
@@ -52,50 +54,28 @@ class APIChannel(Channel):
         )
         self.app.add_exception_handler(HTTPError, self._http_error)
         self.server = Server(self.app, settings)
-        self._mounted: dict[tuple[str, str], BaseRoute] = {}
-        self._started = False
-        self._connected = False
+        self.mounted: dict[tuple[str, str], BaseRoute] = {}
         self._active_conversations: set[str] = set()
         self._conversations_drained = anyio.Event()
         self._conversations_drained.set()
 
-    @property
-    def started(self) -> bool:
-        """Whether routes are mounted and may accept requests."""
-        return self._started
+    async def prepare(self) -> None:
+        """Mount fixed routes so consumers can configure the app first."""
+        self._mount_internal_routes()
+        mount_attachments(self)
 
-    async def startup(self) -> None:
-        """Mount transport endpoints and register the connection once."""
-        if self._started:
+    async def start(self) -> None:
+        """Listen after every consumer readiness callback has finished."""
+        if not self.settings.enabled:
+            self.mark_disconnected("connection is disabled")
             return
-        if self._connected:
-            raise APIConfigurationError(
-                "The previous API lifecycle has not stopped"
-            )
-        driver = get_driver()
-        try:
-            self.adapter = driver.get_adapter(APIAdapter)
-        except KeyError:
-            self.adapter = driver.register_adapter(APIAdapter)
-        self._started = True
-        try:
-            self._mount_internal_routes()
-            mount_attachments(self)
-            self.adapter.connect(self)
-            self._connected = True
-        except BaseException:
-            self._started = False
-            self._unmount_all()
-            raise
+        await self.server.startup(self.adapter.driver.task_group)
+        self._mark_online()
 
-    def stop_accepting(self) -> None:
-        """Reject new requests without releasing transport resources."""
-        self._started = False
+    def stop(self) -> None:
+        """Close listeners while admitted requests keep their resources."""
         self.server.stop_accepting()
-
-    async def start_accepting(self) -> None:
-        """Open this channel listener after consumers are ready."""
-        await self.server.startup(get_driver().task_group)
+        self._mark_offline()
 
     async def drain(self) -> None:
         """Finish active requests before dependent plugins close."""
@@ -103,29 +83,27 @@ class APIChannel(Channel):
         with anyio.fail_after(self.settings.shutdown_timeout):
             await self._conversations_drained.wait()
 
-    def _release_conversation(self, scope: str) -> None:
-        self._active_conversations.discard(scope)
+    async def _release(self) -> None:
+        """Remove this connection's routes and discard uploads."""
+        self._unmount_all()
+        self.uploads.clear()
+
+    def reserve_conversation(self, key: str) -> None:
+        """Reject concurrent requests for the same conversation window."""
+        if key in self._active_conversations:
+            raise HTTPError(409, "conversation is busy")
+        if not self._active_conversations:
+            self._conversations_drained = anyio.Event()
+        self._active_conversations.add(key)
+
+    def release_conversation(self, key: str) -> None:
+        """Allow the next request for a conversation window."""
+        self._active_conversations.discard(key)
         if not self._active_conversations:
             self._conversations_drained.set()
 
-    async def shutdown(self) -> None:
-        """Stop accepting requests and remove this channel's routes."""
-        self.stop_accepting()
-        await self.drain()
-        self._unmount_all()
-        self.uploads.clear()
-        if self._connected:
-            self.adapter.disconnect(self)
-            self._connected = False
-
     async def _http_error(self, request: Request, error: HTTPError) -> Response:
         return error_response(error)
-
-    async def send(
-        self, event: APIMessageEvent, message: Any, **kwargs: Any
-    ) -> Any:
-        """Send a complete message in the current event's response scope."""
-        return await self.call("reply", event=event, result=message, **kwargs)
 
     def _mount_internal_routes(self) -> None:
 
@@ -133,10 +111,10 @@ class APIChannel(Channel):
             return json_response({"status": "ok"})
 
         async def ready(request: Request) -> Response:
-            is_ready = self._started and self.entrance.active
+            is_ready = self.ready and self.owner_ready
             payload: dict[str, Any] = {
                 "status": "ready" if is_ready else "not_ready",
-                "plugin": self.entrance.installation_id,
+                "plugin": self.owner_id,
             }
             return json_response(payload, status_code=200 if is_ready else 503)
 
@@ -157,18 +135,18 @@ class APIChannel(Channel):
                 name=name,
                 response_model=None,
             )
-            self._mounted[(method, path)] = self.app.router.routes[-1]
+            self.mounted[(method, path)] = self.app.router.routes[-1]
 
     def _unmount_all(self) -> None:
-        for route in tuple(self._mounted.values()):
+        for route in tuple(self.mounted.values()):
             self.app.router.routes.remove(route)
-        self._mounted.clear()
+        self.mounted.clear()
 
     async def _handle(self, request: Request) -> Response:
-        """Authenticate a fixed message endpoint and dispatch its matchers."""
+        """Admit one fixed message endpoint and dispatch its matchers."""
         try:
             self.check_request(request)
-            return await MessageExchange(self, self.entrance).respond(request)
+            return await MessageExchange(self, request).respond(request)
         except (anyio.get_cancelled_exc_class(), ClientDisconnect):
             raise
         except Exception as error:
@@ -176,24 +154,7 @@ class APIChannel(Channel):
 
     def check_request(self, request: Request) -> None:
         """Reject requests outside this live plugin-owned connection."""
-        if not self._started or not self.entrance.active:
+        if not self.ready or not self.owner_ready:
             raise HTTPError(503, "connection is not ready")
-        if (
-            request.path_params.get("plugin_id")
-            != self.entrance.installation_id
-        ):
-            raise HTTPError(404, "message entrance not found")
-
-    async def resolve_caller(
-        self, request: Request, stack: AsyncExitStack
-    ) -> UserContext:
-        """Run the consumer's identity dependency inside its request scope."""
-        caller = await self.entrance.identity(
-            channel=self,
-            invocation_context=request,
-            stack=stack,
-            dependency_cache={},
-        )
-        if not isinstance(caller, UserContext):
-            raise TypeError("The identity resolver must return UserContext")
-        return caller
+        if request.path_params.get("plugin_id") != self.owner_id:
+            raise HTTPError(404, "message connection not found")

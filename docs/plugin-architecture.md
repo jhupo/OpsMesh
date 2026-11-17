@@ -2,6 +2,8 @@
 
 OpsMesh 提供事件、消息、规则、权限、依赖注入和插件宿主。功能插件通过原生 OpenAI Agents SDK 定义智能体，并按需依赖通道、执行、数据库和文件系统插件。
 
+通道连接、事件和发送契约见 [通道与执行回调](channels-and-callbacks.md)。
+
 ## 源码与发行包
 
 ```text
@@ -62,15 +64,15 @@ host.json 保存 framework、environment 和 data_dir。宿主的 SQLite 保存�
 
 ```text
 HTTP / QQ / 钉钉
-→ SDK 协议认证或调用插件身份解析、统一消息协议解析
-→ Event + Message + 可信调用者 Context
+→ SDK 协议认证、统一消息协议解析、请求 user 资料转换
+→ Event + Message + 调用者 Context
 → Framework Permission / Rule / Matcher / Dependent
 → on_message / on_command 处理器
 → Matcher.send / Matcher.finish
 → 原 Channel 编码回复
 ```
 
-channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 调用消费插件的 HTTP 身份解析函数或读取 SDK 平台身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
+channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 读取正文 `user` 资料或 SDK 平台身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
 
 框架仍保留通道内部健康检查和明确的非消息管理路由能力，但这类路由不承载智能体会话、知识库或 cron 业务。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
 
@@ -78,11 +80,11 @@ HTTP 一次响应承载多条有序消息。普通 send 表示一条完整消息
 
 格式由调用插件明确指定：字符串为纯文本，`channels.MessageSegment.markdown()` 为 Markdown，流式调用在 `StreamMessageStart` 中明确每个文字块的格式，不按内容猜测。钉钉配置 AI 卡片模板后将 Markdown 增量更新到同一张卡片，未配置则聚合为完整 Markdown 回复。卡片协议、节流及失败收尾属于 channels；模型增量和会话属于调用插件。框架核心不持有卡片状态。配置与异常语义见 [channels 使用说明](../packages/channels/README.md#explicit-markdown-and-dingtalk-ai-cards)。
 
-conversation_id 是通道对话区分符，channels 结合可信用户、连接及插件构造 Event.get_session_id()；SDK Session 的选择映射属于聊天插件。入口同时允许其已开放 Matcher 的受限临时续接，等待不跨重启保存，也不跨请求持有资源。命令兜底与普通聊天排除规则复用框架解析，未知或未授权命令不进入模型。
+conversation_id 是通道对话区分符，channels 结合连接、对话类型、conversation_id 及正文声明的用户 ID 构造 Event.get_session_id()；SDK Session 的选择映射属于聊天插件。入口同时允许其已开放 Matcher 的受限临时续接，等待不跨重启保存，也不跨请求持有资源。命令兜底与普通聊天排除规则复用框架解析，未知或未授权命令不进入模型。
 
 框架通过 Matcher.origin 保留临时 Matcher 的原始关联，并在停止和撤销时清理续接。入口复用 matcher_filter、Permission、插件注册归属与 DispatchResult.suspended/errors。HTTP/SSE 和增量编码属于 channels，SDK Session 选择与并发属于聊天插件。资源停止再启动也会清掉旧续接。
 
-channels.UserContext 是冻结的 id、name、groups、roles，集合使用 frozenset。Context() 注入原对象；身份来自认证结果，正文无法覆盖。会话 ID、执行 ID、数据库及 MCP 客户端由调用插件单独管理。Framework permissions.User 是权限匹配器。
+channels.UserContext 是冻结的 id、name、groups、roles，集合使用 frozenset。Context() 注入原对象；HTTP 资料只来自正文 `user`，不代表已经认证，业务认证由消费插件决定。会话 ID、执行 ID、数据库及 MCP 客户端由调用插件单独管理。Framework permissions.User 是权限匹配器。
 
 Driver 管理框架容器与逻辑连接；Adapter 实现协议；Channel 表示具体账号或逻辑端点。send/call 由 Channel/Adapter 提供。API 持有本地 HTTP 监听，QQ 持有官方 Gateway WebSocket，钉钉持有官方 Stream 连接。
 
@@ -137,9 +139,9 @@ channels 根据这些值自动创建所属机器人的连接，使用方不重�
 ### 消费插件的通道连接与身份
 
 HTTP、QQ、钉钉连接统一由消费插件的 `dependencies.channels` 声明。HTTP 使用
-`api.<name>` 配置监听参数，由同名 `api.message(..., identity=resolver)` 绑定已有
-Matcher 和调用插件的身份解析函数。channels 不维护用户目录、token 列表或业务权限。
-解析函数复用框架 `Dependent/Context/Depends`，同样作用于附件上传与下载。
+`api.<name>` 配置监听参数，channels 自动收集该消费插件的框架 Matcher。HTTP
+请求通过固定的受信用户请求头转换为 `UserContext`；channels 不维护用户目录、token
+列表或业务权限。
 机器人 SDK 认证仍属于传输职责；平台群 ID 保留在 Event，不自动映射到业务用户组。
 连接和调用准入随所属插件启停，业务权限由调用插件处理。详见
 [通道与执行回调](channels-and-callbacks.md)。

@@ -36,6 +36,8 @@ class ChatConsole:
                 + "\0"
                 + client.plugin
                 + "\0"
+                + client.user_id
+                + "\0"
                 + client.token
             ).encode()
         ).hexdigest()

@@ -3,7 +3,7 @@
 import asyncio
 import json
 from contextlib import contextmanager
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import anyio
 import httpx
@@ -18,23 +18,24 @@ from opsmesh.plugins.channels.qq import (
     QQAdapter,
     QQConfigurationError,
     QQConnectionSettings,
-    QQSettings,
     parse_callback,
 )
-from opsmesh.plugins.channels.qq.stream import QQStream
-from opsmesh.plugins.model import PluginStatus
+from opsmesh.plugins.channels.qq.client import QQClient
+from opsmesh.plugins.channels.qq.gateway import QQStream
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import Plugin, PluginStatus
 
 SECRET = "0123456789abcdef0123456789abcdef"
 
 
-class FakePlugin:
-    """A minimal loaded plugin for declaration ownership."""
-
-    def __init__(self, id_: str) -> None:
-        self.ready = True
-        self.id_ = id_
-        self.cleanups = []
-        self.status = PluginStatus.LOADED
+def make_plugin(name="support"):
+    return Plugin(
+        name,
+        ModuleType(name),
+        name,
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
 
 
 @contextmanager
@@ -46,20 +47,21 @@ def owned_by(plugin):
         registry._current_plugin.reset(token)
 
 
-def make_runtime() -> Driver:
-    return Driver(Env(), Config())
-
-
-def make_adapter(client=None, **options) -> QQAdapter:
-    return QQAdapter(
-        make_runtime(), settings=QQSettings(**options), http_client=client
-    )
+def make_adapter() -> QQAdapter:
+    return QQAdapter(Driver(Env(), Config()))
 
 
 def declare(adapter, plugin, name="primary", secret_ref="QQ_SECRET"):
     settings = QQConnectionSettings(app_id="12345", secret_ref=secret_ref)
     with owned_by(plugin):
         return adapter.declare(settings, name=name)
+
+
+def attach_client(channel, http=None):
+    channel._client = QQClient(
+        channel.settings, SECRET, name=channel.self_id, http=http
+    )
+    return channel.client
 
 
 def message_payload(event_type="C2C_MESSAGE_CREATE", *, sequence=None):
@@ -81,15 +83,18 @@ def test_declaration_requires_an_owning_plugin():
     adapter = make_adapter()
     with pytest.raises(QQConfigurationError, match="loaded plugin"):
         declare(adapter, None)
-    channel = declare(adapter, FakePlugin("support"))
+    plugin = make_plugin()
+    channel = declare(adapter, plugin)
     assert channel.self_id == "qq:support:primary"
     assert channel.ready is False
+    with pytest.raises(QQConfigurationError, match="cleanup"):
+        declare(adapter, plugin)
 
 
 def test_event_mapping_supports_c2c_and_both_group_events():
     direct = parse_callback(message_payload(), connection_id="qq:support:bot")
     assert direct is not None
-    assert direct.get_user_id() == "qq:support:bot:user-1"
+    assert json.loads(direct.get_user_id()) == ["user-1", "qq:support:bot"]
     assert direct.user_name == "Alice"
     assert direct.timestamp == "2026-07-21T10:00:00+08:00"
 
@@ -121,8 +126,6 @@ def test_gateway_notice_uses_sequence_when_outer_id_is_absent():
 async def test_native_token_cache_is_shared_with_gateway(monkeypatch):
     from qqbot_agent_sdk.api_client import API_BASE, TOKEN_URL
 
-    from opsmesh.plugins.channels.qq.client import QQClient
-
     calls = []
 
     def token(url, **kwargs):
@@ -143,33 +146,37 @@ async def test_native_token_cache_is_shared_with_gateway(monkeypatch):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(gateway)
     ) as http:
-        client = QQClient(QQSettings(), http)
-        channel = SimpleNamespace(
-            self_id="one",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+        client = QQClient(
+            QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            SECRET,
+            name="one",
+            http=http,
         )
-        api = client.account(channel, SECRET)
+        api = client.api
         assert await api.get_gateway_url() == "wss://api.bot.qq.com/ws/"
         assert await asyncio.to_thread(api.ensure_token_sync) == "token"
         assert calls == [(TOKEN_URL, {"appId": "123", "clientSecret": SECRET})]
-        assert client.account(channel, SECRET) is api
-        other = SimpleNamespace(self_id="two", settings=channel.settings)
-        assert client.account(other, SECRET) is not api
         await client.close()
         assert api.access_token is None
 
 
 @pytest.mark.anyio
 async def test_sdk_gateway_preserves_intents_notices_and_sequences():
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
-    stream = QQStream(channel, SECRET)
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
+    stream = QQStream(channel)
     delivered = []
     connected = []
-    adapter.stream_connected = lambda value: connected.append(value)
+    original_connected = channel.inbound_task_connected
 
-    async def deliver(value, payload):
+    def record_connected():
+        connected.append(channel)
+        original_connected()
+
+    channel.inbound_task_connected = record_connected
+
+    async def deliver(channel_, payload):
         delivered.append(payload)
 
     adapter.accept_event = deliver
@@ -200,27 +207,29 @@ async def test_sdk_gateway_preserves_intents_notices_and_sequences():
     ]
     for frame in frames:
         gateway._dispatch_payload(frame)
-    await asyncio.sleep(0)
+    with anyio.fail_after(2):
+        while len(delivered) < len(frames):
+            await anyio.sleep(0)
     assert delivered == frames
     assert connected == [channel]
     assert stream._session == ("session-1", 42)
     gateway._ws = None
     await gateway.stop()
     assert not gateway._pending
-    await adapter.client.close()
+    await channel.client.close()
 
 
 @pytest.mark.anyio
 async def test_stream_stop_before_start_never_opens_network():
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
-    stream = QQStream(channel, SECRET)
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
+    stream = QQStream(channel)
     stream.stop()
     await stream.run()
     await stream.wait_closed()
     assert stream._scope is None
-    await adapter.client.close()
+    await channel.client.close()
 
 
 @pytest.mark.anyio
@@ -229,10 +238,8 @@ async def test_stream_stop_before_start_never_opens_network():
 )
 async def test_adapter_admits_gateway_event_once(monkeypatch, event_type):
     monkeypatch.setenv("QQ_SECRET", SECRET)
-    adapter = make_adapter(enabled=False, concurrency=1)
-    channel = declare(adapter, FakePlugin("support"))
-    channel.mark_ready()
-    adapter._accepting = True
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
     dispatched = []
 
     async def fake_dispatch(channel_, event, **kwargs):
@@ -240,10 +247,13 @@ async def test_adapter_admits_gateway_event_once(monkeypatch, event_type):
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels._work.dispatch_event", fake_dispatch
+        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event",
+        fake_dispatch,
     )
-    async with adapter.driver.lifespan():
-        await adapter.startup()
+    await adapter.driver.startup()
+    try:
+        await channel.prepare()
+        channel.mark_ready()
         await adapter.accept_event(channel, message_payload(event_type))
         with anyio.fail_after(2):
             while not dispatched:
@@ -254,7 +264,9 @@ async def test_adapter_admits_gateway_event_once(monkeypatch, event_type):
         assert caller.roles == frozenset()
         if event_type == "GROUP_AT_MESSAGE_CREATE":
             assert event.group_id == "group-1"
-        await adapter.shutdown()
+    finally:
+        await channel.close()
+        await adapter.driver.shutdown()
 
 
 @pytest.mark.anyio
@@ -263,11 +275,11 @@ async def test_native_gateway_handshake_delivery_and_stop(monkeypatch):
     import aiohttp
     from qqbot_agent_sdk import QQApiClient
 
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
     monkeypatch.setattr(QQApiClient, "ensure_token_sync", lambda self: "token")
-    stream = QQStream(channel, SECRET)
+    stream = QQStream(channel)
     received = []
     frames = asyncio.Queue()
     sent = []
@@ -323,7 +335,7 @@ async def test_native_gateway_handshake_delivery_and_stop(monkeypatch):
         assert stream._session == ("native-session", 10)
     finally:
         await stream.gateway.stop()
-        await adapter.client.close()
+        await channel.client.close()
     assert socket.closed
     assert stream.gateway._listen_task is None
     assert stream.gateway._heartbeat_task is None
@@ -332,10 +344,10 @@ async def test_native_gateway_handshake_delivery_and_stop(monkeypatch):
 
 @pytest.mark.anyio
 async def test_sdk_helper_tasks_do_not_survive_shutdown():
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
-    stream = QQStream(channel, SECRET)
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
+    stream = QQStream(channel)
     entered = asyncio.Event()
     exited = asyncio.Event()
 
@@ -351,30 +363,30 @@ async def test_sdk_helper_tasks_do_not_survive_shutdown():
     await stream.gateway.stop()
     assert exited.is_set()
     assert not stream.gateway._pending
-    await adapter.client.close()
+    await channel.client.close()
 
 
 @pytest.mark.anyio
 async def test_clean_gateway_close_enters_native_reconnect():
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
-    stream = QQStream(channel, SECRET)
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
+    stream = QQStream(channel)
     stream.gateway._ws = SimpleNamespace(closed=True)
     stream.gateway._running = True
     with pytest.raises(ConnectionError, match="gateway closed"):
         await stream.gateway._read_events()
     await stream.gateway.stop()
-    await adapter.client.close()
+    await channel.client.close()
 
 
 @pytest.mark.anyio
 async def test_stream_cancellation_closes_sdk_session(monkeypatch):
     from qqbot_agent_sdk import QQApiClient
 
-    adapter = make_adapter(enabled=False)
-    adapter.client.open()
-    channel = declare(adapter, FakePlugin("support"))
+    adapter = make_adapter()
+    channel = declare(adapter, make_plugin())
+    attach_client(channel)
     opened = asyncio.Event()
     closed = asyncio.Event()
     frames = asyncio.Queue()
@@ -404,10 +416,10 @@ async def test_stream_cancellation_closes_sdk_session(monkeypatch):
 
     monkeypatch.setattr(QQApiClient, "get_gateway_url", gateway_url)
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.qq.stream.aiohttp.ClientSession",
+        "opsmesh.plugins.channels.qq.gateway.aiohttp.ClientSession",
         lambda **kwargs: Session(),
     )
-    stream = QQStream(channel, SECRET)
+    stream = QQStream(channel)
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(stream.run)
         with anyio.fail_after(2):
@@ -417,7 +429,7 @@ async def test_stream_cancellation_closes_sdk_session(monkeypatch):
     assert closed.is_set()
     assert socket.closed
     assert not stream.gateway._pending
-    await adapter.client.close()
+    await channel.client.close()
 
 
 @pytest.mark.anyio
@@ -425,7 +437,6 @@ async def test_native_api_preserves_safe_operation_errors(monkeypatch, caplog):
     from qqbot_agent_sdk import QQApiClient
 
     from opsmesh.plugins.channels.operations import OperationPermissionDenied
-    from opsmesh.plugins.channels.qq.client import QQClient
 
     monkeypatch.setattr(QQApiClient, "ensure_token_sync", lambda self: "token")
 
@@ -437,14 +448,14 @@ async def test_native_api_preserves_safe_operation_errors(monkeypatch, caplog):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond)
     ) as http:
-        client = QQClient(QQSettings(), http)
-        channel = SimpleNamespace(
-            self_id="one",
-            settings=QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+        client = QQClient(
+            QQConnectionSettings(app_id="123", secret_ref="QQ_SECRET"),
+            SECRET,
+            name="one",
+            http=http,
         )
-        api = client.account(channel, SECRET)
         with pytest.raises(OperationPermissionDenied) as caught:
-            await api.request("GET", "/v2/groups/group/info")
+            await client.api.request("GET", "/v2/groups/group/info")
         assert caught.value.status == 403
         assert caught.value.code == "123"
         assert "private-response-secret" not in caplog.text

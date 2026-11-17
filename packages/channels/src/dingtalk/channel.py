@@ -1,54 +1,48 @@
-"""DingTalk connection state and outgoing message rules."""
+"""DingTalk connection state and native stream capabilities."""
 
 from __future__ import annotations
 
-from typing import Any
+import os
+from typing import TYPE_CHECKING
 
-from ..channel import RobotChannel
-from .config import DingTalkConnectionSettings, DingTalkSettings
-from .events import DingTalkMessageEvent
+from ..channel import MESSAGE_OPERATIONS, CallbackChannel
+from .client import DingTalkClient
+from .config import DingTalkConnectionSettings
+from .errors import DingTalkConfigurationError
+from .groups import DingTalkGroups
+
+if TYPE_CHECKING:
+    from .stream import DingTalkStream
 
 
-class DingTalkChannel(
-    RobotChannel[DingTalkConnectionSettings, DingTalkSettings]
-):
+class DingTalkChannel(CallbackChannel[DingTalkConnectionSettings]):
     """One declared DingTalk robot connection."""
 
     receive_types = frozenset({"text", "image", "file", "audio", "video"})
     send_types = receive_types | {"markdown"}
+    supported_operations = DingTalkGroups.operations | MESSAGE_OPERATIONS
 
     @property
     def stream_formats(self) -> frozenset[str]:
         """Return formats with native incremental delivery configured."""
         return frozenset({"markdown"}) if self.settings.card else frozenset()
 
-    @property
-    def supported_operations(self) -> frozenset[str]:
-        """Return implemented operations, independent of account privileges."""
-        from .groups import DingTalkGroups
-
-        return DingTalkGroups.operations | {"send_message", "stream"}
-
-    async def send(
-        self,
-        event: DingTalkMessageEvent,
-        message: Any,
-        **kwargs: Any,
-    ) -> Any:
-        """Reply to one incoming DingTalk message.
-
-        Args:
-            event: The incoming DingTalk message event.
-            message: Text or framework message with attachment references.
-            **kwargs: Optional delivery observer.
-
-        Returns:
-            The vendor response payload.
-        """
-        if not isinstance(event, DingTalkMessageEvent):
-            raise TypeError(
-                "DingTalkChannel.send requires a DingTalkMessageEvent"
+    def _read_secret(self) -> str:
+        reference = self.settings.client_secret_ref
+        secret = os.environ.get(reference)
+        if secret is None or not secret.strip():
+            raise DingTalkConfigurationError(
+                f"Environment variable {reference} is not set"
             )
-        return await self.call(
-            "send_message", event=event, message=message, **kwargs
-        )
+        return secret.strip()
+
+    def _open_resources(self) -> None:
+        self._client = DingTalkClient(self.settings, self._secret)
+
+    async def _close_resources(self) -> None:
+        await self.client.close()
+
+    def _create_inbound_task(self) -> DingTalkStream:
+        from .stream import DingTalkStream
+
+        return DingTalkStream(self, self._secret)

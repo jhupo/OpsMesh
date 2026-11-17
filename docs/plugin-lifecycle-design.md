@@ -115,7 +115,8 @@ src/opsmesh/
 ├── dispatch/
 └── dependencies/           # 保持通用参数与清理职责
 packages/channels/src/
-├── lifecycle/              # 消费者与共享传输归属
+├── lifecycle.py            # 按消费插件注册框架生命周期回调
+├── adapter.py              # 已准备连接与操作准入
 ├── api/                    # HTTP 请求、响应和流
 ├── qq/                     # QQ 连接和队列处理
 └── dingtalk/               # Stream 连接和队列处理

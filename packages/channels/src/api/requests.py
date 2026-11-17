@@ -58,7 +58,7 @@ async def parse_message(request: Request, limit: int):
     from pydantic import ValidationError
 
     from .errors import HTTPError
-    from .messages import MessageRequest
+    from .schemas import MessageRequest
 
     content = await read_body(request, limit)
     content_type = (

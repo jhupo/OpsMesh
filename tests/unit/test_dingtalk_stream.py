@@ -11,7 +11,6 @@ from dingtalk_stream import ChatbotMessage, SystemMessage
 from opsmesh.plugins.channels.dingtalk.client import DingTalkClient
 from opsmesh.plugins.channels.dingtalk.config import (
     DingTalkConnectionSettings,
-    DingTalkSettings,
 )
 from opsmesh.plugins.channels.dingtalk.errors import DingTalkProtocolError
 from opsmesh.plugins.channels.dingtalk.stream import DingTalkStream
@@ -40,28 +39,27 @@ class Socket:
         self.closed = True
 
 
-def make_stream(http, **settings):
-    protocol = DingTalkSettings(reconnect_delay=0.001, **settings)
+def make_stream(http, **options):
+    settings = DingTalkConnectionSettings(
+        client_id="test-client",
+        client_secret_ref="TEST_SECRET",
+        reconnect_delay=0.001,
+        **options,
+    )
     connections, disconnected, callbacks = [], [], []
 
     async def accept_callback(channel, data):
         callbacks.append(data)
         return 200, "ok"
 
-    adapter = SimpleNamespace(
-        client=DingTalkClient(protocol, http),
-        stream_connected=connections.append,
-        stream_disconnected=disconnected.append,
-        stream_finished=lambda channel: None,
-        accept_callback=accept_callback,
-    )
     channel = SimpleNamespace(
         self_id="dingtalk:plugin:bot",
-        adapter=adapter,
-        settings=DingTalkConnectionSettings(
-            client_id="test-client", client_secret_ref="TEST_SECRET"
-        ),
-        protocol=protocol,
+        settings=settings,
+        client=DingTalkClient(settings, "private-secret", http=http),
+        inbound_task_connected=lambda: connections.append(True),
+        inbound_task_disconnected=lambda: disconnected.append(True),
+        inbound_task_finished=lambda: None,
+        adapter=SimpleNamespace(accept_callback=accept_callback),
     )
     return DingTalkStream(channel, "private-secret"), connections, callbacks
 

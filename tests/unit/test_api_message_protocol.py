@@ -11,8 +11,6 @@ import pytest
 
 from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
-from opsmesh.dependencies import Dependent
-from opsmesh.dependencies.context import ContextParam
 from opsmesh.drivers import Driver
 from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
@@ -27,98 +25,97 @@ from opsmesh.plugins.channels import (
     StreamTextDelta,
 )
 from opsmesh.plugins.channels.api import (
-    APIChannel,
+    APIAdapter,
+    APIConnectionSettings,
     HTTPError,
-    MessageEntrances,
-    MessageRequest,
-    Settings,
-    entrances,
 )
-from opsmesh.plugins.channels.api.entrances import MessageEntrance
+from opsmesh.plugins.channels.rules import GroupRule
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 from opsmesh.utils import flatten_exception_group
-from tests.fixtures.http_identity import protocol_caller
 
 
 class ProtocolHarness:
+    """Declare plugin-owned HTTP connections through the real adapter."""
+
     def __init__(self, monkeypatch):
-        self.router = MessageEntrances()
+        self.driver = Driver(Env(), Config())
+        monkeypatch.setattr(driver_state, "_driver", self.driver)
+        self.driver.register_adapter(APIAdapter)
+        self.adapter = self.driver.get_adapter(APIAdapter)
         self.owners = {}
+        monkeypatch.setattr(registry, "_plugins", self.owners)
         self.channels = {}
-        monkeypatch.setenv("MESSAGE_TOKEN", "secret")
-        monkeypatch.setenv("OTHER_MESSAGE_TOKEN", "other")
-        monkeypatch.setattr(entrances, "_entrances", self.router)
-        monkeypatch.setattr(registry, "get_plugin", self.owners.get)
-        monkeypatch.setattr(driver_state, "_driver", Driver(Env(), Config()))
-        owner = Plugin(
-            name="support",
-            module=ModuleType("support"),
-            module_name="support",
+        self.matchers = []
+        self.channel = None
+
+    def owner(self, name="support", **options):
+        plugin = Plugin(
+            name=name,
+            module=ModuleType(name),
+            module_name=name,
             manager=PluginManager(),
-            status=PluginStatus.READY,
+            status=options.pop("status", PluginStatus.READY),
         )
-        entrance = MessageEntrance(
-            owner,
-            (),
-            Dependent.parse(call=protocol_caller, allow_types=(ContextParam,)),
-            "main",
-            "test",
-        )
-        self.channel = APIChannel(Settings(enabled=False), entrance)
+        self.owners[name] = plugin
+        return plugin
 
     def bind(self, handler, owner_id="support"):
-        owner = Plugin(
-            name=owner_id,
-            module=ModuleType(owner_id),
-            module_name=owner_id,
-            manager=PluginManager(),
-            status=PluginStatus.READY,
+        self.owners.get(owner_id) or self.owner(owner_id)
+        matcher = Matcher.new(
+            type_="message",
+            priority=10,
+            block=True,
+            handlers=[handler],
+            source=MatcherSource(plugin_id=owner_id),
         )
-        self.owners[owner_id] = owner
+        self.matchers.append(matcher)
+        return matcher
+
+    async def connect(self, name="support", **options):
+        owner = self.owners.get(name) or self.owner(name)
         token = registry._current_plugin.set(owner)
         try:
-            matcher = Matcher.new(
-                type_="message",
-                priority=10,
-                block=True,
-                handlers=[handler],
-                source=MatcherSource(plugin_id=owner_id),
+            channel = self.adapter.declare(
+                APIConnectionSettings(enabled=False, **options),
+                name="main",
             )
-            entrance = entrances.message(
-                handlers=(matcher,), identity=protocol_caller
-            )
-            if owner_id == "support":
-                self.channel.entrance = entrance
-            else:
-                self.channels[owner_id] = APIChannel(
-                    Settings(enabled=False), entrance
-                )
-            return matcher
         finally:
             registry._current_plugin.reset(token)
+        await channel.prepare()
+        channel.mark_ready()
+        self.channels[name] = channel
+        if name == "support":
+            self.channel = channel
+        return channel
 
-    async def post(self, message="hello", **options):
-        owner = options.pop("owner", "support")
-        token = options.pop("token", "secret")
-        body = {"message": message, **options.pop("fields", {})}
-        if owner in self.channels:
-            channel = self.channels[owner]
-            await channel.startup()
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=channel.app),
-                base_url="http://test",
-            ) as client:
-                return await client.post(
-                    f"/plugins/{owner}/messages",
-                    json=body,
-                    headers={"authorization": f"Bearer {token}", **options},
-                )
-        return await self.client.post(
-            f"/plugins/{owner}/messages",
-            json=body,
-            headers={"authorization": f"Bearer {token}", **options},
-        )
+    async def reconnect(self, **options):
+        await self.channel.close()
+        return await self.connect(**options)
+
+    async def post(
+        self, message="hello", *, owner="support", fields=None, accept=None
+    ):
+        channel = self.channels[owner]
+        body = {"user": {"id": "user"}, "message": message}
+        if fields:
+            body.update(fields)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=channel.app),
+            base_url="http://test",
+        ) as client:
+            return await client.post(
+                f"/plugins/{owner}/messages",
+                json=body,
+                headers={"accept": accept} if accept else {},
+            )
+
+    async def get(self, path):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=self.channel.app),
+            base_url="http://test",
+        ) as client:
+            return await client.get(path)
 
 
 @pytest.fixture
@@ -126,20 +123,17 @@ async def protocol(monkeypatch):
     saved = dict(matchers.items())
     matchers.clear()
     harness = ProtocolHarness(monkeypatch)
-    await harness.channel.startup()
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=harness.channel.app),
-        base_url="http://test",
-    ) as client:
-        harness.client = client
-        try:
-            yield harness
-        finally:
-            for channel in harness.channels.values():
-                await channel.shutdown()
-            await harness.channel.shutdown()
-            matchers.clear()
-            matchers.update(saved)
+    await harness.connect()
+    try:
+        yield harness
+    finally:
+        for matcher in harness.matchers:
+            matcher.destroy()
+        for channel in set(harness.channels.values()):
+            if channel.state != "closed":
+                await channel.close()
+        matchers.clear()
+        matchers.update(saved)
 
 
 def decode_events(response):
@@ -153,8 +147,44 @@ def decode_events(response):
     ]
 
 
-async def asgi_request(protocol, send, disconnect=None):
-    content = json.dumps({"message": "hello"}).encode()
+@pytest.mark.anyio
+async def test_api_group_message_routes_using_common_event(protocol):
+    seen = []
+    rule = GroupRule(frozenset({"group-a"}), "support", "main", "api")
+
+    async def handler(channel: Channel, event: Event):
+        if await rule(channel, event):
+            seen.append((event.group_id, event.conversation_type))
+
+    protocol.bind(handler)
+    response = await protocol.post(
+        fields={"conversation_type": "group", "group_id": "group-a"}
+    )
+    assert response.status_code == 200
+    assert seen == [("group-a", "group")]
+    conversation_id = response.json()["conversation_id"]
+    assert str(UUID(conversation_id)) == conversation_id
+    continued = await protocol.post(fields={
+        "conversation_type": "group",
+        "group_id": "group-a",
+        "conversation_id": conversation_id,
+    })
+    assert continued.status_code == 200
+
+    invalid = await protocol.post(fields={"conversation_type": "group"})
+    assert invalid.status_code == 422
+    invalid = await protocol.post(
+        fields={"conversation_type": "group", "group_id": " "}
+    )
+    assert invalid.status_code == 422
+    invalid = await protocol.post(fields={"group_id": "group-a"})
+    assert invalid.status_code == 422
+
+
+async def asgi_request(protocol, send, disconnect=None, **options):
+    content = json.dumps(
+        {"user": {"id": "user"}, "message": "hello"}
+    ).encode()
     pending = [{"type": "http.request", "body": content, "more_body": False}]
 
     async def receive():
@@ -174,10 +204,10 @@ async def asgi_request(protocol, send, disconnect=None):
             "scheme": "http",
             "server": ("test", 80),
             "headers": [
-                (b"authorization", b"Bearer secret"),
                 (b"content-type", b"application/json"),
                 (b"accept", b"text/event-stream"),
             ],
+            **options,
         },
         receive,
         send,
@@ -185,7 +215,7 @@ async def asgi_request(protocol, send, disconnect=None):
 
 
 @pytest.mark.anyio
-async def test_public_message_binding_has_one_fixed_path_and_body(protocol):
+async def test_public_message_connection_has_one_fixed_path_and_body(protocol):
     async def ignored():
         return {"ignored": True}
 
@@ -200,13 +230,13 @@ async def test_public_message_binding_has_one_fixed_path_and_body(protocol):
         "messages": [],
         "error": None,
     }
-    assert (
-        await protocol.client.post("/plugins/support/chat")
-    ).status_code == 404
-    with pytest.raises(TypeError):
-        entrances.message("/chat", handlers=())
-    with pytest.raises(TypeError):
-        entrances.message(handlers=(), body=MessageRequest)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=protocol.channel.app),
+        base_url="http://test",
+    ) as client:
+        assert (
+            await client.post("/plugins/support/chat")
+        ).status_code == 404
 
 
 @pytest.mark.anyio
@@ -242,7 +272,9 @@ async def test_message_protocol_rejects_untrusted_or_noncanonical_fields(
         [{"type": "file", "attachment_id": "0" * 32}],
     ],
 )
-async def test_invalid_segments_are_rejected_before_dispatch(protocol, message):
+async def test_invalid_segments_are_rejected_before_dispatch(
+    protocol, message
+):
     async def unexpected():
         pytest.fail("Invalid segments reached the framework")
 
@@ -251,7 +283,9 @@ async def test_invalid_segments_are_rejected_before_dispatch(protocol, message):
 
 
 @pytest.mark.anyio
-async def test_conversation_scope_separates_users_plugins_and_windows(protocol):
+async def test_conversation_scope_separates_users_plugins_and_windows(
+    protocol,
+):
     seen = []
 
     async def remember(event: Event):
@@ -259,11 +293,12 @@ async def test_conversation_scope_separates_users_plugins_and_windows(protocol):
 
     protocol.bind(remember)
     protocol.bind(remember, "other_plugin")
+    await protocol.connect("other_plugin")
     conversation = str(uuid4())
     fields = {"conversation_id": conversation}
     await protocol.post(fields=fields)
     await protocol.post(fields=fields)
-    await protocol.post(fields=fields, token="other")
+    await protocol.post(fields={**fields, "user": {"id": "other"}})
     await protocol.post(fields=fields, owner="other_plugin")
     await protocol.post(fields={"conversation_id": str(uuid4())})
     assert seen[0] == seen[1]
@@ -379,12 +414,7 @@ async def test_attachment_bytes_are_materialized_before_dependency_cleanup(
     response = await protocol.post()
     url = response.json()["messages"][0]["content"][0]["download_url"]
     assert stages == ["read", "dependency closed"]
-    download = await protocol.client.get(
-        url,
-        headers={
-            "authorization": "Bearer secret",
-        },
-    )
+    download = await protocol.get(url)
     assert download.content == b"report"
 
 
@@ -672,11 +702,7 @@ async def test_sse_disconnect_cancels_source_and_closes_dependencies(protocol):
 async def test_sse_buffer_applies_backpressure_to_text_source(protocol):
     blocked, release = anyio.Event(), anyio.Event()
     consumed = []
-    protocol.channel.settings = protocol.channel.settings.model_copy(
-        update={
-            "stream_buffer_size": 1,
-        }
-    )
+    await protocol.reconnect(stream_buffer_size=1)
 
     async def source():
         yield StreamMessageStart("answer")
@@ -710,11 +736,9 @@ async def test_message_output_limits_fail_safely_and_release_admission(
     protocol,
     limit,
 ):
-    protocol.channel.settings = protocol.channel.settings.model_copy(
-        update={
-            "max_output_messages": 1 if limit == "count" else 128,
-            "max_output_bytes": 4 if limit == "bytes" else 1024,
-        }
+    await protocol.reconnect(
+        max_output_messages=1 if limit == "count" else 128,
+        max_output_bytes=4 if limit == "bytes" else 1024,
     )
 
     async def answer(matcher: Matcher):
@@ -735,11 +759,7 @@ async def test_nonstream_timeout_returns_failed_envelope_after_cleanup(
     protocol,
 ):
     closed = []
-    protocol.channel.settings = protocol.channel.settings.model_copy(
-        update={
-            "request_timeout_seconds": 0.1,
-        }
-    )
+    await protocol.reconnect(request_timeout_seconds=0.1)
 
     async def resource():
         try:
@@ -763,11 +783,7 @@ async def test_nonstream_timeout_returns_failed_envelope_after_cleanup(
 
 @pytest.mark.anyio
 async def test_sse_uses_the_same_request_timeout_as_json(protocol):
-    protocol.channel.settings = protocol.channel.settings.model_copy(
-        update={
-            "request_timeout_seconds": 0.02,
-        }
-    )
+    await protocol.reconnect(request_timeout_seconds=0.02)
 
     async def answer(matcher: Matcher):
         await anyio.sleep_forever()
@@ -800,7 +816,7 @@ async def test_dependency_finalizer_cannot_send_a_new_business_message(
 
 
 @pytest.mark.anyio
-async def test_stop_waits_for_active_embedded_requests_before_releasing_channel(
+async def test_quiesce_waits_for_active_requests_before_releasing_channel(
     protocol,
 ):
     entered, release = anyio.Event(), anyio.Event()
@@ -817,7 +833,7 @@ async def test_stop_waits_for_active_embedded_requests_before_releasing_channel(
         completed.append(await protocol.post())
 
     async def stop():
-        await protocol.channel.shutdown()
+        await protocol.channel.quiesce()
         completed.append("stopped")
 
     async with anyio.create_task_group() as tasks:
@@ -825,8 +841,7 @@ async def test_stop_waits_for_active_embedded_requests_before_releasing_channel(
         await entered.wait()
         tasks.start_soon(stop)
         await anyio.sleep(0)
-        assert not protocol.channel.started
-        assert protocol.channel._connected
+        assert protocol.channel.state != "ready"
         release.set()
     assert completed[-1] == "stopped"
     assert completed[0].json()["messages"][0]["content"][0]["text"] == "answer"
@@ -913,8 +928,6 @@ async def test_source_cleanup_timeout_still_attempts_dependency_cleanup(
 
     protocol.bind(answer)
     response = await protocol.post(accept="text/event-stream")
-    assert [name for name, _ in decode_events(response)] == [
-        "error",
-    ]
+    assert [name for name, _ in decode_events(response)] == ["error"]
     assert stages == ["source close attempted", "dependency closed"]
     assert "private" not in response.text

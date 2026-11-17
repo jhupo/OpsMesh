@@ -8,7 +8,6 @@ from .conversation import answer
 from .lifecycle import get_conversations
 
 entrance = ConversationEntrance(get_conversations, answer)
-entrance.bind()
 
 
 @on_shutdown

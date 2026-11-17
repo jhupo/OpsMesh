@@ -1,67 +1,54 @@
-"""QQ connection state and outgoing message rules."""
+"""QQ connection state and native reply limits."""
 
 from __future__ import annotations
 
+import os
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import anyio
 
 from opsmesh.plugins.model import Plugin
 
-from ..channel import RobotChannel
-from .config import QQConnectionSettings, QQSettings
-from .errors import QQSendError
-from .events import QQMessageEvent
-
-if TYPE_CHECKING:
-    from .adapter import QQAdapter
-
+from ..channel import MESSAGE_OPERATIONS, CallbackChannel
+from .client import QQClient
+from .config import QQConnectionSettings
+from .errors import QQConfigurationError, QQSendError
+from .gateway import QQStream
+from .operations import QQOperations
 
 _SEQUENCE_LIMIT = 512
 _MAX_GROUP_REPLIES = 5
 
 
-class QQChannel(RobotChannel[QQConnectionSettings, QQSettings]):
+class QQChannel(CallbackChannel[QQConnectionSettings]):
     """One declared QQ bot connection.
 
-    The channel is connected to the driver only after its Gateway handshake
+    The connection joins the driver index only after its Gateway handshake
     succeeds.
     """
 
     receive_types = frozenset({"text", "image", "file", "audio", "video"})
     send_types = receive_types
     stream_formats = frozenset()
-
-    @property
-    def supported_operations(self) -> frozenset[str]:
-        """Return implemented operations, independent of account privileges."""
-        from .operations import QQOperations
-
-        return QQOperations.operations | {"send_message", "stream"}
+    supported_operations = QQOperations.operations | MESSAGE_OPERATIONS
 
     def __init__(
         self,
-        adapter: QQAdapter,
-        self_id: str,
+        adapter: Any,
         *,
-        owner_id: str,
-        owner: Plugin | None = None,
+        owner: Plugin,
         connection_name: str,
         settings: QQConnectionSettings,
-        protocol: QQSettings,
     ) -> None:
-        """Initialize a declared but not yet active connection."""
+        """Initialize declared reply state."""
         super().__init__(
             adapter,
-            self_id,
-            owner_id=owner_id,
             owner=owner,
             connection_name=connection_name,
             settings=settings,
-            protocol=protocol,
         )
         self._sequences: OrderedDict[str, int] = OrderedDict()
         self._reply_locks: dict[str, anyio.Lock] = {}
@@ -107,24 +94,20 @@ class QQChannel(RobotChannel[QQConnectionSettings, QQSettings]):
             if message_id not in self._reply_locks:
                 del self._sequences[message_id]
 
-    async def send(
-        self,
-        event: QQMessageEvent,
-        message: Any,
-        **kwargs: Any,
-    ) -> Any:
-        """Reply to one incoming QQ message.
+    def _read_secret(self) -> str:
+        reference = self.settings.secret_ref
+        secret = os.environ.get(reference)
+        if secret is None or not secret.strip():
+            raise QQConfigurationError(
+                f"Environment variable {reference} is not set"
+            )
+        return secret.strip()
 
-        Args:
-            event: The incoming QQ message event.
-            message: Text or framework message with attachment references.
-            **kwargs: Optional delivery observer.
+    def _open_resources(self) -> None:
+        self._client = QQClient(self.settings, self._secret, name=self.self_id)
 
-        Returns:
-            The vendor response payload.
-        """
-        if not isinstance(event, QQMessageEvent):
-            raise TypeError("QQChannel.send requires a QQMessageEvent")
-        return await self.call(
-            "send_message", event=event, message=message, **kwargs
-        )
+    async def _close_resources(self) -> None:
+        await self.client.close()
+
+    def _create_inbound_task(self) -> QQStream:
+        return QQStream(self)

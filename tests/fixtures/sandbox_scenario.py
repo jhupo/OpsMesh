@@ -25,11 +25,8 @@ from example_sandbox.sessions import SandboxConversations
 from example_sandbox.workspace import SandboxWorkspaces
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from opsmesh.plugins.channels import UserContext
 from opsmesh.plugins.execution import Settings as ExecutionSettings
 from opsmesh.plugins.execution import _lifecycle as execution_lifecycle
-from opsmesh.plugins.filesystem import files
-from opsmesh.plugins.model import PluginStatus
 
 harness = runpy.run_path("tests/fixtures/chat_scenario.py")
 MessageHarness = harness["MessageHarness"]
@@ -69,13 +66,9 @@ def migrate(connection):
         namespace["upgrade"]()
 
 
-def run_scenario(plugin, routes):
-    from opsmesh.plugins import get_loaded_plugins
-
-    for loaded in get_loaded_plugins():
-        loaded.status = PluginStatus.READY
-    caller = UserContext(id="sandbox-user")
-    api = MessageHarness(routes[0], caller)
+async def run_scenario(plugin, api_channel):
+    api = MessageHarness(api_channel, "sandbox-user")
+    caller = api.caller
     model = ScriptedModel(
         [
             ModelStep(output=[assistant_message(text)])
@@ -135,12 +128,8 @@ def run_scenario(plugin, routes):
         assert len(model.calls) == 3
         assert note.exists()
         assert data_of(await api.post("/history"))["messages"] == []
-        await command_error(
-            api.post("/use " + sid, owner=UserContext(id="other")), 404
-        )
-        await command_error(
-            api.post("/reset_workspace", owner=UserContext(id="other")), 409
-        )
+        await command_error(api.post("/use " + sid, user="other"), 404)
+        await command_error(api.post("/reset_workspace", user="other"), 409)
         assert note.exists()
         async with store.hold(caller.id, sid):
             await command_error(api.post("/reset_workspace"), 409)
@@ -203,9 +192,7 @@ def run_scenario(plugin, routes):
             )
             assert (
                 text_of(
-                    await api.post(
-                        "Write a file", conversation_id=other_window
-                    )
+                    await api.post("Write a file", conversation_id=other_window)
                 )
                 == "tool finished"
             )
@@ -216,16 +203,10 @@ def run_scenario(plugin, routes):
         model.assert_complete()
 
     async def main():
-        from opsmesh.plugins import get_plugin
-
         runtime = execution_lifecycle.ExecutionRuntime(ExecutionSettings())
         execution_lifecycle._runtime = runtime
         await runtime.startup()
         with tempfile.TemporaryDirectory() as temporary:
-            get_plugin("filesystem").config_values = {
-                "root": temporary + "/files"
-            }
-            await files._startup()
             engine = create_async_engine(
                 os.environ.get("OPSMESH_TEST_DATABASE_URL")
                 or "sqlite+aiosqlite:///"
@@ -238,16 +219,13 @@ def run_scenario(plugin, routes):
                     UnixLocalSandboxClient,
                 )
 
-                backend = UnixLocalSandboxClient(
-                    inherit_host_environment=False
-                )
+                backend = UnixLocalSandboxClient(inherit_host_environment=False)
             try:
                 await verify(engine, backend)
             finally:
                 lifecycle._conversations = None
                 await engine.dispose()
-                await files._shutdown()
                 await execution_lifecycle.shutdown()
 
-    asyncio.run(main())
+    await main()
     print("sandbox conversations verified")
