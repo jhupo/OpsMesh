@@ -79,7 +79,8 @@ has_standard_unit() {
 if $rollback; then
     [[ -z $archive && -z $checksums && -z $manifest && -z $environment ]] || fail "--rollback cannot replace configuration or install an archive"
     target=$(readlink -e "$prefix/previous" || true)
-    [[ -n $previous && $target == "$releases/"* && -x $target/opsmesh ]] && has_standard_unit "$target" || fail "No previous release with the standard layout"
+    [[ -n $previous && $target == "$releases/"* && -x $target/opsmesh ]] || fail "No previous release"
+    has_standard_unit "$target" || fail "Previous release does not use the standard layout"
     [[ -L $cli ]] || fail "Missing installed command: $cli"
     installed_unit=/etc/systemd/system/opsmesh.service
     unit_backup=$(mktemp /etc/opsmesh/.rollback-unit.XXXXXX)
