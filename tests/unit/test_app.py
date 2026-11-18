@@ -159,20 +159,48 @@ async def test_online_start_cannot_activate_a_failed_builtin_dependency(
 
 @pytest.mark.skipif(os.name != "posix", reason="Linux local control socket")
 @pytest.mark.anyio
-async def test_online_control_socket_uses_the_running_host(host_dir):
+@pytest.mark.parametrize("custom_runtime", [False, True])
+async def test_online_control_socket_uses_the_running_host(
+    host_dir, custom_runtime
+):
     module = "host_test_local_control"
     register(host_dir, module, "", enabled=True, autoload=True)
     async with (
         host.load_host(manifest(host_dir)) as current,
         current.driver.lifespan(),
     ):
-        async with serve_control(current):
+        runtime_dir = host_dir / "run" if custom_runtime else None
+        async with serve_control(current, runtime_dir=runtime_dir):
             root = current.storage.root
-            stopped = (await send_control(root, "stop", module))["result"]
-            resumed = (await send_control(root, "start", module))["result"]
+            socket = (runtime_dir or root / "control") / "host.sock"
+            assert socket.is_socket()
+            with pytest.raises(BlockingIOError):
+                async with serve_control(current, runtime_dir=runtime_dir):
+                    pytest.fail(
+                        "A second listener acquired the runtime directory"
+                    )
+            stopped = (
+                await send_control(
+                    root, "stop", module, runtime_dir=runtime_dir
+                )
+            )["result"]
+            resumed = (
+                await send_control(
+                    root, "start", module, runtime_dir=runtime_dir
+                )
+            )["result"]
             assert stopped["state"] == "stopped"
             assert resumed["state"] == "ready"
             assert stopped["pid"] == resumed["pid"] == os.getpid()
+        assert not socket.exists()
+
+
+def test_manifest_resolves_runtime_directory(host_dir):
+    path = host_dir / "host.json"
+    path.write_text('{"data_dir":"./state","runtime_dir":"./run"}')
+    settings = host.load_manifest(path)
+    assert settings.data_dir == host_dir / "state"
+    assert settings.runtime_dir == host_dir / "run"
 
 
 @pytest.mark.anyio
@@ -184,7 +212,7 @@ async def test_service_never_reports_ready_when_local_control_fails_to_bind(
     notifications = []
 
     @asynccontextmanager
-    async def unavailable_control(current):
+    async def unavailable_control(current, *, runtime_dir):
         assert current.driver.started
         raise OSError("cannot bind control socket")
         yield

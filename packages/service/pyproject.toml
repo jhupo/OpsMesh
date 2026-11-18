@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-service"
-version = "0.5.8"
+version = "0.5.9"
 description = "OpsMesh host service and local administration CLI"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["opsmesh==0.5.8"]
+dependencies = ["opsmesh==0.5.9"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: POSIX :: Linux",

@@ -21,8 +21,8 @@ separate, explicit provisioning step described in the plugin README.
 
 ## Package boundaries
 
-- `src/opsmesh` owns the framework, driver, host and CLI. It must start with an empty plugin manifest and without official plugin dependencies.
-- `packages/service` owns process startup, the CLI, and the plugin catalog. The other `packages/*` projects are plugins. Both may use framework interfaces; the framework must not import the service or a plugin.
+- `src/opsmesh` owns the framework and Driver. It must be usable without the service distribution or any official plugins.
+- `packages/service` installs `opsmesh.service` and owns process startup, the CLI, and the plugin catalog. The service must be able to start with an empty plugin catalog. The other `packages/*` projects are plugins. Both may use framework interfaces; the framework must not import the service or a plugin.
 - `require()` expresses plugin loading and lifecycle dependencies. `Depends()` resolves invocation parameters and scoped resources.
 - Agent plugins define native SDK objects. Execution adapts native runs and observation; it does not own business sessions or usage ledgers.
 - The installer manages only the framework service. Plugin installation and database migrations are explicit administrative actions.

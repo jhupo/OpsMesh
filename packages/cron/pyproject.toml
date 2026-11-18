@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-cron"
-version = "0.5.8"
+version = "0.5.9"
 description = "Persistent APScheduler events for OpsMesh plugins"
 readme = "README.md"
 license = "MIT"

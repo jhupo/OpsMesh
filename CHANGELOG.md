@@ -2,6 +2,15 @@
 
 Changes are recorded here before publication. A section in this file is not proof that a matching release has been published.
 
+## 0.5.9 — 2026-11-18
+
+- Install the Linux CLI in `/usr/local/bin` and keep versioned program and
+  plugin code separate from configuration and persistent state. Preserve
+  the installed systemd unit when an upgrade or rollback fails.
+- Support an explicit service runtime directory. New systemd and Docker
+  deployments use `/run/opsmesh/host.sock`; existing data and plugin settings
+  are retained when upgrading.
+
 ## 0.5.8 — 2026-11-18
 
 - Split the process, CLI, local control socket, and SQLite plugin catalog

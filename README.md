@@ -8,7 +8,8 @@ OpsMesh 是 Python 事件框架与插件宿主。框架提供事件、消息、M
 
 | 发行包 | 导入模块 | 内容 |
 |---|---|---|
-| `opsmesh` | `opsmesh` | 框架、驱动接口、宿主和命令行 |
+| `opsmesh` | `opsmesh` | 事件分发、Driver、依赖注入与插件生命周期 |
+| [opsmesh-service](packages/service/README.md) | `opsmesh.service` | 官方宿主进程、`opsmesh` CLI、本机控制及 SQLite 插件目录 |
 | [opsmesh-channels](packages/channels/README.md) | `opsmesh.plugins.channels` | FastAPI 入口、QQ Gateway、钉钉 Stream 与统一用户上下文 |
 | [opsmesh-execution](packages/execution/README.md) | `opsmesh.plugins.execution` | 原生 Runner、流清理、插件回调与可选 Langfuse 追踪 |
 | [opsmesh-filesystem](packages/filesystem/README.md) | `opsmesh.plugins.filesystem` | 插件目录、文件操作与 ZIP 导入导出 |
@@ -29,7 +30,7 @@ sudo bash install.sh \
 journalctl -u opsmesh -f
 ```
 
-安装器部署框架服务及其自带 Python 运行环境，首次安装生成基础配置，升级保留现有配置、插件与数据。插件通过宿主 CLI 单独登记。HTTP 服务由 channels 插件提供，数据库迁移使用 database 插件的维护命令。
+安装器部署框架服务及其自带 Python 运行环境，首次安装生成基础配置。升级时默认保留现有配置、插件文件和数据，不会升级已登记的插件。使用插件的部署应先确认新版宿主和插件兼容，再按维护窗口切换。HTTP 服务由 channels 插件提供，数据库迁移使用 database 插件的维护命令。
 
 需要插件时，另行部署同版本、同架构的插件运行包，通过宿主 CLI 登记模块、配置和启用状态后启动。插件运行包携带插件源码、资源和额外 Python 依赖，服务器无需 pip。完整步骤见 [Linux 部署](docs/linux-deployment.md)。
 

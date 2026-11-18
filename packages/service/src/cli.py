@@ -189,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                         manifest.data_dir,
                         args.online_plugin_action,
                         args.module,
+                        runtime_dir=manifest.runtime_dir,
                     )
                 )
             except ConnectionError as error:

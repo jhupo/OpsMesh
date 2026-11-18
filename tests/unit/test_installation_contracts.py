@@ -19,10 +19,14 @@ def test_default_manifest_needs_no_plugins_or_credentials():
         (ROOT / "deploy/host.example.json").read_text(encoding="utf-8")
     )
     assert set(manifest.model_dump()) == {
-        "environment", "framework", "data_dir"
+        "environment",
+        "framework",
+        "data_dir",
+        "runtime_dir",
     }
     assert manifest.environment == "production"
     assert manifest.data_dir == Path("/var/lib/opsmesh")
+    assert manifest.runtime_dir == Path("/run/opsmesh")
 
 
 def test_installation_validation_refuses_non_disposable_hosts(monkeypatch):
@@ -39,7 +43,7 @@ def test_installer_probe_archive_retains_payload_and_checksums(
     script = runpy.run_path(str(ROOT / "scripts/test_installation.py"))
     archive = tmp_path / "opsmesh-0.1.0-linux-x86_64.tar.gz"
     root = archive.name.removesuffix(".tar.gz")
-    service = b"[Service]\nExecStart=/opt/opsmesh/current/opsmesh\n"
+    service = b"[Service]\nExecStart=/usr/local/bin/opsmesh\n"
     contents = {
         "opsmesh": b"executable",
         "deploy/systemd/opsmesh.service": service,
@@ -69,6 +73,10 @@ def test_installer_probe_archive_retains_payload_and_checksums(
         ).read()
         if fail_start:
             assert b"Type=notify" in actual
-            assert b"ExecStart=/usr/bin/false" in actual
+            assert b"ExecStartPre=/usr/bin/false" in actual
+            assert (
+                b"ExecStart=/usr/local/bin/opsmesh "
+                b"--manifest /etc/opsmesh/host.json" in actual
+            )
         else:
             assert actual == service

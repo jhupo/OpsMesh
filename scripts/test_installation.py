@@ -14,6 +14,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CURRENT = Path("/usr/local/lib/opsmesh/current")
+COMMAND = Path("/usr/local/bin/opsmesh")
 
 
 def run(*arguments: str, success: bool = True) -> subprocess.CompletedProcess:
@@ -41,7 +43,9 @@ def changed_archive(
                 "/deploy/systemd/opsmesh.service"
             ):
                 content = (
-                    b"[Service]\nType=notify\nExecStart=/usr/bin/false\n"
+                    b"[Service]\nType=notify\nExecStartPre=/usr/bin/false\n"
+                    b"ExecStart=/usr/local/bin/opsmesh "
+                    b"--manifest /etc/opsmesh/host.json\n"
                     b"TimeoutStartSec=2\n"
                     b"[Install]\nWantedBy=multi-user.target\n"
                 )
@@ -93,6 +97,17 @@ def main() -> None:
         broken, broken_sum = changed_archive(
             archive, broken_directory, fail_start=True
         )
+        run("sudo", "install", "-m", "0755", "/usr/bin/true", str(COMMAND))
+        run(
+            *command,
+            "--archive",
+            str(archive),
+            "--checksums",
+            str(checksums),
+            success=False,
+        )
+        assert not COMMAND.is_symlink()
+        run("sudo", "rm", str(COMMAND))
         run(
             *command,
             "--archive",
@@ -101,7 +116,8 @@ def main() -> None:
             str(broken_sum),
             success=False,
         )
-        assert not Path("/opt/opsmesh/current").exists()
+        assert not CURRENT.is_symlink()
+        assert not COMMAND.is_symlink()
         assert not Path("/etc/systemd/system/opsmesh.service").exists()
         run(
             *command,
@@ -116,6 +132,10 @@ def main() -> None:
             )
         )
         assert "plugins" not in installed
+        assert installed["runtime_dir"] == "/run/opsmesh"
+        assert COMMAND.resolve() == (CURRENT / "opsmesh").resolve()
+        run("sudo", "test", "-S", "/run/opsmesh/host.sock")
+        run("opsmesh", "--version")
         run("systemctl", "is-active", "--quiet", "opsmesh")
         run(
             "sudo",
@@ -124,7 +144,7 @@ def main() -> None:
             "/etc/systemd/system/opsmesh.service",
         )
         run("sudo", "touch", "/var/lib/opsmesh/preserve-me")
-        original = Path("/opt/opsmesh/current").resolve()
+        original = CURRENT.resolve()
         changed, changed_sum = changed_archive(archive, temporary)
         run(
             *command,
@@ -137,9 +157,9 @@ def main() -> None:
             "--env-file",
             str(environment),
         )
-        assert Path("/opt/opsmesh/current").resolve() != original
+        assert CURRENT.resolve() != original
         run(*command, "--rollback")
-        assert Path("/opt/opsmesh/current").resolve() == original
+        assert CURRENT.resolve() == original
         run("sudo", "test", "-f", "/var/lib/opsmesh/preserve-me")
         run("sudo", "cmp", str(environment), "/etc/opsmesh/opsmesh.env")
         run("sudo", "cmp", str(config), "/etc/opsmesh/host.json")
@@ -155,14 +175,35 @@ def main() -> None:
             success=False,
         )
         run("systemctl", "is-active", "--quiet", "opsmesh")
-        assert Path("/opt/opsmesh/current").resolve() == original
+        assert CURRENT.resolve() == original
+        assert COMMAND.resolve() == original / "opsmesh"
         installed = json.loads(
             subprocess.check_output(
                 ["sudo", "cat", "/etc/opsmesh/host.json"], text=True, timeout=30
             )
         )
         assert installed["environment"] == "installation-test"
+        unit = Path("/etc/systemd/system/opsmesh.service")
+        live_unit = temporary / "live.service"
+        live_unit.write_bytes(unit.read_bytes() + b"\n# Site-local change\n")
+        run("sudo", "install", "-m", "0644", str(live_unit), str(unit))
+        run("sudo", "systemctl", "daemon-reload")
+        broken_digest = broken_sum.read_text().split()[0][:12]
+        broken_name = f"{archive.name[:-7]}-{broken_digest}"
+        broken_release = original.parent / broken_name
+        run(
+            "sudo",
+            "ln",
+            "-sfn",
+            str(broken_release),
+            str(CURRENT.with_name("previous")),
+        )
+        run(*command, "--rollback", success=False)
+        assert CURRENT.resolve() == original
+        run("sudo", "cmp", str(live_unit), str(unit))
+        run("systemctl", "is-active", "--quiet", "opsmesh")
         run("sudo", "systemctl", "stop", "opsmesh")
+        assert not Path("/run/opsmesh").exists()
     print("Systemd installation checks passed")
 
 
