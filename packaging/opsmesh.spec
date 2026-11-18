@@ -13,9 +13,6 @@ from PyInstaller.utils.hooks import (
 )
 
 root = Path(SPECPATH).parent
-source_path = str(root / "src")
-service_path = str(root / "packages" / "service" / "src")
-sys.path.insert(0, source_path)
 sys.path.insert(0, str(root / "scripts"))
 from release_artifacts import runtime_dependencies
 
@@ -65,7 +62,7 @@ for name in sorted(sys.stdlib_module_names - excluded_stdlib):
 
 analysis = Analysis(
     [str(root / "packaging" / "entrypoint.py")],
-    pathex=[source_path, service_path],
+    pathex=[],
     binaries=[],
     datas=host_data,
     hiddenimports=host_modules + standard_library,

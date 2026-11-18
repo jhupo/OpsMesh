@@ -8,12 +8,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from opsmesh_service.host import _data_lock
-
 from opsmesh.plugins.filesystem._files import (
     _publish_new_directory,
     write_bytes,
 )
+from opsmesh.service.host import _data_lock
 
 KINDS = ("data", "cache", "config")
 JOURNAL = ".plugin-path-migration.json"

@@ -11,18 +11,18 @@ from importlib.metadata import entry_points
 
 import anyio
 import pytest
-from opsmesh_service import host, service
-from opsmesh_service.catalog import (
+from pydantic import ValidationError
+
+from opsmesh.plugins import get_available_plugin_names, get_plugin, registry
+from opsmesh.plugins.model import PluginStatus
+from opsmesh.service import host, service
+from opsmesh.service.catalog import (
     SCHEMA_VERSION,
     PluginProtectedError,
     PluginRecord,
     PluginStorage,
 )
-from opsmesh_service.control import _dispatch, send_control, serve_control
-from pydantic import ValidationError
-
-from opsmesh.plugins import get_available_plugin_names, get_plugin, registry
-from opsmesh.plugins.model import PluginStatus
+from opsmesh.service.control import _dispatch, send_control, serve_control
 
 
 @pytest.fixture
@@ -176,12 +176,11 @@ async def test_online_control_socket_uses_the_running_host(host_dir):
 
 
 @pytest.mark.anyio
-async def test_service_keeps_host_ready_when_local_control_fails_to_bind(
+async def test_service_never_reports_ready_when_local_control_fails_to_bind(
     host_dir, monkeypatch
 ):
     module = "host_test_service"
     register(host_dir, module, "", enabled=True, autoload=True)
-    stop = anyio.Event()
     notifications = []
 
     @asynccontextmanager
@@ -190,18 +189,17 @@ async def test_service_keeps_host_ready_when_local_control_fails_to_bind(
         raise OSError("cannot bind control socket")
         yield
 
-    def notify(state):
-        notifications.append(state)
-        assert get_plugin(module).ready
-        if state == "READY=1":
-            stop.set()
-
     monkeypatch.setattr(service, "serve_control", unavailable_control)
-    monkeypatch.setattr(service, "_notify", notify)
-    with anyio.fail_after(2):
-        await service.serve(manifest(host_dir), stop_event=stop)
-    assert notifications == ["READY=1", "STOPPING=1"]
+    monkeypatch.setattr(service, "_notify", notifications.append)
+    settings = manifest(host_dir)
+    with pytest.raises(OSError, match="cannot bind control socket"):
+        await service.serve(settings)
+    assert notifications == []
     assert get_plugin(module) is None
+    with host._data_lock(settings.data_dir):
+        pass
+    async with host.load_host(settings):
+        pass
 
 
 @pytest.mark.anyio
@@ -362,7 +360,7 @@ async def test_invalid_dependency_configuration_can_be_repaired(host_dir):
 
 
 def test_cli_imports_configuration_and_dependencies_from_one_file(host_dir):
-    from opsmesh_service.cli import main
+    from opsmesh.service.cli import main
 
     source = host_dir / "host_test_configured.py"
     source.write_text("value = 1\n", encoding="utf-8")
@@ -455,7 +453,7 @@ async def test_declared_file_initializes_once_and_can_be_reimported(host_dir):
 import asyncio
 import sys
 from pathlib import Path
-from opsmesh_service import host as app
+from opsmesh.service import host as app
 from opsmesh.plugins import get_available_plugin_names, get_plugin
 sys.path.insert(0, sys.argv[1])
 app.entry_points = lambda **kwargs: ()
@@ -575,7 +573,7 @@ async def test_config_file_rejects_paths_outside_plugin(host_dir, filename):
 
 
 def test_cli_check_imports_file_without_starting_resources(host_dir):
-    from opsmesh_service.cli import main
+    from opsmesh.service.cli import main
 
     source = FILE_CONFIG_PLUGIN.replace(
         "observed.append(get_plugin_config(Settings).label)",
@@ -637,7 +635,7 @@ async def test_configuration_rejects_symlink_to_outside_plugin(host_dir):
 
 
 def test_cli_import_config_uses_declared_file(host_dir):
-    from opsmesh_service.cli import main
+    from opsmesh.service.cli import main
 
     name = "host_test_cli_file"
     register(host_dir, name, FILE_CONFIG_PLUGIN, config={"label": "old"})

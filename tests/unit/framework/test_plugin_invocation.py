@@ -251,7 +251,7 @@ async def test_false_matcher_releases_owner_before_event_stack(
     try:
         async with AsyncExitStack() as event_stack:
             await check_and_run_matcher(
-                matcher, *conversation, {}, stack=event_stack
+                matcher, conversation, {}, stack=event_stack
             )
             assert not caller.calls and closed == [caller]
     finally:
@@ -281,7 +281,7 @@ async def test_cancelled_matcher_check_closes_with_correct_owner(
     )
     try:
         with pytest.raises(asyncio.CancelledError):
-            await execution.check_and_run_matcher(matcher, *conversation, {})
+            await execution.check_and_run_matcher(matcher, conversation, {})
         assert closed == [caller] and not caller.calls
     finally:
         matcher.destroy()
@@ -327,7 +327,7 @@ async def test_cancelled_matcher_finishes_async_finalizers(
             async with AsyncExitStack() as resources:
                 await execution.check_and_run_matcher(
                     matcher,
-                    *conversation,
+                    conversation,
                     {},
                     stack=resources if phase == "transferred" else None,
                 )
@@ -365,7 +365,7 @@ async def test_repeated_drain_preserves_pending_matcher_finalizer(
         source=MatcherSource(plugin_id=caller.id_, module_name="caller")
     )
     request = asyncio.create_task(
-        execution.check_and_run_matcher(matcher, *conversation, {})
+        execution.check_and_run_matcher(matcher, conversation, {})
     )
     try:
         await checking.wait()
@@ -411,7 +411,7 @@ async def test_interrupted_finalizer_keeps_admission_after_external_cancel(
         source=MatcherSource(plugin_id=caller.id_, module_name="caller")
     )
     request = asyncio.create_task(
-        execution.check_and_run_matcher(matcher, *conversation, {})
+        execution.check_and_run_matcher(matcher, conversation, {})
     )
     try:
         await checking.wait()

@@ -14,7 +14,7 @@
 | Plugin | 当前模块、运行状态、依赖、活动配置与注册归属 |
 | 外部管理插件 | 安装、下载、解压、发布、删除、权限检查和管理接口 |
 
-数据库插件服务业务 PostgreSQL，filesystem 提供普通文件操作。`opsmesh_service.catalog` 使用标准库 SQLite 保存宿主记录；core 的 `opsmesh.plugins.config` 只负责配置模型、读取和校验，不依赖 SQLite。
+数据库插件服务业务 PostgreSQL，filesystem 提供普通文件操作。`opsmesh.service.catalog` 使用标准库 SQLite 保存宿主记录；core 的 `opsmesh.plugins.config` 只负责配置模型、读取和校验，不依赖 SQLite。
 
 ## 宿主配置
 
@@ -81,7 +81,7 @@ save_config 不修改活动配置、不重启插件。apply_config 对停止的�
 
 ## 管理入口
 
-Host 连接存储与现有 PluginManager/Lifespan，提供登记、保护、配置和启停操作。部署服务从 `opsmesh_service.host.load_host()` 上下文取得 Host，再交给本机控制入口。只嵌入框架的应用可自行装配 Driver、插件及配置，不需要 Host 或 SQLite。
+Host 连接存储与现有 PluginManager/Lifespan，提供登记、保护、配置和启停操作。部署服务从 `opsmesh.service.host.load_host()` 上下文取得 Host，再交给本机控制入口。只嵌入框架的应用可自行装配 Driver、插件及配置，不需要 Host 或 SQLite。
 
 register 只登记已存在模块，不复制文件或执行代码。enable 保存 enabled=true、autoload=true；运行中同时启动。disable 预检消费者后保存 enabled=false，再停止资源。临时 start_plugin/stop_plugin 不修改持久值。
 

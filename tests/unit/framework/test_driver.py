@@ -1,23 +1,9 @@
 import pytest
 
 import opsmesh as framework
-from opsmesh import adapters, config
+from opsmesh import config
 from opsmesh.drivers import Driver
 from opsmesh.plugins.activation import Lifespan
-
-
-class Adapter(adapters.Adapter):
-    @classmethod
-    def get_name(cls):
-        return "test"
-
-    async def _call(self, channel, api, **data):
-        raise NotImplementedError
-
-
-class Channel(adapters.Channel):
-    async def send(self, event, message, **kwargs):
-        raise NotImplementedError
 
 
 def new_runtime():
@@ -39,38 +25,6 @@ def test_framework_has_no_process_global_driver_api():
         assert not hasattr(drivers, name)
 
 
-def test_adapter_registration_is_owned_by_each_driver():
-    first, second = new_runtime(), new_runtime()
-    first.register_adapter(Adapter)
-    second.register_adapter(Adapter)
-    assert (
-        first.adapters["test"].driver,
-        second.adapters["test"].driver,
-    ) == (
-        first,
-        second,
-    )
-
-
-def test_adapter_lookup_returns_a_copy():
-    driver = new_runtime()
-    driver.register_adapter(Adapter)
-    driver.adapters.clear()
-    assert driver.get_adapter(Adapter).driver is driver
-
-
-def test_channel_lookup_returns_a_snapshot():
-    driver = new_runtime()
-    driver.register_adapter(Adapter)
-    channel = Channel(driver.adapters["test"], "snapshot")
-    driver.connect(channel)
-
-    driver.channels.clear()
-
-    assert driver.get_channel("snapshot") is channel
-    assert driver.channels.keys() == {"snapshot"}
-
-
 def test_driver_configuration_is_independent_of_callers():
     settings = config.Config(command_start=frozenset({"!"}))
     driver = Driver(config.Env(environment="staging"), settings)
@@ -80,47 +34,34 @@ def test_driver_configuration_is_independent_of_callers():
     assert not hasattr(driver.config, "plugin_configs")
 
 
-def test_duplicate_registration_preserves_existing_adapter():
+def test_driver_does_not_own_channel_connections():
     driver = new_runtime()
-    adapter = driver.register_adapter(Adapter)
-    with pytest.raises(ValueError):
-        driver.register_adapter(Adapter)
-    assert driver.get_adapter("test") is adapter
+    for name in (
+        "adapters",
+        "channels",
+        "_adapters",
+        "_channels",
+        "register_adapter",
+        "get_adapter",
+        "get_channel",
+        "connect",
+        "disconnect",
+        "on_connect",
+        "on_disconnect",
+    ):
+        assert not hasattr(driver, name), name
 
 
-def test_adapter_connections_are_read_only_and_isolated():
-    class OtherAdapter(Adapter):
-        @classmethod
-        def get_name(cls):
-            return "other"
-
+@pytest.mark.anyio
+async def test_driver_task_group_is_scoped_to_its_lifespan():
     driver = new_runtime()
-    adapter = driver.register_adapter(Adapter)
-    other = driver.register_adapter(OtherAdapter)
-    channel = Channel(adapter, "first")
-    adapter.connect(channel)
-    other.connect(Channel(other, "second"))
-    assert list(adapter.channels) == ["first"]
-    with pytest.raises(TypeError):
-        adapter.channels["injected"] = channel
-    adapter.disconnect(channel)
-    assert not adapter.channels
-    assert list(driver.channels) == ["second"]
+    with pytest.raises(RuntimeError, match="Lifespan not started"):
+        _ = driver.task_group
 
+    async with driver.lifespan():
+        assert driver.started
+        assert driver.task_group is driver._lifespan.task_group
 
-def test_disconnect_cannot_remove_another_connection_with_same_id():
-    driver = new_runtime()
-    adapter = driver.register_adapter(Adapter)
-    channel = Channel(adapter, "first")
-    adapter.connect(channel)
-    with pytest.raises(ValueError):
-        driver.disconnect(Channel(adapter, "first"))
-    assert driver.get_channel("first") is channel
-
-
-def test_missing_connection_never_falls_back_to_another():
-    driver = new_runtime()
-    adapter = driver.register_adapter(Adapter)
-    adapter.connect(Channel(adapter, "existing"))
-    with pytest.raises(KeyError):
-        driver.get_channel("missing")
+    assert not driver.started
+    with pytest.raises(RuntimeError, match="Lifespan not started"):
+        _ = driver.task_group

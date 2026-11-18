@@ -13,6 +13,7 @@ from opsmesh.config import Config, Env
 from opsmesh.dispatch.results import DispatchResult
 from opsmesh.drivers import Driver
 from opsmesh.plugins import registry
+from opsmesh.plugins.channels import get_event_channel
 from opsmesh.plugins.channels.qq import (
     GROUP_MESSAGE_CREATE,
     QQAdapter,
@@ -242,12 +243,14 @@ async def test_adapter_admits_gateway_event_once(monkeypatch, event_type):
     channel = declare(adapter, make_plugin())
     dispatched = []
 
-    async def fake_dispatch(channel_, event, **kwargs):
-        dispatched.append((channel_, event, kwargs["invocation_context"]))
+    async def fake_dispatch(event, **kwargs):
+        dispatched.append(
+            (get_event_channel(event), event, kwargs["invocation_context"])
+        )
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event",
+        "opsmesh.plugins.channels.channel.dispatch_event",
         fake_dispatch,
     )
     await adapter.driver.startup()

@@ -1,10 +1,7 @@
-from types import SimpleNamespace
-
 import pytest
 
-from opsmesh.adapters import Channel, Event
-from opsmesh.config import Config
 from opsmesh.drivers import Driver
+from opsmesh.events import Event
 from opsmesh.messages import Message, MessageSegment
 
 
@@ -28,11 +25,6 @@ class TextMessage(Message[TextSegment]):
     @staticmethod
     def _construct(message):
         yield TextSegment("text", {"text": message})
-
-
-class MemoryChannel(Channel):
-    async def send(self, event, message, **kwargs):
-        return None
 
 
 class MemoryEvent(Event):
@@ -70,8 +62,4 @@ def runtime_type():
 
 @pytest.fixture
 def conversation():
-    channel = MemoryChannel(
-        SimpleNamespace(config=Config(), get_name=lambda: "memory"),
-        "connection",
-    )
-    return channel, MemoryEvent()
+    return MemoryEvent()

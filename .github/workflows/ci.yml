@@ -44,13 +44,14 @@ jobs:
           /tmp/opsmesh-core-check/bin/pip install -c requirements.lock dist/python/opsmesh-*.whl
           test ! -e /tmp/opsmesh-core-check/bin/opsmesh
           cd /tmp
-          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("opsmesh_service") is None; assert importlib.util.find_spec("uvicorn") is None; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh.plugins.channels") is None'
+          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("opsmesh.service") is None; assert importlib.util.find_spec("uvicorn") is None; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh.plugins.channels") is None'
       - name: Run the service wheel without plugins
         run: |
           python -m venv /tmp/opsmesh-service-check
           /tmp/opsmesh-service-check/bin/pip install -c requirements.lock dist/python/opsmesh-*.whl dist/python/opsmesh_service-*.whl
           /tmp/opsmesh-service-check/bin/opsmesh --version
-          /tmp/opsmesh-service-check/bin/opsmesh --manifest deploy/host.example.json --check
+          printf '%s\n' '{"data_dir":"./data"}' > /tmp/opsmesh-service-check/host.json
+          /tmp/opsmesh-service-check/bin/opsmesh --manifest /tmp/opsmesh-service-check/host.json --check
       - name: Install each plugin wheel with its declared dependencies
         run: |
           for plugin in channels cron database execution filesystem; do

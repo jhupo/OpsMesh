@@ -10,15 +10,15 @@ OpsMesh 提供事件、消息、规则、权限、依赖注入和插件宿主。
 
 ```text
 src/opsmesh/
-├── drivers/                       # Driver 运行时、适配器索引和生命周期编排
-├── adapters/                      # Channel / Adapter / Event
+├── drivers/                       # 框架配置、任务组和插件生命周期入口
+├── events.py                      # 不依赖传输的 Event 契约
 ├── dispatch/、matchers/、messages/
 ├── dependencies/                  # Dependent 与 Context
 ├── permissions/、rules/
 ├── plugins/                       # 加载、归属、调用持有与配置模型
 └── config.py
 packages/
-├── service/src/opsmesh_service/   # 独立服务、CLI、本机控制和 SQLite 插件目录
+├── service/src/   # 独立服务、CLI、本机控制和 SQLite 插件目录
 ├── channels/src/                  # opsmesh.plugins.channels
 ├── execution/src/                 # opsmesh.plugins.execution
 ├── database/src/                  # opsmesh.plugins.database
@@ -40,15 +40,15 @@ tools/                            # 离线数据维护
 | 组件 | 负责 | 调用者负责 |
 |---|---|---|
 | 核心 | 插件加载、依赖、运行时准入、调用排空、事件分发 | 进程管理、下载和安装包、配置目录、业务数据、业务策略 |
-| Driver | 当前运行时的适配器注册、逻辑连接索引、任务组和 `Lifespan` 阶段协调；当前是具体运行时对象，不是抽象协议类 | 网络服务与协议实现、包安装和代码版本切换 |
-| channels | SDK 协议认证、协议收发、事件转换、附件传输与平台群操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
+| Driver | 框架配置、任务组和插件生命周期入口 | 协议适配器、连接索引、网络收发、包安装和代码版本切换 |
+| channels | 协议适配器、按消费插件归属的连接、接收与排空、SDK 协议认证、事件转换、回复及平台操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
 | execution | 原生 Runner、流清理、SDK 回调与 Trace | Agent/MCP/沙箱构造、Session、审批、用量存储 |
 | database | PostgreSQL engine、会话工厂、事务和插件迁移 | ORM 模型、业务查询与事务边界 |
 | filesystem | 插件文件空间、文件操作、ZIP 与原子发布 | 技能/工具/Agent 元数据、资源索引与安装 |
 
 核心使用 Python 与框架依赖，SDK、SQLAlchemy、FastAPI 和机器人 SDK 由相应插件引入。execution 可独立使用，不依赖 database、filesystem 或 channels。
 
-部署命令由 `opsmesh_service.cli:main` 提供。`opsmesh_service.service.serve()` 负责信号、systemd 通知与本机控制；控制套接字启动失败时目前记录警告，宿主继续运行。`opsmesh_service.host.load_host()` 装配 Driver、独占数据目录并管理插件登记和配置。嵌入方可直接使用 `driver.lifespan()`，不需要安装服务包。
+部署命令由 `opsmesh.service.cli:main` 提供。`opsmesh.service.service.serve()` 负责信号、systemd 通知与本机控制；控制套接字绑定成功后服务才报告就绪。`opsmesh.service.host.load_host()` 装配 Driver、独占数据目录并管理插件登记和配置。嵌入方可直接使用 `driver.lifespan()`，不需要安装服务包。
 
 `require()` 确定加载依赖，返回插件模块；`Depends()` 确定一次处理的参数和资源作用域。原生类型通过正常 Python 导入使用。
 
@@ -71,16 +71,16 @@ host.json 保存 framework、environment 和 data_dir。宿主的 SQLite 保存�
 ```text
 HTTP / QQ / 钉钉
 → SDK 协议认证、统一消息协议解析、请求 user 资料转换
-→ Event + Message + 调用者 Context
+→ Event + Message + 调用者 Context + 可选回复函数
 → Framework Permission / Rule / Matcher / Dependent
 → on_message / on_command 处理器
 → Matcher.send / Matcher.finish
-→ 原 Channel 编码回复
+→ channels 在原连接编码回复
 ```
 
 channels 定义统一的 `POST /plugins/{plugin_id}/messages` 消息协议。调用者发送 `MessageRequest`，channels 读取正文 `user` 资料或 SDK 平台身份、校验文本/附件、构造 Framework Event/Message，然后只分发已声明的 `on_message/on_command` Matcher。处理器不依赖 Python `return` 作为回复，使用 `Matcher.send()`、`Matcher.finish()`、`Matcher.pause()` 和 `Matcher.reject()`；channels 再按 HTTP、QQ 或钉钉协议编码消息。会话、知识库和计划管理通过命令或消息处理器进入，插件不为每个业务操作定义 REST 路由。协议约定见[通道与执行回调](channels-and-callbacks.md)及[多模态消息](multimodal-messages.md)。
 
-框架仍保留通道内部健康检查和明确的非消息管理路由能力，但这类路由不承载智能体会话、知识库或 cron 业务。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
+通道内部健康检查和非消息路由属于 channels，不在框架中。处理器返回值不是通用回复契约；需要给调用方返回结构化信息时，由 channels 在消息发送协议中编码，不让业务处理器返回 FastAPI Response。
 
 HTTP 一次响应承载多条有序消息。普通 send 表示一条完整消息；模型增量通过 channels 的输出操作按 message_id 关联，HTTP SSE 展示增量，机器人默认聚合后发送。非流式回复先在依赖有效期内物化发送数据，清理成功后返回；流式持有资源直到消费和清理完成，再发送请求完成标记。finish 仅结束当前 Matcher，不直接结束 HTTP。结构化结果作为出站 data 段提供，机器人呈现同一消息的可读内容。
 
@@ -92,7 +92,9 @@ conversation_id 是通道对话区分符，channels 结合连接、对话类型�
 
 channels.UserContext 是冻结的 id、name、groups、roles，集合使用 frozenset。Context() 注入原对象；HTTP 资料只来自正文 `user`，不代表已经认证，业务认证由消费插件决定。会话 ID、执行 ID、数据库及 MCP 客户端由调用插件单独管理。Framework permissions.User 是权限匹配器。
 
-Driver 管理框架容器与逻辑连接；Adapter 实现协议；Channel 表示具体账号或逻辑端点。send/call 由 Channel/Adapter 提供。API 持有本地 HTTP 监听，QQ 持有官方 Gateway WebSocket，钉钉持有官方 Stream 连接。
+`dispatch_event(event, config=…, reply=…, invocation_context=…)` 接收通用事件、可选框架配置、可选异步回复函数和调用上下文；框架不查找传输、连接或适配器。`Matcher.send()` 调用本次分发绑定的回复函数，没有回复能力的事件不能发送。通用会话隔离使用来源方提供的 `Event.get_session_id()`，无需把连接对象交给框架。
+
+`Adapter`、`Channel`、连接查询和连接级操作均归 channels。每个协议适配器保有按「消费插件 ID、连接名」索引的已准备连接；可用性来自连接本身，不维护第二份在线表。API 持有本地 HTTP 监听，QQ 持有 Gateway WebSocket，钉钉持有 Stream 连接。只需发出事件的插件（例如 cron）直接分发，不构造虚拟通道，也不依赖 channels。旧的核心通道 API 不保留兼容层。
 
 ## 调用与资源生命周期
 
@@ -146,7 +148,7 @@ channels 根据这些值自动创建所属机器人的连接，使用方不重�
 
 HTTP、QQ、钉钉连接统一由消费插件的 `dependencies.channels` 声明。HTTP 使用
 `api.<name>` 配置监听参数，channels 自动收集该消费插件的框架 Matcher。HTTP
-请求通过固定的受信用户请求头转换为 `UserContext`；channels 不维护用户目录、token
+请求正文的 `user` 转换为 `UserContext`，但不代表认证结果；channels 不维护用户目录、token
 列表或业务权限。
 机器人 SDK 认证仍属于传输职责；平台群 ID 保留在 Event，不自动映射到业务用户组。
 连接和调用准入随所属插件启停，业务权限由调用插件处理。详见

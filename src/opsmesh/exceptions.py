@@ -1,4 +1,4 @@
-"""Exceptions used by framework runtime and protocol adapters.
+"""Exceptions used by the framework runtime.
 
 Some exceptions control internal execution and are handled by the framework.
 
@@ -9,18 +9,12 @@ FrameworkException
 |   ├── IgnoredException
 |   ├── SkippedException
 |   |   └── TypeMisMatch
-|   ├── MockCallException
 |   └── StopPropagation
 ├── MatcherException
 |   ├── PausedException
 |   ├── RejectedException
 |   └── FinishedException
-├── AdapterException
-|   ├── NoLogException
-|   ├── OperationNotAvailable
-|   ├── NetworkError
-|   └── ActionFailed
-└── DriverException
+└── NoLogException
 ```
 """
 
@@ -102,22 +96,6 @@ class TypeMisMatch(SkippedException):
         )
 
 
-class MockCallException(ProcessException):
-    """Override an operation's execution or return value with a supplied result.
-
-    Operation hooks may raise this exception.
-
-    Args:
-        result: The replacement return value.
-    """
-
-    def __init__(self, result: Any):
-        self.result = result
-
-    def __repr__(self) -> str:
-        return f"MockCallException(result={self.result!r})"
-
-
 class StopPropagation(ProcessException):
     """Stop propagation of the current event to lower-priority matchers.
 
@@ -188,41 +166,8 @@ class FinishedException(MatcherException):
     """
 
 
-# Adapter Exceptions
-class AdapterException(FrameworkException):
-    """Base class for protocol-specific adapter exceptions.
-
-    Args:
-        adapter_name: The adapter identifier.
-    """
-
-    def __init__(self, adapter_name: str, *args: object) -> None:
-        super().__init__(*args)
-        self.adapter_name: str = adapter_name
-
-
-class NoLogException(AdapterException):
+class NoLogException(FrameworkException):
     """Process the current event without emitting its normal event log.
 
     Event.get_log_string may raise this exception.
     """
-
-
-class OperationNotAvailable(AdapterException):
-    """An operation cannot run because its connection is unavailable."""
-
-
-class NetworkError(AdapterException):
-    """A network request failed.
-
-    Examples include invalid endpoints, missing responses, or error statuses.
-    """
-
-
-class ActionFailed(AdapterException):
-    """A request succeeded at the transport layer but the operation failed."""
-
-
-# Driver Exceptions
-class DriverException(FrameworkException):
-    """Base class for driver exceptions."""

@@ -1,105 +1,39 @@
-"""Framework configuration, logical connections and lifecycle ownership."""
+"""Framework configuration and lifecycle ownership."""
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, cast, overload
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
-from anyio import CancelScope, create_task_group
 from anyio.abc import TaskGroup
 
 from opsmesh.config import Config, Env
-from opsmesh.dependencies import Dependent
-from opsmesh.dependencies.params import (
-    ChannelParam,
-    DefaultParam,
-    DependParam,
-)
-from opsmesh.exceptions import SkippedException
 from opsmesh.plugins.activation import Lifespan
 from opsmesh.plugins.lifecycle import LIFESPAN_FUNC
-from opsmesh.typing import (
-    T_ConnectionHook,
-    T_DependencyCache,
-    T_DisconnectionHook,
-)
-from opsmesh.utils import flatten_exception_group, run_coro_with_catch
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Adapter, Channel
     from opsmesh.plugins.model import Plugin
-
-logger = logging.getLogger(__name__)
-A = TypeVar("A", bound="Adapter")
-
-CONNECTION_HOOK_PARAMS = [DependParam, ChannelParam, DefaultParam]
 
 
 class Driver:
     """Own protocol-independent framework driver state for one host process."""
 
-    _connection_hook: ClassVar[set[Dependent[Any]]] = set()
-    _disconnection_hook: ClassVar[set[Dependent[Any]]] = set()
-
     def __init__(self, env: Env, config: Config) -> None:
-        """Capture configuration and prepare empty logical registries."""
+        """Capture configuration and prepare the plugin lifecycle."""
         self.env: str = env.environment
         """The runtime environment name."""
         self.config: Config = config.model_copy(deep=True)
         """The runtime-owned deployment configuration snapshot."""
-        self._adapters: dict[str, Adapter] = {}
-        self._channels: dict[str, Channel] = {}
         self._lifespan = Lifespan(self)
 
     def __repr__(self) -> str:
-        return (
-            f"Driver(environment={self.env!r}, "
-            f"adapters={len(self._adapters)}, channels={len(self._channels)})"
-        )
-
-    @property
-    def adapters(self) -> dict[str, Adapter]:
-        """A copy of the adapters owned by this runtime instance."""
-        return self._adapters.copy()
-
-    @property
-    def channels(self) -> dict[str, Channel]:
-        """An independent snapshot of the currently connected channels."""
-        return self._channels.copy()
+        return f"Driver(environment={self.env!r})"
 
     @property
     def task_group(self) -> TaskGroup:
         """The task group active during the runtime lifespan."""
         return self._lifespan.task_group
-
-    def register_adapter(self, adapter: type[A], **kwargs: Any) -> A:
-        """Construct and register a protocol adapter exactly once."""
-        name = adapter.get_name()
-        if name in self._adapters:
-            raise ValueError(f'Adapter "{name}" is already registered')
-        instance = adapter(self, **kwargs)
-        self._adapters[name] = instance
-        return instance
-
-    @overload
-    def get_adapter(self, name: str) -> Adapter: ...
-
-    @overload
-    def get_adapter(self, name: type[A]) -> A: ...
-
-    def get_adapter(self, name: str | type[A]) -> Adapter | A:
-        """Find an adapter by protocol name or concrete adapter class."""
-        key = name if isinstance(name, str) else name.get_name()
-        adapter = self._adapters[key]
-        if not isinstance(name, str) and not isinstance(adapter, name):
-            raise TypeError(f'Adapter "{key}" has another implementation')
-        return cast(A, adapter)
-
-    def get_channel(self, connection_id: str) -> Channel:
-        """Find one connected endpoint by its explicit connection ID."""
-        return self._channels[connection_id]
 
     @property
     def started(self) -> bool:
@@ -156,84 +90,6 @@ class Driver:
     def on_stopping(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
         """Register work to drain before plugin resources are closed."""
         return self._lifespan.on_stopping(func)
-
-    @classmethod
-    def on_connect(cls, func: T_ConnectionHook) -> T_ConnectionHook:
-        """Register a callback for successful channel connections.
-
-        Hook arguments:
-
-        channel: The connected channel instance.
-        """
-        from opsmesh.plugins.registry import register_hook
-
-        return register_hook(cls._connection_hook, func, CONNECTION_HOOK_PARAMS)
-
-    @classmethod
-    def on_disconnect(cls, func: T_DisconnectionHook) -> T_DisconnectionHook:
-        """Register a callback for channel disconnections.
-
-        Hook arguments:
-
-        channel: The connected channel instance.
-        """
-        from opsmesh.plugins.registry import register_hook
-
-        return register_hook(
-            cls._disconnection_hook, func, CONNECTION_HOOK_PARAMS
-        )
-
-    def connect(self, channel: Channel) -> None:
-        """Register a channel after its connection succeeds."""
-        if channel.self_id in self._channels:
-            raise RuntimeError(
-                f"Duplicate channel connection with id {channel.self_id}"
-            )
-        self._channels[channel.self_id] = channel
-
-        if not self._connection_hook:
-            return
-
-        self.task_group.start_soon(
-            self._run_hooks, self._connection_hook, channel
-        )
-
-    def disconnect(self, channel: Channel) -> None:
-        """Unregister a channel after its connection closes."""
-        if self._channels.get(channel.self_id) is not channel:
-            raise ValueError(f"Channel {channel.self_id} is not connected")
-        del self._channels[channel.self_id]
-        if self._disconnection_hook:
-            self.task_group.start_soon(
-                self._run_hooks, self._disconnection_hook, channel
-            )
-
-    async def _run_hooks(
-        self, hooks: set[Dependent[Any]], channel: Channel
-    ) -> None:
-        dependency_cache: T_DependencyCache = {}
-        with CancelScope(shield=True):
-            try:
-                async with (
-                    AsyncExitStack() as stack,
-                    create_task_group() as task_group,
-                ):
-                    for hook in tuple(hooks):
-                        task_group.start_soon(
-                            run_coro_with_catch,
-                            hook(
-                                channel=channel,
-                                stack=stack,
-                                dependency_cache=dependency_cache,
-                            ),
-                            (SkippedException,),
-                        )
-            except* Exception as errors:
-                for error in flatten_exception_group(errors):
-                    logger.error(
-                        "Channel lifecycle hook failed",
-                        exc_info=(type(error), error, error.__traceback__),
-                    )
 
     def on_started(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
         """Register ingress startup after all plugins become ready."""

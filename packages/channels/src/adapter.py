@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
-from opsmesh.adapters import Adapter
 from opsmesh.drivers import Driver
 from opsmesh.plugins import get_current_plugin
 from opsmesh.plugins.model import Plugin
@@ -19,11 +18,10 @@ from .operations import UnsupportedOperation
 ChannelT = TypeVar("ChannelT", bound=Channel)
 
 
-class ChannelAdapter(Adapter, Generic[ChannelT]):
+class ChannelAdapter(ABC, Generic[ChannelT]):
     """Create connections for one protocol and authorize their operations.
 
-    Every adapter keeps the connections it prepared for the current
-    activation; the driver only indexes connections that are online.
+    The prepared connection table is the sole index for one protocol.
     """
 
     channel_type: type[ChannelT]
@@ -33,8 +31,14 @@ class ChannelAdapter(Adapter, Generic[ChannelT]):
 
     def __init__(self, driver: Driver) -> None:
         """Initialize the prepared connection table."""
-        super().__init__(driver)
+        self.driver = driver
         self._connections: dict[tuple[str, str], ChannelT] = {}
+
+    @classmethod
+    @abstractmethod
+    def get_name(cls) -> str:
+        """Return the protocol identifier."""
+        raise NotImplementedError
 
     @property
     def connections(self) -> tuple[ChannelT, ...]:
@@ -87,7 +91,7 @@ class ChannelAdapter(Adapter, Generic[ChannelT]):
             self.driver.on_started(channel.start)
             self.driver.on_quiescing(channel.quiesce)
             self.driver.on_shutdown(channel.close)
-        track_registration(lambda: self.forget(channel), owner)
+            track_registration(lambda: self.forget(channel))
         return channel
 
     def forget(self, channel: ChannelT) -> None:

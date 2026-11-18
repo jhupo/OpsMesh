@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 
+from opsmesh.config import Config
+from opsmesh.events import Event, Reply, _event_scope, _EventBinding
 from opsmesh.exceptions import (
     StopPropagation,
 )
@@ -18,7 +20,6 @@ from opsmesh.typing import (
 )
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Channel, Event
     from opsmesh.plugins.invocation import PluginCall
 
 from .processors import _apply_run_postprocessors, _apply_run_preprocessors
@@ -37,8 +38,7 @@ class _DispatchResources(AsyncExitStack):
 
 async def _check_matcher(
     Matcher: type[Matcher],
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     stack: AsyncExitStack | None = None,
     dependency_cache: T_DependencyCache | None = None,
@@ -51,7 +51,6 @@ async def _check_matcher(
 
     Args:
         Matcher: The matcher class to check.
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         stack: The asynchronous resource cleanup stack.
@@ -84,7 +83,7 @@ async def _check_matcher(
 
     try:
         if not await Matcher.check_perm(
-            channel, event, stack, dependency_cache, invocation_context
+            event, stack, dependency_cache, invocation_context
         ):
             logger.debug(f"Permission conditions not met for {Matcher}")
             return False
@@ -98,7 +97,7 @@ async def _check_matcher(
 
     try:
         if not await Matcher.check_rule(
-            channel, event, state, stack, dependency_cache, invocation_context
+            event, state, stack, dependency_cache, invocation_context
         ):
             logger.debug(f"Rule conditions not met for {Matcher}")
             return False
@@ -115,8 +114,7 @@ async def _check_matcher(
 
 async def _run_matcher(
     Matcher: type[Matcher],
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     stack: AsyncExitStack | None = None,
     dependency_cache: T_DependencyCache | None = None,
@@ -128,7 +126,6 @@ async def _run_matcher(
 
     Args:
         Matcher: The matcher class.
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         stack: The asynchronous resource cleanup stack.
@@ -148,7 +145,6 @@ async def _run_matcher(
     matcher = Matcher()
 
     if not await _apply_run_preprocessors(
-        channel=channel,
         event=event,
         state=state,
         matcher=matcher,
@@ -165,7 +161,7 @@ async def _run_matcher(
 
     try:
         await matcher.run(
-            channel, event, state, stack, dependency_cache, invocation_context
+            event, state, stack, dependency_cache, invocation_context
         )
         record_outcome("suspended" if matcher.suspended else "handled")
     except Exception as e:
@@ -177,7 +173,6 @@ async def _run_matcher(
         exception = e
 
     await _apply_run_postprocessors(
-        channel=channel,
         event=event,
         matcher=matcher,
         exception=exception,
@@ -192,27 +187,49 @@ async def _run_matcher(
 
 async def check_and_run_matcher(
     Matcher: type[Matcher],
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     stack: AsyncExitStack | None = None,
-    dependency_cache: T_DependencyCache | None = None,
     invocation_context: Any = None,
     *,
+    config: Config | None = None,
+    reply: Reply | None = None,
     admitted_call: "PluginCall | None" = None,
 ) -> None:
     """Check a matcher and execute it if eligible.
 
     Args:
         Matcher: The matcher class.
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         stack: The asynchronous resource cleanup stack.
-        dependency_cache: The event-scoped dependency cache.
         invocation_context: Trusted context supplied for this event only.
+        config: Framework settings for this event, or the defaults.
+        reply: Optional reply operation for this event.
         admitted_call: Explicit admission retained by the event transport.
     """
+    with _event_scope(config, reply) as binding:
+        await _check_and_run_matcher(
+            Matcher,
+            event,
+            state,
+            stack,
+            invocation_context,
+            binding=binding,
+            admitted_call=admitted_call,
+        )
+
+
+async def _check_and_run_matcher(
+    Matcher: type[Matcher],
+    event: Event,
+    state: T_State,
+    stack: AsyncExitStack | None,
+    invocation_context: Any,
+    *,
+    binding: _EventBinding,
+    admitted_call: "PluginCall | None",
+) -> None:
     from opsmesh.plugins.invocation import (
         PluginUnavailable,
         hold_continuation,
@@ -236,7 +253,11 @@ async def check_and_run_matcher(
         return
 
     async def close_owned(exc_type=None, error=None, traceback=None):
-        with plugin_scope(plugin), invocation_scope(call):
+        with (
+            binding.bind(),
+            plugin_scope(plugin),
+            invocation_scope(call),
+        ):
             suppressed = await owned_stack.__aexit__(exc_type, error, traceback)
             await admission.aclose()
             return suppressed
@@ -245,7 +266,6 @@ async def check_and_run_matcher(
         try:
             matches = await _check_matcher(
                 Matcher=Matcher,
-                channel=channel,
                 event=event,
                 state=state,
                 stack=owned_stack,
@@ -262,7 +282,6 @@ async def check_and_run_matcher(
         try:
             await _run_matcher(
                 Matcher=Matcher,
-                channel=channel,
                 event=event,
                 state=state,
                 stack=owned_stack,

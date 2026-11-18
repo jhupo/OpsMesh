@@ -86,7 +86,7 @@ QQ 使用 `dependencies.channels.qq.<连接名称>`，账号字段为 `app_id`�
 连接归属当前使用方；停止时关闭并移除，重新启用按当前配置重建。不同插件声明同一
 机器人账号会报出已有归属，不隐式共享或创建第二条连接。
 
-连接限制只来自消费插件的依赖配置，不再有 channels 自身的协议配置。所有消费者就绪后启动 Stream，连接成功才加入 Driver 的在线索引；断线撤出并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
+连接限制只来自消费插件的依赖配置，不再有 channels 自身的协议配置。消费者就绪后启动 Stream，连接成功时更新自身就绪状态；断线只更新该连接并自动重连。关闭时先停止输入，再排空已接受消息，最后关闭回复客户端。
 
 固定使用 [官方 dingtalk-stream 0.24.3](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。消息解析、回调及 ACK 使用 SDK 原生实现。该版本原生启动循环会吞掉取消，握手和回复请求使用无超时的同步 HTTP；因此 `stream.py` 只接管异步握手、连接任务和关闭，复用 SDK 协议逻辑。日志不输出握手 ticket、secret 或完整协议帧。回复继续使用钉钉返回的 session webhook（这是出站回复地址，不是本地 Webhook 接收端点）。
 
@@ -154,7 +154,9 @@ Event、Message 或命令并进入统一分发，不保留每个业务的 REST �
 
 入口按插件归属接收该插件的全部 Matcher，包括运行时派生且通过作用域校验的临时续接 Matcher；不要求 `block=True`，也不过早过滤临时 Matcher。框架全局事件钩子继续承担策略和日志。
 
-`Matcher.send/finish` 通过当前事件绑定的 Channel 工作，handler 的普通返回值被忽略。`send()` 可调用多次；`finish(message)` 发送可选消息并结束当前 Matcher，不额外发送“最终消息”标记，也不直接关闭 HTTP。`pause/reject` 改变下一条事件的处理位置，不把当前请求一直挂起等待用户。
+`Matcher.send/finish` 调用 channels 为本次事件绑定的回复函数，框架不持有 Channel；handler 的普通返回值被忽略。`send()` 可调用多次；`finish(message)` 发送可选消息并结束当前 Matcher，不额外发送“最终消息”标记，也不直接关闭 HTTP。`pause/reject` 改变下一条事件的处理位置，不把当前请求一直挂起等待用户。
+
+普通处理器只依赖 `Event`。确实需要通道能力（例如卡片、流式发送、平台操作）时，消费插件声明对 channels 的依赖，并通过 `Annotated[channels.Channel, Depends(channels.get_event_channel)]` 注入当前事件所属的连接。不要从 Driver 查找连接，不要在本次处理结束后缓存回复能力。无回复能力的来源（例如 cron）直接分发事件，调用 `Matcher.send()` 会报错。
 
 ### 通道对话标识与多轮续接
 
@@ -322,7 +324,7 @@ OAuth 令牌、IM 群操作、机器人消息、附件下载地址及卡片创�
 ## 接收、排空与回复资源
 
 QQ、钉钉的每一条连接由 channels 内部的 `ChannelAdapter` 管理归属与操作准入；由 `Channel` 持有本连接的去重、队列、SDK client 和连接任务。
-框架仍负责 Driver、插件生命周期、Matcher、Dependent、PluginCall 和事件分发。
+框架仍负责插件生命周期、Matcher、Dependent、PluginCall 和事件分发。Driver 不保存适配器或在线连接表。通道插件使用协议适配器的已准备连接表查询实例，在线状态由连接自身提供。
 协议适配器负责解析事件、调用各自 SDK 和编码平台 ACK。连接资源按连接独立，不存在跨消费者共享的 client 或队列。
 
 `ready` 表示接收连接已就绪；`replies_available` 表示出站资源仍可使用。

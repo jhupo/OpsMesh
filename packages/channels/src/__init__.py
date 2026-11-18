@@ -9,8 +9,9 @@ from . import lifecycle as _lifecycle  # noqa: F401
 from .attachments import Attachment, AttachmentCollection, AttachmentError
 from .channel import Channel
 from .config import ChannelConnections
-from .context import UserContext
+from .context import UserContext, get_event_channel
 from .events import MessageEvent
+from .hooks import MockCallException
 from .messages import (
     Message,
     MessageSegment,
@@ -60,6 +61,7 @@ __all__ = [
     "MessageEvent",
     "MessageSegment",
     "MessageSendError",
+    "MockCallException",
     "OperationError",
     "OperationPermissionDenied",
     "OperationRateLimited",
@@ -70,6 +72,7 @@ __all__ = [
     "UserContext",
     "api",
     "dingtalk",
+    "get_event_channel",
     "in_group",
     "qq",
 ]

@@ -9,8 +9,8 @@ from uuid import UUID
 from pydantic import ConfigDict
 
 from opsmesh import on_command, on_message
-from opsmesh.adapters import Channel, Event
-from opsmesh.matchers import Matcher, current_channel
+from opsmesh.events import Event, get_event_config
+from opsmesh.matchers import Matcher, current_event
 from opsmesh.messages import Message
 from opsmesh.params import Command, CommandArg, Context, Depends
 from opsmesh.rules import to_me
@@ -18,6 +18,10 @@ from opsmesh.rules import to_me
 from . import channels
 from .schemas import ConversationView
 from .store import ConversationError, ConversationStore
+
+CurrentChannel = Annotated[
+    channels.Channel, Depends(channels.get_event_channel)
+]
 
 MAX_QUESTION_LENGTH = 8000
 COMMAND_NAMES = (
@@ -39,13 +43,13 @@ class ConversationTurn:
 
     __pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)
 
-    channel: Channel
+    channel: channels.Channel
     event: Event
     caller: channels.UserContext
 
 
 async def current_turn(
-    channel: Channel,
+    channel: CurrentChannel,
     event: Event,
     caller: Annotated[channels.UserContext, Context()],
 ) -> ConversationTurn:
@@ -53,29 +57,28 @@ async def current_turn(
     return ConversationTurn(channel, event, caller)
 
 
-def command_input(channel: Channel, event: Event) -> bool:
+def command_input(event: Event) -> bool:
     """Reject every configured command prefix, including unknown commands."""
     text = event.get_plaintext().lstrip()
     return any(
-        text.startswith(prefix)
-        for prefix in channel.adapter.config.command_start
+        text.startswith(prefix) for prefix in get_event_config().command_start
     )
 
 
-async def addressed_message(channel: Channel, event: Event) -> bool:
+async def addressed_message(event: Event) -> bool:
     """Accept addressed messages that have no configured command prefix."""
-    return event.is_tome() and not command_input(channel, event)
+    return event.is_tome() and not command_input(event)
 
 
-async def addressed_command(channel: Channel, event: Event) -> bool:
+async def addressed_command(event: Event) -> bool:
     """Select command input left after registered command matchers."""
-    return event.is_tome() and command_input(channel, event)
+    return event.is_tome() and command_input(event)
 
 
 def result_message(text: str, data: dict) -> channels.Message:
     """Pair readable replies with outbound JSON data."""
     message = channels.Message(channels.MessageSegment.text(text))
-    if "data" in current_channel.get().send_types:
+    if "data" in channels.get_event_channel(current_event.get()).send_types:
         message.append(channels.MessageSegment.structured(data))
     return message
 

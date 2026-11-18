@@ -6,7 +6,6 @@ from opsmesh.dependencies import Dependent
 from opsmesh.dependencies.context import ContextParam
 from opsmesh.dependencies.params import (
     ArgParam,
-    ChannelParam,
     DefaultParam,
     DependParam,
     EventParam,
@@ -29,7 +28,6 @@ _run_postprocessors: set[Dependent[Any]] = set()
 EVENT_PCS_PARAMS = (
     ContextParam,
     DependParam,
-    ChannelParam,
     EventParam,
     StateParam,
     DefaultParam,
@@ -37,7 +35,6 @@ EVENT_PCS_PARAMS = (
 RUN_PREPCS_PARAMS = (
     ContextParam,
     DependParam,
-    ChannelParam,
     EventParam,
     StateParam,
     ArgParam,
@@ -48,7 +45,6 @@ RUN_POSTPCS_PARAMS = (
     ContextParam,
     DependParam,
     ExceptionParam,
-    ChannelParam,
     EventParam,
     StateParam,
     ArgParam,

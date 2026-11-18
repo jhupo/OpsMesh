@@ -1,18 +1,14 @@
 """Run one host and attach the deployed service's process interfaces."""
 
 import asyncio
-import logging
 import os
 import signal
 import socket
-from contextlib import AsyncExitStack
 
 import anyio
 
 from .control import serve_control
 from .host import HostManifest, load_host
-
-logger = logging.getLogger(__name__)
 
 
 def _notify(state: str) -> None:
@@ -42,18 +38,16 @@ async def serve(
         async with (
             load_host(manifest) as host,
             host.driver.lifespan(),
-            AsyncExitStack() as controls,
+            serve_control(host),
         ):
-            try:
-                await controls.enter_async_context(serve_control(host))
-            except OSError as error:
-                logger.warning("Local plugin control is unavailable: %s", error)
             _notify("READY=1")
-            controls.callback(_notify, "STOPPING=1")
-            if stop_event is None:
-                await anyio.sleep_forever()
-            else:
-                await stop_event.wait()
+            try:
+                if stop_event is None:
+                    await anyio.sleep_forever()
+                else:
+                    await stop_event.wait()
+            finally:
+                _notify("STOPPING=1")
     finally:
         if listening:
             loop.remove_signal_handler(signal.SIGTERM)

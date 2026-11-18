@@ -1,6 +1,6 @@
 import pytest
 
-from opsmesh.adapters import Message, MessageSegment
+from opsmesh.messages import Message, MessageSegment
 from opsmesh.messages.template import MessageTemplate
 
 

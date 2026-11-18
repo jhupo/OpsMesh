@@ -77,13 +77,13 @@ Use standard framework matchers through the consumer plugin dependency configura
 
 ```python
 from opsmesh import on_message
-from opsmesh.adapters import Channel, Event
+from opsmesh.events import Event
 
 chat = on_message()
 
 @chat.handle()
-async def answer(channel: Channel, event: Event):
-    await channel.send(event, "Received: " + event.get_plaintext())
+async def answer(event: Event):
+    await chat.send("Received: " + event.get_plaintext())
 
 ```
 

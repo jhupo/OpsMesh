@@ -97,9 +97,9 @@ async def run_scenario(plugin, api_channel):
     from example_chat.agent import agent
     from example_chat.sessions import ChatConversations, ConversationError
 
-    from opsmesh.dispatch import dispatch_event
     from opsmesh.permissions import Permission
     from opsmesh.plugins.channels.dingtalk.events import parse_callback
+    from opsmesh.plugins.channels.lifecycle import protocol_adapter
     from opsmesh.plugins.execution import Settings as ExecutionSettings
     from opsmesh.plugins.execution import _lifecycle as execution_lifecycle
 
@@ -118,7 +118,7 @@ async def run_scenario(plugin, api_channel):
             ]
         ]
     )
-    channel = api_channel.adapter.driver.get_adapter("qq").get_connection(
+    channel = protocol_adapter(api_channel.adapter.driver, "qq").get_connection(
         plugin.id_, "primary"
     )
     responses = []
@@ -153,12 +153,7 @@ async def run_scenario(plugin, api_channel):
             },
             connection_id=channel.self_id,
         )
-        outcome = await dispatch_event(
-            channel,
-            event,
-            invocation_context=caller,
-            matcher_filter=channel.accepts_matcher,
-        )
+        outcome = await channel.dispatch(event, invocation_context=caller)
         outcome.raise_for_errors()
 
     async def verify(engine):
@@ -204,7 +199,7 @@ async def run_scenario(plugin, api_channel):
             },
             connection_id="bot",
         )
-        assert not await addressed_message(channel, group)
+        assert not await addressed_message(group)
 
         first = data_of(await api.post("/new First"))["session"]
         sid = first["id"]

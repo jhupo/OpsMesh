@@ -21,7 +21,6 @@ from typing import (
 import typing_extensions as t_ext
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Channel
     from opsmesh.dependencies.params import DependencyCache
     from opsmesh.permissions import Permission
 
@@ -117,40 +116,6 @@ _DependentCallable: TypeAlias = (
     t.Callable[..., T] | t.Callable[..., t.Awaitable[T]]
 )
 
-# driver hooks
-T_ConnectionHook: TypeAlias = _DependentCallable[t.Any]
-"""A hook called when a channel connects.
-
-Supported dependency descriptors:
-
-- DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
-- DefaultParam: A declared default value.
-"""
-T_DisconnectionHook: TypeAlias = _DependentCallable[t.Any]
-"""A hook called when a channel disconnects.
-
-Supported dependency descriptors:
-
-- DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
-- DefaultParam: A declared default value.
-"""
-
-# operation hooks
-T_CallingHook: TypeAlias = t.Callable[
-    ["Channel", str, dict[str, t.Any]], t.Awaitable[t.Any]
-]
-"""A hook executed before channel.call."""
-T_CalledHook: TypeAlias = t.Callable[
-    ["Channel", Exception | None, str, dict[str, t.Any], t.Any],
-    t.Awaitable[t.Any],
-]
-"""A hook executed after channel.call.
-
-Arguments are channel, exception, operation, data, and result, in order.
-"""
-
 # event hooks
 T_EventPreProcessor: TypeAlias = _DependentCallable[t.Any]
 """An event preprocessor callable.
@@ -158,7 +123,6 @@ T_EventPreProcessor: TypeAlias = _DependentCallable[t.Any]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - DefaultParam: A declared default value.
@@ -169,7 +133,6 @@ T_EventPostProcessor: TypeAlias = _DependentCallable[t.Any]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - DefaultParam: A declared default value.
@@ -182,7 +145,6 @@ T_RunPreProcessor: TypeAlias = _DependentCallable[t.Any]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - MatcherParam: The current matcher instance.
@@ -194,7 +156,6 @@ T_RunPostProcessor: TypeAlias = _DependentCallable[t.Any]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - MatcherParam: The current matcher instance.
@@ -209,7 +170,6 @@ T_RuleChecker: TypeAlias = _DependentCallable[bool]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - DefaultParam: A declared default value.
@@ -220,7 +180,6 @@ T_PermissionChecker: TypeAlias = _DependentCallable[bool]
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - DefaultParam: A declared default value.
 """
@@ -235,7 +194,6 @@ The default continuation event type is message.
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - MatcherParam: The current matcher instance.
@@ -249,7 +207,6 @@ By default, continuations are restricted to the current conversation.
 Supported dependency descriptors:
 
 - DependParam: A nested dependency.
-- ChannelParam: The current channel instance.
 - EventParam: The current event instance.
 - StateParam: The current state mapping.
 - MatcherParam: The current matcher instance.

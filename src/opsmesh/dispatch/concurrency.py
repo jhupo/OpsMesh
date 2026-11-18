@@ -1,30 +1,32 @@
 """Explicit process-local concurrency control for event handlers."""
 
 from collections.abc import Awaitable, Callable
+from typing import Any, Generic, TypeVar
 
-from opsmesh.adapters import Channel, Event
+from opsmesh.events import Event
+
+T = TypeVar("T")
 
 
 class SessionBusyError(RuntimeError):
-    """Another call owns this channel's session; delivery must be retried."""
+    """Another call owns this session; delivery must be retried."""
 
 
-class SessionGuard:
+class SessionGuard(Generic[T]):
     """Reject overlapping session calls within one host-owned instance.
 
     Share one instance across deliveries that must exclude each other. It owns
     no global hooks or plugin state and provides no cross-process protection.
-    Busy calls raise instead of appearing successfully processed to a queue.
+    Event sources must supply source-scoped session IDs. Busy calls raise
+    instead of appearing successfully processed to a queue.
     """
 
-    def __init__(
-        self, handler: Callable[[Channel, Event], Awaitable[None]]
-    ) -> None:
+    def __init__(self, handler: Callable[..., Awaitable[T]]) -> None:
         """Wrap a handler whose lifetime includes its dependency cleanup."""
         self._handler = handler
-        self._active: set[tuple[str, str, str]] = set()
+        self._active: set[str] = set()
 
-    async def __call__(self, channel: Channel, event: Event) -> None:
+    async def __call__(self, event: Event, **kwargs: Any) -> T:
         """Hold a session slot until completion, failure, or cancellation.
 
         Events explicitly lacking a session bypass the guard. Unexpected
@@ -34,15 +36,13 @@ class SessionGuard:
         try:
             session_id = event.get_session_id()
         except (NotImplementedError, ValueError):
-            await self._handler(channel, event)
-            return
-        identity = (channel.type, channel.self_id, session_id)
-        if identity in self._active:
+            return await self._handler(event, **kwargs)
+        if session_id in self._active:
             raise SessionBusyError(
                 "Another event is being processed in this session"
             )
-        self._active.add(identity)
+        self._active.add(session_id)
         try:
-            await self._handler(channel, event)
+            return await self._handler(event, **kwargs)
         finally:
-            self._active.remove(identity)
+            self._active.remove(session_id)

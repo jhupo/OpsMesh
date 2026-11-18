@@ -32,9 +32,11 @@ async def startup(driver: Driver) -> None:
         raise SchedulerUnavailable(
             "The previous scheduler has unfinished cleanup"
         )
-    scheduler = Scheduler(get_database(), get_plugin_config(Settings))
+    scheduler = Scheduler(
+        get_database(), get_plugin_config(Settings), config=driver.config
+    )
     _scheduler = scheduler
-    await scheduler.startup(driver)
+    await scheduler.startup()
 
 
 @on_started

@@ -1,6 +1,7 @@
 """Verify per-connection queue draining and reply lifetime."""
 
 import time
+from contextvars import copy_context
 from types import ModuleType, SimpleNamespace
 
 import anyio
@@ -8,7 +9,9 @@ import pytest
 
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
+from opsmesh.exceptions import SkippedException
 from opsmesh.plugins import registry
+from opsmesh.plugins.channels import get_event_channel
 from opsmesh.plugins.channels.callbacks import EventQueue
 from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
@@ -32,7 +35,8 @@ def make_channel(protocol, monkeypatch):
     )
     monkeypatch.setattr(registry, "_plugins", {"support": owner})
     monkeypatch.setattr(
-        registry, "_module_plugins",
+        registry,
+        "_module_plugins",
         {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     token = registry._current_plugin.set(owner)
@@ -91,6 +95,72 @@ async def wait_until(predicate):
 
 
 @pytest.mark.anyio
+async def test_dispatch_binding_does_not_leak_to_other_events_or_tasks(
+    monkeypatch,
+):
+    _, channel = make_channel("qq", monkeypatch)
+    parent = make_event("qq", channel, "message")
+    unrelated = parent.model_copy()
+    inherited = None
+
+    async def dispatch(event, **kwargs):
+        nonlocal inherited
+        assert get_event_channel(event) is channel
+        if event is parent:
+            inherited = copy_context()
+            with pytest.raises(SkippedException):
+                get_event_channel(unrelated)
+            await channel.dispatch(unrelated)
+            assert get_event_channel(parent) is channel
+        else:
+            with pytest.raises(SkippedException):
+                get_event_channel(parent)
+
+    monkeypatch.setattr(
+        "opsmesh.plugins.channels.channel.dispatch_event", dispatch
+    )
+    await channel.dispatch(parent)
+    with pytest.raises(SkippedException):
+        get_event_channel(parent)
+    with pytest.raises(SkippedException):
+        inherited.run(get_event_channel, parent)
+    await channel.close()
+
+
+@pytest.mark.anyio
+async def test_failed_cleanup_reserves_account_until_retry(monkeypatch):
+    adapter, channel = make_channel("qq", monkeypatch)
+    original_release = channel._release
+
+    async def fail_release():
+        raise RuntimeError("Outbound resource could not be closed")
+
+    monkeypatch.setattr(channel, "_release", fail_release)
+    with pytest.raises(ExceptionGroup, match="cleanup failed"):
+        await channel.close()
+    assert adapter.connections == (channel,)
+    assert channel.dirty and not channel.ready
+
+    owner = Plugin(
+        "other",
+        ModuleType("other"),
+        "other",
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
+    from opsmesh.plugins.channels.qq import QQConfigurationError
+
+    with registry.plugin_scope(owner):
+        with pytest.raises(QQConfigurationError, match="already declared"):
+            adapter.declare(channel.settings)
+
+    monkeypatch.setattr(channel, "_release", original_release)
+    await channel.close()
+    assert adapter.connections == ()
+    assert not channel.replies_available
+
+
+@pytest.mark.anyio
 async def test_event_queue_cancels_stuck_workers_in_the_host_group():
     started, cancelled = anyio.Event(), anyio.Event()
 
@@ -127,15 +197,15 @@ async def test_quiesce_drains_admitted_work_before_replies_close(
     entered, release = anyio.Event(), anyio.Event()
     observed = []
 
-    async def dispatch(origin, event, **kwargs):
+    async def dispatch(event, **kwargs):
         observed.append(event.message_id)
-        assert origin.replies_available
+        assert get_event_channel(event).replies_available
         entered.set()
         await release.wait()
         return SimpleNamespace(errors=[])
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event", dispatch
+        "opsmesh.plugins.channels.channel.dispatch_event", dispatch
     )
     event = make_event(protocol, channel, "message")
     quiesced = anyio.Event()
@@ -169,7 +239,7 @@ async def test_disconnect_keeps_queued_work_until_replies_close(
     entered, release = anyio.Event(), anyio.Event()
     observed = []
 
-    async def dispatch(origin, event, **kwargs):
+    async def dispatch(event, **kwargs):
         observed.append(event.message_id)
         if event.message_id == "first":
             entered.set()
@@ -177,7 +247,7 @@ async def test_disconnect_keeps_queued_work_until_replies_close(
         return SimpleNamespace(errors=[])
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event", dispatch
+        "opsmesh.plugins.channels.channel.dispatch_event", dispatch
     )
     first = make_event(protocol, channel, "first")
     second = make_event(protocol, channel, "second")

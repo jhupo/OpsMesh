@@ -12,7 +12,7 @@ from .events import APIMessageEvent
 
 
 class APIAdapter(ChannelAdapter[APIChannel]):
-    """Expose one request's response through the framework channel contract."""
+    """Expose one request's response through the channel operation contract."""
 
     channel_type = APIChannel
     configuration_error = APIConfigurationError

@@ -195,8 +195,7 @@ async def test_anyio_scope_cancellation_waits_for_thread_cleanup(worker_error):
 
 @pytest.fixture
 def cron_runtime(monkeypatch):
-    from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver
+    from opsmesh.config import Config
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
     from opsmesh.plugins.manager import PluginManager
@@ -234,12 +233,11 @@ def cron_runtime(monkeypatch):
         registry, "_module_plugins",
         {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
-    runtime = scheduler.Scheduler(SimpleNamespace(), cron.Settings())
+    runtime = scheduler.Scheduler(
+        SimpleNamespace(), cron.Settings(), config=Config()
+    )
     runtime._healthy = True
     runtime._check_lock = AsyncMock()
-    runtime.channel = scheduler.ScheduleChannel(
-        scheduler.ScheduleAdapter(Driver(Env(), Config())), "sync-cron"
-    )
     definition = cron.ScheduleDefinition(
         name="sync",
         handler="sync",

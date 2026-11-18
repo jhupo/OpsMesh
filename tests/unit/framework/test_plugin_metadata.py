@@ -8,6 +8,7 @@ from typing import get_type_hints
 import pytest
 from pydantic import TypeAdapter
 
+from opsmesh import plugins
 from opsmesh.plugins import registry
 from opsmesh.plugins.manager import (
     PluginManager,
@@ -26,20 +27,25 @@ def test_metadata_supports_runtime_type_inspection():
     assert metadata.dependency_config is None
 
 
+def test_metadata_has_no_adapter_compatibility_api():
+    assert "supported_adapters" not in get_type_hints(PluginMetadata)
+    assert not hasattr(PluginMetadata, "get_supported_adapters")
+    assert not hasattr(plugins, "inherit_supported_adapters")
+
+
 @pytest.fixture
 def plugin_path(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(registry, "_plugins", {})
     monkeypatch.setattr(
-        registry, "_module_plugins",
+        registry,
+        "_module_plugins",
         {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     with plugin_environment():
         yield tmp_path
     for name, module in list(sys.modules.items()):
-        if name.startswith("metadata_test_") and isinstance(
-            module, ModuleType
-        ):
+        if name.startswith("metadata_test_") and isinstance(module, ModuleType):
             del sys.modules[name]
 
 
@@ -118,9 +124,7 @@ def test_failed_loading_removes_plugin_and_matchers(plugin_path, failure):
 async def test_failed_plugin_removes_hooks_and_lifecycle_without_touching_host(
     plugin_path,
 ):
-    from opsmesh.adapters import Channel
     from opsmesh.dispatch import hooks
-    from opsmesh.drivers import Driver
     from opsmesh.plugins.activation import Lifespan
 
     module = ModuleType("metadata_test_resources")
@@ -133,10 +137,6 @@ async def test_failed_plugin_removes_hooks_and_lifecycle_without_touching_host(
         hooks._event_postprocessors,
         hooks._run_preprocessors,
         hooks._run_postprocessors,
-        Driver._connection_hook,
-        Driver._disconnection_hook,
-        Channel._calling_hook,
-        Channel._called_hook,
     )
     before = [set(group) for group in processors]
     source = """
@@ -145,16 +145,6 @@ from opsmesh.dispatch import (
     event_preprocessor, event_postprocessor, run_preprocessor, run_postprocessor
 )
 from opsmesh.plugins import on_message
-from opsmesh.drivers import Driver
-from opsmesh.adapters import Channel
-@Driver.on_connect
-@Driver.on_disconnect
-async def connection(channel):
-    pass
-@Channel.on_calling
-@Channel.on_called
-async def operation(*args):
-    pass
 @event_preprocessor
 @event_postprocessor
 @run_preprocessor

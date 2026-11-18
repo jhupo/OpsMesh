@@ -10,6 +10,7 @@ import pytest
 
 @pytest.fixture
 def cron_runtime(monkeypatch):
+    from opsmesh.config import Config
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
     from opsmesh.plugins.manager import PluginManager
@@ -45,7 +46,9 @@ def cron_runtime(monkeypatch):
         registry, "_module_plugins",
         {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
-    runtime = scheduler.Scheduler(SimpleNamespace(), cron.Settings())
+    runtime = scheduler.Scheduler(
+        SimpleNamespace(), cron.Settings(), config=Config()
+    )
     runtime._healthy = True
     runtime._check_lock = AsyncMock()
     runtime.schedules = SimpleNamespace(initialize=AsyncMock(), all=AsyncMock())

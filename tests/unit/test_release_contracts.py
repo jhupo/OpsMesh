@@ -11,9 +11,9 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from opsmesh_service.catalog import PluginRecord, PluginStorage
 
 from opsmesh.plugins.database import migrations, schema
+from opsmesh.service.catalog import PluginRecord, PluginStorage
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -264,7 +264,7 @@ async def check():
         [
             sys.executable,
             "-m",
-            "opsmesh_service.cli",
+            "opsmesh.service.cli",
             "--manifest",
             str(manifest),
             "--command",
@@ -272,9 +272,7 @@ async def check():
         ],
         env={
             **os.environ,
-            "PYTHONPATH": os.pathsep.join(
-                [str(ROOT / "src"), str(ROOT / "packages/service/src")]
-            ),
+            "PYTHONPATH": str(ROOT / "src"),
         },
         capture_output=True,
         text=True,
@@ -294,7 +292,7 @@ def test_command_cannot_import_an_undeclared_plugin(tmp_path):
         [
             sys.executable,
             "-m",
-            "opsmesh_service.cli",
+            "opsmesh.service.cli",
             "--manifest",
             str(manifest),
             "--command",
@@ -302,9 +300,7 @@ def test_command_cannot_import_an_undeclared_plugin(tmp_path):
         ],
         env={
             **os.environ,
-            "PYTHONPATH": os.pathsep.join(
-                [str(ROOT / "src"), str(ROOT / "packages/service/src")]
-            ),
+            "PYTHONPATH": str(ROOT / "src"),
         },
         capture_output=True,
         text=True,

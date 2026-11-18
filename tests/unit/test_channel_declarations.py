@@ -18,7 +18,11 @@ from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 driver = Driver(Env(), Config())
 manager = PluginManager(["opsmesh.plugins.channels"])
 register_plugin_manager(manager)
-assert manager.load_plugin("opsmesh.plugins.channels") is not None
+provider = manager.load_plugin("opsmesh.plugins.channels")
+assert provider is not None
+from opsmesh.plugins.channels.lifecycle import (
+    _active_adapters, protocol_adapter,
+)
 """
 
 
@@ -65,8 +69,7 @@ require("channels")
         + """
 async def main():
     async with driver.lifespan():
-        assert driver.adapters == {}
-        assert driver.channels == {}
+        assert not _active_adapters[driver]
         assert "uvicorn" not in sys.modules
 asyncio.run(main())
 assert "uvicorn" not in sys.modules
@@ -106,11 +109,10 @@ else:
     raise AssertionError("Prepared connections were available before startup")
 async def main():
     async with driver.lifespan():
-        adapter = driver.get_adapter("api")
+        adapter = protocol_adapter(driver, "api")
         channel = adapter.get_connection("consumer", "main")
         assert isinstance(channel, APIChannel)
         assert channel.ready
-        assert driver.get_channel(channel.self_id) is channel
         assert channel.server.bound_port is not None
         assert ("POST", "/plugins/{plugin_id}/messages") in channel.mounted
         assert ("GET", "/attachments/{plugin_id}/{attachment_id}") in (
@@ -119,7 +121,6 @@ async def main():
         assert "uvicorn" in sys.modules
     assert channel.state == "closed"
     assert adapter.connections == ()
-    assert driver.channels == {}
 asyncio.run(main())
 """,
     )
@@ -151,10 +152,11 @@ assert consumer.status is PluginStatus.LOADED
 async def main():
     async with driver.lifespan():
         assert consumer.status is PluginStatus.FAILED
-        assert driver.get_adapter("api").connections == ()
-        assert driver.channels == {}
+        adapter = protocol_adapter(driver, "api")
+        assert adapter.connections == ()
         assert "uvicorn" not in sys.modules
-    assert driver.get_adapter("api").connections == ()
+    assert adapter.connections == ()
+    assert driver not in _active_adapters
 asyncio.run(main())
 """,
     )
@@ -220,14 +222,12 @@ async def waits_until_ready(channel):
 
 async def main():
     async with driver.lifespan():
-        adapter = driver.get_adapter("qq")
+        adapter = protocol_adapter(driver, "qq")
         channel = adapter.get_connection("consumer", "primary")
         await waits_until_ready(channel)
         assert isinstance(channel, QQChannel)
         assert channel.ready
-        assert driver.get_channel(channel.self_id) is channel
-        assert "api" not in driver.adapters
-        assert "dingtalk" not in driver.adapters
+        assert set(_active_adapters[driver]) == {"qq"}
         assert "uvicorn" not in sys.modules
     assert channel.state == "closed"
     assert adapter.connections == ()
@@ -279,18 +279,16 @@ async def waits_until_ready(channel):
 
 async def main():
     async with driver.lifespan():
-        adapter = driver.get_adapter("dingtalk")
+        adapter = protocol_adapter(driver, "dingtalk")
         channel = adapter.get_connection("consumer", "primary")
         await waits_until_ready(channel)
         assert isinstance(channel, DingTalkChannel)
         assert channel.ready
-        assert driver.get_channel(channel.self_id) is channel
         assert "uvicorn" not in sys.modules
         from inspect import getattr_static
         assert getattr_static(channel, "path", None) is None
     assert channel.state == "closed"
     assert adapter.connections == ()
-    assert driver.channels == {}
 asyncio.run(main())
 """,
     )
@@ -333,8 +331,9 @@ async def request(channel, plugin_id):
         )
 async def main():
     async with driver.lifespan():
-        first = driver.get_channel("api:consumer:main")
-        other = driver.get_channel("api:second:main")
+        adapter = protocol_adapter(driver, "api")
+        first = adapter.get_connection("consumer")
+        other = adapter.get_connection("second")
         assert first is not other
         assert first.server.bound_port != other.server.bound_port
         assert (await request(first, "consumer")).status_code == 200
@@ -346,12 +345,23 @@ async def main():
         assert other.ready
         assert (await request(other, "second")).status_code == 200
         await driver.start_plugin(consumer)
-        restarted = driver.get_channel("api:consumer:main")
+        restarted = adapter.get_connection("consumer")
         assert restarted is not first
         assert (await request(restarted, "consumer")).status_code == 200
-        adapter = driver.get_adapter("api")
         assert len(adapter.connections) == 2
-    assert not driver.channels
+        await driver.stop_plugin(consumer)
+        await driver.stop_plugin(second)
+        await driver.stop_plugin(provider)
+        assert driver not in _active_adapters
+        assert not adapter.connections
+        await driver.start_plugin(provider)
+        await driver.start_plugin(second)
+        replacement = protocol_adapter(driver, "api")
+        assert replacement is not adapter
+        new_channel = replacement.get_connection("second")
+        assert replacement.connections == (new_channel,)
+        assert (await request(new_channel, "second")).status_code == 200
+    assert driver not in _active_adapters
 asyncio.run(main())
 """,
     )

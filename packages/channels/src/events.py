@@ -4,7 +4,7 @@ from typing import ClassVar, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
-from opsmesh.adapters import Event
+from opsmesh.events import Event
 
 from .attachments import AttachmentCollection
 from .context import UserContext, encode_scope

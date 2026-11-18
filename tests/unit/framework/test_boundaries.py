@@ -23,7 +23,8 @@ class Boundary(importlib.abc.MetaPathFinder):
                       'loguru', 'pydantic_settings', 'dotenv', 'agents'}
         if (fullname.startswith(('opsmesh.gateway', 'opsmesh.infra',
                                  'opsmesh.modules', 'opsmesh.integrations',
-                                 'opsmesh_service'))
+                                 'opsmesh.service', 'opsmesh.adapters',
+                                 'opsmesh.plugins.channels'))
                 or fullname in transports):
             raise AssertionError('Forbidden core dependency: ' + fullname)
 sys.meta_path.insert(0, Boundary())
@@ -50,6 +51,13 @@ anyio.run(verify)
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_framework_exports_event_without_legacy_adapter_package():
+    from opsmesh.events import Event
+
+    assert framework.Event is Event
+    assert importlib.util.find_spec("opsmesh.adapters") is None
 
 
 def test_core_config_does_not_choose_a_server():
@@ -131,6 +139,7 @@ def _import_targets(path, source_root):
 
 def test_framework_dependencies_follow_layer_boundaries():
     forbidden_prefixes = (
+        "opsmesh.adapters",
         "opsmesh.plugins.channels",
         "opsmesh.plugins.database",
         "opsmesh.plugins.execution",
@@ -138,7 +147,7 @@ def test_framework_dependencies_follow_layer_boundaries():
         "opsmesh.bootstrap",
         "opsmesh.main",
         "opsmesh.plugins.storage",
-        "opsmesh_service",
+        "opsmesh.service",
         "opsmesh.api",
         "opsmesh.modules",
         "opsmesh.gateway",

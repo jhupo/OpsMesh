@@ -54,19 +54,18 @@ def verify_wheel(path: Path) -> None:
         )
         metadata = email.message_from_bytes(archive.read(metadata_path))
         name = metadata["Name"]
-        module = "opsmesh_service" if name == "opsmesh-service" else "opsmesh"
         code_roots = {
             member.split("/")[0]
             for member in members
             if member.endswith((".py", ".pyi", "py.typed"))
         }
-        if code_roots != {module}:
+        if code_roots != {"opsmesh"}:
             raise ValueError(
                 f"Unexpected code packages in {name}: {code_roots}"
             )
         if name == "opsmesh":
             if any(
-                member.startswith("opsmesh/bootstrap/")
+                member.startswith(("opsmesh/bootstrap/", "opsmesh/service/"))
                 or member in {"opsmesh/main.py", "opsmesh/plugins/storage.py"}
                 or member.endswith(".dist-info/entry_points.txt")
                 for member in members
@@ -108,7 +107,7 @@ def verify_wheel(path: Path) -> None:
             if (
                 entry_points.sections() != ["console_scripts"]
                 or dict(entry_points["console_scripts"])
-                != {"opsmesh": "opsmesh_service.cli:main"}
+                != {"opsmesh": "opsmesh.service.cli:main"}
             ):
                 raise ValueError("Unexpected service wheel entry points")
             modules = (
@@ -120,10 +119,13 @@ def verify_wheel(path: Path) -> None:
                 "service",
             )
             expected = {
-                f"opsmesh_service/{module}.py" for module in modules
+                f"opsmesh/service/{module}.py" for module in modules
             }
-            if not expected.issubset(members):
-                raise ValueError("The service wheel is missing runtime modules")
+            service_code = {
+                member for member in members if member.endswith((".py", ".pyi"))
+            }
+            if service_code != expected:
+                raise ValueError("Unexpected runtime modules in the service wheel")
         elif name != "opsmesh":
             prefix = f"opsmesh/plugins/{name.removeprefix('opsmesh-')}/"
             code = [

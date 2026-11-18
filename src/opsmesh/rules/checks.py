@@ -29,7 +29,7 @@ from typing import (
 
 from pygtrie import CharTrie
 
-from opsmesh.adapters import Channel, Event, Message, MessageSegment
+from opsmesh.config import Config
 from opsmesh.consts import (
     CMD_ARG_KEY,
     CMD_KEY,
@@ -45,7 +45,9 @@ from opsmesh.consts import (
     SHELL_ARGV,
     STARTSWITH_KEY,
 )
+from opsmesh.events import Event
 from opsmesh.exceptions import ParserExit
+from opsmesh.messages import Message, MessageSegment
 from opsmesh.params import (
     Command,
     CommandArg,
@@ -81,7 +83,7 @@ parser_message: ContextVar[str] = ContextVar("parser_message")
 
 
 class TrieRule:
-    """Index declared commands using the incoming channel's configuration."""
+    """Index declared commands using the event configuration."""
 
     _commands: dict[object, tuple[tuple[str, ...], ...]] = {}
     # Serialize builds with invalidation so an in-flight build cannot republish
@@ -141,7 +143,7 @@ class TrieRule:
 
     @classmethod
     def get_value(
-        cls, channel: Channel, event: Event, state: T_State
+        cls, event: Event, state: T_State, *, config: Config | None = None
     ) -> CMD_RESULT:
         """Extract the longest command prefix and store its parsed arguments."""
         prefix = CMD_RESULT(
@@ -159,7 +161,8 @@ class TrieRule:
         message_seg: MessageSegment = message[0]
         if message_seg.is_text():
             segment_text = str(message_seg).lstrip()
-            config = channel.adapter.config
+            if config is None:
+                config = Config()
             with cls._lock:
                 trie = cls._prefix_for(config.command_start, config.command_sep)
             if pf := trie.longest_prefix(segment_text):
@@ -752,7 +755,7 @@ def regex(regex: str, flags: int | re.RegexFlag = 0) -> Rule:
 
 
 class ToMeRule:
-    """Check whether the event is directed to the channel."""
+    """Check whether the event is directed to the receiving identity."""
 
     __slots__ = ()
 
@@ -766,12 +769,12 @@ class ToMeRule:
         return hash((self.__class__,))
 
     async def __call__(self, to_me: bool = EventToMe()) -> bool:
-        """Return whether the event is directed to the channel."""
+        """Return whether the event is directed to the receiving identity."""
         return to_me
 
 
 def to_me() -> Rule:
-    """Match events directed to the channel."""
+    """Match events directed to the receiving identity."""
     return Rule(ToMeRule())
 
 

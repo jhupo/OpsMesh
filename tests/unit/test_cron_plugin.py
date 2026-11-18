@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from opsmesh.config import Config, Env
-from opsmesh.drivers import Driver
+from opsmesh.config import Config
+from opsmesh.events import Event
 from opsmesh.plugins.manager import PluginManager
 
 
@@ -173,17 +173,13 @@ def record_for(cron, *, trigger=None):
     )
 
 
-def make_scheduler(cron, record):
+def make_scheduler(cron, record, *, config: Config | None = None):
     settings = cron.api.Settings()
-    runtime = cron.scheduler.Scheduler(SimpleNamespace(), settings)
+    runtime = cron.scheduler.Scheduler(
+        SimpleNamespace(), settings, config=config or Config()
+    )
     runtime._healthy = True
     runtime._check_lock = AsyncMock()
-    runtime.channel = cron.scheduler.ScheduleChannel(
-        cron.scheduler.ScheduleAdapter(
-            Driver(Env(), Config())
-        ),
-        "test-cron",
-    )
     runtime.schedules = SimpleNamespace(
         get=AsyncMock(return_value=record), complete=AsyncMock()
     )
@@ -191,10 +187,14 @@ def make_scheduler(cron, record):
 
 
 @pytest.mark.anyio
-async def test_dynamic_name_dispatches_only_referenced_matcher(cron):
+async def test_dynamic_name_dispatches_only_referenced_matcher(
+    cron, monkeypatch
+):
     calls = []
     matcher = cron.api.on_schedule("digest")
     other = cron.api.on_schedule("other")
+    dispatch = AsyncMock(wraps=cron.scheduler.dispatch_event)
+    monkeypatch.setattr(cron.scheduler, "dispatch_event", dispatch)
 
     @matcher.handle()
     async def digest(event: cron.api.ScheduledEvent):
@@ -204,13 +204,19 @@ async def test_dynamic_name_dispatches_only_referenced_matcher(cron):
     async def unrelated():
         raise AssertionError("Unrelated matcher was invoked")
 
-    runtime = make_scheduler(cron, record_for(cron))
+    config = Config(command_start={"!"})
+    runtime = make_scheduler(cron, record_for(cron), config=config)
     await runtime._fire(
         cron.scheduler._TimerBinding(
             "schedule", "current", cron.owner, cron.owner.generation
         )
     )
     assert calls == ["online-name"]
+    dispatch.assert_awaited_once()
+    (event,) = dispatch.await_args.args
+    assert isinstance(event, cron.api.ScheduledEvent)
+    assert dispatch.await_args.kwargs["config"] is config
+    assert "reply" not in dispatch.await_args.kwargs
     assert not runtime._active
 
 
@@ -275,7 +281,9 @@ async def test_single_fire_completed_even_if_handler_fails(cron):
 
 @pytest.mark.anyio
 async def test_lock_loss_disables_scheduler(cron):
-    runtime = cron.scheduler.Scheduler(SimpleNamespace(), cron.api.Settings())
+    runtime = cron.scheduler.Scheduler(
+        SimpleNamespace(), cron.api.Settings(), config=Config()
+    )
     runtime._healthy = True
     runtime._lock = SimpleNamespace(
         scalar=AsyncMock(side_effect=OSError("lost"))
@@ -456,7 +464,7 @@ async def test_shutdown_waits_for_lock_connection_use(cron):
     assert runtime._lock is None
 
 
-def test_scheduled_event_has_no_fabricated_user_or_reply(cron):
+def test_scheduled_event_has_no_fabricated_user_or_conversation(cron):
     event = cron.api.ScheduledEvent(
         schedule_id="id",
         invocation_id="call",
@@ -466,6 +474,7 @@ def test_scheduled_event_has_no_fabricated_user_or_reply(cron):
         fired_at=datetime.now(UTC),
         payload={},
     )
+    assert isinstance(event, Event)
     with pytest.raises(ValueError, match="human user"):
         event.get_user_id()
     with pytest.raises(ValueError, match="conversation"):

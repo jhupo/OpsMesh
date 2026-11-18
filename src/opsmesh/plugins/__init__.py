@@ -22,7 +22,6 @@ from .lifecycle import on_shutdown as on_shutdown
 from .lifecycle import on_started as on_started
 from .lifecycle import on_startup as on_startup
 from .lifecycle import on_stopping as on_stopping
-from .load import inherit_supported_adapters as inherit_supported_adapters
 from .load import load_all_plugins as load_all_plugins
 from .load import load_from_json as load_from_json
 from .load import load_from_toml as load_from_toml

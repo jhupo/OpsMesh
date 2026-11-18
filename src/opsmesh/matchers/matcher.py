@@ -23,13 +23,6 @@ from typing import (  # noqa: UP035
     overload,
 )
 
-from opsmesh.adapters import (
-    Channel,
-    Event,
-    Message,
-    MessageSegment,
-    MessageTemplate,
-)
 from opsmesh.consts import (
     ARG_KEY,
     LAST_RECEIVE_KEY,
@@ -43,7 +36,6 @@ from opsmesh.dependencies import Dependent, Param
 from opsmesh.dependencies.context import ContextParam
 from opsmesh.dependencies.params import (
     ArgParam,
-    ChannelParam,
     DefaultParam,
     DependParam,
     Depends,
@@ -51,6 +43,7 @@ from opsmesh.dependencies.params import (
     MatcherParam,
     StateParam,
 )
+from opsmesh.events import Event, _get_event_reply, get_event_config
 from opsmesh.exceptions import (
     FinishedException,
     PausedException,
@@ -58,6 +51,7 @@ from opsmesh.exceptions import (
     SkippedException,
     StopPropagation,
 )
+from opsmesh.messages import Message, MessageSegment, MessageTemplate
 from opsmesh.permissions.base import Permission, User
 from opsmesh.rules.base import Rule
 from opsmesh.typing import (
@@ -78,7 +72,6 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
-current_channel: ContextVar[Channel] = ContextVar("current_channel")
 current_event: ContextVar[Event] = ContextVar("current_event")
 current_matcher: ContextVar["Matcher"] = ContextVar("current_matcher")
 current_handler: ContextVar[Dependent[Any]] = ContextVar("current_handler")
@@ -178,7 +171,6 @@ class Matcher(metaclass=MatcherMeta):
     HANDLER_PARAM_TYPES: ClassVar[tuple[Type[Param], ...]] = (  # noqa: UP006
         ContextParam,
         DependParam,
-        ChannelParam,
         EventParam,
         StateParam,
         ArgParam,
@@ -398,7 +390,6 @@ class Matcher(metaclass=MatcherMeta):
     @classmethod
     async def check_perm(
         cls,
-        channel: Channel,
         event: Event,
         stack: AsyncExitStack | None = None,
         dependency_cache: T_DependencyCache | None = None,
@@ -407,7 +398,6 @@ class Matcher(metaclass=MatcherMeta):
         """Check whether the event satisfies the matcher permissions.
 
         Args:
-            channel: The channel instance.
             event: The incoming event.
             stack: The asynchronous resource cleanup stack.
             dependency_cache: The event-scoped dependency cache.
@@ -418,13 +408,12 @@ class Matcher(metaclass=MatcherMeta):
         """
         event_type = event.get_type()
         return event_type == (cls.type or event_type) and await cls.permission(
-            channel, event, stack, dependency_cache, invocation_context
+            event, stack, dependency_cache, invocation_context
         )
 
     @classmethod
     async def check_rule(
         cls,
-        channel: Channel,
         event: Event,
         state: T_State,
         stack: AsyncExitStack | None = None,
@@ -434,7 +423,6 @@ class Matcher(metaclass=MatcherMeta):
         """Check whether the event satisfies the matcher rules.
 
         Args:
-            channel: The channel instance.
             event: The incoming event.
             state: The current state mapping.
             stack: The asynchronous resource cleanup stack.
@@ -446,7 +434,7 @@ class Matcher(metaclass=MatcherMeta):
         """
         event_type = event.get_type()
         return event_type == (cls.type or event_type) and await cls.rule(
-            channel, event, state, stack, dependency_cache, invocation_context
+            event, state, stack, dependency_cache, invocation_context
         )
 
     @classmethod
@@ -607,17 +595,18 @@ class Matcher(metaclass=MatcherMeta):
 
         Args:
             message: Initial message content.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
+
+        Raises:
+            RuntimeError: The event does not provide a reply callable.
         """
-        channel = current_channel.get()
-        event = current_event.get()
+        reply = _get_event_reply()
         if isinstance(message, MessageTemplate):
             state = current_matcher.get().state
             _message = message.format(**state)
         else:
             _message = message
-        return await channel.send(event=event, message=_message, **kwargs)
+        return await reply(_message, **kwargs)
 
     @classmethod
     async def finish(
@@ -629,8 +618,7 @@ class Matcher(metaclass=MatcherMeta):
 
         Args:
             message: Initial message content.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
         """
         if message is not None:
             await cls.send(message, **kwargs)
@@ -646,8 +634,7 @@ class Matcher(metaclass=MatcherMeta):
 
         Args:
             prompt: The prompt message.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
         """
         try:
             matcher = current_matcher.get()
@@ -673,8 +660,7 @@ class Matcher(metaclass=MatcherMeta):
 
         Args:
             prompt: The prompt message.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
         """
         try:
             matcher = current_matcher.get()
@@ -710,8 +696,7 @@ class Matcher(metaclass=MatcherMeta):
         Args:
             key: The argument name.
             prompt: The prompt message.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
         """
         matcher = current_matcher.get()
         arg_key = ARG_KEY.format(key=key)
@@ -737,8 +722,7 @@ class Matcher(metaclass=MatcherMeta):
         Args:
             id: The receive identifier.
             prompt: The prompt message.
-            kwargs: Arguments forwarded to Channel.send;
-                consult the adapter's channel operation documentation.
+            kwargs: Additional arguments forwarded to the reply callable.
         """
         matcher = current_matcher.get()
         receive_key = RECEIVE_KEY.format(id=id)
@@ -832,7 +816,6 @@ class Matcher(metaclass=MatcherMeta):
 
     async def update_type(
         self,
-        channel: Channel,
         event: Event,
         stack: AsyncExitStack | None = None,
         dependency_cache: T_DependencyCache | None = None,
@@ -842,7 +825,6 @@ class Matcher(metaclass=MatcherMeta):
         updater = self.__class__._default_type_updater
         return (
             await updater(
-                channel=channel,
                 event=event,
                 state=self.state,
                 matcher=self,
@@ -856,7 +838,6 @@ class Matcher(metaclass=MatcherMeta):
 
     async def update_permission(
         self,
-        channel: Channel,
         event: Event,
         stack: AsyncExitStack | None = None,
         dependency_cache: T_DependencyCache | None = None,
@@ -865,7 +846,6 @@ class Matcher(metaclass=MatcherMeta):
         """Resolve continuation access, defaulting to the current user."""
         if updater := self.__class__._default_permission_updater:
             return await updater(
-                channel=channel,
                 event=event,
                 state=self.state,
                 matcher=self,
@@ -883,21 +863,18 @@ class Matcher(metaclass=MatcherMeta):
             self.state[REJECT_TARGET] = self.state[REJECT_CACHE_TARGET]
 
     @contextmanager
-    def ensure_context(self, channel: Channel, event: Event):
-        """Bind channel, event, and matcher context until the scope exits."""
-        b_t = current_channel.set(channel)
+    def ensure_context(self, event: Event):
+        """Bind event and matcher context until the scope exits."""
         e_t = current_event.set(event)
         m_t = current_matcher.set(self)
         try:
             yield
         finally:
-            current_channel.reset(b_t)
             current_event.reset(e_t)
             current_matcher.reset(m_t)
 
     async def simple_run(
         self,
-        channel: Channel,
         event: Event,
         state: T_State,
         stack: AsyncExitStack | None = None,
@@ -907,7 +884,7 @@ class Matcher(metaclass=MatcherMeta):
         """Execute remaining handlers with the incoming state and context."""
         logger.debug("Running %s with incoming context", self)
 
-        with self.ensure_context(channel, event):
+        with self.ensure_context(event):
             try:
                 # Refresh preprocess state
                 self.state.update(state)
@@ -920,7 +897,6 @@ class Matcher(metaclass=MatcherMeta):
                     try:
                         await handler(
                             matcher=self,
-                            channel=channel,
                             event=event,
                             state=self.state,
                             stack=stack,
@@ -937,7 +913,6 @@ class Matcher(metaclass=MatcherMeta):
     # Run the remaining handlers.
     async def run(
         self,
-        channel: Channel,
         event: Event,
         state: T_State,
         stack: AsyncExitStack | None = None,
@@ -951,7 +926,6 @@ class Matcher(metaclass=MatcherMeta):
 
         try:
             await self.simple_run(
-                channel,
                 event,
                 state,
                 stack,
@@ -992,10 +966,10 @@ class Matcher(metaclass=MatcherMeta):
             self.suspended = True
             await self.resolve_reject()
             type_ = await self.update_type(
-                channel, event, stack, dependency_cache, invocation_context
+                event, stack, dependency_cache, invocation_context
             )
             permission = await self.update_permission(
-                channel, event, stack, dependency_cache, invocation_context
+                event, stack, dependency_cache, invocation_context
             )
 
             self.new(
@@ -1007,7 +981,7 @@ class Matcher(metaclass=MatcherMeta):
                 priority=0,
                 block=True,
                 source=self.__class__._source,
-                expire_time=channel.config.session_expire_timeout,
+                expire_time=get_event_config().session_expire_timeout,
                 default_state=self.state,
                 default_type_updater=self.__class__._default_type_updater,
                 default_permission_updater=self.__class__._default_permission_updater,
@@ -1015,10 +989,10 @@ class Matcher(metaclass=MatcherMeta):
         elif isinstance(exc, PausedException):
             self.suspended = True
             type_ = await self.update_type(
-                channel, event, stack, dependency_cache, invocation_context
+                event, stack, dependency_cache, invocation_context
             )
             permission = await self.update_permission(
-                channel, event, stack, dependency_cache, invocation_context
+                event, stack, dependency_cache, invocation_context
             )
 
             self.new(
@@ -1030,7 +1004,7 @@ class Matcher(metaclass=MatcherMeta):
                 priority=0,
                 block=True,
                 source=self.__class__._source,
-                expire_time=channel.config.session_expire_timeout,
+                expire_time=get_event_config().session_expire_timeout,
                 default_state=self.state,
                 default_type_updater=self.__class__._default_type_updater,
                 default_permission_updater=self.__class__._default_permission_updater,

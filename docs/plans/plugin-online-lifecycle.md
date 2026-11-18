@@ -21,7 +21,7 @@
 
 ### 如何识别与执行政策
 
-现有 `PluginRecord.protected` 同时要求 enabled、autoload、required 为真。内置插件允许按需安装，因此在各自的 `pyproject.toml` 中声明 `opsmesh.builtin_plugins` 入口点。宿主在导入插件代码前读取包元数据，将标记合并到现有运行时 `protected`，无需修改 SQLite 记录、`host.json` 或业务 `settings.json`。部署仍只安装受信任的包。[channels 包配置](../../packages/channels/pyproject.toml) · [存储模型](../../packages/service/src/opsmesh_service/catalog.py)
+现有 `PluginRecord.protected` 同时要求 enabled、autoload、required 为真。内置插件允许按需安装，因此在各自的 `pyproject.toml` 中声明 `opsmesh.builtin_plugins` 入口点。宿主在导入插件代码前读取包元数据，将标记合并到现有运行时 `protected`，无需修改 SQLite 记录、`host.json` 或业务 `settings.json`。部署仍只安装受信任的包。[channels 包配置](../../packages/channels/pyproject.toml) · [存储模型](../../packages/service/src/catalog.py)
 
 宿主根据已安装包的元数据保护规范模块名及其子模块。Host 阻止对应的在线变更，Driver 和注册表沿用运行时保护。宿主启动、整体关闭及启动失败清理沿用内部生命周期。后续实现在线制品登记时，再校验候选制品来源及命名空间冲突。
 
@@ -33,7 +33,7 @@
 
 | 看起来相似的实现 | 应当保留的区别 |
 |---|---|
-| Driver 的在线索引和 ChannelAdapter 的已准备索引 | Driver 只发布已上线连接。Adapter 在握手前就要定位连接、阻止重复账号，清理失败时还要保留旧实例。两者生命周期不同。见 [Driver](../../src/opsmesh/drivers/base.py)、[ChannelAdapter](../../packages/channels/src/adapter.py) |
+| 已准备连接与在线状态 | `ChannelAdapter` 在握手前就要定位连接、阻止重复账号，清理失败时还要保留旧实例。由连接自身报告是否就绪，不额外维护 Driver 在线索引。见 [ChannelAdapter](../../packages/channels/src/adapter.py) |
 | 框架准入和协议入口的 ready 检查 | SDK 的前置检查可尽早拒绝并返回平台 ACK；入队时仍需持有插件及依赖直到分发清理结束。握手完成、插件 READY、在途可回复分别表达不同条件。见 [回调分发](../../packages/channels/src/callbacks/dispatch.py) |
 | API 监听与机器人连接 | HTTP 有监听端口、响应流和上传；机器人有长连接、去重、队列和平台确认。现有 CallbackChannel 已覆盖两个机器人协议的共同生命周期，APIChannel 保持独立。见 [通道基类](../../packages/channels/src/channel.py)、[APIChannel](../../packages/channels/src/api/channel.py) |
 | QQ 与钉钉发送逻辑 | QQ 回复序号、条数限制归 QQ；钉钉 AI 卡片的增量更新与 ACK 归钉钉。消息预处理和流式遍历已有公共实现。见 [消息预处理](../../packages/channels/src/sending.py)、[流发送](../../packages/channels/src/streaming.py) |
@@ -53,7 +53,7 @@
 
 ## 3. 接通扩展在线加载、启停与配置应用
 
-1. **管理入口。** 安装命令和 `python -m opsmesh_service.cli` 使用同一个入口。部署服务由 `serve()` 运行，负责 systemd 通知和受文件权限保护的本机控制套接字。`load_host()` 直接返回装配后的 Host，CLI 和控制接口使用 Host 方法。在线 CLI 请求持锁宿主，离线 CLI 通过同一个宿主上下文进行维护。扩展停止后仍可查询；对从未加载的扩展执行 stop 返回明确错误。[CLI](../../packages/service/src/opsmesh_service/cli.py) · [Host](../../packages/service/src/opsmesh_service/host.py) · [服务](../../packages/service/src/opsmesh_service/service.py)
+1. **管理入口。** 安装命令和 `python -m opsmesh.service.cli` 使用同一个入口。部署服务由 `serve()` 运行，负责 systemd 通知和受文件权限保护的本机控制套接字。`load_host()` 直接返回装配后的 Host，CLI 和控制接口使用 Host 方法。在线 CLI 请求持锁宿主，离线 CLI 通过同一个宿主上下文进行维护。扩展停止后仍可查询；对从未加载的扩展执行 stop 返回明确错误。[CLI](../../packages/service/src/cli.py) · [Host](../../packages/service/src/host.py) · [服务](../../packages/service/src/service.py)
 2. **热加载。** 对尚未导入且依赖兼容的扩展，先准备独立的可信制品目录，核对清单、来源、模块名及与宿主共享依赖的版本，再 register → load → 按需 start。load 仅完成声明和归属登记；start 才获取资源。导入或启动失败分别回滚本次注册或本次激活并记录失败。导入失败存在未清除的 Python 副作用时，标记该制品需新进程重试。要求可替换或有冲突依赖的扩展首次加载就采用第 4 节的 Worker 模式。
 3. **资源管理。** 复用 Host、PluginManager 和 Lifespan。stop 临时停止；disable 持久禁用。先验证依赖和内置保护，再关闭新调用、排空在途请求和 finally，最后释放资源与激活期注册。清理失败保留资源引用并阻止二次启动。显式重启一组扩展时按依赖逆序停止、正序启动，只恢复先前运行的集合。状态查询分别返回启动意图、实际状态、在途数、清理进度、连接就绪情况。
 4. **操作一致性。** 每次变更带 request_id、完整模块名和可选预期修订，重复请求返回同一 operation_id；同一 ID 参数不同返回冲突。宿主排队执行，CLI 断线不取消已受理操作。在现有管理锁内重新计算影响范围，SQLite 使用短事务记录阶段；关闭宿主先停止接收管理请求。报告失败阶段、阻挡依赖及是否可重试，日志避免记录配置秘密。

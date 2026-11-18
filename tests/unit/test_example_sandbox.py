@@ -37,14 +37,15 @@ assert get_plugin("channels") is not None
 assert get_plugin("example_sandbox") is plugin
 
 from opsmesh.plugins.channels import ChannelConnections
+from opsmesh.plugins.channels.lifecycle import protocol_adapter
 
 with plugin_scope(plugin):
     connections = get_dependency_config(ChannelConnections)
 assert sorted(connections.api) == ["main"]
 
 try:
-    driver.get_adapter("api")
-except KeyError:
+    protocol_adapter(driver, "api")
+except LookupError:
     pass
 else:
     raise AssertionError("connections must wait for plugin startup")
@@ -65,7 +66,7 @@ run = runpy.run_path("tests/fixtures/consumer_lifecycle.py")["run"]
 
 
 async def body():
-    api = driver.get_adapter("api").get_connection(plugin.id_, "main")
+    api = protocol_adapter(driver, "api").get_connection(plugin.id_, "main")
     scenario = runpy.run_path("tests/fixtures/sandbox_scenario.py")
     await scenario["run_scenario"](plugin, api)
 
@@ -79,7 +80,7 @@ def skip(func):
 
 anyio.run(
     lambda: run(
-        plugin, driver, body, skip=skip, started=("filesystem",)
+        plugin, driver, body, skip=skip, started=("filesystem", "channels")
     )
 )
 """

@@ -4,7 +4,6 @@ from collections.abc import Callable
 from re import Match
 from typing import Any, Literal, overload
 
-from opsmesh.adapters import Event, Message, MessageSegment
 from opsmesh.consts import (
     CMD_ARG_KEY,
     CMD_KEY,
@@ -31,7 +30,6 @@ from opsmesh.dependencies.params import (
     ArgPromptResult as ArgPromptResult,
 )
 from opsmesh.dependencies.params import ArgStr as ArgStr
-from opsmesh.dependencies.params import ChannelParam as ChannelParam
 from opsmesh.dependencies.params import DefaultParam as DefaultParam
 from opsmesh.dependencies.params import DependParam as DependParam
 from opsmesh.dependencies.params import Depends as Depends
@@ -41,7 +39,9 @@ from opsmesh.dependencies.params import (
 )
 from opsmesh.dependencies.params import MatcherParam as MatcherParam
 from opsmesh.dependencies.params import StateParam as StateParam
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher
+from opsmesh.messages import Message, MessageSegment
 from opsmesh.typing import T_State
 
 
@@ -77,7 +77,7 @@ async def _event_to_me(event: Event) -> bool:
 
 
 def EventToMe() -> bool:
-    """Inject whether the event targets the channel."""
+    """Inject whether the event targets the receiving identity."""
     return Depends(_event_to_me)
 
 
@@ -280,7 +280,6 @@ __autodoc__ = {
     "ArgStr": True,
     "Depends": True,
     "ArgParam": True,
-    "ChannelParam": True,
     "EventParam": True,
     "StateParam": True,
     "DependParam": True,

@@ -3,10 +3,11 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from opsmesh.adapters import Channel, Event
+from opsmesh.events import Event
 from opsmesh.plugins import get_current_plugin
 from opsmesh.rules import Rule
 
+from .context import channel_for_event
 from .events import MessageEvent
 
 ChannelProtocol = Literal["api", "qq", "dingtalk"]
@@ -21,8 +22,11 @@ class GroupRule:
     connection: str | None
     protocol: ChannelProtocol | None
 
-    async def __call__(self, channel: Channel, event: Event) -> bool:
+    async def __call__(self, event: Event) -> bool:
         """Match a normalized group identifier within the declaring plugin."""
+        channel = channel_for_event(event)
+        if channel is None or not isinstance(event, MessageEvent):
+            return False
         if self.protocol is not None and self.protocol != channel.type:
             return False
         if channel.owner_id != self.owner_id:
@@ -31,8 +35,6 @@ class GroupRule:
             self.connection is not None
             and channel.connection_name != self.connection
         ):
-            return False
-        if not isinstance(event, MessageEvent):
             return False
         if event.conversation_type != "group" or event.group_id is None:
             return False

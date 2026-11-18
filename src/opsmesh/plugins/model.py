@@ -1,6 +1,5 @@
 """Plugin metadata and ownership models."""
 
-import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -9,10 +8,7 @@ from typing import TYPE_CHECKING, Any, Type  # noqa: UP035
 
 from pydantic import BaseModel
 
-from opsmesh.utils import resolve_dot_notation
-
 if TYPE_CHECKING:
-    from opsmesh.adapters import Adapter
     from opsmesh.matchers import Matcher
 
     from .invocation import PluginCall
@@ -36,13 +32,6 @@ class PluginMetadata:
     """The plugin homepage URL."""
     config: Type[BaseModel] | None = None  # noqa: UP006
     """The plugin configuration model."""
-    supported_adapters: set[str] | None = None
-    """Module paths for adapters supported by this plugin.
-
-    Use fully qualified <module>[:<Adapter>] paths.
-
-    None indicates support for all adapters.
-    """
     extra: dict[Any, Any] = field(default_factory=dict)
     """Author metadata and native objects consumed by application modules."""
 
@@ -50,17 +39,6 @@ class PluginMetadata:
     """Schema for settings supplied by each consuming plugin."""
     config_file: str | None = None
     """Initial JSON configuration path relative to the plugin entry package."""
-
-    def get_supported_adapters(self) -> set[Type["Adapter"]] | None:  # noqa: UP006
-        """Resolve supported adapter classes that are currently installed."""
-        if self.supported_adapters is None:
-            return None
-
-        adapters = set()
-        for adapter in self.supported_adapters:
-            with contextlib.suppress(ModuleNotFoundError, AttributeError):
-                adapters.add(resolve_dot_notation(adapter, "Adapter"))
-        return adapters
 
 
 class PluginStatus(StrEnum):

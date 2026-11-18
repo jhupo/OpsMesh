@@ -11,7 +11,6 @@ from contextlib import AsyncExitStack, ExitStack, contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field
-from functools import wraps
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -276,34 +275,6 @@ def register_hook(group, func, parameters):
     )
     group.add(dependent)
     track_registration(lambda: group.discard(dependent), func)
-    return func
-
-
-def register_callback(group, func):
-    """Own one asynchronous channel callback without sharing its identity."""
-    plugin = _current_plugin.get() or get_plugin_by_module_name(func.__module__)
-
-    @wraps(func)
-    async def registered(*args, **kwargs):
-        from .invocation import (
-            PluginUnavailable,
-            _current_call,
-            hold_plugin,
-            invocation_scope,
-        )
-
-        with plugin_scope(plugin):
-            async with AsyncExitStack() as stack:
-                try:
-                    with invocation_scope(_current_call.get()):
-                        call = hold_plugin(plugin, stack)
-                except PluginUnavailable:
-                    return None
-                with invocation_scope(call):
-                    return await func(*args, **kwargs)
-
-    group.add(registered)
-    track_registration(lambda: group.discard(registered), func)
     return func
 
 

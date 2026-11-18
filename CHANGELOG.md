@@ -2,6 +2,20 @@
 
 Changes are recorded here before publication. A section in this file is not proof that a matching release has been published.
 
+## 0.5.8 — 2026-11-18
+
+- Split the process, CLI, local control socket, and SQLite plugin catalog
+  into the `opsmesh-service` distribution. The core exposes an explicit
+  driver and protocol-neutral events; the channels plugin owns connections,
+  adapters, transport events, and channel hooks.
+- Allow online status, load, start, stop, and restart for eligible plugins.
+  Installing or replacing plugin code and removing it from disk still require
+  a service restart. The Linux service reports ready only after its local
+  control socket is available.
+- Upgrade the framework, service, and official plugins together. Plugins
+  using `opsmesh.adapters` or the global framework driver must migrate before
+  deployment; the removed APIs are not retained as aliases.
+
 ## 0.5.7 — 2026-11-17
 
 - Unify API, QQ and DingTalk under one consumer-owned connection model. Every

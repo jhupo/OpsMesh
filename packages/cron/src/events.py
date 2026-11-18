@@ -1,11 +1,11 @@
 """Logical, non-network events for scheduled framework handlers."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import JsonValue
 
-from opsmesh.adapters import Adapter, Channel, Event
+from opsmesh.events import Event
 
 
 class ScheduledEvent(Event):
@@ -46,25 +46,3 @@ class ScheduledEvent(Event):
     def is_tome(self) -> bool:
         """Report no addressed human conversation."""
         return False
-
-
-class ScheduleAdapter(Adapter):
-    """Dispatch timer events without network resources."""
-
-    @classmethod
-    def get_name(cls) -> str:
-        """Return the logical adapter's unique protocol name."""
-        return "cron"
-
-    async def _call(self, channel: Channel, operation: str, **data: Any):
-        raise NotImplementedError(
-            "Scheduled channels do not support operations"
-        )
-
-
-class ScheduleChannel(Channel):
-    """A logical timer source with no message destination."""
-
-    async def send(self, event: Event, message: Any, **kwargs: Any):
-        """Reject replies; consumers must choose their own destination."""
-        raise NotImplementedError("Scheduled events do not support replies")

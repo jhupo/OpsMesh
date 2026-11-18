@@ -7,7 +7,10 @@ from importlib import import_module
 from opsmesh import on_plugin_loaded, on_startup
 from opsmesh.drivers import Driver
 from opsmesh.plugins import Plugin, get_dependency_config
-from opsmesh.plugins.registry import get_plugin_by_module_name
+from opsmesh.plugins.registry import (
+    get_plugin_by_module_name,
+    track_registration,
+)
 
 from .adapter import ChannelAdapter
 from .channel import Channel
@@ -18,6 +21,16 @@ _ADAPTERS = {
     "qq": "QQAdapter",
     "dingtalk": "DingTalkAdapter",
 }
+_active_adapters: dict[Driver, dict[str, ChannelAdapter]] = {}
+
+
+@on_startup(with_driver=True, before=True)
+async def _prepare_adapters(driver: Driver) -> None:
+    """Own protocol adapters for one channels plugin activation."""
+    if driver in _active_adapters:
+        raise RuntimeError("Channel adapters are already active for this host")
+    _active_adapters[driver] = {}
+    track_registration(lambda: _active_adapters.pop(driver))
 
 
 def adapter_type(protocol: str) -> type[ChannelAdapter]:
@@ -32,18 +45,17 @@ def adapter_type(protocol: str) -> type[ChannelAdapter]:
 
 def protocol_adapter(driver: Driver, protocol: str) -> ChannelAdapter:
     """Return the adapter that prepared the protocol's connections."""
-    adapter_class = adapter_type(protocol)
     try:
-        return driver.get_adapter(adapter_class)
+        return _active_adapters[driver][protocol]
     except KeyError:
         raise LookupError(f"{protocol} connections are not prepared") from None
 
 
 def _ensure_adapter(driver: Driver, protocol: str) -> ChannelAdapter:
-    try:
-        return protocol_adapter(driver, protocol)
-    except LookupError:
-        return driver.register_adapter(adapter_type(protocol))
+    adapters = _active_adapters[driver]
+    if protocol not in adapters:
+        adapters[protocol] = adapter_type(protocol)(driver)
+    return adapters[protocol]
 
 
 @on_plugin_loaded
