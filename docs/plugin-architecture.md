@@ -4,19 +4,21 @@ OpsMesh 提供事件、消息、规则、权限、依赖注入和插件宿主。
 
 通道连接、事件和发送契约见 [通道与执行回调](channels-and-callbacks.md)。
 
+框架与独立服务的迁移及后续计划见[框架库与插件管理服务设计](plans/framework-service-design.md)。下面的源码布局描述拆包后的工作树。
+
 ## 源码与发行包
 
 ```text
 src/opsmesh/
-├── app.py / cli.py                # 宿主与命令行
-├── drivers/                       # 适配器、逻辑连接、生命周期入口
+├── drivers/                       # Driver 运行时、适配器索引和生命周期编排
 ├── adapters/                      # Channel / Adapter / Event
 ├── dispatch/、matchers/、messages/
 ├── dependencies/                  # Dependent 与 Context
 ├── permissions/、rules/
-├── plugins/                       # 加载、归属、调用持有与本地记录
-└── config.py / lifecycle.py
+├── plugins/                       # 加载、归属、调用持有与配置模型
+└── config.py
 packages/
+├── service/src/opsmesh_service/   # 独立服务、CLI、本机控制和 SQLite 插件目录
 ├── channels/src/                  # opsmesh.plugins.channels
 ├── execution/src/                 # opsmesh.plugins.execution
 ├── database/src/                  # opsmesh.plugins.database
@@ -31,14 +33,14 @@ examples/
 tools/                            # 离线数据维护
 ```
 
-核心和六个插件分别构建 wheel 与源码包，同一个 tag 的 Release 一并发布。Linux 框架包携带宿主运行环境，插件运行包按需部署。插件安装模块为 `opsmesh.plugins.<name>`，entry point 提供 `require("channels")` 等短名；持久记录使用完整模块路径。
+框架、服务和六个插件分别构建 wheel 与源码包，同一个 tag 的 Release 一并发布。Linux 服务包携带宿主运行环境，插件运行包按需部署。插件安装模块为 `opsmesh.plugins.<name>`，entry point 提供 `require("channels")` 等短名；持久记录使用完整模块路径。
 
 ## 职责与依赖
 
 | 组件 | 负责 | 调用者负责 |
 |---|---|---|
-| 核心 | 插件加载、依赖、配置记录、生命周期、调用排空、事件分发 | 下载和安装包、业务数据、业务策略 |
-| Driver | 适配器注册、逻辑连接索引、任务组和阶段回调 | 网络服务与协议实现 |
+| 核心 | 插件加载、依赖、运行时准入、调用排空、事件分发 | 进程管理、下载和安装包、配置目录、业务数据、业务策略 |
+| Driver | 当前运行时的适配器注册、逻辑连接索引、任务组和 `Lifespan` 阶段协调；当前是具体运行时对象，不是抽象协议类 | 网络服务与协议实现、包安装和代码版本切换 |
 | channels | SDK 协议认证、协议收发、事件转换、附件传输与平台群操作 | Agent 选择、会话、产物选择与存储、呈现策略、群管理策略 |
 | execution | 原生 Runner、流清理、SDK 回调与 Trace | Agent/MCP/沙箱构造、Session、审批、用量存储 |
 | database | PostgreSQL engine、会话工厂、事务和插件迁移 | ORM 模型、业务查询与事务边界 |
@@ -46,17 +48,21 @@ tools/                            # 离线数据维护
 
 核心使用 Python 与框架依赖，SDK、SQLAlchemy、FastAPI 和机器人 SDK 由相应插件引入。execution 可独立使用，不依赖 database、filesystem 或 channels。
 
+部署命令由 `opsmesh_service.cli:main` 提供。`opsmesh_service.service.serve()` 负责信号、systemd 通知与本机控制；控制套接字启动失败时目前记录警告，宿主继续运行。`opsmesh_service.host.load_host()` 装配 Driver、独占数据目录并管理插件登记和配置。嵌入方可直接使用 `driver.lifespan()`，不需要安装服务包。
+
 `require()` 确定加载依赖，返回插件模块；`Depends()` 确定一次处理的参数和资源作用域。原生类型通过正常 Python 导入使用。
+
+`Lifespan` 位于核心插件子系统的 `plugins/activation.py`，负责编排启动、排空和资源释放。`plugins/lifecycle.py` 把 `on_*` 回调登记到所属插件，加载阶段不需要 Driver。Service 创建 Driver 并进入和退出 `driver.lifespan()`；没有进程级 Driver 实例或查找入口。需要实例的插件启动或就绪回调可以分别用 `@on_startup(with_driver=True)` 或 `@on_ready(with_driver=True)`，接收本次激活的 Driver。不新增 `runtime` 包。
 
 ## 加载、配置与保护
 
 host.json 保存 framework、environment 和 data_dir。宿主的 SQLite 保存插件模块位置、配置和启动意图。PluginMetadata.config 声明插件自己的 Pydantic 配置类型，插件启动时通过 get_plugin_config 读取。
 
-`load_plugin` 导入声明，`start_plugin` 创建资源，`stop_plugin` 排空并释放资源，`revoke_plugin` 在依赖和保护检查后撤销声明。停止后的静态声明保留，启动期注册随资源清理，重启资源时重新创建。
+`PluginManager` 发现和导入模块；已加载 Registry 记录实际插件、声明归属与依赖，不索引未导入的插件。`Driver.start_plugin()` 创建资源，`Driver.stop_plugin()` 排空并释放资源；`revoke_plugin` 检查依赖及清理状态后撤销声明。停止后的静态声明保留，启动期注册随资源清理，重启资源时重新创建。
 
 核心插件由宿主记录的 protected 标记指定，同时满足 enabled、autoload、required。普通管理操作禁止停止、停用、资源重启或撤销核心插件；宿主退出仍正常释放其资源。save_config 保存候选值，apply_config 单独执行资源重启。详见[插件配置](plugin-configuration-design.md)和[插件生命周期](plugin-lifecycle-design.md)。
 
-源码插件是受信任的进程内 Python 代码。归属和路径约束用于可靠管理，并不隔离恶意 Python；代码和依赖更新通过宿主重启生效。
+源码插件是受信任的进程内 Python 代码。归属和路径约束用于可靠管理，并不隔离恶意 Python；`stop/start/restart` 只重建插件资源，代码和依赖更新仍通过宿主重启或独立 Worker 生效。
 
 ## 事件、身份与回复
 

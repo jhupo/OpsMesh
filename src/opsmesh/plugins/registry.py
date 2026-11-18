@@ -7,12 +7,11 @@ owner. It does not perform a second discovery or import step.
 
 import inspect
 from collections.abc import Callable
-from contextlib import AsyncExitStack, contextmanager
+from contextlib import AsyncExitStack, ExitStack, contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import wraps
-from itertools import chain
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -26,11 +25,7 @@ if TYPE_CHECKING:
     from .manager import PluginManager
 
 _plugins: dict[str, "Plugin"] = {}
-# Fast exact-module lookup for the hot ownership path. The fallback in
-# get_plugin_by_module_name keeps tests and embedders that replace _plugins
-# directly correct.
 _module_plugins: dict[str, "Plugin"] = {}
-_managers: list["PluginManager"] = []
 _current_plugin: ContextVar["Plugin | None"] = ContextVar(
     "_current_plugin", default=None
 )
@@ -82,54 +77,17 @@ def plugin_scope(plugin: "Plugin | None"):
         _current_plugin.reset(token)
 
 
-def _module_name_to_plugin_name(module_name: str) -> str:
-    return module_name.rsplit(".", 1)[-1]
-
-
-def _controlled_modules() -> dict[str, str]:
-    return {
-        plugin_id: module_name
-        for manager in _managers
-        for plugin_id, module_name in manager.controlled_modules.items()
-    }
-
-
-def _find_parent_plugin_id(
-    module_name: str, controlled_modules: dict[str, str] | None = None
-) -> str | None:
-    if controlled_modules is None:
-        controlled_modules = _controlled_modules()
-    available = {
-        module_name: plugin_id
-        for plugin_id, module_name in controlled_modules.items()
-    }
-    while "." in module_name:
-        module_name, _ = module_name.rsplit(".", 1)
-        if module_name in available:
-            return available[module_name]
-
-
-def _module_name_to_plugin_id(
-    module_name: str, controlled_modules: dict[str, str] | None = None
-) -> str:
-    plugin_name = _module_name_to_plugin_name(module_name)
-    if parent_plugin_id := _find_parent_plugin_id(
-        module_name, controlled_modules
-    ):
-        return f"{parent_plugin_id}:{plugin_name}"
-    return plugin_name
-
-
 def _new_plugin(
-    module_name: str, module: ModuleType, manager: "PluginManager"
+    plugin_id: str,
+    parent_plugin_id: str | None,
+    module: ModuleType,
+    manager: "PluginManager",
 ) -> "Plugin":
-    plugin_id = _module_name_to_plugin_id(module_name)
     if plugin_id in _plugins:
         raise RuntimeError(
             f"Plugin {plugin_id} already exists! Check your plugin name."
         )
 
-    parent_plugin_id = _find_parent_plugin_id(module_name)
     if parent_plugin_id is not None and parent_plugin_id not in _plugins:
         raise RuntimeError(
             f"Parent plugin {parent_plugin_id} must "
@@ -139,17 +97,17 @@ def _new_plugin(
         _plugins[parent_plugin_id] if parent_plugin_id is not None else None
     )
 
+    module_name = module.__name__
     plugin = Plugin(
-        name=_module_name_to_plugin_name(module_name),
+        name=module_name.rsplit(".", 1)[-1],
         module=module,
         module_name=module_name,
         manager=manager,
         parent_plugin=parent_plugin,
         config_values=deepcopy(manager.config_values),
         dependency_config_values=deepcopy(manager.dependency_config_values),
-        required=bool(getattr(manager, "required", False)),
-        enabled=bool(getattr(manager, "enabled", True)),
-        protected=bool(getattr(manager, "protected", False)),
+        required=manager.required,
+        enabled=manager.enabled,
     )
     if parent_plugin:
         parent_plugin.sub_plugins.add(plugin)
@@ -161,22 +119,14 @@ def _new_plugin(
 
 def revoke_plugin(plugin: "Plugin") -> None:
     """Revoke cleaned declarations after checking the entire child tree."""
-    from .errors import PluginProtectedError
-
     affected = {plugin}
     pending = [plugin]
     while pending:
         item = pending.pop()
         affected.update(item.sub_plugins)
         pending.extend(item.sub_plugins)
-    if any(item.protected for item in affected):
-        raise PluginProtectedError(
-            "Protected plugin declarations cannot be revoked"
-        )
     if any(not item.cleanup_complete or item.calls for item in affected):
-        raise RuntimeError(
-            "Plugin resources must be stopped before revocation"
-        )
+        raise RuntimeError("Plugin resources must be stopped before revocation")
     if any(
         item not in affected
         and any(owner.id_ in item.dependencies for owner in affected)
@@ -219,6 +169,19 @@ def _revoke_plugin(plugin: "Plugin") -> None:
         parent_plugin.sub_plugins.discard(plugin)
     if errors:
         raise ExceptionGroup("Plugin registration cleanup failed", errors)
+
+
+@contextmanager
+def _registration_scope():
+    """Release the declarations created in one plugin environment."""
+    existing = get_loaded_plugins()
+    try:
+        yield
+    finally:
+        with ExitStack() as cleanup:
+            for plugin in _plugins.values():
+                if plugin not in existing:
+                    cleanup.callback(_revoke_plugin, plugin)
 
 
 def track_registration(
@@ -318,9 +281,7 @@ def register_hook(group, func, parameters):
 
 def register_callback(group, func):
     """Own one asynchronous channel callback without sharing its identity."""
-    plugin = _current_plugin.get() or get_plugin_by_module_name(
-        func.__module__
-    )
+    plugin = _current_plugin.get() or get_plugin_by_module_name(func.__module__)
 
     @wraps(func)
     async def registered(*args, **kwargs):
@@ -371,20 +332,11 @@ def get_plugin_by_module_name(module_name: str) -> "Plugin | None":
     candidate = module_name
     while candidate:
         plugin = _module_plugins.get(candidate)
-        if plugin is not None and _plugins.get(plugin.id_) is plugin:
+        if plugin is not None:
             return plugin
         if "." not in candidate:
             break
         candidate = candidate.rsplit(".", 1)[0]
-
-    # Keep compatibility with callers that replace the registry mapping in
-    # tests or embedded hosts instead of using the loader lifecycle.
-    for plugin in _plugins.values():
-        if module_name == plugin.module_name or module_name.startswith(
-            plugin.module_name + "."
-        ):
-            _module_plugins[plugin.module_name] = plugin
-            return plugin
 
 
 def get_loaded_plugins() -> set["Plugin"]:
@@ -423,25 +375,3 @@ def get_plugins_in_dependency_order() -> list["Plugin"]:
     for plugin in _plugins.values():
         visit(plugin)
     return ordered
-
-
-def get_available_plugin_names() -> set[str]:
-    """Return available plugin identifiers, including unloaded plugins."""
-    return {
-        *chain.from_iterable(
-            manager.available_plugins for manager in _managers
-        )
-    }
-
-
-def register_plugin_manager(manager: "PluginManager") -> None:
-    """Pre-register a manager without importing any of its modules.
-
-    Hosts use this to install the complete startup snapshot before loading an
-    entry, so dependencies resolve to their declared configuration.
-
-    Args:
-        manager: The manager whose controlled modules become loadable.
-    """
-    if manager not in _managers:
-        _managers.append(manager)

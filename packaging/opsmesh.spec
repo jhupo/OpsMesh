@@ -1,4 +1,4 @@
-"""Freeze the framework host and Python standard library, without plugins."""
+"""Freeze the service, framework and Python standard library, without plugins."""
 
 import importlib.util
 import importlib.metadata
@@ -14,13 +14,15 @@ from PyInstaller.utils.hooks import (
 
 root = Path(SPECPATH).parent
 source_path = str(root / "src")
+service_path = str(root / "packages" / "service" / "src")
 sys.path.insert(0, source_path)
 sys.path.insert(0, str(root / "scripts"))
 from release_artifacts import runtime_dependencies
 
 # Plugins may use public submodules that core itself never imports.
 host_distributions = {
-    canonicalize_name(item["name"]) for item in runtime_dependencies("opsmesh")
+    canonicalize_name(item["name"])
+    for item in runtime_dependencies("opsmesh-service")
 }
 host_packages = {
     name
@@ -28,7 +30,7 @@ host_packages = {
     if any(canonicalize_name(owner) in host_distributions for owner in owners)
 }
 host_modules = []
-host_data = copy_metadata("opsmesh", recursive=True)
+host_data = copy_metadata("opsmesh-service", recursive=True)
 for name in sorted(host_packages):
     host_modules.extend(collect_submodules(name))
     host_data.extend(collect_data_files(name))
@@ -63,7 +65,7 @@ for name in sorted(sys.stdlib_module_names - excluded_stdlib):
 
 analysis = Analysis(
     [str(root / "packaging" / "entrypoint.py")],
-    pathex=[source_path],
+    pathex=[source_path, service_path],
     binaries=[],
     datas=host_data,
     hiddenimports=host_modules + standard_library,

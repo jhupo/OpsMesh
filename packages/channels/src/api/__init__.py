@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from opsmesh.drivers import Driver
+
     from .adapter import APIAdapter
     from .channel import APIChannel
     from .config import APIConnectionSettings
@@ -38,7 +40,7 @@ def __getattr__(name: str) -> object:
     return value
 
 
-def get_app(connection: str = "main") -> FastAPI:
+def get_app(driver: Driver, connection: str = "main") -> FastAPI:
     """Return the prepared FastAPI app for caller-owned native routes.
 
     The app exists from the consumer's startup phase and is listening after
@@ -52,7 +54,9 @@ def get_app(connection: str = "main") -> FastAPI:
     if owner is None:
         raise RuntimeError("HTTP connections belong to consuming plugins")
     try:
-        channel = protocol_adapter("api").get_connection(owner.id_, connection)
+        channel = protocol_adapter(driver, "api").get_connection(
+            owner.id_, connection
+        )
     except LookupError as error:
         raise RuntimeError(
             f"API connection {connection!r} is not prepared"

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from opsmesh import get_driver, on_plugin_loaded
+from opsmesh import on_plugin_loaded, on_startup
 from opsmesh.plugins import require
 from opsmesh.plugins.model import Plugin
 from opsmesh.plugins.registry import track_registration
@@ -116,9 +116,8 @@ def bind_schema(plugin: Plugin) -> None:
     require("database")
     track_registration(registry.add(plugin.id_, schema))
 
+    @on_startup(before=True)
     async def check() -> None:
         from .migrations import check_migrations
 
         await check_migrations(plugin.id_)
-
-    get_driver().on_startup(check)

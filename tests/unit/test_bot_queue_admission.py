@@ -10,7 +10,6 @@ import pytest
 from opsmesh.adapters import Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.params import Depends
 from opsmesh.permissions import Permission
@@ -34,7 +33,6 @@ class BotHarness:
     def __init__(self, protocol, monkeypatch):
         self.protocol = protocol
         self.driver = Driver(Env(), Config())
-        monkeypatch.setattr(driver_state, "_driver", self.driver)
         self.provider = Plugin(
             "provider",
             ModuleType("provider"),
@@ -54,6 +52,10 @@ class BotHarness:
             registry,
             "_plugins",
             {"support": self.owner, "provider": self.provider},
+        )
+        monkeypatch.setattr(
+            registry, "_module_plugins",
+            {plugin.module_name: plugin for plugin in registry._plugins.values()},
         )
         token = registry._current_plugin.set(self.owner)
         try:

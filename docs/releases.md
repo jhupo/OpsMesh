@@ -1,6 +1,6 @@
 # 发布
 
-核心 `opsmesh` 和六个官方插件分别构建 Python 包。采用同步版本：七个 `pyproject.toml` 的版本必须相同，Release tag 使用 `v<version>`。
+核心 `opsmesh`、官方服务 `opsmesh-service` 和六个插件分别构建 Python 包。采用同步版本：八个 `pyproject.toml` 的版本必须相同，Release tag 使用 `v<version>`。
 
 版本约定：从 `v0.5.0` 起，常规功能与修复均递增为 `0.5.1`、`0.5.2`、`0.5.3` 等，保持 `0.5.x`。只有明确决定进行大版本调整时才切换版本系列；目录重构或普通功能新增本身不自动升级版本系列。
 
@@ -25,7 +25,7 @@ python -m pip install --no-deps --no-build-isolation .
 python scripts/build_packages.py --output dist/python
 ```
 
-输出包含七个 wheel 和七个源码包；构建脚本会检查版本一致性和 wheel 内容边界。
+输出包含八个 wheel 和八个源码包；构建脚本会检查版本一致性和 wheel 内容边界。
 
 在目标 Linux 架构上继续构建与验收：
 
@@ -45,11 +45,11 @@ knowledge 的 PyTorch、本地编码依赖与模型权重独立提供。普通 P
 
 ## 维护者流程
 
-1. 更新核心与六个插件的版本，以及各插件 `requirements-core.txt` 和 `requirements-plugins.txt` 中匹配的依赖版本；更新 `CHANGELOG.md`，并同步需要变更的锁文件。
+1. 更新框架、服务和六个插件的版本，以及服务与插件对其他发行包的精确版本依赖；更新 `CHANGELOG.md`，并同步需要变更的锁文件。
 2. 在 Pull Request 中通过 CI、Python 包检查以及两种架构的冻结产物验收。
 3. 将已审查的提交合并后创建并推送对应 tag，例如 `v0.5.1`。
 4. 检查 Release 工作流的版本校验、构建、测试、校验和、来源证明及附件上传结果。
-5. 核对七个包和两种架构附件齐全后，使用实际发布附件进行安装验证。
+5. 核对八个包和两种架构附件齐全后，使用实际发布附件进行安装验证。
 
 不要通过移动已发布 tag 替换现有包；修复应使用新版本。撤回有缺陷的发布时记录原因，说明宿主与插件的匹配要求和数据迁移影响。
 

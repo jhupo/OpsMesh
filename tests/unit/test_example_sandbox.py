@@ -13,15 +13,13 @@ from pathlib import Path
 
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import get_dependency_config, get_plugin, registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 from opsmesh.plugins.registry import plugin_scope
 
 driver = Driver(Env(), Config())
-driver_state.set_driver(driver)
 temporary = tempfile.TemporaryDirectory()
-registry.register_plugin_manager(
+register_plugin_manager(
     PluginManager(
         ["opsmesh.plugins.filesystem"],
         config={"root": str(Path(temporary.name) / "files")},
@@ -32,7 +30,7 @@ manager = PluginManager(
     config={"model": "gpt-test"},
     dependencies={"channels": {"api": {"main": {"port": 0}}}},
 )
-registry.register_plugin_manager(manager)
+register_plugin_manager(manager)
 plugin = manager.load_plugin("example_sandbox")
 assert plugin is not None
 assert get_plugin("channels") is not None
@@ -98,8 +96,13 @@ def run_sandbox_script(script):
         ]
     )
     environment.pop("OPENAI_API_KEY", None)
+    payload = script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", managed],
         cwd=ROOT,
         env=environment,
         capture_output=True,

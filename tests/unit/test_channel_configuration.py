@@ -11,13 +11,12 @@ BOOTSTRAP = """
 import asyncio
 import anyio
 from opsmesh.config import Config, Env
-from opsmesh.drivers import Driver, set_driver
+from opsmesh.drivers import Driver
 from opsmesh.plugins import load_plugin, registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 from opsmesh.dispatch import dispatch_event
 
 driver = Driver(Env(), Config(command_start={"/"}))
-set_driver(driver)
 driver._lifespan.shutdown_timeout = 2
 channels = load_plugin("opsmesh.plugins.channels")
 assert channels is not None
@@ -119,8 +118,13 @@ def run_script(tmp_path, script, consumer=CONSUMER):
     (tmp_path / "configured_bot.py").write_text(consumer, encoding="utf-8")
     (tmp_path / "other_bot.py").write_text(consumer, encoding="utf-8")
     root = Path(__file__).resolve().parents[2]
+    payload = BOOTSTRAP + script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", BOOTSTRAP + script],
+        [sys.executable, "-c", managed],
         cwd=root,
         env={
             **os.environ,

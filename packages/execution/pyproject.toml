@@ -27,6 +27,9 @@ package-dir = {"opsmesh.plugins.execution" = "src"}
 [project.entry-points."opsmesh.plugins"]
 execution = "opsmesh.plugins.execution"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+execution = "opsmesh.plugins.execution"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.execution" = ["py.typed"]
 

@@ -5,7 +5,6 @@ import pytest
 import opsmesh.plugins.execution as plugin
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins.execution import _lifecycle as lifecycle
 
 
@@ -19,9 +18,7 @@ def execution_settings(monkeypatch):
 async def test_lifecycle_starts_and_stops_execution(
     execution_settings, monkeypatch
 ):
-    monkeypatch.setattr(driver_state, "_driver", None)
     driver = Driver(Env(), Config())
-    driver_state.set_driver(driver)
     monkeypatch.setattr(lifecycle, "_runtime", None)
     driver.on_startup(lifecycle.startup)
     driver.on_shutdown(lifecycle.shutdown)

@@ -93,7 +93,19 @@ filesystem.json 是 CLI 配置输入，例如 `{"root":"/var/lib/opsmesh/files"}
 channels 只负责传输、正文 `user` 转换和框架分发。
 插件模型、凭据引用和端口仍由消费插件定义。详见[插件配置](plugin-configuration-design.md)和[通道配置](channels-and-callbacks.md)。
 
-运行中的服务独占宿主数据目录；离线 CLI、检查和迁移操作需停止服务，在线入口由管理插件提供。
+运行中的服务独占宿主数据目录。登记包、离线检查和迁移仍在维护窗口执行。
+
+扩展资源可以通过 Linux 本机控制接口查询、加载、启动、停止和重启。宿主使用
+`<data_dir>/control/host.sock`，以服务账号执行命令。内置插件在各自的包元数据中声明 `opsmesh.builtin_plugins`，随官方插件包发布。升级时使用带该标记的新插件包。`host.json` 继续只保存宿主配置。在线启动依赖内置提供方的扩展前，该提供方须已在宿主启动时就绪。
+
+```bash
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
+  --online-plugin-action stop --module example_chat
+sudo -u opsmesh /opt/opsmesh/current/opsmesh --manifest /etc/opsmesh/host.json \
+  --online-plugin-action start --module example_chat
+```
+
+用完整模块名替换 `example_chat`。两条命令在同一个运行中的宿主完成，结果包含宿主 PID、插件状态和清理标记。人工停止保持到显式恢复或宿主下次按持久配置启动。恢复使用已加载的代码；代码版本替换见下文。
 
 环境文件不是必需文件。systemd 和安装检查允许 `/etc/opsmesh/opsmesh.env` 不存在；需要插件凭据时通过 `--env-file` 显式提供，升级保留已有文件。可选 Docker 示例的 `env_file.required: false` 需要 Docker Compose 2.24.0 或更新版本。
 

@@ -12,7 +12,6 @@ import pytest
 from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.params import Depends
 from opsmesh.plugins import registry
@@ -40,11 +39,14 @@ class ProtocolHarness:
 
     def __init__(self, monkeypatch):
         self.driver = Driver(Env(), Config())
-        monkeypatch.setattr(driver_state, "_driver", self.driver)
         self.driver.register_adapter(APIAdapter)
         self.adapter = self.driver.get_adapter(APIAdapter)
         self.owners = {}
         monkeypatch.setattr(registry, "_plugins", self.owners)
+        monkeypatch.setattr(
+            registry, "_module_plugins",
+            {plugin.module_name: plugin for plugin in registry._plugins.values()},
+        )
         self.channels = {}
         self.matchers = []
         self.channel = None
@@ -58,6 +60,7 @@ class ProtocolHarness:
             status=options.pop("status", PluginStatus.READY),
         )
         self.owners[name] = plugin
+        registry._module_plugins[plugin.module_name] = plugin
         return plugin
 
     def bind(self, handler, owner_id="support"):

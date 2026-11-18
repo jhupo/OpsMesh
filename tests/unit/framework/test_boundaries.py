@@ -8,7 +8,7 @@ from pathlib import Path
 import opsmesh as framework
 from opsmesh.config import Config
 from opsmesh.permissions import MESSAGE, Permission
-from opsmesh.plugins import load_from_toml
+from opsmesh.plugins import load_from_toml, plugin_environment
 from opsmesh.rules import Rule, regex
 
 
@@ -22,21 +22,23 @@ class Boundary(importlib.abc.MetaPathFinder):
                       'websockets', 'yarl', 'multidict',
                       'loguru', 'pydantic_settings', 'dotenv', 'agents'}
         if (fullname.startswith(('opsmesh.gateway', 'opsmesh.infra',
-                                 'opsmesh.modules', 'opsmesh.integrations'))
+                                 'opsmesh.modules', 'opsmesh.integrations',
+                                 'opsmesh_service'))
                 or fullname in transports):
             raise AssertionError('Forbidden core dependency: ' + fullname)
 sys.meta_path.insert(0, Boundary())
 import opsmesh
 import opsmesh.dependencies
 import opsmesh.plugins
-from opsmesh.app import HostManifest, load_host
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
 import anyio
 
 async def verify():
-    async with load_host(HostManifest()) as driver:
-        async with driver.lifespan():
-            assert driver.started
-            assert not hasattr(driver, "http")
+    driver = Driver(Env(), Config())
+    async with driver.lifespan():
+        assert driver.started
+        assert not hasattr(driver, "http")
     assert not driver.started
 
 anyio.run(verify)
@@ -79,8 +81,6 @@ def test_framework_does_not_create_or_run_asgi_hosts():
     }
     for package in ("opsmesh",):
         for path in (root / package).rglob("*.py"):
-            if path.name in {"app.py", "cli.py"}:
-                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if (
@@ -106,7 +106,8 @@ def test_plugin_configuration_uses_nested_opsmesh_table(tmp_path):
         "[tool.opsmesh]\nplugins = []\nplugin_dirs = []\n",
         encoding="utf-8",
     )
-    assert load_from_toml(str(path)) == set()
+    with plugin_environment():
+        assert load_from_toml(str(path)) == set()
 
 
 def _import_targets(path, source_root):
@@ -134,7 +135,10 @@ def test_framework_dependencies_follow_layer_boundaries():
         "opsmesh.plugins.database",
         "opsmesh.plugins.execution",
         "opsmesh.plugins.filesystem",
-        "opsmesh.app",
+        "opsmesh.bootstrap",
+        "opsmesh.main",
+        "opsmesh.plugins.storage",
+        "opsmesh_service",
         "opsmesh.api",
         "opsmesh.modules",
         "opsmesh.gateway",
@@ -153,8 +157,6 @@ def test_framework_dependencies_follow_layer_boundaries():
     root = source_root / "opsmesh"
     forbidden = []
     for path in root.rglob("*.py"):
-        if path.name in {"app.py", "cli.py"}:
-            continue
         for target in _import_targets(path, source_root):
             if any(
                 target == prefix or target.startswith(prefix + ".")
@@ -182,7 +184,7 @@ def test_internal_components_do_not_import_public_framework_entrypoint():
     source_root = root.parent
     forbidden = []
     for path in root.rglob("*.py"):
-        if path in (root / "__init__.py", root / "app.py"):
+        if path in (root / "__init__.py", root / "bootstrap" / "host.py"):
             continue
         if "opsmesh" in _import_targets(path, source_root):
             forbidden.append(str(path.relative_to(source_root)))

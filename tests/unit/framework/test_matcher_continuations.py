@@ -7,10 +7,10 @@ from types import ModuleType
 import pytest
 
 from opsmesh.dispatch import dispatch_event
-from opsmesh.lifecycle import Lifespan
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.permissions import Permission
 from opsmesh.plugins import registry
+from opsmesh.plugins.activation import Lifespan
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
@@ -29,6 +29,10 @@ def plugin(monkeypatch):
     module = ModuleType("continuation_test")
     plugin = Plugin(module.__name__, module, module.__name__, PluginManager())
     monkeypatch.setattr(registry, "_plugins", {plugin.id_: plugin})
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     return plugin
 
 

@@ -28,33 +28,12 @@ class PluginLoadRequest:
 PluginAdmission = Callable[[PluginLoadRequest], bool | None]
 """Return False to deny; None or True allows the load."""
 
-_admission: PluginAdmission | None = None
-
-
-def set_plugin_admission(admission: PluginAdmission | None) -> None:
-    """Install the process-wide admission check used before imports."""
-    global _admission
-    _admission = admission
-
-
-def clear_plugin_admission() -> None:
-    """Remove the process-wide admission check."""
-    set_plugin_admission(None)
-
 
 def check_plugin_load(
-    plugin_id: str, module_name: str, origin: str | None
+    admission: PluginAdmission | None, request: PluginLoadRequest
 ) -> None:
-    """Raise when the host denies this plugin load.
-
-    There is no admission check by default, preserving standalone framework
-    usage. Exceptions raised by the check itself are not swallowed.
-    """
-    admission = _admission
-    if admission is None:
-        return
-    request = PluginLoadRequest(plugin_id, module_name, origin)
-    if admission(request) is False:
+    """Raise when the active environment denies this plugin load."""
+    if admission is not None and admission(request) is False:
         raise PluginLoadDenied(
-            f'Plugin "{plugin_id}" is not enabled for this host'
+            f'Plugin "{request.plugin_id}" is not enabled for this host'
         )

@@ -31,25 +31,28 @@ async def run(plugin, driver, body, *, skip=None, started=()):
     Providers named in ``started`` run their own entries first.
     """
     lifespan = driver._lifespan
-    lifespan._startup_funcs[:] = [
-        entry
-        for entry in lifespan._startup_funcs
-        if skip is None or not skip(entry.func)
-    ]
+    original = {}
+    if skip is not None:
+        for phase in ("prepare", "startup"):
+            if phase in plugin.lifecycle_hooks:
+                entries = original[phase] = plugin.lifecycle_hooks[phase]
+                plugin.lifecycle_hooks[phase] = [
+                    entry for entry in entries if not skip(entry.func)
+                ]
     _mark_dependencies_ready(plugin)
     providers = [get_plugin(name) for name in started]
     async with anyio.create_task_group() as task_group:
         lifespan._task_group = task_group
         try:
             for provider in providers:
-                await lifespan._owned_phase(lifespan._startup_funcs, provider)
-                await lifespan._owned_phase(lifespan._ready_funcs, provider)
+                await lifespan._owned_phase("startup", provider)
+                await lifespan._owned_phase("ready", provider)
                 provider.status = PluginStatus.READY
-                await lifespan._owned_phase(lifespan._started_funcs, provider)
-            await lifespan._owned_phase(lifespan._startup_funcs, plugin)
-            await lifespan._owned_phase(lifespan._ready_funcs, plugin)
+                await lifespan._owned_phase("started", provider)
+            await lifespan._owned_phase("startup", plugin)
+            await lifespan._owned_phase("ready", plugin)
             plugin.status = PluginStatus.READY
-            await lifespan._owned_phase(lifespan._started_funcs, plugin)
+            await lifespan._owned_phase("started", plugin)
             await body()
             plugin.status = PluginStatus.STOPPING
             await lifespan._close_plugin(plugin)
@@ -58,4 +61,5 @@ async def run(plugin, driver, body, *, skip=None, started=()):
                 await lifespan._close_plugin(provider)
                 provider.status = PluginStatus.STOPPED
         finally:
+            plugin.lifecycle_hooks.update(original)
             lifespan._task_group = None

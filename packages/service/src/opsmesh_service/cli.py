@@ -6,34 +6,34 @@ import argparse
 import asyncio
 import importlib
 import inspect
+import json
 import logging
-import os
-import signal
-import socket
 import traceback
 from importlib.metadata import version
 from pathlib import Path
 
-import anyio
-
-from opsmesh.app import get_host, load_host, load_manifest
 from opsmesh.plugins import (
     get_loaded_plugins,
     get_plugin_by_module_name,
 )
-from opsmesh.plugins.config import validate_dependency_config
-from opsmesh.plugins.storage import PluginConfiguration, PluginRecord
-from opsmesh.utils import run_sync
+from opsmesh.plugins.config import (
+    PluginConfiguration,
+    validate_dependency_config,
+)
+
+from .catalog import PluginRecord
+from .control import ACTIONS, send_control
+from .host import HostManifest, load_host, load_manifest
+from .service import serve
 
 logger = logging.getLogger(__name__)
 
 
-async def _plugins(args) -> None:
+async def _plugins(manifest: HostManifest, args: argparse.Namespace) -> None:
     """Manage records for existing plugins without installing packages."""
-    async with load_host(load_manifest(args.manifest), load_entries=False):
-        host = get_host()
+    async with load_host(manifest, load_entries=False) as host:
         if args.plugin_action == "list":
-            for record in host.records.values():
+            for record in host.list_plugins():
                 print(
                     f"{record.module}\tenabled={record.enabled}\tautoload={record.autoload}"
                     f"\tprotected={record.protected}"
@@ -64,7 +64,7 @@ async def _plugins(args) -> None:
                 )
             )
         elif args.plugin_action == "protect":
-            await run_sync(host.storage.set_protected)(args.module)
+            await host.protect(args.module)
         elif args.plugin_action == "enable":
             await host.enable(args.module)
         elif args.plugin_action == "disable":
@@ -81,12 +81,11 @@ async def _plugins(args) -> None:
             await host.import_config(args.module)
 
 
-async def _maintenance(manifest_path: Path, command: str | None) -> None:
+async def _maintenance(manifest: HostManifest, command: str | None) -> None:
     """Validate declarations and optionally call an enabled plugin command."""
-    manifest = load_manifest(manifest_path)
-    async with load_host(manifest, manifest_dir=manifest_path.parent):
+    async with load_host(manifest) as host:
         for plugin in get_loaded_plugins():
-            await get_host().initialize_config(plugin)
+            await host.initialize_config(plugin)
             validate_dependency_config(plugin)
             if plugin.metadata and plugin.metadata.config:
                 plugin.metadata.config.model_validate(
@@ -110,49 +109,11 @@ async def _maintenance(manifest_path: Path, command: str | None) -> None:
             await result
 
 
-def _notify(state: str) -> None:
-    """Report readiness to systemd without a libsystemd dependency."""
-    address = os.environ.get("NOTIFY_SOCKET")
-    if not address:
-        return
-    if address.startswith("@"):
-        address = "\0" + address[1:]
-    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as channel:
-        channel.connect(address)
-        channel.sendall(state.encode())
-
-
-async def _serve(manifest_path: Path) -> None:
-    """Translate systemd SIGTERM into cancellation with lifecycle cleanup."""
-    task = asyncio.current_task()
-    loop = asyncio.get_running_loop()
-    if task is not None and hasattr(signal, "SIGTERM"):
-        try:
-            loop.add_signal_handler(signal.SIGTERM, task.cancel)
-        except NotImplementedError:
-            pass
-    try:
-        async with load_host(
-            load_manifest(manifest_path), manifest_dir=manifest_path.parent
-        ) as driver:
-            async with driver.lifespan():
-                _notify("READY=1")
-                try:
-                    await anyio.sleep_forever()
-                finally:
-                    _notify("STOPPING=1")
-    finally:
-        try:
-            loop.remove_signal_handler(signal.SIGTERM)
-        except NotImplementedError:
-            pass
-
-
 def main(argv: list[str] | None = None) -> int:
     """Run the installed host or one explicit maintenance command."""
     parser = argparse.ArgumentParser(prog="opsmesh")
     parser.add_argument(
-        "--version", action="version", version=version("opsmesh")
+        "--version", action="version", version=version("opsmesh-service")
     )
     parser.add_argument("--manifest", required=True, type=Path)
     actions = parser.add_mutually_exclusive_group()
@@ -174,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
             "protect",
         ],
         help="Manage an existing plugin while the host is stopped",
+    )
+    actions.add_argument(
+        "--online-plugin-action",
+        choices=ACTIONS,
+        help="Manage an extension on the running host",
     )
     parser.add_argument("--module", help="Full plugin module name")
     parser.add_argument(
@@ -208,17 +174,36 @@ def main(argv: list[str] | None = None) -> int:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
     args = parser.parse_args(argv)
+    if args.online_plugin_action and not args.module:
+        parser.error("--online-plugin-action requires --module")
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     try:
-        if args.plugin_action:
-            asyncio.run(_plugins(args))
+        manifest = load_manifest(args.manifest)
+        if args.online_plugin_action:
+            try:
+                reply = asyncio.run(
+                    send_control(
+                        manifest.data_dir,
+                        args.online_plugin_action,
+                        args.module,
+                    )
+                )
+            except ConnectionError as error:
+                logger.error("%s", error)
+                return 1
+            if "error" in reply:
+                logger.error("%s", reply["error"])
+                return 1
+            print(json.dumps(reply["result"], ensure_ascii=False))
+        elif args.plugin_action:
+            asyncio.run(_plugins(manifest, args))
         elif args.check or args.command:
-            asyncio.run(_maintenance(args.manifest, args.command))
+            asyncio.run(_maintenance(manifest, args.command))
         else:
-            asyncio.run(_serve(args.manifest))
+            asyncio.run(serve(manifest))
     except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Host stopped by signal")
     except Exception as error:
@@ -233,3 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 1
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

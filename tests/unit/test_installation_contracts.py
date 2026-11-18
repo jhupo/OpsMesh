@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_default_manifest_needs_no_plugins_or_credentials():
-    from opsmesh.app import HostManifest
+    from opsmesh_service.host import HostManifest
 
     manifest = HostManifest.model_validate_json(
         (ROOT / "deploy/host.example.json").read_text(encoding="utf-8")

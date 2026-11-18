@@ -21,6 +21,9 @@ package-dir = {"opsmesh.plugins.knowledge" = "src"}
 [project.entry-points."opsmesh.plugins"]
 knowledge = "opsmesh.plugins.knowledge"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+knowledge = "opsmesh.plugins.knowledge"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.knowledge" = ["py.typed", "migrations/*.py"]
 

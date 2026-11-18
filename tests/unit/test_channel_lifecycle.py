@@ -31,6 +31,10 @@ def make_channel(protocol, monkeypatch):
         status=PluginStatus.READY,
     )
     monkeypatch.setattr(registry, "_plugins", {"support": owner})
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     token = registry._current_plugin.set(owner)
     try:
         if protocol == "qq":

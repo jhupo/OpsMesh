@@ -235,7 +235,7 @@ class Channel(FrameworkChannel):
         """Withdraw readiness without invalidating admitted work."""
         if self.adapter.channels.get(self.self_id) is self:
             self.adapter.disconnect(self)
-        if self._state != CLOSED:
+        if self._state not in {CLOSED, FAILED}:
             self.mark_disconnected()
 
 

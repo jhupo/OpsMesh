@@ -11,8 +11,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from opsmesh import get_driver, get_plugin, plugin_call
+from opsmesh import get_plugin, plugin_call
 from opsmesh.dispatch import dispatch_event
+from opsmesh.drivers import Driver
 from opsmesh.plugins.database import Database
 from opsmesh.plugins.invocation import PluginUnavailable
 from opsmesh.plugins.model import Plugin
@@ -79,7 +80,7 @@ class Scheduler:
         """Whether this instance still owns scheduling authority."""
         return self._healthy and not self._closing
 
-    async def startup(self) -> None:
+    async def startup(self, driver: Driver) -> None:
         """Reserve a dedicated connection and exclusive namespace lock."""
         connection = await self.database.engine.connect()
         self._lock = connection
@@ -97,7 +98,6 @@ class Scheduler:
                 text("SELECT pg_backend_pid()")
             )
             await connection.commit()
-            driver = get_driver()
             try:
                 adapter = driver.get_adapter(ScheduleAdapter)
             except KeyError:

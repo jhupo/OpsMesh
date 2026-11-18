@@ -10,16 +10,14 @@ import asyncio
 import sys
 
 import anyio
-from opsmesh.drivers import base as driver_state
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.plugins import registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 
 driver = Driver(Env(), Config())
-driver_state.set_driver(driver)
 manager = PluginManager(["opsmesh.plugins.channels"])
-registry.register_plugin_manager(manager)
+register_plugin_manager(manager)
 assert manager.load_plugin("opsmesh.plugins.channels") is not None
 """
 
@@ -31,8 +29,13 @@ def run_script(tmp_path, script):
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(root / "src"), str(tmp_path)]
     )
+    payload = BOOTSTRAP + script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", BOOTSTRAP + script],
+        [sys.executable, "-c", managed],
         cwd=root,
         env=environment,
         text=True,
@@ -45,7 +48,7 @@ def run_script(tmp_path, script):
 def load_consumer(dependencies):
     return f"""
 manager = PluginManager(["consumer"], dependencies={dependencies!r})
-registry.register_plugin_manager(manager)
+register_plugin_manager(manager)
 consumer = manager.load_plugin("consumer")
 assert consumer is not None
 """
@@ -85,9 +88,9 @@ async def reply():
     await hello.finish("hello")
 
 
-@on_ready
-async def configure_app():
-    assert get_app() is not None
+@on_ready(with_driver=True)
+async def configure_app(driver):
+    assert get_app(driver) is not None
 """)
     run_script(
         tmp_path,
@@ -96,7 +99,7 @@ async def configure_app():
 from opsmesh.plugins.channels.api import APIChannel, get_app
 assert "opsmesh.plugins.channels.api.adapter" not in sys.modules
 try:
-    get_app()
+    get_app(driver)
 except RuntimeError as error:
     assert "not prepared" in str(error)
 else:
@@ -316,7 +319,7 @@ import httpx
 second_manager = PluginManager(
     ["second"], dependencies={"channels": {"api": {"main": {"port": 0}}}}
 )
-registry.register_plugin_manager(second_manager)
+register_plugin_manager(second_manager)
 second = second_manager.load_plugin("second")
 assert second is not None
 async def request(channel, plugin_id):
@@ -337,12 +340,12 @@ async def main():
         assert (await request(first, "consumer")).status_code == 200
         assert (await request(first, "second")).status_code == 404
         assert (await request(other, "second")).status_code == 200
-        await manager.stop_plugin("consumer")
+        await driver.stop_plugin(consumer)
         assert first.state == "closed"
         assert not first.ready
         assert other.ready
         assert (await request(other, "second")).status_code == 200
-        await manager.start_plugin("consumer")
+        await driver.start_plugin(consumer)
         restarted = driver.get_channel("api:consumer:main")
         assert restarted is not first
         assert (await request(restarted, "consumer")).status_code == 200

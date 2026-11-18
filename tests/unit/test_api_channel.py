@@ -11,7 +11,6 @@ import pytest
 from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.messages import Message
 from opsmesh.params import Context, Depends, EventMessage
@@ -83,17 +82,21 @@ class APIHarness:
 
     def __init__(self, monkeypatch):
         self.driver = Driver(Env(), Config())
-        monkeypatch.setattr(driver_state, "_driver", self.driver)
         self.driver.register_adapter(APIAdapter)
         self.adapter = self.driver.get_adapter(APIAdapter)
         self.owners = {}
         monkeypatch.setattr(registry, "_plugins", self.owners)
+        monkeypatch.setattr(
+            registry, "_module_plugins",
+            {plugin.module_name: plugin for plugin in registry._plugins.values()},
+        )
         self.channels = {}
         self.matchers = []
 
     def owner(self, name="support", **options):
         plugin = plugin_owner(name, **options)
         self.owners[name] = plugin
+        registry._module_plugins[plugin.module_name] = plugin
         return plugin
 
     async def connect(self, name="support", connection="main", **options):
@@ -147,6 +150,9 @@ async def api(monkeypatch):
         for channel in harness.channels.values():
             if channel.state != "closed":
                 await channel.close()
+        for owner in tuple(harness.owners.values()):
+            while owner.activation_cleanups:
+                owner.activation_cleanups.pop()()
         matchers.clear()
         matchers.update(saved)
 
@@ -175,13 +181,10 @@ def test_connection_settings_reject_business_identity_configuration():
 @pytest.mark.anyio
 @pytest.mark.parametrize("question", ["/api_probe", "/api_probe hello"])
 async def test_api_message_uses_framework_command_and_caller_context(
-    api, monkeypatch, question
+    api, question
 ):
     from opsmesh.params import CommandArg
     from opsmesh.rules import command
-    from opsmesh.rules.checks import TrieRule
-
-    monkeypatch.setattr(TrieRule, "prefix", type(TrieRule.prefix)())
 
     async def handler(
         channel: Channel,
@@ -206,7 +209,8 @@ async def test_api_message_uses_framework_command_and_caller_context(
             ),
         )
 
-    api.bind(handler, rule=command("api_probe", force_whitespace=True))
+    with registry.plugin_scope(api.owner()):
+        api.bind(handler, rule=command("api_probe", force_whitespace=True))
     channel = await api.connect()
     response = await api.post(
         channel,
@@ -643,7 +647,7 @@ async def test_native_fastapi_routes_are_caller_owned(api):
     channel = await api.connect()
     token = registry._current_plugin.set(api.owners["support"])
     try:
-        app = get_app()
+        app = get_app(api.driver)
     finally:
         registry._current_plugin.reset(token)
     assert app is channel.app

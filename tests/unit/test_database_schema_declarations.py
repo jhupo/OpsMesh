@@ -45,11 +45,10 @@ def reject(plugin):
     script = """
 import asyncio
 import logging
-from opsmesh.drivers import base as driver_state
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.plugins import registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 from opsmesh.plugins.hooks import _bound
 
 class TestDriver(Driver):
@@ -58,9 +57,9 @@ class TestDriver(Driver):
     @property
     def logger(self): return logging.getLogger("test")
 
-driver_state.set_driver(TestDriver(Env(), Config()))
+driver = TestDriver(Env(), Config())
 manager = PluginManager(["schema_probe", "schema_failure"])
-registry._managers.append(manager)
+register_plugin_manager(manager)
 plugin = manager.load_plugin("schema_probe")
 assert plugin is not None
 from opsmesh.plugins.database import migrations, schema as database_schema
@@ -68,9 +67,8 @@ assert plugin.dependencies == ["database"]
 schema = plugin.metadata.extra["database"]
 assert database_schema.registry.get("schema_probe").head == schema.head
 migrations.validate_migrations("schema_probe")
-startup_entries = driver_state.get_driver()._lifespan._startup_funcs
-owned = [item for item in startup_entries if item.plugin is plugin]
-assert len(owned) == 2
+assert len(plugin.lifecycle_hooks["prepare"]) == 1
+assert len(plugin.lifecycle_hooks["startup"]) == 1
 
 async def check(owner):
     assert owner == "schema_probe"
@@ -78,8 +76,8 @@ async def check(owner):
 
 migrations.check_migrations = check
 async def startup():
-    for item in owned:
-        await item.func()
+    lifespan = driver._lifespan
+    await lifespan._owned_phase("startup", plugin)
 asyncio.run(startup())
 assert plugin.module.events == ["schema", "consumer"]
 count = len(_bound)
@@ -87,13 +85,10 @@ assert manager.load_plugin("schema_failure") is None
 assert len(_bound) == count
 assert all(item.owner != "schema_failure"
            for item in database_schema.registry.sources())
-assert not any(
-    item.plugin and item.plugin.id_ == "schema_failure"
-    for item in startup_entries
-)
+assert registry.get_plugin("schema_failure") is None
 registry.revoke_plugin(plugin)
 assert not database_schema.registry.sources()
-assert not any(item.plugin is plugin for item in startup_entries)
+assert not any(plugin.lifecycle_hooks.values())
 provider = registry.get_plugin("database")
 registry.revoke_plugin(provider)
 assert not _bound
@@ -104,8 +99,13 @@ print("schema ownership verified")
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(root / "src"), str(tmp_path)]
     )
+    payload = script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", managed],
         cwd=root,
         env=environment,
         capture_output=True,

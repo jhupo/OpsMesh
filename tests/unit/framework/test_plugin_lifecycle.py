@@ -6,23 +6,62 @@ from types import ModuleType
 
 import pytest
 
-from opsmesh.lifecycle import Lifespan
 from opsmesh.plugins import get_plugin, registry
-from opsmesh.plugins import load as plugin_load
-from opsmesh.plugins import manager as plugin_manager
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins import lifecycle as plugin_lifecycle
+from opsmesh.plugins.activation import Lifespan
+from opsmesh.plugins.manager import (
+    PluginManager,
+    plugin_environment,
+    register_plugin_manager,
+)
 from opsmesh.plugins.model import PluginStatus
+
+
+def test_lifecycle_public_api_keeps_declarations_separate_from_engine():
+    from opsmesh import (
+        on_quiescing,
+        on_ready,
+        on_shutdown,
+        on_started,
+        on_startup,
+        on_stopping,
+    )
+
+    declarations = (
+        plugin_lifecycle.on_startup,
+        plugin_lifecycle.on_ready,
+        plugin_lifecycle.on_started,
+        plugin_lifecycle.on_quiescing,
+        plugin_lifecycle.on_stopping,
+        plugin_lifecycle.on_shutdown,
+    )
+    public_declarations = (
+        on_startup,
+        on_ready,
+        on_started,
+        on_quiescing,
+        on_stopping,
+        on_shutdown,
+    )
+
+    assert declarations == public_declarations
+    assert all(
+        declaration.__module__ == "opsmesh.plugins.lifecycle"
+        for declaration in declarations
+    )
+    assert Lifespan.__module__ == "opsmesh.plugins.activation"
 
 
 @pytest.fixture
 def plugin_path(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(registry, "_plugins", {})
-    managers = []
-    monkeypatch.setattr(registry, "_managers", managers)
-    monkeypatch.setattr(plugin_manager, "_managers", managers)
-    monkeypatch.setattr(plugin_load, "_managers", managers)
-    yield tmp_path
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
+    with plugin_environment():
+        yield tmp_path
     for name, module in list(sys.modules.items()):
         if name.startswith("lifecycle_test_") and isinstance(
             module, ModuleType
@@ -42,7 +81,7 @@ def _load(path, name, source, *, required=False):
     (path / f"{name}.py").write_text(source, encoding="utf-8")
     importlib.invalidate_caches()
     manager = PluginManager([name], required=required)
-    registry._managers.append(manager)
+    register_plugin_manager(manager)
     return manager.load_plugin(name)
 
 
@@ -154,29 +193,20 @@ lifespan.on_shutdown(lambda: events.append("cleanup"))
 
 
 @pytest.mark.anyio
-async def test_decorated_callbacks_bind_to_managed_plugin(
-    plugin_path, monkeypatch
-):
-    from types import SimpleNamespace
-
-    from opsmesh.drivers import base as driver_state
-
+async def test_decorated_callbacks_bind_to_managed_plugin(plugin_path):
     host = _host_module("lifecycle_test_decorators_host")
-    driver = SimpleNamespace(
-        on_startup=host.lifespan.on_startup,
-        on_ready=host.lifespan.on_ready,
-        on_started=host.lifespan.on_started,
-        on_quiescing=host.lifespan.on_quiescing,
-        on_stopping=host.lifespan.on_stopping,
-        on_shutdown=host.lifespan.on_shutdown,
-    )
-    monkeypatch.setattr(driver_state, "_driver", driver)
     plugin = _load(
         plugin_path,
         "lifecycle_test_decorated",
         """
-from opsmesh import on_startup, on_ready, on_stopping, on_shutdown
-from opsmesh import on_started, on_quiescing
+from opsmesh.plugins.lifecycle import (
+    on_quiescing,
+    on_ready,
+    on_shutdown,
+    on_started,
+    on_startup,
+    on_stopping,
+)
 from lifecycle_test_decorators_host import events
 
 @on_startup
@@ -206,7 +236,7 @@ async def shutdown():
     )
     assert plugin is not None
     assert host.events == []
-    assert all(entry.plugin is plugin for entry in host.lifespan._startup_funcs)
+    assert len(plugin.lifecycle_hooks["startup"]) == 1
     async with host.lifespan:
         assert plugin.ready
         assert host.events == ["start", "ready", "listen"]
@@ -221,21 +251,8 @@ async def shutdown():
 
 
 @pytest.mark.anyio
-async def test_revocation_removes_decorated_callbacks(plugin_path, monkeypatch):
-    from types import SimpleNamespace
-
-    from opsmesh.drivers import base as driver_state
-
+async def test_revocation_removes_decorated_callbacks(plugin_path):
     host = _host_module("lifecycle_test_revoke_host")
-    monkeypatch.setattr(
-        driver_state,
-        "_driver",
-        SimpleNamespace(
-            on_startup=host.lifespan.on_startup,
-            on_stopping=host.lifespan.on_stopping,
-            on_shutdown=host.lifespan.on_shutdown,
-        ),
-    )
     plugin = _load(
         plugin_path,
         "lifecycle_test_revoked",
@@ -370,12 +387,20 @@ lifespan.on_startup(startup)
 lifespan.on_shutdown(lambda: events.append("close"))
 """,
     )
+    prepared = []
+
+    async def prepare(owner):
+        prepared.append(owner.generation)
+        assert registry.get_current_plugin() is owner
+
+    plugin.manager.prepare_config = prepare
     async with host.lifespan:
         await host.lifespan.stop_plugin(plugin)
         await host.lifespan.stop_plugin(plugin)
         await host.lifespan.start_plugin(plugin)
         await host.lifespan.start_plugin(plugin)
         assert host.events == ["open", "close", "activation removed", "open"]
+        assert prepared == [1, 2]
     assert host.events[-2:] == ["close", "activation removed"]
 
 
@@ -567,16 +592,14 @@ async def test_start_rechecks_identity_after_dependency_startup(plugin_path):
     import asyncio
 
     host = _host_module("lifecycle_test_dependency_revoke_host")
-    provider = _load(plugin_path, "lifecycle_test_revoked_provider", "")
-    caller = _load(
-        plugin_path,
-        "lifecycle_test_revoked_caller",
-        "from opsmesh import require\n"
-        "require('lifecycle_test_revoked_provider')\n",
-    )
     async with host.lifespan:
-        await host.lifespan.stop_plugin(caller)
-        await host.lifespan.stop_plugin(provider)
+        provider = _load(plugin_path, "lifecycle_test_revoked_provider", "")
+        caller = _load(
+            plugin_path,
+            "lifecycle_test_revoked_caller",
+            "from opsmesh import require\n"
+            "require('lifecycle_test_revoked_provider')\n",
+        )
         entered = asyncio.Event()
         release = asyncio.Event()
 

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from opsmesh.matchers import Matcher
 
     from .invocation import PluginCall
+    from .lifecycle import LifecycleHook
     from .manager import PluginManager
 
 
@@ -94,9 +95,7 @@ class Plugin:
     """Child plugins."""
     metadata: PluginMetadata | None = None
     """Plugin metadata."""
-    cleanups: list[Callable[[], None]] = field(
-        default_factory=list, repr=False
-    )
+    cleanups: list[Callable[[], None]] = field(default_factory=list, repr=False)
     """Registration removals in acquisition order; never arbitrary effects."""
     config_values: dict[Any, Any] | None = field(default=None, repr=False)
     """Owned startup values, independent of global deployment configuration."""
@@ -108,8 +107,6 @@ class Plugin:
     """Plugin identifiers required before this plugin may accept work."""
     required: bool = False
     """Whether a startup failure must abort the host."""
-    protected: bool = False
-    """Whether normal management may stop or revoke this plugin."""
     status: PluginStatus = PluginStatus.LOADED
     """The current lifecycle state."""
     failure: BaseException | None = field(default=None, repr=False)
@@ -118,6 +115,8 @@ class Plugin:
     """Dependencies whose failure blocks this plugin."""
 
     enabled: bool = True
+    manually_stopped: bool = False
+    """Whether this host requires explicit recovery before activation."""
     generation: int = 0
     """In-memory activation counter, independent of package versions."""
     cleanup_complete: bool = True
@@ -126,6 +125,9 @@ class Plugin:
     )
     calls: dict[int, "PluginCall"] = field(default_factory=dict, repr=False)
     completed_shutdown_hooks: set[int] = field(default_factory=set, repr=False)
+    lifecycle_hooks: dict[str, list["LifecycleHook"]] = field(
+        default_factory=dict, repr=False
+    )
 
     @property
     def ready(self) -> bool:

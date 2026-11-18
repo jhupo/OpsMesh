@@ -11,13 +11,11 @@ SCRIPT = """
 
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import get_dependency_config, get_plugin, registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 from opsmesh.plugins.registry import plugin_scope
 
 driver = Driver(Env(), Config(command_start={"/", "!"}))
-driver_state.set_driver(driver)
 for module, values in {
     "opsmesh.plugins.channels": {},
     "example_chat": {
@@ -38,7 +36,7 @@ for module, values in {
             if module == "example_chat" else {}
         ),
     )
-    registry.register_plugin_manager(manager)
+    register_plugin_manager(manager)
 plugin = manager.load_plugin("example_chat")
 assert plugin is not None, "example_chat did not load"
 assert plugin.metadata is not None
@@ -127,8 +125,13 @@ def run_example_script(script):
         ]
     )
     env.pop("OPENAI_API_KEY", None)
+    payload = script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", managed],
         cwd=ROOT,
         env=env,
         capture_output=True,

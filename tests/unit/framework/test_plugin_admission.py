@@ -6,12 +6,10 @@ from types import ModuleType
 import pytest
 
 from opsmesh.plugins import (
-    clear_plugin_admission,
+    plugin_environment,
+    register_plugin_manager,
     registry,
-    set_plugin_admission,
 )
-from opsmesh.plugins import load as plugin_load
-from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins.errors import PluginLoadDenied, PluginReloadError
 from opsmesh.plugins.manager import PluginManager
 
@@ -20,12 +18,11 @@ from opsmesh.plugins.manager import PluginManager
 def plugin_path(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(registry, "_plugins", {})
-    managers = []
-    monkeypatch.setattr(registry, "_managers", managers)
-    monkeypatch.setattr(plugin_manager, "_managers", managers)
-    monkeypatch.setattr(plugin_load, "_managers", managers)
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     yield tmp_path
-    clear_plugin_admission()
     for name, module in list(sys.modules.items()):
         if name.startswith("admission_test_") and isinstance(
             module, ModuleType
@@ -35,9 +32,7 @@ def plugin_path(tmp_path, monkeypatch):
 
 def new_manager(plugin_path, name, source="value = 1\n"):
     (plugin_path / f"{name}.py").write_text(source, encoding="utf-8")
-    manager = PluginManager([name])
-    registry._managers.append(manager)
-    return manager
+    return PluginManager([name])
 
 
 def test_admission_denial_stops_the_import(plugin_path):
@@ -48,10 +43,10 @@ def test_admission_denial_stops_the_import(plugin_path):
         "raise AssertionError('plugin source must not run')\n",
     )
     requests = []
-    set_plugin_admission(lambda request: requests.append(request) or False)
-
-    with pytest.raises(PluginLoadDenied, match="not enabled for this host"):
-        manager.load_plugin(name)
+    with plugin_environment(admission=lambda request: requests.append(request) or False):
+        register_plugin_manager(manager)
+        with pytest.raises(PluginLoadDenied, match="not enabled for this host"):
+            manager.load_plugin(name)
 
     assert name not in sys.modules
     assert len(requests) == 1
@@ -66,10 +61,9 @@ def test_admission_returns_none_to_allow_the_load(plugin_path):
     manager = new_manager(plugin_path, name)
     requests = []
 
-    set_plugin_admission(lambda request: requests.append(request) or None)
-
-    plugin = manager.load_plugin(name)
-    assert plugin is not None
+    with plugin_environment(admission=lambda request: requests.append(request) or None):
+        register_plugin_manager(manager)
+        assert manager.load_plugin(name) is not None
     assert [request.module_name for request in requests] == [name]
 
 
@@ -80,20 +74,39 @@ def test_admission_errors_are_not_reported_as_import_failures(plugin_path):
     def unavailable(request):
         raise RuntimeError("admission backend unavailable")
 
-    set_plugin_admission(unavailable)
-
-    with pytest.raises(RuntimeError, match="admission backend unavailable"):
-        manager.load_plugin(name)
+    with plugin_environment(admission=unavailable):
+        register_plugin_manager(manager)
+        with pytest.raises(RuntimeError, match="admission backend unavailable"):
+            manager.load_plugin(name)
     assert name not in sys.modules
 
 
 def test_revoked_plugin_cannot_be_loaded_again(plugin_path):
     name = "admission_test_revoked"
     manager = new_manager(plugin_path, name)
-    plugin = manager.load_plugin(name)
-    assert plugin is not None
+    with plugin_environment():
+        register_plugin_manager(manager)
+        plugin = manager.load_plugin(name)
+        assert plugin is not None
+        registry.revoke_plugin(plugin)
+        with pytest.raises(PluginReloadError, match="restart the host"):
+            manager.load_plugin(name)
 
-    registry.revoke_plugin(plugin)
 
-    with pytest.raises(PluginReloadError, match="restart the host"):
-        manager.load_plugin(name)
+def test_environment_owns_finder_and_loaded_records(plugin_path):
+    from opsmesh.plugins import get_available_plugin_names
+
+    name = "admission_test_scope"
+    manager = new_manager(plugin_path, name)
+    original = tuple(sys.meta_path)
+    with plugin_environment():
+        register_plugin_manager(manager)
+        assert tuple(sys.meta_path) != original
+        assert get_available_plugin_names() == {name}
+        assert registry.get_plugin(name) is None
+        plugin = manager.load_plugin(name)
+        assert registry.get_plugin(name) is plugin
+    assert tuple(sys.meta_path) == original
+    assert not get_available_plugin_names()
+    assert registry.get_plugin(name) is None
+    assert sys.modules[name] is plugin.module
