@@ -51,12 +51,11 @@ def owner():
                 cleanups.pop()()
 
 
-def channel(start, sep):
-    config = Config(command_start={start}, command_sep={sep})
-    return SimpleNamespace(adapter=SimpleNamespace(config=config))
+def config(start, sep):
+    return Config(command_start={start}, command_sep={sep})
 
 
-def parse(channel, *parts):
+def parse(settings, *parts):
     message = TextMessage(
         [
             TextSegment("text", {"text": part})
@@ -68,17 +67,17 @@ def parse(channel, *parts):
     event = SimpleNamespace(
         get_type=lambda: "message", get_message=lambda: message
     )
-    return TrieRule.get_value(channel, event, {})
+    return TrieRule.get_value(event, {}, config=settings)
 
 
-def test_declare_before_config_and_match_per_channel(owner):
+def test_declare_before_config_and_match_per_dispatch(owner):
     with plugin_scope(owner()):
         command("prefix_probe", "prefix_alias")
         shell_command(("prefix_probe", "long"))
 
-    dot = channel("/", ".")
-    hyphen = channel("!", "-")
-    slash_hyphen = channel("/", "-")
+    dot = config("/", ".")
+    hyphen = config("!", "-")
+    slash_hyphen = config("/", "-")
     image = TextSegment("image", {})
     info = parse(dot, "  /prefix_probe.long", "  ", " value", image)
     assert info == {
@@ -109,8 +108,8 @@ def test_declare_before_config_and_match_per_channel(owner):
 
 
 def test_cleanup_refreshes_warm_tries_and_preserves_other_owners(owner):
-    dot = channel("/", ".")
-    bang = channel("!", ".")
+    dot = config("/", ".")
+    bang = config("!", ".")
     assert parse(dot, "/prefix_probe.long")["command"] is None
 
     first = owner()

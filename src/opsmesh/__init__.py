@@ -4,6 +4,7 @@ from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
 
+from opsmesh.events import Event as Event
 from opsmesh.plugins import CommandGroup as CommandGroup
 from opsmesh.plugins import MatcherGroup as MatcherGroup
 from opsmesh.plugins import PluginAdmission as PluginAdmission
@@ -53,6 +54,6 @@ from opsmesh.plugins.lifecycle import on_started as on_started
 from opsmesh.plugins.lifecycle import on_startup as on_startup
 from opsmesh.plugins.lifecycle import on_stopping as on_stopping
 
-__version__ = "0.5.7"
+__version__ = "0.5.8"
 
 from opsmesh.plugins.hooks import on_plugin_loaded as on_plugin_loaded

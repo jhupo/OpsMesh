@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from types import ModuleType
 from typing import Any
 
-from opsmesh.adapters import Event
 from opsmesh.dependencies import Dependent
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher, MatcherSource
 from opsmesh.permissions import Permission
 from opsmesh.rules import ArgumentParser, Rule

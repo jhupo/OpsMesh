@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from opsmesh.adapters import Event
+from opsmesh.events import Event
 
 from ..attachments import AttachmentCollection, AttachmentError
 from ..attachments.transfer import AttachmentReader

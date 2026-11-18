@@ -7,9 +7,9 @@ from typing import Annotated
 import anyio
 import pytest
 
-from opsmesh.adapters import Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.params import Depends
 from opsmesh.permissions import Permission
@@ -54,8 +54,12 @@ class BotHarness:
             {"support": self.owner, "provider": self.provider},
         )
         monkeypatch.setattr(
-            registry, "_module_plugins",
-            {plugin.module_name: plugin for plugin in registry._plugins.values()},
+            registry,
+            "_module_plugins",
+            {
+                plugin.module_name: plugin
+                for plugin in registry._plugins.values()
+            },
         )
         token = registry._current_plugin.set(self.owner)
         try:

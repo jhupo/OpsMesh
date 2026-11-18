@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Generic, Protocol, TypeVar
+from collections.abc import Callable
+from contextlib import AsyncExitStack
+from functools import partial
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Protocol, TypeVar
 
 import anyio
 
-from opsmesh.adapters import Channel as FrameworkChannel
-from opsmesh.adapters import Event
+from opsmesh.dispatch import DispatchResult, dispatch_event
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher
 from opsmesh.messages import Message
+from opsmesh.plugins import get_current_plugin, plugin_call
 from opsmesh.plugins.model import Plugin
 
 from .callbacks import (
@@ -19,7 +23,14 @@ from .callbacks import (
     dispatch_queued,
     enqueue,
 )
+from .context import UserContext, bind_event_channel
 from .events import MessageEvent
+from .hooks import CalledHook, CallingHook, invoke_operation, register_hook
+
+if TYPE_CHECKING:
+    from opsmesh.plugins.invocation import PluginCall
+
+    from .adapter import ChannelAdapter
 
 CONNECTING = "connecting"
 READY = "ready"
@@ -54,26 +65,27 @@ class InboundConnectionTask(Protocol):
         """Wait until the SDK task has released its transport."""
 
 
-class Channel(FrameworkChannel):
+class Channel:
     """Bind one declared connection to the plugin that owns it."""
 
     receive_types: ClassVar[frozenset[str]] = frozenset()
     send_types: ClassVar[frozenset[str]] = frozenset()
     stream_formats: ClassVar[frozenset[str]] = frozenset()
     supported_operations: ClassVar[frozenset[str]] = MESSAGE_OPERATIONS
+    _calling_hook: ClassVar[set[CallingHook]] = set()
+    _called_hook: ClassVar[set[CalledHook]] = set()
 
     def __init__(
         self,
-        adapter: Any,
+        adapter: ChannelAdapter,
         *,
         owner: Plugin,
         connection_name: str,
         settings: Any,
     ) -> None:
         """Initialize ownership, configuration and lifecycle state."""
-        super().__init__(
-            adapter, f"{adapter.get_name()}:{owner.id_}:{connection_name}"
-        )
+        self.adapter = adapter
+        self.self_id = f"{adapter.get_name()}:{owner.id_}:{connection_name}"
         self._owner = owner
         self._connection_name = connection_name
         self._settings = settings
@@ -81,6 +93,21 @@ class Channel(FrameworkChannel):
         self._replies_available = False
         self._error: str | None = None
         self._dirty = True
+
+    def __repr__(self) -> str:
+        """Identify the connection without exposing its configuration."""
+        return f"Channel(type={self.type!r}, self_id={self.self_id!r})"
+
+    def __getattr__(self, operation: str):
+        """Expose operations as dynamic methods."""
+        if operation.startswith("__") and operation.endswith("__"):
+            raise AttributeError(operation)
+        return partial(self.call, operation)
+
+    @property
+    def type(self) -> str:
+        """The protocol of this connection."""
+        return self.adapter.get_name()
 
     @property
     def owner(self) -> Plugin:
@@ -135,6 +162,53 @@ class Channel(FrameworkChannel):
     def accepts_matcher(self, matcher: type[Matcher]) -> bool:
         """Limit dispatch to handlers owned by the declaring plugin."""
         return matcher.plugin_id == self.owner_id
+
+    async def dispatch(
+        self,
+        event: Event,
+        *,
+        invocation_context: UserContext | None = None,
+        stack: AsyncExitStack | None = None,
+        matcher_filter: Callable[[type[Matcher]], bool] | None = None,
+        admitted_call: PluginCall | None = None,
+    ) -> DispatchResult:
+        """Submit an event while retaining reply capability and owner scope."""
+        if invocation_context is None and isinstance(event, MessageEvent):
+            invocation_context = event.user
+
+        def eligible(matcher: type[Matcher]) -> bool:
+            return self.accepts_matcher(matcher) and (
+                matcher_filter is None or matcher_filter(matcher)
+            )
+
+        with bind_event_channel(event, self):
+            return await dispatch_event(
+                event,
+                config=self.adapter.driver.config,
+                reply=partial(self.send, event),
+                invocation_context=invocation_context,
+                stack=stack,
+                matcher_filter=eligible,
+                admitted_call=admitted_call,
+            )
+
+    async def call(self, operation: str, **data: Any) -> Any:
+        """Execute a protocol operation under the calling plugin's admission."""
+        plugin = get_current_plugin()
+        if plugin is None:
+            return await invoke_operation(self, operation, data)
+        async with plugin_call(plugin.id_):
+            return await invoke_operation(self, operation, data)
+
+    @classmethod
+    def on_calling(cls, func: CallingHook) -> CallingHook:
+        """Run a callback with the channel, operation and arguments."""
+        return register_hook(cls._calling_hook, func)
+
+    @classmethod
+    def on_called(cls, func: CalledHook) -> CalledHook:
+        """Observe a call's channel, error, operation, arguments and result."""
+        return register_hook(cls._called_hook, func)
 
     async def send(
         self,
@@ -224,17 +298,13 @@ class Channel(FrameworkChannel):
         self._error = "connection closed"
 
     def _mark_online(self) -> None:
-        """Publish readiness to the driver exactly once."""
+        """Publish readiness without adding a separate connection index."""
         if self._state == CLOSED:
             return
         self.mark_ready()
-        if self.adapter.channels.get(self.self_id) is not self:
-            self.adapter.connect(self)
 
     def _mark_offline(self) -> None:
         """Withdraw readiness without invalidating admitted work."""
-        if self.adapter.channels.get(self.self_id) is self:
-            self.adapter.disconnect(self)
         if self._state not in {CLOSED, FAILED}:
             self.mark_disconnected()
 

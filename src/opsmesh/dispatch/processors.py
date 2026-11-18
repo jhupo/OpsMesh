@@ -2,10 +2,11 @@
 
 import logging
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import anyio
 
+from opsmesh.events import Event
 from opsmesh.exceptions import (
     IgnoredException,
     SkippedException,
@@ -19,9 +20,6 @@ from opsmesh.utils import (
     flatten_exception_group,
     run_coro_with_catch,
 )
-
-if TYPE_CHECKING:
-    from opsmesh.adapters import Channel, Event
 
 from .hooks import (
     _event_postprocessors,
@@ -46,8 +44,7 @@ def _handle_exception(
 
 
 async def _apply_event_preprocessors(
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     stack: AsyncExitStack | None = None,
     dependency_cache: T_DependencyCache | None = None,
@@ -57,7 +54,6 @@ async def _apply_event_preprocessors(
     """Execute event preprocessors.
 
     Args:
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         stack: The asynchronous resource cleanup stack.
@@ -80,7 +76,6 @@ async def _apply_event_preprocessors(
                 tg.start_soon(
                     run_coro_with_catch,
                     proc(
-                        channel=channel,
                         event=event,
                         state=state,
                         stack=stack,
@@ -103,8 +98,7 @@ async def _apply_event_preprocessors(
 
 
 async def _apply_event_postprocessors(
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     stack: AsyncExitStack | None = None,
     dependency_cache: T_DependencyCache | None = None,
@@ -114,7 +108,6 @@ async def _apply_event_postprocessors(
     """Execute event postprocessors.
 
     Args:
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         stack: The asynchronous resource cleanup stack.
@@ -134,7 +127,6 @@ async def _apply_event_postprocessors(
                 tg.start_soon(
                     run_coro_with_catch,
                     proc(
-                        channel=channel,
                         event=event,
                         state=state,
                         stack=stack,
@@ -151,8 +143,7 @@ async def _apply_event_postprocessors(
 
 
 async def _apply_run_preprocessors(
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     state: T_State,
     matcher: Matcher,
     stack: AsyncExitStack | None = None,
@@ -162,7 +153,6 @@ async def _apply_run_preprocessors(
     """Execute processors that run before a matcher.
 
     Args:
-        channel: The channel instance.
         event: The incoming event instance.
         state: The conversation state mapping.
         matcher: The matcher instance.
@@ -177,7 +167,7 @@ async def _apply_run_preprocessors(
         return True
 
     # ensure matcher function can be correctly called
-    with matcher.ensure_context(channel, event):
+    with matcher.ensure_context(event):
         try:
             async with anyio.create_task_group() as tg:
                 for proc in _run_preprocessors:
@@ -185,7 +175,6 @@ async def _apply_run_preprocessors(
                         run_coro_with_catch,
                         proc(
                             matcher=matcher,
-                            channel=channel,
                             event=event,
                             state=state,
                             stack=stack,
@@ -208,8 +197,7 @@ async def _apply_run_preprocessors(
 
 
 async def _apply_run_postprocessors(
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     matcher: Matcher,
     exception: Exception | None = None,
     stack: AsyncExitStack | None = None,
@@ -219,7 +207,6 @@ async def _apply_run_postprocessors(
     """Execute processors that run after a matcher.
 
     Args:
-        channel: The channel instance.
         event: The incoming event instance.
         matcher: The matcher instance.
         exception: The exception raised during matcher execution, if any.
@@ -230,7 +217,7 @@ async def _apply_run_postprocessors(
     if not _run_postprocessors:
         return
 
-    with matcher.ensure_context(channel, event):
+    with matcher.ensure_context(event):
         try:
             async with anyio.create_task_group() as tg:
                 for proc in _run_postprocessors:
@@ -239,7 +226,6 @@ async def _apply_run_postprocessors(
                         proc(
                             matcher=matcher,
                             exception=exception,
-                            channel=channel,
                             event=event,
                             state=matcher.state,
                             stack=stack,

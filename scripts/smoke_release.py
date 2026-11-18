@@ -13,7 +13,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from opsmesh_service.catalog import PluginRecord, PluginStorage
+from opsmesh.service.catalog import PluginRecord, PluginStorage
 
 PLUGIN = """from importlib.resources import files
 from agents import Agent, RunConfig

@@ -13,6 +13,7 @@ from opsmesh.config import Config, Env
 from opsmesh.dispatch.results import DispatchResult
 from opsmesh.drivers import Driver
 from opsmesh.plugins import registry
+from opsmesh.plugins.channels import get_event_channel
 from opsmesh.plugins.channels.dingtalk import (
     DingTalkAdapter,
     DingTalkConfigurationError,
@@ -221,20 +222,25 @@ async def test_sdk_callback_dispatches_once(monkeypatch, conversation_type):
     received = anyio.Event()
 
     async def fake_dispatch(
-        channel_,
         event,
         *,
+        config,
+        reply,
         invocation_context=None,
         matcher_filter=None,
         admitted_call=None,
         stack=None,
     ):
-        dispatched.append((channel_, event, invocation_context))
+        assert config is adapter.driver.config
+        assert reply.func == channel.send
+        assert reply.args == (event,)
+        assert invocation_context is event.user
+        dispatched.append((get_event_channel(event), event, invocation_context))
         received.set()
         return DispatchResult()
 
     monkeypatch.setattr(
-        "opsmesh.plugins.channels.callbacks.dispatch.dispatch_event",
+        "opsmesh.plugins.channels.channel.dispatch_event",
         fake_dispatch,
     )
 
@@ -409,7 +415,6 @@ async def test_shutdown_closes_streams_and_unregisters_channel(monkeypatch):
     result = await adapter.accept_callback(channel, direct_payload())
     assert result[0] == 500
     assert adapter.connections == ()
-    assert adapter.driver.channels == {}
 
 
 @pytest.mark.anyio
@@ -438,7 +443,6 @@ async def test_full_queue_releases_deduplication_for_retry(monkeypatch):
 
 @pytest.mark.anyio
 async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
-    from opsmesh.dispatch import dispatch_event
     from opsmesh.matchers import Matcher, MatcherSource
 
     adapter = make_adapter()
@@ -469,9 +473,7 @@ async def test_connection_only_dispatches_to_its_ready_owner(monkeypatch):
         source=MatcherSource(plugin_id="other"),
     )
     try:
-        result = await dispatch_event(
-            channel, event, matcher_filter=channel.accepts_matcher
-        )
+        result = await channel.dispatch(event)
         result.raise_for_errors()
         assert calls == ["support"]
         owner.status = PluginStatus.STOPPING

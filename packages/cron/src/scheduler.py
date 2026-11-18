@@ -12,8 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from opsmesh import get_plugin, plugin_call
+from opsmesh.config import Config
 from opsmesh.dispatch import dispatch_event
-from opsmesh.drivers import Driver
 from opsmesh.plugins.database import Database
 from opsmesh.plugins.invocation import PluginUnavailable
 from opsmesh.plugins.model import Plugin
@@ -21,7 +21,7 @@ from opsmesh.plugins.model import Plugin
 from .config import Settings
 from .declarations import ScheduleDeclaration, declarations
 from .errors import ScheduleError, SchedulerUnavailable
-from .events import ScheduleAdapter, ScheduleChannel, ScheduledEvent
+from .events import ScheduledEvent
 from .models import ScheduleRecord
 from .schedules import Schedules, namespace_lock
 from .schemas import (
@@ -56,10 +56,13 @@ class _TimerBinding:
 class Scheduler:
     """Own one locked namespace, native timers, and bounded invocations."""
 
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(
+        self, database: Database, settings: Settings, *, config: Config
+    ) -> None:
         """Create in-memory timers without taking database resources."""
         self.database = database
         self.settings = settings
+        self._config = config
         self.schedules = Schedules(database, settings)
         self.native = AsyncIOScheduler(timezone=settings.timezone)
         self._lock: AsyncConnection | None = None
@@ -73,14 +76,13 @@ class Scheduler:
         self._initialized: set[tuple[str, str]] = set()
         self._semaphore = asyncio.Semaphore(settings.max_concurrency)
         self._sync_lock = asyncio.Lock()
-        self.channel: ScheduleChannel | None = None
 
     @property
     def available(self) -> bool:
         """Whether this instance still owns scheduling authority."""
         return self._healthy and not self._closing
 
-    async def startup(self, driver: Driver) -> None:
+    async def startup(self) -> None:
         """Reserve a dedicated connection and exclusive namespace lock."""
         connection = await self.database.engine.connect()
         self._lock = connection
@@ -98,13 +100,6 @@ class Scheduler:
                 text("SELECT pg_backend_pid()")
             )
             await connection.commit()
-            try:
-                adapter = driver.get_adapter(ScheduleAdapter)
-            except KeyError:
-                adapter = driver.register_adapter(ScheduleAdapter)
-            self.channel = ScheduleChannel(
-                adapter, f"cron:{self.settings.namespace}"
-            )
             self.native.start(paused=True)
             self._healthy = True
         except BaseException:
@@ -335,8 +330,8 @@ class Scheduler:
                         async with asyncio.timeout(definition.timeout_seconds):
                             async with AsyncExitStack() as stack:
                                 result = await dispatch_event(
-                                    self.channel,
                                     event,
+                                    config=self._config,
                                     stack=stack,
                                     admitted_call=admitted_call,
                                     matcher_filter=lambda matcher: (

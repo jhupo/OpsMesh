@@ -9,19 +9,21 @@ import anyio
 import httpx
 import pytest
 
-from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.params import Depends
 from opsmesh.plugins import registry
 from opsmesh.plugins.channels import (
     Attachment,
+    Channel,
     Message,
     MessageSegment,
     StreamMessageEnd,
     StreamMessageStart,
     StreamTextDelta,
+    get_event_channel,
 )
 from opsmesh.plugins.channels.api import (
     APIAdapter,
@@ -39,13 +41,16 @@ class ProtocolHarness:
 
     def __init__(self, monkeypatch):
         self.driver = Driver(Env(), Config())
-        self.driver.register_adapter(APIAdapter)
-        self.adapter = self.driver.get_adapter(APIAdapter)
+        self.adapter = APIAdapter(self.driver)
         self.owners = {}
         monkeypatch.setattr(registry, "_plugins", self.owners)
         monkeypatch.setattr(
-            registry, "_module_plugins",
-            {plugin.module_name: plugin for plugin in registry._plugins.values()},
+            registry,
+            "_module_plugins",
+            {
+                plugin.module_name: plugin
+                for plugin in registry._plugins.values()
+            },
         )
         self.channels = {}
         self.matchers = []
@@ -155,8 +160,11 @@ async def test_api_group_message_routes_using_common_event(protocol):
     seen = []
     rule = GroupRule(frozenset({"group-a"}), "support", "main", "api")
 
-    async def handler(channel: Channel, event: Event):
-        if await rule(channel, event):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
+        assert channel is protocol.channel
+        if await rule(event):
             seen.append((event.group_id, event.conversation_type))
 
     protocol.bind(handler)
@@ -167,11 +175,13 @@ async def test_api_group_message_routes_using_common_event(protocol):
     assert seen == [("group-a", "group")]
     conversation_id = response.json()["conversation_id"]
     assert str(UUID(conversation_id)) == conversation_id
-    continued = await protocol.post(fields={
-        "conversation_type": "group",
-        "group_id": "group-a",
-        "conversation_id": conversation_id,
-    })
+    continued = await protocol.post(
+        fields={
+            "conversation_type": "group",
+            "group_id": "group-a",
+            "conversation_id": conversation_id,
+        }
+    )
     assert continued.status_code == 200
 
     invalid = await protocol.post(fields={"conversation_type": "group"})
@@ -185,9 +195,7 @@ async def test_api_group_message_routes_using_common_event(protocol):
 
 
 async def asgi_request(protocol, send, disconnect=None, **options):
-    content = json.dumps(
-        {"user": {"id": "user"}, "message": "hello"}
-    ).encode()
+    content = json.dumps({"user": {"id": "user"}, "message": "hello"}).encode()
     pending = [{"type": "http.request", "body": content, "more_body": False}]
 
     async def receive():
@@ -237,9 +245,7 @@ async def test_public_message_connection_has_one_fixed_path_and_body(protocol):
         transport=httpx.ASGITransport(app=protocol.channel.app),
         base_url="http://test",
     ) as client:
-        assert (
-            await client.post("/plugins/support/chat")
-        ).status_code == 404
+        assert (await client.post("/plugins/support/chat")).status_code == 404
 
 
 @pytest.mark.anyio
@@ -275,9 +281,7 @@ async def test_message_protocol_rejects_untrusted_or_noncanonical_fields(
         [{"type": "file", "attachment_id": "0" * 32}],
     ],
 )
-async def test_invalid_segments_are_rejected_before_dispatch(
-    protocol, message
-):
+async def test_invalid_segments_are_rejected_before_dispatch(protocol, message):
     async def unexpected():
         pytest.fail("Invalid segments reached the framework")
 
@@ -434,7 +438,9 @@ async def test_json_stream_aggregates_within_the_callers_scope(protocol):
         finally:
             stages.append("source closed")
 
-    async def answer(channel: Channel, event: Event):
+    async def answer(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await channel.call("stream", event=event, source=source())
         assert stages == ["source closed"]
         stages.append("caller continued")
@@ -469,7 +475,7 @@ async def test_sse_keeps_messages_separate_and_finishes_after_cleanup(protocol):
             stages.append("source closed")
 
     async def answer(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         matcher: Matcher,
         value: Annotated[object, Depends(resource)],
@@ -531,7 +537,7 @@ async def test_sse_failures_end_with_safe_error_and_no_success_done(
                 raise RuntimeError("private source cleanup failure")
 
     async def answer(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         value: Annotated[object, Depends(resource)],
     ):
@@ -679,7 +685,7 @@ async def test_sse_disconnect_cancels_source_and_closes_dependencies(protocol):
             stages.append("source closed")
 
     async def answer(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         value: Annotated[object, Depends(resource)],
     ):
@@ -714,7 +720,9 @@ async def test_sse_buffer_applies_backpressure_to_text_source(protocol):
             yield StreamTextDelta("answer", index + 1, "part")
         yield StreamMessageEnd("answer")
 
-    async def answer(channel: Channel, event: Event):
+    async def answer(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await channel.call("stream", event=event, source=source())
 
     async def send(message):
@@ -802,7 +810,9 @@ async def test_sse_uses_the_same_request_timeout_as_json(protocol):
 async def test_dependency_finalizer_cannot_send_a_new_business_message(
     protocol,
 ):
-    async def resource(channel: Channel, event: Event):
+    async def resource(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         yield "resource"
         await channel.send(event, "too late")
 
@@ -871,7 +881,7 @@ async def test_sse_transport_failure_cancels_source_and_closes_dependencies(
             stages.append("source closed")
 
     async def answer(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         value: Annotated[object, Depends(resource)],
     ):
@@ -923,7 +933,7 @@ async def test_source_cleanup_timeout_still_attempts_dependency_cleanup(
             stages.append("dependency closed")
 
     async def answer(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         value: Annotated[object, Depends(resource)],
     ):

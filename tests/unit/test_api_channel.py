@@ -8,25 +8,28 @@ import anyio
 import httpx
 import pytest
 
-from opsmesh.adapters import Channel, Event
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
+from opsmesh.events import Event
 from opsmesh.matchers import Matcher, MatcherSource, matchers
 from opsmesh.messages import Message
 from opsmesh.params import Context, Depends, EventMessage
 from opsmesh.plugins import registry
 from opsmesh.plugins.channels import (
-    Message as ChannelMessage,
-)
-from opsmesh.plugins.channels import (
+    Channel,
     MessageSegment,
     UserContext,
+    get_event_channel,
+)
+from opsmesh.plugins.channels import (
+    Message as ChannelMessage,
 )
 from opsmesh.plugins.channels.api import (
     APIAdapter,
     APIConnectionSettings,
     APIMessageEvent,
 )
+from opsmesh.plugins.channels.lifecycle import _active_adapters
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
@@ -82,13 +85,19 @@ class APIHarness:
 
     def __init__(self, monkeypatch):
         self.driver = Driver(Env(), Config())
-        self.driver.register_adapter(APIAdapter)
-        self.adapter = self.driver.get_adapter(APIAdapter)
+        self.adapter = APIAdapter(self.driver)
+        monkeypatch.setitem(
+            _active_adapters, self.driver, {"api": self.adapter}
+        )
         self.owners = {}
         monkeypatch.setattr(registry, "_plugins", self.owners)
         monkeypatch.setattr(
-            registry, "_module_plugins",
-            {plugin.module_name: plugin for plugin in registry._plugins.values()},
+            registry,
+            "_module_plugins",
+            {
+                plugin.module_name: plugin
+                for plugin in registry._plugins.values()
+            },
         )
         self.channels = {}
         self.matchers = []
@@ -187,7 +196,7 @@ async def test_api_message_uses_framework_command_and_caller_context(
     from opsmesh.rules import command
 
     async def handler(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         message: Annotated[Message, EventMessage()],
         argument: Annotated[Message, CommandArg()],
@@ -229,7 +238,7 @@ async def test_api_message_uses_framework_command_and_caller_context(
 @pytest.mark.anyio
 async def test_api_channel_replies_with_a_framework_message(api):
     async def handler(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: Event,
         message: Annotated[Message, EventMessage()],
     ):
@@ -251,7 +260,10 @@ async def test_api_channel_replies_with_a_framework_message(api):
 
 @pytest.mark.anyio
 async def test_upload_message_and_download_share_connection_scope(api):
-    async def handler(channel: Channel, event: APIMessageEvent):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)],
+        event: APIMessageEvent,
+    ):
         parts = event.get_message()
         assert [part.type for part in parts] == ["text", "file"]
         data = await event.attachments.read(parts[1].data["attachment_id"])
@@ -360,7 +372,9 @@ async def test_message_handler_return_is_not_an_implicit_reply(api):
 
 @pytest.mark.anyio
 async def test_message_handler_sends_multiple_complete_messages(api):
-    async def handler(channel: Channel, event: Event):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await channel.send(event, "first")
         await channel.send(event, "second")
 
@@ -377,7 +391,9 @@ async def test_message_handler_sends_multiple_complete_messages(api):
 async def test_image_only_api_request_stays_a_framework_message(api):
     from opsmesh.plugins.channels import Attachment
 
-    async def handler(channel: Channel, event: Event):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await channel.send(
             event,
             structured_reply(
@@ -437,7 +453,7 @@ async def test_message_transport_retains_owner_after_handler_cleanup(
         observed.append(receipt.status)
 
     async def handler(
-        channel: Channel,
+        channel: Annotated[Channel, Depends(get_event_channel)],
         event: APIMessageEvent,
         value: Annotated[str, Depends(resource)],
     ):
@@ -540,7 +556,9 @@ async def test_slow_body_releases_plugin_admission(api, path):
 @pytest.mark.anyio
 @pytest.mark.parametrize("streamed", [False, True])
 async def test_body_and_handler_share_one_deadline(api, streamed):
-    async def handler(channel: Channel, event: Event):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await anyio.sleep(0.25)
         await channel.send(event, "too late")
 
@@ -620,7 +638,9 @@ async def test_connection_serves_only_its_owner_paths(api):
 
 @pytest.mark.anyio
 async def test_fixed_connection_observes_plugin_state_and_closure(api):
-    async def handler(channel: Channel, event: Event):
+    async def handler(
+        channel: Annotated[Channel, Depends(get_event_channel)], event: Event
+    ):
         await channel.send(event, "ready")
 
     api.bind(handler)

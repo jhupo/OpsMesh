@@ -74,7 +74,7 @@ async def test_repeated_continuations_retain_the_root_matcher(
     root.append_handler(final)
     for _ in range(2):
         outcome = await dispatch_event(
-            *conversation,
+            conversation,
             matcher_filter=lambda item: item.origin is root,
         )
         outcome.raise_for_errors()
@@ -84,7 +84,7 @@ async def test_repeated_continuations_retain_the_root_matcher(
         assert unrelated in matchers[1]
 
     outcome = await dispatch_event(
-        *conversation,
+        conversation,
         matcher_filter=lambda item: item.origin is root,
     )
     outcome.raise_for_errors()
@@ -111,12 +111,12 @@ async def test_shared_source_does_not_grant_an_unbound_matcher_access(
         calls.append("received")
 
     outcome = await dispatch_event(
-        *conversation, matcher_filter=lambda item: item is unbound
+        conversation, matcher_filter=lambda item: item is unbound
     )
     outcome.raise_for_errors()
 
     outcome = await dispatch_event(
-        *conversation, matcher_filter=lambda item: item.origin is bound
+        conversation, matcher_filter=lambda item: item.origin is bound
     )
     outcome.raise_for_errors()
 
@@ -147,18 +147,18 @@ async def test_continuation_rechecks_scope_and_permission(
     async def receive():
         calls.append("received")
 
-    outcome = await dispatch_event(*conversation)
+    outcome = await dispatch_event(conversation)
     outcome.raise_for_errors()
     continuation = matchers[0][0]
     if restriction == "conversation":
         monkeypatch.setattr(
-            conversation[1], "get_session_id", lambda: "other-conversation"
+            conversation, "get_session_id", lambda: "other-conversation"
         )
     else:
         allowed = False
 
     outcome = await dispatch_event(
-        *conversation, matcher_filter=lambda item: item is continuation
+        conversation, matcher_filter=lambda item: item is continuation
     )
     outcome.raise_for_errors()
 
@@ -179,13 +179,13 @@ async def test_expired_continuation_is_removed_before_invocation(conversation):
     async def receive():
         calls.append("received")
 
-    outcome = await dispatch_event(*conversation)
+    outcome = await dispatch_event(conversation)
     outcome.raise_for_errors()
     continuation = matchers[0][0]
     continuation.expire_time = datetime.now() - timedelta(seconds=1)
 
     outcome = await dispatch_event(
-        *conversation, matcher_filter=lambda item: item is continuation
+        conversation, matcher_filter=lambda item: item is continuation
     )
     outcome.raise_for_errors()
     assert calls == []
@@ -224,7 +224,7 @@ async def test_resource_restart_removes_waits_and_preserves_static_matcher(
         calls.append("received")
 
     async with lifespan:
-        pending = asyncio.create_task(dispatch_event(*conversation))
+        pending = asyncio.create_task(dispatch_event(conversation))
         await entered.wait()
         if wait_phase == "ready":
             outcome = await pending
@@ -241,7 +241,7 @@ async def test_resource_restart_removes_waits_and_preserves_static_matcher(
 
         await lifespan.start_plugin(plugin)
         outcome = await dispatch_event(
-            *conversation, matcher_filter=lambda item: item.priority == 0
+            conversation, matcher_filter=lambda item: item.priority == 0
         )
         outcome.raise_for_errors()
         assert outcome.matched == 0
@@ -263,7 +263,7 @@ async def test_revocation_removes_static_matcher_after_resource_stop(
         await matcher.pause()
 
     async with lifespan:
-        outcome = await dispatch_event(*conversation)
+        outcome = await dispatch_event(conversation)
         outcome.raise_for_errors()
         await lifespan.stop_plugin(plugin)
         registry.revoke_plugin(plugin)
@@ -292,7 +292,7 @@ async def test_host_shutdown_removes_every_wait_and_keeps_static_matchers(
         ]
 
     async with lifespan:
-        outcome = await dispatch_event(*conversation)
+        outcome = await dispatch_event(conversation)
         outcome.raise_for_errors()
         assert outcome.suspended == 2
         assert len(matchers[0]) == 2

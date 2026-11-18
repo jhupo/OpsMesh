@@ -78,44 +78,6 @@ async def test_sync_context_cleanup_receives_cancellation():
 
 
 @pytest.mark.anyio
-async def test_disconnect_waits_for_generator_dependency_cleanup(
-    monkeypatch, runtime_type
-):
-    from types import SimpleNamespace
-
-    from opsmesh.config import Config, Env
-
-    Driver = runtime_type
-
-    monkeypatch.setattr(Driver, "_disconnection_hook", set())
-    driver = Driver(Env(), Config())
-    events = []
-    finished = anyio.Event()
-
-    async def resource():
-        events.append("enter")
-        try:
-            yield "value"
-        finally:
-            await anyio.sleep(0)
-            events.append("exit")
-
-    dependency = params.Depends(resource)
-
-    @driver.on_disconnect
-    async def disconnected(value=dependency):
-        events.append(value)
-        finished.set()
-
-    async with driver.lifespan():
-        channel = SimpleNamespace(self_id="connection")
-        driver.connect(channel)
-        driver.disconnect(channel)
-        await finished.wait()
-    assert events == ["enter", "value", "exit"]
-
-
-@pytest.mark.anyio
 async def test_driver_public_lifespan_exposes_hooks_and_state(runtime_type):
     from opsmesh.config import Config, Env
 

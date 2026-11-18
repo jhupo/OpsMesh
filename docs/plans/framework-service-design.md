@@ -25,7 +25,7 @@ systemd / 容器 / 命令行 ──启动──> opsmesh-service
 | 归属 | 唯一职责 | 可独立验证的边界 |
 |---|---|---|
 | 框架库 `opsmesh` | Event、Message、Matcher、分发、插件声明与依赖、Driver 运行时资源归属、准入和释放 | 只安装 core wheel，无服务命令。导入框架时不启动任务、不扫描部署目录、不创建文件或监听端口；不负责安装包、代码版本切换或服务进程寿命 |
-| 服务包 `opsmesh-service`，Python 包 `opsmesh_service` | 进程装配、包发现、部署策略、目录存储、本机管理、信号处理、运维结果和 Worker 交接 | 只依赖 core 即可启动空服务。管理流程不会导入某个具体业务包来判断其身份 |
+| 服务包 `opsmesh-service`，Python 包 `opsmesh.service` | 进程装配、包发现、部署策略、目录存储、本机管理、信号处理、运维结果和 Worker 交接 | 只依赖 core 即可启动空服务。管理流程不会导入某个具体业务包来判断其身份 |
 | 插件发行包 | 用框架 API 声明事件处理、配置、资源和清理钩子；直接声明实际使用的其他包 | 插件开发、导入和单测无需安装服务包。插件也无需知道服务通过 SQLite 或套接字管理它 |
 
 NoneBot 的 NB-CLI 把项目创建和启动放在框架外，用模板生成项目并调用目标 Python 环境。OpsMesh 可以借鉴入口归属；本项目另外要求运行中的进程能交接插件资源，所以运行时管理入口放在常驻服务。首期无需引入脚手架、模板引擎或另一套 CLI 插件系统。[NB-CLI 项目创建](https://cli.nonebot.dev/docs/guide/create-a-project/) · [项目启动实现](https://github.com/nonebot/nb-cli/blob/master/nb_cli/handlers/project.py)
@@ -34,7 +34,7 @@ NoneBot 的 NB-CLI 把项目创建和启动放在框架外，用模板生成项�
 
 ### 拆包后的目标文件树
 
-下图展开本次拆包涉及的源码和部署入口，省略与迁移无关的文件。服务包首期有五个实现模块，命令直接指向 `opsmesh_service.cli:main`。
+下图展开本次拆包涉及的源码和部署入口，省略与迁移无关的文件。服务包首期有五个实现模块，命令直接指向 `opsmesh.service.cli:main`。
 
 ```text
 OpsMesh/
@@ -43,9 +43,9 @@ OpsMesh/
 │   ├── __init__.py                      # 供插件和嵌入方导入的公共 API
 │   ├── config.py                        # Driver 接收的框架参数
 │   ├── drivers/
-│   │   ├── base.py                      # 具体 Driver、适配器和连接索引
-│   │   └── lifecycle.py                 # core 的激活、准入、排空和释放引擎
+│   │   └── base.py                      # 框架配置、任务组与生命周期入口
 │   ├── plugins/
+│   │   ├── activation.py                # core 的激活、排空与释放引擎
 │   │   ├── model.py                     # Plugin、PluginMetadata、PluginStatus
 │   │   ├── config.py                    # PluginConfiguration、配置读取与校验
 │   │   ├── lifecycle.py                 # 生命周期回调声明和加载时绑定
@@ -67,7 +67,7 @@ OpsMesh/
 ├── packages/
 │   ├── service/
 │   │   ├── pyproject.toml               # 发行 opsmesh-service，注册 opsmesh 命令
-│   │   └── src/opsmesh_service/
+│   │   └── src/
 │   │       ├── __init__.py
 │   │       ├── cli.py                   # 命令、参数、输出和退出码
 │   │       ├── service.py               # 读取 host.json、目录锁、信号、进程寿命
@@ -111,7 +111,7 @@ OpsMesh/
 第 4 批实现代码热更新时，再在服务包内增加以下两个模块。宿主侧负责选择版本和转发请求，子进程入口只负责运行一个版本的扩展。
 
 ```text
-packages/service/src/opsmesh_service/
+packages/service/src/
 ├── workers.py                           # 服务侧创建和回收进程、路由切换与排空
 └── worker.py                            # 子进程入口，加载指定版本并处理 IPC 调用
 ```
@@ -132,22 +132,22 @@ packages/service/src/opsmesh_service/
 
 ### 现有文件迁移对照
 
-服务包已承载实际实现，`opsmesh` 命令直接指向 `opsmesh_service.cli:main`。
+服务包已承载实际实现，`opsmesh` 命令直接指向 `opsmesh.service.cli:main`。
 旧的 core 入口和存储导入路径已删除；原有 `state.sqlite3` 的位置及 v3 格式不变。
 `Driver` 保留在 core 的 `drivers/base.py`；插件激活机制在 `plugins/activation.py`，钩子声明在 `plugins/lifecycle.py`。没有全局 Driver 或 `runtime` 包。
 
 | 拆包前路径 | 已迁移位置与后续改法 |
 |---|---|
-| 根 `pyproject.toml`、`src/opsmesh/main.py` | 根工程只发行框架库。移除 core 的 console script 和转发入口。新增 `packages/service/pyproject.toml`，直接声明 `opsmesh = "opsmesh_service.cli:main"`。沿用已部署的可执行文件名称 |
-| `bootstrap/cli.py`、`bootstrap/control.py` | 移到 `packages/service/src/opsmesh_service/{cli,control}.py`。CLI 解析参数、输出结果和退出码。control 只做本机传输、请求解码、响应编码。两个入口都把操作交给同一个 Host 方法 |
+| 根 `pyproject.toml`、`src/opsmesh/main.py` | 根工程只发行框架库。移除 core 的 console script 和转发入口。新增 `packages/service/pyproject.toml`，直接声明 `opsmesh = "opsmesh.service.cli:main"`。沿用已部署的可执行文件名称 |
+| `bootstrap/cli.py`、`bootstrap/control.py` | 移到 `packages/service/src/{cli,control}.py`。CLI 解析参数、输出结果和退出码。control 只做本机传输、请求解码、响应编码。两个入口都把操作交给同一个 Host 方法 |
 | `bootstrap/service.py`、`bootstrap/host.py` | 服务包内 `service.py` 管进程启动、数据目录独占、控制端点、信号和退出顺序；`host.py` 装配插件并执行业务无关的管理决策。Host 调 Driver 和目录存储，不再自己维护第二套生命周期。先沿用这两个模块，无需再包一层 bootstrap 或 main |
 | `plugins/storage.py` | 把 `PluginConfiguration`（插件自身值和消费者提供的依赖配置）移入 core 的 `plugins/config.py`；把 `PluginRecord`、`PluginStorage`、SQLite schema 和数据迁移移入服务包 `catalog.py`。保留首期的数据库路径和数据格式 |
 | `plugins/model.py`、`registry.py`、`manager.py` | Manager 的来源索引负责定位和导入；Registry 只记录已加载的插件、声明归属、依赖及撤销。Manager 不提供资源启停入口 |
 | `plugins/load.py`、`plugins/manager.py` | `plugin_environment()` 显式安装 `PluginFinder`，临时持有来源和准入规则，退出时撤销本次登记。Service 和嵌入方共用该入口 |
-| `drivers/base.py`、`plugins/activation.py` | Driver 保存适配器、逻辑连接和所使用的插件生命周期执行器。执行器维护插件阶段、在途调用、准入和清理状态。Service 构造 Driver、进入和退出其生命周期，并负责信号、包版本、持久配置及保护策略 |
+| `drivers/base.py`、`plugins/activation.py` | Driver 持有框架配置与插件生命周期执行器，不管理协议适配器或连接。执行器维护插件阶段及资源清理。Service 构造 Driver、进入和退出其生命周期，并负责信号、包版本、持久配置及保护策略 |
 | `packaging/entrypoint.py`、`opsmesh.spec`、`scripts/build_*.py`、部署文件与迁移工具 | 冻结程序直接调用服务包入口。构建区分 core、service、业务插件三类 wheel；服务 wheel 不参与业务插件枚举。发布清单记录服务和框架版本。systemd、Docker、安装脚本、离线迁移工具和测试一起切换 |
 
-业务插件继续使用既有的 `opsmesh.plugins.*` 包路径，服务包使用独立顶层名称。[当前宿主装配](../../packages/service/src/opsmesh_service/host.py) · [插件导入器](../../src/opsmesh/plugins/manager.py) · [服务目录](../../packages/service/src/opsmesh_service/catalog.py) · [wheel 构建校验](../../scripts/build_packages.py)
+业务插件使用 `opsmesh.plugins.*`，独立发行的服务包映射到 `opsmesh.service`，不在框架 wheel 内。[当前宿主装配](../../packages/service/src/host.py) · [插件导入器](../../src/opsmesh/plugins/manager.py) · [服务目录](../../packages/service/src/catalog.py) · [wheel 构建校验](../../scripts/build_packages.py)
 
 ### 框架与服务之间的 Python 接口
 
@@ -213,7 +213,7 @@ async def run_application(wait_for_exit):
 
 **服务启动。** 读取 manifest → 独占数据目录 → 打开目录数据库 → 发现并核对已安装入口 → 创建并绑定 Driver，登记选定模块和准入规则 → 加载自启动声明及其依赖 → 执行已有的启动阶段 → 开放本机管理端点并向 systemd 报告就绪。依赖图有环或必需插件失败时报告具体路径并倒序清理；可选扩展失败时保留诊断，其余已就绪插件继续运行。所有退出路径释放目录锁并撤销此次装配的导入器、注册项和 Driver 绑定。首期保持一个进程一个活动宿主。
 
-**服务关闭。** 收到退出信号后先停止接受新的管理变更，再等待已受理的操作到达可恢复的阶段，关闭业务准入、排空调用，按依赖逆序释放资源，最后关闭控制连接、目录库并解锁。内置插件参与整机关闭。Linux 服务以本机 Unix socket 提供管理；目标设计把控制端点视为官方服务的就绪条件，绑定失败应使启动失败并清理。目前实现会记录告警后继续报告就绪。嵌入框架的普通应用不需要这个端点。[当前服务实现](../../packages/service/src/opsmesh_service/service.py)
+**服务关闭。** 收到退出信号后先停止接受新的管理变更，再等待已受理的操作到达可恢复的阶段，关闭业务准入、排空调用，按依赖逆序释放资源，最后关闭控制连接、目录库并解锁。内置插件参与整机关闭。Linux 服务以本机 Unix socket 提供管理；控制端点成功绑定后才报告就绪，绑定失败则退出并回收已启动的资源。嵌入框架的普通应用不需要这个端点。[当前服务实现](../../packages/service/src/service.py)
 
 **建议命令。** `opsmesh serve --manifest host.json` 启动服务；`opsmesh plugin status A`、`opsmesh plugin stop A`、`opsmesh plugin start A` 等连接同一实例（实例选择来自指定 manifest 或部署默认路径）。`start` 即恢复，不再增设等价动词。下表是目标行为；当前工作树在线路径仅接通已登记扩展的 `status/load/start/stop/restart`，其余按第 7 节实施。
 

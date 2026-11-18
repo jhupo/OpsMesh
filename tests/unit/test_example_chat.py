@@ -46,6 +46,7 @@ assert get_plugin("api") is None
 assert get_plugin("qq") is None
 
 from opsmesh.plugins.channels import ChannelConnections
+from opsmesh.plugins.channels.lifecycle import protocol_adapter
 
 with plugin_scope(plugin):
     connections = get_dependency_config(ChannelConnections)
@@ -54,12 +55,11 @@ assert sorted(connections.qq) == ["primary"]
 
 for protocol in ("api", "qq"):
     try:
-        driver.get_adapter(protocol)
-    except KeyError:
+        protocol_adapter(driver, protocol)
+    except LookupError:
         pass
     else:
         raise AssertionError("connections must wait for plugin startup")
-assert driver.channels == {}
 
 from example_chat import agent as definition
 assert not hasattr(definition, "agent"), "Agent resources start in on_startup"
@@ -99,7 +99,7 @@ QQStream.run = receive
 
 
 async def body():
-    api = driver.get_adapter("api").get_connection(plugin.id_, "main")
+    api = protocol_adapter(driver, "api").get_connection(plugin.id_, "main")
     await scenario(plugin, api)
 
 
@@ -110,7 +110,7 @@ def skip(func):
     )
 
 
-anyio.run(lambda: run(plugin, driver, body, skip=skip))
+anyio.run(lambda: run(plugin, driver, body, skip=skip, started=("channels",)))
 """
 
 

@@ -42,8 +42,9 @@ from opsmesh.utils import (
 )
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Channel, Event, Message
+    from opsmesh.events import Event
     from opsmesh.matchers import Matcher
+    from opsmesh.messages import Message
 
 
 class DependsInner:
@@ -337,67 +338,6 @@ class DependParam(Param):
         await self.dependent.check(**kwargs)
 
 
-class ChannelParam(Param):
-    """A parameter receiving the current Channel instance.
-
-    Accepts Channel, its subclasses, or optional channel annotations.
-
-    For compatibility, an unannotated parameter named channel is also
-    accepted.
-    """
-
-    def __init__(
-        self, *args, checker: ModelField | None = None, **kwargs: Any
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        self.checker = checker
-
-    def __repr__(self) -> str:
-        return (
-            "ChannelParam("
-            + (
-                repr(self.checker.annotation)
-                if self.checker is not None
-                else ""
-            )
-            + ")"
-        )
-
-    @classmethod
-    @override
-    def _check_param(
-        cls, param: inspect.Parameter, allow_types: tuple[type[Param], ...]
-    ) -> Self | None:
-        from opsmesh.adapters import Channel
-
-        # param type is Channel(s) or subclass(es) of Channel or None
-        if generic_check_issubclass(param.annotation, Channel):
-            checker: ModelField | None = None
-            if param.annotation is not Channel:
-                checker = ModelField.construct(
-                    name=param.name,
-                    annotation=param.annotation,
-                    field_info=FieldInfo(),
-                )
-            return cls(checker=checker)
-        # legacy: param is named "channel" and has no type annotation
-        elif param.annotation == param.empty and param.name == "channel":
-            return cls()
-
-    @override
-    async def _solve(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, channel: "Channel", **kwargs: Any
-    ) -> Any:
-        return channel
-
-    @override
-    async def _check(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, channel: "Channel", **kwargs: Any
-    ) -> None:
-        if self.checker is not None:
-            check_field_type(self.checker, channel)
-
-
 class EventParam(Param):
     """A parameter receiving the current Event instance.
 
@@ -428,7 +368,7 @@ class EventParam(Param):
     def _check_param(
         cls, param: inspect.Parameter, allow_types: tuple[type[Param], ...]
     ) -> Self | None:
-        from opsmesh.adapters import Event
+        from opsmesh.events import Event
 
         # param type is Event(s) or subclass(es) of Event or None
         if generic_check_issubclass(param.annotation, Event):

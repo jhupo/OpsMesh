@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING
 
 import anyio
 
-from opsmesh.adapters import Event
-from opsmesh.dispatch import dispatch_event
+from opsmesh.events import Event
 from opsmesh.plugins.invocation import (
     PluginCall,
     PluginUnavailable,
@@ -19,7 +18,6 @@ from opsmesh.plugins.invocation import (
 )
 from opsmesh.plugins.registry import plugin_scope
 
-from ..events import MessageEvent
 from .queue import EventQueue
 
 if TYPE_CHECKING:
@@ -62,11 +60,6 @@ class QueuedEvent:
             await self.stack.aclose()
 
 
-def _invocation_context(event: Event):
-    """Messages carry the caller profile; notices have no verified user."""
-    return event.user if isinstance(event, MessageEvent) else None
-
-
 async def dispatch_queued(item: QueuedEvent) -> None:
     """Dispatch one admitted bot event through the framework exactly once."""
     channel = item.channel
@@ -74,12 +67,8 @@ async def dispatch_queued(item: QueuedEvent) -> None:
         logger.info("Cancelled queued event: owner stopped")
         return
     with invocation_scope(item.admitted_call):
-        result = await dispatch_event(
-            channel,
-            item.event,
-            invocation_context=_invocation_context(item.event),
-            matcher_filter=channel.accepts_matcher,
-            admitted_call=item.admitted_call,
+        result = await channel.dispatch(
+            item.event, admitted_call=item.admitted_call
         )
     if result.errors:
         logger.error(

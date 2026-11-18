@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from opsmesh import on_message
-from opsmesh.adapters import Event
+from opsmesh.events import Event
 from opsmesh.params import Context
 from opsmesh.plugins.channels import UserContext
 

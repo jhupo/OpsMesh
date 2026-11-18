@@ -8,7 +8,7 @@
 
 一次成功的 tag 发布包含：
 
-- `opsmesh`、`opsmesh-channels`、`opsmesh-execution`、`opsmesh-filesystem`、`opsmesh-database`、`opsmesh-cron`、`opsmesh-knowledge` 各自的 wheel 和源码包。
+- `opsmesh`、`opsmesh-service`、`opsmesh-channels`、`opsmesh-execution`、`opsmesh-filesystem`、`opsmesh-database`、`opsmesh-cron`、`opsmesh-knowledge` 各自的 wheel 和源码包。
 - Linux x86_64、aarch64 的框架可执行包。
 - 同版本、同架构的可选基础插件运行包，内含 channels、execution、filesystem、database、cron 及额外依赖。
 - `install.sh`、`SHA256SUMS` 及工作流生成的构建来源证明。

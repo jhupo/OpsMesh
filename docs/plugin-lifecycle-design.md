@@ -16,8 +16,8 @@ PluginMetadata 描述作者声明，Plugin 保存运行归属，PluginManager �
 | Driver.Lifespan | 当前 Driver 实例的阶段屏障、依赖顺序、资源启停、调用排空和释放 |
 | plugins/registry.py | 已加载插件索引、依赖和注册撤销 |
 | plugins/invocation.py | 框架调用持有及结束通知；不理解 HTTP、SDK 或业务会话 |
-| opsmesh_service.catalog | 本地插件记录、SQLite 配置持久化，不处理安装包 |
-| opsmesh_service.host | 服务侧配置读取、数据目录锁、记录发现及持久管理入口 |
+| opsmesh.service.catalog | 本地插件记录、SQLite 配置持久化，不处理安装包 |
+| opsmesh.service.host | 服务侧配置读取、数据目录锁、记录发现及持久管理入口 |
 
 通用 Dependent 继续只处理参数和依赖清理。插件状态检查放在 Matcher 分发、插件回调注册和通道请求边界，不能让底层依赖解析器依赖插件管理。
 
@@ -91,7 +91,7 @@ execution 复用 plugin_call。原生 Agent.as_tool/handoff 等由 SDK 在外层
 
 channels 自己管理 API HTTP 监听、QQ Gateway、钉钉连接和有界队列。框架不认识协议类型、Token、消息签名、模型、Agent 或 Session。
 
-消费者启动时按自己的依赖配置声明具名连接。Driver 缓存协议适配器，适配器按消费者和连接名保存已准备的连接，Driver 的在线索引只登记已上线的连接。停止一个消费者会排空并释放它拥有的连接，其他消费者的连接继续服务。
+消费者启动时按自己的依赖配置声明具名连接。channels 持有协议适配器，适配器按消费者和连接名保存已准备的连接，就绪状态由连接自身维护。Driver 不持有通道状态。停止一个消费者会排空并释放它拥有的连接，其他消费者的连接继续服务。
 
 机器人队列并发、QQ Gateway 参数和 HTTP 监听配置均属于具体连接。向允许重启的消费者应用依赖配置时，会重新构造该消费者的连接。channels 模块和适配器实例随宿主运行。内置保护与扩展在线管理的拟议改造见[扩展插件在线管理方案与内置 channels 架构审查](plans/plugin-online-lifecycle.md)。
 
@@ -104,9 +104,10 @@ API 路由随所属插件 READY 状态开放，关闭期间返回不可用。流
 ```text
 src/opsmesh/
 ├── drivers/
-│   ├── base.py             # 具体 Driver、适配器和连接索引
-│   └── lifecycle.py        # core 生命周期引擎与插件生命周期声明
+│   └── base.py             # 框架配置、任务组与生命周期入口
 ├── plugins/
+│   ├── activation.py       # 生命周期执行
+│   ├── lifecycle.py        # 生命周期回调声明
 │   ├── model.py
 │   ├── manager.py
 │   ├── load.py
@@ -115,7 +116,7 @@ src/opsmesh/
 │   └── registry.py
 ├── dispatch/
 └── dependencies/           # 保持通用参数与清理职责
-packages/service/src/opsmesh_service/
+packages/service/src/
 ├── host.py                 # 宿主装配与管理
 └── catalog.py              # 插件目录及 SQLite
 packages/channels/src/

@@ -7,6 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 
+from opsmesh.config import Config
+from opsmesh.events import (
+    Event,
+    Reply,
+    _event_scope,
+    _EventBinding,
+    get_event_config,
+)
 from opsmesh.exceptions import (
     NoLogException,
     StopPropagation,
@@ -18,10 +26,9 @@ from opsmesh.typing import (
 )
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Channel, Event
     from opsmesh.plugins.invocation import PluginCall
 
-from .execution import _DispatchResources, check_and_run_matcher
+from .execution import _check_and_run_matcher, _DispatchResources
 from .processors import (
     _apply_event_postprocessors,
     _apply_event_preprocessors,
@@ -39,10 +46,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _dispatch_event(
-    channel: "Channel",
-    event: "Event",
-    invocation_context: Any = None,
+    event: Event,
     *,
+    binding: _EventBinding,
+    invocation_context: Any = None,
     stack: AsyncExitStack | None = None,
     matcher_filter: Callable[[type[Matcher]], bool] | None = None,
     admitted_call: "PluginCall | None" = None,
@@ -50,8 +57,8 @@ async def _dispatch_event(
     """Dispatch an incoming event through the processing pipeline.
 
     Args:
-        channel: The channel instance.
         event: The incoming event instance.
+        binding: Active configuration and reply binding for this delivery.
         invocation_context: Trusted context supplied by the dispatch owner.
         stack: Optional resources retained by the transport until response end.
         matcher_filter: Optional eligibility restriction applied before checks.
@@ -59,27 +66,33 @@ async def _dispatch_event(
 
     Examples:
         ```python
-        driver.task_group.start_soon(handle_event, channel, event)
+        task_group.start_soon(handle_event, event)
         ```
     """
     show_log = True
-    log_msg = f"{channel.type} {channel.self_id} | "
     try:
-        log_msg += event.get_log_string()
+        log_msg = event.get_log_string()
     except NoLogException:
         show_log = False
-    if show_log:
-        logger.info(log_msg)
+    else:
+        logger.info("%s", log_msg)
 
     state: dict[Any, Any] = {}
     dependency_cache: T_DependencyCache = {}
 
-    # create event scope context
+    resources = _DispatchResources()
+    if stack is not None:
+
+        async def close_resources(exc_type, error, traceback):
+            with binding.bind():
+                return await resources.__aexit__(exc_type, error, traceback)
+
+        stack.push_async_exit(close_resources)
+
     async with (
-        nullcontext(stack) if stack is not None else _DispatchResources()
+        nullcontext(resources) if stack is not None else resources
     ) as stack:
         if not await _apply_event_preprocessors(
-            channel=channel,
             event=event,
             state=state,
             stack=stack,
@@ -91,7 +104,7 @@ async def _dispatch_event(
 
         # Trie Match
         try:
-            TrieRule.get_value(channel, event, state)
+            TrieRule.get_value(event, state, config=get_event_config())
         except Exception as e:
             record_error(e)
             logger.warning(
@@ -104,14 +117,13 @@ async def _dispatch_event(
         async def run_matcher(matcher):
             nonlocal break_flag
             try:
-                await check_and_run_matcher(
+                await _check_and_run_matcher(
                     matcher,
-                    channel,
                     event,
                     state.copy(),
                     stack,
-                    dependency_cache,
-                    invocation_context,
+                    invocation_context=invocation_context,
+                    binding=binding,
                     admitted_call=admitted_call,
                 )
             except* StopPropagation:
@@ -140,14 +152,15 @@ async def _dispatch_event(
             logger.debug("Checking for matchers completed")
 
         await _apply_event_postprocessors(
-            channel, event, state, stack, dependency_cache, invocation_context
+            event, state, stack, dependency_cache, invocation_context
         )
 
 
 async def dispatch_event(
-    channel: "Channel",
-    event: "Event",
+    event: Event,
     *,
+    config: Config | None = None,
+    reply: Reply | None = None,
     invocation_context: Any = None,
     stack: AsyncExitStack | None = None,
     matcher_filter: Callable[[type[Matcher]], bool] | None = None,
@@ -160,12 +173,18 @@ async def dispatch_event(
     An external stack transfers dependency cleanup to the transport owner,
     which must close it after the response finishes, including cancellation.
     A matcher filter narrows eligible handlers before their checks run.
+    Omitted config and reply never inherit values from an enclosing dispatch.
+    The event's reply capability expires when dispatch returns or raises.
     """
-    with collect_errors() as errors, collect_progress() as progress:
+    with (
+        _event_scope(config, reply) as binding,
+        collect_errors() as errors,
+        collect_progress() as progress,
+    ):
         await _dispatch_event(
-            channel,
             event,
-            invocation_context,
+            binding=binding,
+            invocation_context=invocation_context,
             stack=stack,
             matcher_filter=matcher_filter,
             admitted_call=admitted_call,
@@ -180,7 +199,14 @@ async def dispatch_event(
 
 
 async def handle_event(
-    channel: "Channel", event: "Event", *, invocation_context: Any = None
+    event: Event,
+    *,
+    config: Config | None = None,
+    reply: Reply | None = None,
+    invocation_context: Any = None,
+    stack: AsyncExitStack | None = None,
+    matcher_filter: Callable[[type[Matcher]], bool] | None = None,
+    admitted_call: "PluginCall | None" = None,
 ) -> None:
     """Process an event and propagate failures after resource cleanup.
 
@@ -188,6 +214,12 @@ async def handle_event(
     Call dispatch_event instead when inspecting failures without raising.
     """
     result = await dispatch_event(
-        channel, event, invocation_context=invocation_context
+        event,
+        config=config,
+        reply=reply,
+        invocation_context=invocation_context,
+        stack=stack,
+        matcher_filter=matcher_filter,
+        admitted_call=admitted_call,
     )
     result.raise_for_errors()

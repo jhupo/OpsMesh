@@ -8,9 +8,8 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import anyio
 from starlette.requests import ClientDisconnect
 
-from opsmesh.dispatch import dispatch_event
-
 from ..attachments import AttachmentCollection
+from ..context import bind_event_channel
 from .codec import from_request, json_response, sse_event
 from .errors import request_error
 from .events import APIMessageEvent
@@ -87,19 +86,12 @@ class MessageExchange:
         failure: BaseException | None = None
         multiple = False
         outcome = None
-        with self.scope():
+        with self.scope(), bind_event_channel(self.event, self.channel):
             try:
                 with self.execution.budget():
                     if self.output.emit is not None:
                         # StreamingResponse owns the ASGI disconnect receiver.
-                        outcome = await dispatch_event(
-                            self.channel,
-                            self.event,
-                            invocation_context=self.event.user,
-                            stack=self.stack,
-                            matcher_filter=self.channel.accepts_matcher,
-                            admitted_call=self.execution.admitted_call,
-                        )
+                        outcome = await self._dispatch_event()
                     else:
                         outcome = await self._dispatch()
                     if outcome.errors:
@@ -212,18 +204,19 @@ class MessageExchange:
                         return
 
             tasks.start_soon(watch_disconnect)
-            outcome = await dispatch_event(
-                self.channel,
-                self.event,
-                invocation_context=self.event.user,
-                stack=self.stack,
-                matcher_filter=self.channel.accepts_matcher,
-                admitted_call=self.execution.admitted_call,
-            )
+            outcome = await self._dispatch_event()
             tasks.cancel_scope.cancel()
         if disconnected:
             raise ClientDisconnect()
         return outcome
+
+    async def _dispatch_event(self):
+        """Submit the event and retain its request resources."""
+        return await self.channel.dispatch(
+            self.event,
+            stack=self.stack,
+            admitted_call=self.execution.admitted_call,
+        )
 
 
 def _error_payload(status: int, message: str) -> dict:

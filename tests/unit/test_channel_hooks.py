@@ -1,18 +1,41 @@
 """Verify operation rejection and observation error boundaries."""
 
 import asyncio
+from types import ModuleType
 
 import pytest
 
-from opsmesh.adapters import Channel
-from opsmesh.exceptions import MockCallException
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
+from opsmesh.plugins.channels import Channel, MockCallException
+from opsmesh.plugins.channels.api import APIAdapter, APIConnectionSettings
+from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.model import Plugin, PluginStatus
+from opsmesh.plugins.registry import plugin_scope
+
+
+@pytest.fixture
+async def channel():
+    owner = Plugin(
+        "support",
+        ModuleType("support"),
+        "support",
+        PluginManager(),
+        status=PluginStatus.READY,
+    )
+    adapter = APIAdapter(Driver(Env(), Config()))
+    with plugin_scope(owner):
+        endpoint = adapter.declare(APIConnectionSettings(enabled=False))
+    try:
+        yield endpoint
+    finally:
+        await endpoint.close()
 
 
 @pytest.mark.anyio
 async def test_rejection_wins_over_mock_without_calling_adapter(
-    conversation, monkeypatch
+    channel, monkeypatch
 ):
-    channel, _ = conversation
     called = []
 
     async def operation(*args, **kwargs):
@@ -34,8 +57,7 @@ async def test_rejection_wins_over_mock_without_calling_adapter(
 
 
 @pytest.mark.anyio
-async def test_observer_failure_preserves_success(conversation, monkeypatch):
-    channel, _ = conversation
+async def test_observer_failure_preserves_success(channel, monkeypatch):
 
     async def operation(*args, **kwargs):
         return "sent"

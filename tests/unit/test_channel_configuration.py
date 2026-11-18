@@ -14,12 +14,14 @@ from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
 from opsmesh.plugins import load_plugin, registry
 from opsmesh.plugins.manager import PluginManager, register_plugin_manager
-from opsmesh.dispatch import dispatch_event
 
 driver = Driver(Env(), Config(command_start={"/"}))
 driver._lifespan.shutdown_timeout = 2
 channels = load_plugin("opsmesh.plugins.channels")
 assert channels is not None
+from opsmesh.plugins.channels.lifecycle import (
+    _active_adapters, protocol_adapter,
+)
 
 async def receive(stream):
     stream.channel.inbound_task_connected()
@@ -147,29 +149,21 @@ def test_automatic_connections_route_groups_and_restart(tmp_path, protocol):
 owner = load_plugin("configured_bot", dependencies=connections(protocol, "123"))
 other = load_plugin("other_bot", dependencies=connections(protocol, "456"))
 assert owner and other
-assert not driver.adapters
+assert driver not in _active_adapters
 async def main():
     async with driver.lifespan():
-        adapter = driver.get_adapter(protocol)
+        adapter = protocol_adapter(driver, protocol)
         assert len(adapter.connections) == 2
         first = adapter.get_connection("configured_bot", "main")
         second = adapter.get_connection("other_bot", "main")
         await online(first)
         await online(second)
         for group in ("group-a", "group-b", "ignored", None):
-            result = await dispatch_event(
-                first,
-                event(first, group),
-                matcher_filter=first.accepts_matcher,
-            )
+            result = await first.dispatch(event(first, group))
             assert not result.errors, result.errors
         assert owner.module.handled == ["sales", "technical"]
         assert not other.module.handled
-        result = await dispatch_event(
-            first,
-            event(first, "group-a", "/clear"),
-            matcher_filter=first.accepts_matcher,
-        )
+        result = await first.dispatch(event(first, "group-a", "/clear"))
         assert not result.errors, result.errors
         assert owner.module.handled[-1] == "clear"
         await driver.stop_plugin(owner)
@@ -187,7 +181,6 @@ async def main():
         await driver.stop_plugin(owner)
         await driver.stop_plugin(other)
         assert not adapter.connections
-        assert not driver.channels
 asyncio.run(main())
 """,
     )
@@ -209,7 +202,7 @@ async def main():
         assert other.status.value == "failed"
         assert "secret_ref" in str(owner.failure)
         assert "undeclared" in str(other.failure)
-        assert not driver.adapters
+        assert not _active_adapters[driver]
 asyncio.run(main())
 """,
     )
@@ -228,11 +221,11 @@ assert owner
 async def main():
     async with driver.lifespan():
         assert owner.ready, owner.failure
-        adapter = driver.get_adapter("qq")
+        adapter = protocol_adapter(driver, "qq")
         assert len(adapter.connections) == 1
         channel = adapter.get_connection("configured_bot", "main")
         assert channel._inbound_task is None
-        assert not driver.channels
+        assert channel.state == "disconnected"
 asyncio.run(main())
 """,
     )
@@ -250,9 +243,9 @@ async def main():
     async with driver.lifespan():
         assert owner.status.value == "ready"
         for protocol in ("qq", "dingtalk"):
-            adapter = driver.get_adapter(protocol)
+            adapter = protocol_adapter(driver, protocol)
             await online(adapter.get_connection("configured_bot", "main"))
-        assert len(driver.channels) == 2
+        assert set(_active_adapters[driver]) == {"qq", "dingtalk"}
 asyncio.run(main())
 """,
     )
@@ -267,7 +260,7 @@ assert owner
 async def main():
     async with driver.lifespan():
         assert owner.status.value == "failed"
-        adapter = driver.get_adapter("qq")
+        adapter = protocol_adapter(driver, "qq")
         assert not adapter.connections
         assert owner.cleanup_complete
 asyncio.run(main())
@@ -292,7 +285,7 @@ async def main():
     async with driver.lifespan():
         assert owner.ready
         assert other.status.value == "failed"
-        adapter = driver.get_adapter("qq")
+        adapter = protocol_adapter(driver, "qq")
         assert len(adapter.connections) == 1
         await online(adapter.get_connection("configured_bot", "main"))
 asyncio.run(main())
@@ -325,15 +318,13 @@ async def send(event, message, **kwargs):
     replies.append(str(message))
 async def main():
     async with driver.lifespan():
-        adapter = driver.get_adapter("qq")
+        adapter = protocol_adapter(driver, "qq")
         channel = adapter.get_connection("group_assistant", "main")
         await online(channel)
         channel.send = send
         for group in ("group-a", "group-b", "ignored", None):
-            result = await dispatch_event(
-                channel,
+            result = await channel.dispatch(
                 event(channel, group),
-                matcher_filter=channel.accepts_matcher,
                 invocation_context=UserContext(id="user"),
             )
             assert not result.errors, result.errors

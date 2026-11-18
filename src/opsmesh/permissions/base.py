@@ -6,16 +6,15 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import anyio
 
-from opsmesh.adapters import Channel, Event
 from opsmesh.dependencies import Dependent
 from opsmesh.dependencies.context import ContextParam
 from opsmesh.dependencies.params import (
-    ChannelParam,
     DefaultParam,
     DependParam,
     EventParam,
     Param,
 )
+from opsmesh.events import Event
 from opsmesh.exceptions import SkippedException
 from opsmesh.typing import T_DependencyCache, T_PermissionChecker
 from opsmesh.utils import run_coro_with_catch
@@ -46,7 +45,6 @@ class Permission:
     HANDLER_PARAM_TYPES: ClassVar[list[type[Param]]] = [
         ContextParam,
         DependParam,
-        ChannelParam,
         EventParam,
         DefaultParam,
     ]
@@ -72,7 +70,6 @@ class Permission:
 
     async def __call__(
         self,
-        channel: Channel,
         event: Event,
         stack: AsyncExitStack | None = None,
         dependency_cache: T_DependencyCache | None = None,
@@ -81,7 +78,6 @@ class Permission:
         """Check whether any configured permission allows the event.
 
         Args:
-            channel: The channel instance.
             event: The incoming event instance.
             stack: The asynchronous resource cleanup stack.
             dependency_cache: The event-scoped dependency cache.
@@ -97,7 +93,6 @@ class Permission:
             # calculate the result first to avoid data racing
             is_passed = await run_coro_with_catch(
                 checker(
-                    channel=channel,
                     event=event,
                     stack=stack,
                     dependency_cache=dependency_cache,
@@ -167,7 +162,7 @@ class User:
             + ")"
         )
 
-    async def __call__(self, channel: Channel, event: Event) -> bool:
+    async def __call__(self, event: Event) -> bool:
         """Check the event user and any additional composed permission."""
         try:
             session = event.get_session_id()
@@ -179,7 +174,7 @@ class User:
             return True
         stack, dependency_cache, invocation_context = _permission_context.get()
         return await self.perm(
-            channel, event, stack, dependency_cache, invocation_context
+            event, stack, dependency_cache, invocation_context
         )
 
     @classmethod

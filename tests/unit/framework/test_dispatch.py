@@ -53,14 +53,14 @@ async def test_dispatch_result_reports_caught_failures(incoming, stage):
         }[stage]
         register(failing)
     Matcher.new(**options)
-    result = await dispatch.dispatch_event(*incoming)
+    result = await dispatch.dispatch_event(incoming)
     with pytest.raises(ExceptionGroup) as caught:
         result.raise_for_errors()
     assert [str(error) for error in flatten_exception_group(caught.value)] == [
         stage
     ]
     with pytest.raises(ExceptionGroup):
-        await dispatch.handle_event(*incoming)
+        await dispatch.handle_event(incoming)
 
 
 @pytest.mark.anyio
@@ -80,14 +80,13 @@ async def test_expected_nonexecution_is_not_a_dispatch_failure(
         Matcher.new(permission=Permission(denied))
     elif outcome == "ignored":
         dispatch.event_preprocessor(ignored)
-    result = await dispatch.dispatch_event(*incoming)
+    result = await dispatch.dispatch_event(incoming)
     result.raise_for_errors()
     assert result.errors == ()
 
 
 @pytest.mark.anyio
-async def test_concurrent_dispatch_results_do_not_share_failures(incoming):
-    channel, _ = incoming
+async def test_concurrent_dispatch_results_do_not_share_failures():
     results = {}
     entered = anyio.Event()
 
@@ -104,7 +103,7 @@ async def test_concurrent_dispatch_results_do_not_share_failures(incoming):
             get_type=lambda: "notice",
             get_log_string=lambda: name,
         )
-        results[name] = await dispatch.dispatch_event(channel, event)
+        results[name] = await dispatch.dispatch_event(event)
 
     Matcher.new(handlers=[handler])
     async with anyio.create_task_group() as tasks:
@@ -112,6 +111,55 @@ async def test_concurrent_dispatch_results_do_not_share_failures(incoming):
         tasks.start_soon(run, "succeeded")
     assert results["succeeded"].errors == ()
     assert len(results["failed"].errors) == 1
+
+
+@pytest.mark.anyio
+async def test_nested_event_without_reply_cannot_send_to_outer_event(incoming):
+    sent = []
+
+    async def reply(message, **options):
+        sent.append((message, options))
+
+    async def inner():
+        with pytest.raises(RuntimeError, match="repl"):
+            await Matcher.send("not deliverable")
+
+    async def outer():
+        await Matcher.send("before", tag=1)
+        scheduled = SimpleNamespace(
+            get_type=lambda: "scheduled", get_log_string=lambda: "scheduled"
+        )
+        await dispatch.handle_event(scheduled)
+        await Matcher.finish("after", tag=2)
+
+    Matcher.new(type_="notice", handlers=[outer])
+    Matcher.new(type_="scheduled", handlers=[inner])
+    await dispatch.handle_event(incoming, reply=reply)
+    assert sent == [("before", {"tag": 1}), ("after", {"tag": 2})]
+
+
+@pytest.mark.anyio
+async def test_reply_expires_in_tasks_that_outlive_dispatch(incoming):
+    release = anyio.Event()
+    sent = []
+
+    async def reply(message):
+        sent.append(message)
+
+    async def background():
+        await release.wait()
+        with pytest.raises(RuntimeError, match="No reply callable"):
+            await Matcher.send("too late")
+
+    async def handler():
+        tasks.start_soon(background)
+        await Matcher.send("during dispatch")
+
+    Matcher.new(handlers=[handler])
+    async with anyio.create_task_group() as tasks:
+        await dispatch.handle_event(incoming, reply=reply)
+        release.set()
+    assert sent == ["during dispatch"]
 
 
 @pytest.mark.anyio
@@ -130,7 +178,7 @@ async def test_dispatch_result_is_returned_after_dependency_cleanup(incoming):
         raise ValueError(value)
 
     Matcher.new(handlers=[handler])
-    result = await dispatch.dispatch_event(*incoming)
+    result = await dispatch.dispatch_event(incoming)
     assert events == ["closed"] and len(result.errors) == 1
 
 
@@ -156,7 +204,7 @@ async def test_context_reaches_rules_permissions_hooks_and_nested_resources(
         seen.append(value)
         return True
 
-    channel, event = conversation
+    event = conversation
     permission = Permission(
         User((event.get_session_id(),), Permission(observe))
     )
@@ -169,9 +217,7 @@ async def test_context_reaches_rules_permissions_hooks_and_nested_resources(
     ):
         register(observe)
     context = {"user": "alice"}
-    result = await dispatch.dispatch_event(
-        channel, event, invocation_context=context
-    )
+    result = await dispatch.dispatch_event(event, invocation_context=context)
     result.raise_for_errors()
     assert len(seen) == 7 and all(value is context for value in seen)
     assert closed == [context, context]
@@ -180,7 +226,7 @@ async def test_context_reaches_rules_permissions_hooks_and_nested_resources(
 
 @pytest.mark.anyio
 async def test_interaction_resume_receives_fresh_context(conversation):
-    channel, event = conversation
+    event = conversation
     seen = []
     interaction = Matcher.new(type_="message", temp=True, block=True)
 
@@ -189,10 +235,10 @@ async def test_interaction_resume_receives_fresh_context(conversation):
         seen.append(context)
 
     first = await dispatch.dispatch_event(
-        channel, event, invocation_context={"role": "old"}
+        event, invocation_context={"role": "old"}
     )
     second = await dispatch.dispatch_event(
-        channel, event, invocation_context={"role": "current"}
+        event, invocation_context={"role": "current"}
     )
     first.raise_for_errors()
     second.raise_for_errors()
@@ -202,7 +248,7 @@ async def test_interaction_resume_receives_fresh_context(conversation):
 
 
 @pytest.mark.anyio
-async def test_concurrent_and_nested_contexts_do_not_leak(incoming):
+async def test_concurrent_and_nested_contexts_do_not_leak():
     seen = []
 
     async def handler(event, context: Annotated[dict, Context()]):
@@ -215,7 +261,7 @@ async def test_concurrent_and_nested_contexts_do_not_leak(incoming):
                 name="nested",
             )
             result = await dispatch.dispatch_event(
-                incoming[0], nested, invocation_context={"user": "nested"}
+                nested, invocation_context={"user": "nested"}
             )
             result.raise_for_errors()
             assert result.handled == 1
@@ -227,7 +273,7 @@ async def test_concurrent_and_nested_contexts_do_not_leak(incoming):
             get_type=lambda: "notice", get_log_string=lambda: name, name=name
         )
         result = await dispatch.dispatch_event(
-            incoming[0], event, invocation_context={"user": name}
+            event, invocation_context={"user": name}
         )
         result.raise_for_errors()
         assert result.handled == 1
@@ -264,7 +310,7 @@ async def test_context_resource_releases_when_dispatch_is_cancelled(incoming):
     Matcher.new(handlers=[handler])
 
     async def invoke():
-        await dispatch.handle_event(*incoming, invocation_context=context)
+        await dispatch.handle_event(incoming, invocation_context=context)
 
     with anyio.fail_after(2):
         async with anyio.create_task_group() as tasks:
@@ -291,7 +337,7 @@ async def test_stop_propagation_does_not_cancel_same_priority_peer(incoming):
     Matcher.new(priority=1, block=True, handlers=[blocker])
     Matcher.new(priority=1, handlers=[peer])
     Matcher.new(priority=2, handlers=[lower])
-    result = await dispatch.dispatch_event(*incoming)
+    result = await dispatch.dispatch_event(incoming)
     result.raise_for_errors()
     assert calls == ["blocked", "completed"]
     assert result.handled == 2
@@ -320,13 +366,11 @@ def isolated_dispatch():
 
 @pytest.fixture
 def incoming():
-    channel = SimpleNamespace(type="test", self_id="channel")
-    event = SimpleNamespace(
+    return SimpleNamespace(
         get_type=lambda: "notice",
         get_event_name=lambda: "test.notice",
         get_log_string=lambda: "test event",
     )
-    return channel, event
 
 
 @pytest.mark.anyio
@@ -364,7 +408,7 @@ async def test_dispatch_orders_processors_and_releases_shared_dependency(
         calls.append("event after")
 
     Matcher.new(handlers=[handler])
-    await dispatch.handle_event(*incoming)
+    await dispatch.handle_event(incoming)
     assert calls == [
         "enter",
         "event before",
@@ -400,7 +444,7 @@ async def test_blocking_matcher_preserves_peers_and_stops_lower_priorities(
     Matcher.new(priority=1, handlers=[peer])
     Matcher.new(priority=2, handlers=[lower])
     with anyio.fail_after(2):
-        await dispatch.handle_event(*incoming)
+        await dispatch.handle_event(incoming)
     assert calls == ["peer", "blocking"]
 
 
@@ -424,7 +468,7 @@ async def test_ignored_event_stops_dispatch_and_releases_resources(incoming):
         calls.append("handler")
 
     Matcher.new(handlers=[handler])
-    await dispatch.handle_event(*incoming)
+    await dispatch.handle_event(incoming)
     assert calls == ["cleanup"]
 
 
@@ -447,7 +491,7 @@ async def test_handler_failure_reaches_postprocessors_and_next_matcher(
     Matcher.new(priority=1, handlers=[failing])
     Matcher.new(priority=2, handlers=[next_handler])
     with pytest.raises(ExceptionGroup, match="Event dispatch failed"):
-        await dispatch.handle_event(*incoming)
+        await dispatch.handle_event(incoming)
     assert calls == ["ValueError", "next", "NoneType"]
 
 
@@ -466,14 +510,14 @@ async def test_temporary_and_expired_matchers_are_removed(incoming):
         expire_time=datetime.now(UTC) - timedelta(seconds=1),
         handlers=[expired],
     )
-    await dispatch.handle_event(*incoming)
-    await dispatch.handle_event(*incoming)
+    await dispatch.handle_event(incoming)
+    await dispatch.handle_event(incoming)
     assert (calls, list(matchers.get(1, []))) == (["temporary"], [])
 
 
 @pytest.mark.anyio
 async def test_no_log_event_still_reaches_handlers(incoming, caplog):
-    channel, event = incoming
+    event = incoming
     calls = []
 
     def hidden_log():
@@ -486,7 +530,7 @@ async def test_no_log_event_still_reaches_handlers(incoming, caplog):
 
     Matcher.new(handlers=[handler])
     with caplog.at_level("INFO"):
-        await dispatch.handle_event(channel, event)
+        await dispatch.handle_event(event)
     assert calls == ["handler"] and "test event" not in caplog.text
 
 
@@ -497,7 +541,7 @@ async def test_continuation_keeps_permission_resources_and_event_cache(
 ):
     from opsmesh.permissions import Permission
 
-    channel, event = conversation
+    event = conversation
     lifecycle = []
     calls = []
 
@@ -525,8 +569,8 @@ async def test_continuation_keeps_permission_resources_and_event_cache(
     Matcher.new(
         temp=True, permission=Permission(allowed), handlers=[first, second]
     )
-    await dispatch.handle_event(channel, event)
-    await dispatch.handle_event(channel, event)
+    await dispatch.handle_event(event)
+    await dispatch.handle_event(event)
     names = [name for name, _ in calls]
     assert names == (
         ["permission", "first", "permission", "second"]

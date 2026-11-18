@@ -6,7 +6,7 @@ from typing import Any
 
 from qqbot_agent_sdk import EventParser
 
-from opsmesh.adapters import Event
+from opsmesh.events import Event
 
 from ..attachments import AttachmentCollection
 from ..attachments.transfer import AttachmentReader

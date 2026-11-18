@@ -5,17 +5,16 @@ from typing import Any, ClassVar, NoReturn
 
 import anyio
 
-from opsmesh.adapters import Channel, Event
 from opsmesh.dependencies import Dependent
 from opsmesh.dependencies.context import ContextParam
 from opsmesh.dependencies.params import (
-    ChannelParam,
     DefaultParam,
     DependParam,
     EventParam,
     Param,
     StateParam,
 )
+from opsmesh.events import Event
 from opsmesh.exceptions import SkippedException
 from opsmesh.typing import T_DependencyCache, T_RuleChecker, T_State
 
@@ -41,7 +40,6 @@ class Rule:
     HANDLER_PARAM_TYPES: ClassVar[list[type[Param]]] = [
         ContextParam,
         DependParam,
-        ChannelParam,
         EventParam,
         StateParam,
         DefaultParam,
@@ -65,7 +63,6 @@ class Rule:
 
     async def __call__(
         self,
-        channel: Channel,
         event: Event,
         state: T_State,
         stack: AsyncExitStack | None = None,
@@ -75,7 +72,6 @@ class Rule:
         """Check whether every configured rule matches.
 
         Args:
-            channel: The channel instance.
             event: The incoming event instance.
             state: The current event-processing state.
             stack: The asynchronous resource cleanup stack.
@@ -91,7 +87,6 @@ class Rule:
             nonlocal result
             # calculate the result first to avoid data racing
             is_passed = await checker(
-                channel=channel,
                 event=event,
                 state=state,
                 stack=stack,
