@@ -24,7 +24,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - run: python -m pip install -r requirements-dev.lock
-      - run: python -m pip install --no-deps . ./packages/channels ./packages/cron ./packages/database ./packages/execution ./packages/filesystem
+      - run: python -m pip install --no-deps . ./packages/service ./packages/channels ./packages/cron ./packages/database ./packages/execution ./packages/filesystem
       - run: python -m pip check
       - run: python -m pytest tests/unit -q
       - name: Check deployment scripts
@@ -42,15 +42,29 @@ jobs:
         run: |
           python -m venv /tmp/opsmesh-core-check
           /tmp/opsmesh-core-check/bin/pip install -c requirements.lock dist/python/opsmesh-*.whl
+          test ! -e /tmp/opsmesh-core-check/bin/opsmesh
           cd /tmp
-          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("uvicorn") is None; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh.plugins.channels") is None'
+          /tmp/opsmesh-core-check/bin/python -I -c 'import importlib.util,opsmesh; assert importlib.util.find_spec("opsmesh_service") is None; assert importlib.util.find_spec("uvicorn") is None; assert importlib.util.find_spec("agents") is None; assert importlib.util.find_spec("sqlalchemy") is None; assert importlib.util.find_spec("opsmesh.plugins.channels") is None'
+      - name: Run the service wheel without plugins
+        run: |
+          python -m venv /tmp/opsmesh-service-check
+          /tmp/opsmesh-service-check/bin/pip install -c requirements.lock dist/python/opsmesh-*.whl dist/python/opsmesh_service-*.whl
+          /tmp/opsmesh-service-check/bin/opsmesh --version
+          /tmp/opsmesh-service-check/bin/opsmesh --manifest deploy/host.example.json --check
       - name: Install each plugin wheel with its declared dependencies
         run: |
           for plugin in channels cron database execution filesystem; do
             python -m venv "/tmp/opsmesh-$plugin-check"
             "/tmp/opsmesh-$plugin-check/bin/pip" install -c requirements-dev.lock --find-links dist/python dist/python/opsmesh-*.whl dist/python/opsmesh_${plugin}-*.whl
             "/tmp/opsmesh-$plugin-check/bin/pip" check
-            (cd /tmp && "/tmp/opsmesh-$plugin-check/bin/python" -I -c "from opsmesh.config import Config,Env; from opsmesh.drivers import Driver,set_driver; from importlib import import_module; set_driver(Driver(Env(),Config())); import_module('opsmesh.plugins.$plugin')")
+            (cd /tmp && "/tmp/opsmesh-$plugin-check/bin/python" -I - "$plugin" <<'PY'
+          import sys
+          from opsmesh.plugins import load_plugin, plugin_environment
+
+          with plugin_environment():
+              assert load_plugin(f"opsmesh.plugins.{sys.argv[1]}") is not None
+          PY
+            )
           done
       - name: Upload Python distributions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -86,7 +100,7 @@ jobs:
           cache: pip
           cache-dependency-path: packaging/knowledge.lock
       - run: python -m pip install -r requirements-dev.lock -r packaging/knowledge.lock
-      - run: python -m pip install --no-deps . ./packages/cron ./packages/database ./packages/filesystem ./packages/knowledge
+      - run: python -m pip install --no-deps . ./packages/service ./packages/cron ./packages/database ./packages/filesystem ./packages/knowledge
       - run: python -m pip check
       - name: Prepare isolated vector test database
         env:

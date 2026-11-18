@@ -10,21 +10,22 @@ import pytest
 
 @pytest.fixture
 def cron_runtime(monkeypatch):
-    from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver, base
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
     from opsmesh.plugins.manager import PluginManager
     from opsmesh.plugins.model import Plugin, PluginStatus
 
     saved_matchers = dict(matchers.items())
-    monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database_module = importlib.import_module("opsmesh.plugins.database")
     database = Plugin(
         "database", database_module, database_module.__name__, PluginManager()
     )
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, database.id_: database}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     cron = importlib.import_module("opsmesh.plugins.cron")
     declaration_module = importlib.import_module(
@@ -39,6 +40,10 @@ def cron_runtime(monkeypatch):
     owner.status = PluginStatus.READY
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, owner.id_: owner}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     runtime = scheduler.Scheduler(SimpleNamespace(), cron.Settings())
     runtime._healthy = True

@@ -2,35 +2,39 @@
 
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import asynccontextmanager
+from importlib.metadata import entry_points
 
+import anyio
 import pytest
+from opsmesh_service import host, service
+from opsmesh_service.catalog import (
+    SCHEMA_VERSION,
+    PluginProtectedError,
+    PluginRecord,
+    PluginStorage,
+)
+from opsmesh_service.control import _dispatch, send_control, serve_control
 from pydantic import ValidationError
 
-from opsmesh import app as host
-from opsmesh.drivers import base as driver_state
-from opsmesh.plugins import admission, get_plugin, registry
-from opsmesh.plugins import load as plugin_load
-from opsmesh.plugins import manager as plugin_manager
-from opsmesh.plugins.errors import PluginProtectedError
+from opsmesh.plugins import get_available_plugin_names, get_plugin, registry
 from opsmesh.plugins.model import PluginStatus
-from opsmesh.plugins.storage import SCHEMA_VERSION, PluginRecord, PluginStorage
 
 
 @pytest.fixture
 def host_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(driver_state, "_driver", None)
     monkeypatch.setattr(registry, "_plugins", {})
-    managers = []
-    monkeypatch.setattr(registry, "_managers", managers)
-    monkeypatch.setattr(plugin_manager, "_managers", managers)
-    monkeypatch.setattr(plugin_load, "_managers", managers)
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     monkeypatch.setattr(host, "entry_points", lambda **kwargs: ())
     monkeypatch.syspath_prepend(str(tmp_path))
     yield tmp_path
-    admission.clear_plugin_admission()
     for name in tuple(sys.modules):
         if name.startswith("host_test_"):
             del sys.modules[name]
@@ -46,10 +50,212 @@ def manifest(directory):
     return host.HostManifest(data_dir=directory / "data")
 
 
+@pytest.mark.anyio
+async def test_online_stop_and_recovery_preserve_builtin_provider(
+    host_dir, monkeypatch
+):
+    provider = "host_test_fixed_provider"
+    extension = "host_test_extension"
+    consumer = "host_test_consumer"
+    register(host_dir, provider, "", enabled=True, autoload=True)
+    register(
+        host_dir,
+        extension,
+        f"from opsmesh import require\nrequire({provider!r})",
+        enabled=True,
+        autoload=True,
+    )
+    register(
+        host_dir,
+        consumer,
+        f"from opsmesh import require\nrequire({extension!r})",
+        enabled=True,
+    )
+    metadata = host_dir / "test_provider-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "entry_points.txt").write_text(
+        f"[opsmesh.builtin_plugins]\n{provider} = {provider}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        host,
+        "entry_points",
+        lambda *, group: entry_points(group=group, name=provider),
+    )
+    async with (
+        host.load_host(manifest(host_dir)) as manager,
+        manager.driver.lifespan(),
+    ):
+
+        async def request(module, action):
+            payload = {"version": 1, "module": module, "action": action}
+            return await _dispatch(manager, json.dumps(payload).encode())
+
+        fixed = get_plugin(provider)
+        assert manager.plugin_status(fixed.module_name)["protected"]
+        assert fixed.ready
+        assert not manager.records[provider].protected
+        assert (await request(provider, "status"))["result"]["builtin"]
+        assert "not loaded" in (await request(consumer, "stop"))["error"]
+        initial = (await request(extension, "status"))["result"]
+        stopped = (await request(extension, "stop"))["result"]
+        assert stopped["state"] == "stopped"
+        assert stopped["enabled"] and stopped["manually_stopped"]
+        assert stopped["cleanup_complete"]
+        rejection = await request(consumer, "start")
+        assert "manually stopped dependency" in rejection["error"]
+        for action in ("load", "stop", "start", "restart"):
+            assert "error" in await request(provider, action)
+        with pytest.raises(PluginProtectedError):
+            await manager.register(PluginRecord(module=f"{provider}.reserved"))
+        resumed = (await request(extension, "start"))["result"]
+        assert resumed["state"] == "ready"
+        assert not resumed["manually_stopped"]
+        assert resumed["pid"] == initial["pid"]
+        assert resumed["generation"] == initial["generation"] + 1
+        assert fixed.ready and fixed.generation == 1
+
+
+@pytest.mark.anyio
+async def test_online_start_cannot_activate_a_failed_builtin_dependency(
+    host_dir, monkeypatch
+):
+    from importlib.metadata import EntryPoint
+
+    provider = "host_test_fixed_dependency"
+    consumer = "host_test_fixed_consumer"
+    register(
+        host_dir,
+        provider,
+        "from opsmesh import on_startup\n"
+        "@on_startup\n"
+        "def startup():\n"
+        "    raise RuntimeError('initial activation failed')\n",
+        enabled=True,
+        autoload=True,
+    )
+    register(
+        host_dir,
+        consumer,
+        f"from opsmesh import require\nrequire({provider!r})\n",
+        enabled=True,
+    )
+    monkeypatch.setattr(
+        host,
+        "entry_points",
+        lambda *, group: (EntryPoint(provider, provider, group),)
+        if group == "opsmesh.builtin_plugins"
+        else (),
+    )
+    async with host.load_host(manifest(host_dir)) as current:
+        async with current.driver.lifespan():
+            plugin = get_plugin(provider)
+            assert plugin.status is PluginStatus.FAILED
+            with pytest.raises(PluginProtectedError, match=provider):
+                await current.control_plugin(consumer, "start")
+            assert plugin.generation == 1
+            assert get_plugin(consumer).generation == 0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Linux local control socket")
+@pytest.mark.anyio
+async def test_online_control_socket_uses_the_running_host(host_dir):
+    module = "host_test_local_control"
+    register(host_dir, module, "", enabled=True, autoload=True)
+    async with (
+        host.load_host(manifest(host_dir)) as current,
+        current.driver.lifespan(),
+    ):
+        async with serve_control(current):
+            root = current.storage.root
+            stopped = (await send_control(root, "stop", module))["result"]
+            resumed = (await send_control(root, "start", module))["result"]
+            assert stopped["state"] == "stopped"
+            assert resumed["state"] == "ready"
+            assert stopped["pid"] == resumed["pid"] == os.getpid()
+
+
+@pytest.mark.anyio
+async def test_service_keeps_host_ready_when_local_control_fails_to_bind(
+    host_dir, monkeypatch
+):
+    module = "host_test_service"
+    register(host_dir, module, "", enabled=True, autoload=True)
+    stop = anyio.Event()
+    notifications = []
+
+    @asynccontextmanager
+    async def unavailable_control(current):
+        assert current.driver.started
+        raise OSError("cannot bind control socket")
+        yield
+
+    def notify(state):
+        notifications.append(state)
+        assert get_plugin(module).ready
+        if state == "READY=1":
+            stop.set()
+
+    monkeypatch.setattr(service, "serve_control", unavailable_control)
+    monkeypatch.setattr(service, "_notify", notify)
+    with anyio.fail_after(2):
+        await service.serve(manifest(host_dir), stop_event=stop)
+    assert notifications == ["READY=1", "STOPPING=1"]
+    assert get_plugin(module) is None
+
+
+@pytest.mark.anyio
+async def test_driver_construction_failure_releases_host_ownership(
+    host_dir, monkeypatch
+):
+    def fail_driver(*args):
+        raise RuntimeError("driver construction failed")
+
+    settings = manifest(host_dir)
+    with monkeypatch.context() as patch:
+        patch.setattr(host, "Driver", fail_driver)
+        with pytest.raises(RuntimeError, match="driver construction failed"):
+            async with host.load_host(settings):
+                pytest.fail("Opened a host with a failed driver")
+    with host._data_lock(settings.data_dir):
+        pass
+    async with host.load_host(settings) as current:
+        assert isinstance(current.driver, host.Driver)
+
+
+@pytest.mark.anyio
+async def test_host_reserves_process_before_opening_data(host_dir, monkeypatch):
+    acquiring = anyio.Event()
+    proceed = anyio.Event()
+    open_sync = host.run_sync_ctx_manager
+
+    @asynccontextmanager
+    async def pause_first_open(context):
+        if not acquiring.is_set():
+            acquiring.set()
+            await proceed.wait()
+        async with open_sync(context) as value:
+            yield value
+
+    async def open_first():
+        async with host.load_host(manifest(host_dir)):
+            pass
+
+    monkeypatch.setattr(host, "run_sync_ctx_manager", pause_first_open)
+    other = host.HostManifest(data_dir=host_dir / "other")
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(open_first)
+        await acquiring.wait()
+        with pytest.raises(RuntimeError, match="already owns this process"):
+            async with host.load_host(other):
+                pytest.fail("Second host obtained process ownership")
+        assert not other.data_dir.exists()
+        proceed.set()
+
+
 DEPENDENCY_PROVIDER = """
 from pydantic import BaseModel, ConfigDict
-from opsmesh import get_dependency_config
-from opsmesh.drivers import get_driver
+from opsmesh import get_dependency_config, on_startup
 from opsmesh.plugins import PluginMetadata, on_plugin_loaded
 
 class ConsumerSettings(BaseModel):
@@ -64,9 +270,10 @@ observed = []
 def configure(consumer):
     if "host_test_provider" not in consumer.dependencies:
         return
+    @on_startup(before=True)
     def startup():
-        observed.append((consumer.name, get_dependency_config(ConsumerSettings)))
-    get_driver().on_startup(startup)
+        settings = get_dependency_config(ConsumerSettings)
+        observed.append((consumer.name, settings))
 """
 
 
@@ -82,16 +289,16 @@ async def test_dependency_configuration_is_isolated_persisted_and_reapplied(
         register(
             host_dir,
             name,
-            'from opsmesh import require\nprovider = require("host_test_provider")\n',
+            'from opsmesh import require\n'
+            'provider = require("host_test_provider")\n',
             enabled=True,
             autoload=True,
             dependencies={"host_test_provider": {"accounts": [account]}},
         )
-    async with host.load_host(manifest(host_dir)) as driver:
-        manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
         first = get_plugin("host_test_first")
         provider = get_plugin("host_test_provider")
-        async with driver.lifespan():
+        async with manager.driver.lifespan():
             observed = dict(provider.module.observed)
             assert observed["host_test_first"].accounts == ["first"]
             assert observed["host_test_second"].accounts == ["second"]
@@ -139,8 +346,7 @@ async def test_invalid_dependency_configuration_can_be_repaired(host_dir):
         enabled=False,
         dependencies={"host_test_provider": {}},
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
         plugin = manager.load("host_test_repairable")
         assert not plugin.ready
         await manager.save_config(
@@ -148,7 +354,7 @@ async def test_invalid_dependency_configuration_can_be_repaired(host_dir):
             {},
             dependencies={"host_test_provider": {"accounts": ["repaired"]}},
         )
-        async with driver.lifespan():
+        async with manager.driver.lifespan():
             await manager.enable(plugin.module_name)
             assert plugin.ready
             provider = get_plugin("host_test_provider")
@@ -156,7 +362,7 @@ async def test_invalid_dependency_configuration_can_be_repaired(host_dir):
 
 
 def test_cli_imports_configuration_and_dependencies_from_one_file(host_dir):
-    from opsmesh.cli import main
+    from opsmesh_service.cli import main
 
     source = host_dir / "host_test_configured.py"
     source.write_text("value = 1\n", encoding="utf-8")
@@ -218,11 +424,10 @@ async def test_declared_file_initializes_once_and_can_be_reimported(host_dir):
     register(host_dir, name, FILE_CONFIG_PLUGIN, enabled=True, autoload=True)
     settings = host_dir / "settings.json"
     settings.write_text('{"config": {"label": "initial"}}', encoding="utf-8")
-    async with host.load_host(manifest(host_dir)) as driver:
-        manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
         plugin = get_plugin(name)
         assert not manager.records[name].config_initialized
-        async with driver.lifespan():
+        async with manager.driver.lifespan():
             assert plugin.module.observed == ["initial"]
             assert manager.records[name].config_initialized
             settings.write_text(
@@ -250,14 +455,14 @@ async def test_declared_file_initializes_once_and_can_be_reimported(host_dir):
 import asyncio
 import sys
 from pathlib import Path
-from opsmesh import app
-from opsmesh.plugins import get_plugin
+from opsmesh_service import host as app
+from opsmesh.plugins import get_available_plugin_names, get_plugin
 sys.path.insert(0, sys.argv[1])
 app.entry_points = lambda **kwargs: ()
 async def main():
     manifest = app.HostManifest(data_dir=Path(sys.argv[1]) / "data")
-    async with app.load_host(manifest) as driver:
-        async with driver.lifespan():
+    async with app.load_host(manifest) as manager:
+        async with manager.driver.lifespan():
             assert get_plugin("host_test_file").module.observed == ["edited"]
 asyncio.run(main())
 """,
@@ -281,8 +486,8 @@ async def test_explicit_empty_configuration_skips_missing_file(host_dir):
         autoload=True,
         config={},
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             plugin = get_plugin(name)
             assert plugin.ready
             assert plugin.module.observed == ["default"]
@@ -317,8 +522,8 @@ require("host_test_provider")
         ),
         encoding="utf-8",
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             assert get_plugin("host_test_parent").ready
             assert get_plugin("host_test_child").module.observed == ["child"]
             provider = get_plugin("host_test_provider")
@@ -343,9 +548,8 @@ async def test_invalid_file_is_repairable_without_partial_save(
     settings = host_dir / "settings.json"
     if content is not None:
         settings.write_text(content, encoding="utf-8")
-    async with host.load_host(manifest(host_dir)) as driver:
-        manager = host.get_host()
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             plugin = get_plugin(name)
             assert plugin.status is PluginStatus.FAILED
             assert not manager.records[name].config_initialized
@@ -365,13 +569,13 @@ async def test_config_file_rejects_paths_outside_plugin(host_dir, filename):
     name = "host_test_unsafe_file"
     source = FILE_CONFIG_PLUGIN.replace('"settings.json"', repr(filename))
     register(host_dir, name, source)
-    async with host.load_host(manifest(host_dir)):
+    async with host.load_host(manifest(host_dir)) as manager:
         with pytest.raises(ValueError, match="within the plugin package"):
-            await host.get_host().import_config(name)
+            await manager.import_config(name)
 
 
 def test_cli_check_imports_file_without_starting_resources(host_dir):
-    from opsmesh.cli import main
+    from opsmesh_service.cli import main
 
     source = FILE_CONFIG_PLUGIN.replace(
         "observed.append(get_plugin_config(Settings).label)",
@@ -408,8 +612,8 @@ async def test_package_configuration_is_relative_to_entry_package(host_dir):
     )
     with PluginStorage(host_dir / "data") as storage:
         storage.save(PluginRecord(module=name, enabled=True, autoload=True))
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             assert get_plugin(name).module.observed == ["package"]
 
 
@@ -427,13 +631,13 @@ async def test_configuration_rejects_symlink_to_outside_plugin(host_dir):
         pytest.skip("Creating symlinks is unavailable")
     with PluginStorage(host_dir / "data") as storage:
         storage.save(PluginRecord(module=name))
-    async with host.load_host(manifest(host_dir)):
+    async with host.load_host(manifest(host_dir)) as manager:
         with pytest.raises(ValueError, match="outside the plugin package"):
-            await host.get_host().import_config(name)
+            await manager.import_config(name)
 
 
 def test_cli_import_config_uses_declared_file(host_dir):
-    from opsmesh.cli import main
+    from opsmesh_service.cli import main
 
     name = "host_test_cli_file"
     register(host_dir, name, FILE_CONFIG_PLUGIN, config={"label": "old"})
@@ -486,8 +690,7 @@ async def test_external_plugin_namespace_is_discovered_and_restored(
         with PluginStorage(host_dir / "data") as storage:
             storage.save(record)
     try:
-        async with host.load_host(manifest(host_dir)):
-            manager = host.get_host()
+        async with host.load_host(manifest(host_dir)) as manager:
             if register_online:
                 await manager.register(record)
             plugin = manager.load(record.module)
@@ -546,20 +749,17 @@ async def test_protected_plugin_management_preserves_state(host_dir):
         required=True,
         protected=True,
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             plugin = get_plugin("host_test_core")
-            manager = host.get_host()
             with pytest.raises(PluginProtectedError):
                 await manager.disable(plugin.module_name)
             with pytest.raises(PluginProtectedError):
                 await manager.apply_config(plugin.module_name)
             with pytest.raises(PluginProtectedError):
-                await manager.managers[plugin.module_name].stop_plugin(
-                    plugin.module_name
-                )
+                await manager.control_plugin(plugin.module_name, "stop")
             with pytest.raises(PluginProtectedError):
-                registry.revoke_plugin(plugin)
+                await manager.control_plugin(plugin.module_name, "restart")
             assert (
                 plugin.ready
                 and manager.storage.get(plugin.module_name).enabled
@@ -597,11 +797,10 @@ async def test_shutdown_cancels_host_management_startup(host_dir):
         "    closed.append(True)\n",
         enabled=True,
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        manager = host.get_host()
-        async with driver.lifespan():
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             plugin = manager.load("host_test_pending_start")
-            driver._lifespan.shutdown_timeout = 0.1
+            manager.driver._lifespan.shutdown_timeout = 0.1
             pending = asyncio.create_task(manager.enable(plugin.module_name))
             await plugin.module.entered.wait()
         with anyio.fail_after(1):
@@ -650,8 +849,7 @@ async def test_dependency_uses_its_record_and_cannot_enable_itself(host_dir):
         async with host.load_host(manifest(host_dir)):
             pass
     assert "host_test_dependency" not in sys.modules
-    assert not driver_state.is_initialized()
-    assert registry._managers == []
+    assert not get_available_plugin_names()
 
 
 @pytest.mark.anyio
@@ -711,15 +909,15 @@ async def test_save_does_not_apply_or_restart_and_apply_uses_saved_values(
         enabled=True,
         autoload=True,
     )
-    async with host.load_host(manifest(host_dir)) as driver:
+    async with host.load_host(manifest(host_dir)) as manager:
         plugin = get_plugin("host_test_configured")
-        async with driver.lifespan():
-            await host.get_host().save_config(
+        async with manager.driver.lifespan():
+            await manager.save_config(
                 plugin.module_name, {"value": "new"}
             )
             assert plugin.module.events == ["old"]
             assert plugin.config_values == {"value": "old"}
-            await host.get_host().apply_config(plugin.module_name)
+            await manager.apply_config(plugin.module_name)
             assert plugin.module.events == ["old", "closed", "new"]
             assert plugin.ready
         assert plugin.cleanup_complete
@@ -732,8 +930,7 @@ async def test_disabled_configuration_loads_declarations_without_resources(
     host_dir,
 ):
     register(host_dir, "host_test_configured", CONFIGURED_PLUGIN)
-    async with host.load_host(manifest(host_dir)):
-        manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
         await manager.save_config("host_test_configured", {"value": "saved"})
         plugin = get_plugin("host_test_configured")
         assert plugin.module.events == []
@@ -750,9 +947,8 @@ async def test_enable_and_disable_are_persisted_without_unloading_code(
         CONFIGURED_PLUGIN,
         config={"value": "ready"},
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
-            manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             await manager.enable("host_test_configured")
             plugin = get_plugin("host_test_configured")
             assert plugin.ready
@@ -768,8 +964,8 @@ async def test_enable_and_disable_are_persisted_without_unloading_code(
 async def test_registration_does_not_install_or_execute_files(host_dir):
     source = host_dir / "host_test_manual.py"
     source.write_text("raise AssertionError('imported')", encoding="utf-8")
-    async with host.load_host(manifest(host_dir), load_entries=False):
-        manager = host.get_host()
+    settings = manifest(host_dir)
+    async with host.load_host(settings, load_entries=False) as manager:
         await manager.register(
             PluginRecord(module="host_test_manual", directory=str(host_dir))
         )
@@ -800,9 +996,8 @@ def test_storage_survives_reopen_and_does_not_accept_package_fields(host_dir):
 @pytest.mark.anyio
 async def test_online_enable_uses_values_saved_while_disabled(host_dir):
     register(host_dir, "host_test_configured", CONFIGURED_PLUGIN)
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
-            manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
             await manager.save_config("host_test_configured", {"value": "new"})
             await manager.enable("host_test_configured")
             assert get_plugin("host_test_configured").module.events == ["new"]
@@ -820,9 +1015,8 @@ async def test_save_failure_preserves_active_and_persisted_config(
         enabled=True,
         autoload=True,
     )
-    async with host.load_host(manifest(host_dir)) as driver:
-        async with driver.lifespan():
-            manager = host.get_host()
+    async with host.load_host(manifest(host_dir)) as manager:
+        async with manager.driver.lifespan():
 
             def fail(record):
                 raise OSError("disk full")

@@ -8,23 +8,25 @@ import pytest
 import opsmesh.plugins.filesystem as filesystem
 from opsmesh.config import Config, Env
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
-from opsmesh.plugins import load as plugin_load
-from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins import registry
 from opsmesh.plugins.filesystem import files
 from opsmesh.plugins.filesystem._paths import resolve_caller_plugin
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import (
+    PluginManager,
+    plugin_environment,
+    register_plugin_manager,
+)
 
 
 @pytest.fixture
 def clean_registry(monkeypatch):
     monkeypatch.setattr(registry, "_plugins", {})
-    managers: list[PluginManager] = []
-    monkeypatch.setattr(registry, "_managers", managers)
-    monkeypatch.setattr(plugin_manager, "_managers", managers)
-    monkeypatch.setattr(plugin_load, "_managers", managers)
-    yield managers
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
+    with plugin_environment():
+        yield
     for name, module in list(sys.modules.items()):
         if name.startswith("filesystem_owner_") and isinstance(
             module, ModuleType
@@ -32,7 +34,7 @@ def clean_registry(monkeypatch):
             del sys.modules[name]
 
 
-def _load_owner(tmp_path, monkeypatch, managers):
+def _load_owner(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     name = "filesystem_owner_demo"
     (tmp_path / f"{name}.py").write_text(
@@ -46,14 +48,14 @@ def owner():
         encoding="utf-8",
     )
     manager = PluginManager([name])
-    managers.append(manager)
+    register_plugin_manager(manager)
     return manager.load_plugin(name)
 
 
 def test_caller_plugin_is_resolved_from_its_module(
     tmp_path, monkeypatch, clean_registry
 ):
-    plugin = _load_owner(tmp_path, monkeypatch, clean_registry)
+    plugin = _load_owner(tmp_path, monkeypatch)
     assert plugin is not None
     module = sys.modules["filesystem_owner_demo"]
     assert module.owner() == "filesystem_owner_demo"
@@ -68,14 +70,12 @@ def test_unregistered_caller_is_rejected(clean_registry):
 async def test_lifecycle_prepares_roots_and_rejects_access(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(driver_state, "_driver", None)
     driver = Driver(Env(), Config())
     monkeypatch.setattr(
         files,
         "get_plugin_config",
         lambda model, **kwargs: model(root=str(tmp_path / "files")),
     )
-    driver_state.set_driver(driver)
     plugin = filesystem
     driver.on_startup(files._startup)
     driver.on_shutdown(files._shutdown)

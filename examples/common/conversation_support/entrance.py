@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict
 
-from opsmesh import get_driver, on_command, on_message
+from opsmesh import on_command, on_message
 from opsmesh.adapters import Channel, Event
 from opsmesh.matchers import Matcher, current_channel
 from opsmesh.messages import Message
@@ -53,22 +53,23 @@ async def current_turn(
     return ConversationTurn(channel, event, caller)
 
 
-def command_input(event: Event) -> bool:
+def command_input(channel: Channel, event: Event) -> bool:
     """Reject every configured command prefix, including unknown commands."""
     text = event.get_plaintext().lstrip()
     return any(
-        text.startswith(prefix) for prefix in get_driver().config.command_start
+        text.startswith(prefix)
+        for prefix in channel.adapter.config.command_start
     )
 
 
-async def addressed_message(event: Event) -> bool:
+async def addressed_message(channel: Channel, event: Event) -> bool:
     """Accept addressed messages that have no configured command prefix."""
-    return event.is_tome() and not command_input(event)
+    return event.is_tome() and not command_input(channel, event)
 
 
-async def addressed_command(event: Event) -> bool:
+async def addressed_command(channel: Channel, event: Event) -> bool:
     """Select command input left after registered command matchers."""
-    return event.is_tome() and command_input(event)
+    return event.is_tome() and command_input(channel, event)
 
 
 def result_message(text: str, data: dict) -> channels.Message:

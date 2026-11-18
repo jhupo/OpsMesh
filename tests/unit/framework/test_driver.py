@@ -3,7 +3,7 @@ import pytest
 import opsmesh as framework
 from opsmesh import adapters, config
 from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
+from opsmesh.plugins.activation import Lifespan
 
 
 class Adapter(adapters.Adapter):
@@ -20,32 +20,23 @@ class Channel(adapters.Channel):
         raise NotImplementedError
 
 
-@pytest.fixture(autouse=True)
-def isolated_runtime(monkeypatch):
-    monkeypatch.setattr(driver_state, "_driver", None)
-
-
 def new_runtime():
     return Driver(config.Env(), config.Config())
 
 
-def test_uninitialized_driver_access_has_clear_error():
-    with pytest.raises(ValueError, match="has not been initialized"):
-        framework.get_driver()
-
-
-def test_public_and_internal_access_return_the_same_driver():
+def test_driver_uses_the_core_lifespan_engine():
     driver = new_runtime()
-    driver_state.set_driver(driver)
-    assert framework.get_driver() is driver_state.get_driver() is driver
+
+    assert isinstance(driver._lifespan, Lifespan)
+    assert type(driver._lifespan).__module__ == "opsmesh.plugins.activation"
 
 
-def test_bound_driver_cannot_be_replaced():
-    original = new_runtime()
-    driver_state.set_driver(original)
-    with pytest.raises(RuntimeError, match="already been initialized"):
-        driver_state.set_driver(new_runtime())
-    assert driver_state.get_driver() is original
+def test_framework_has_no_process_global_driver_api():
+    from opsmesh import drivers
+
+    for name in ("get_driver", "set_driver", "bind_driver", "is_initialized"):
+        assert not hasattr(framework, name)
+        assert not hasattr(drivers, name)
 
 
 def test_adapter_registration_is_owned_by_each_driver():
@@ -63,7 +54,6 @@ def test_adapter_registration_is_owned_by_each_driver():
 
 def test_adapter_lookup_returns_a_copy():
     driver = new_runtime()
-    driver_state.set_driver(driver)
     driver.register_adapter(Adapter)
     driver.adapters.clear()
     assert driver.get_adapter(Adapter).driver is driver
@@ -71,7 +61,6 @@ def test_adapter_lookup_returns_a_copy():
 
 def test_channel_lookup_returns_a_snapshot():
     driver = new_runtime()
-    driver_state.set_driver(driver)
     driver.register_adapter(Adapter)
     channel = Channel(driver.adapters["test"], "snapshot")
     driver.connect(channel)

@@ -1,4 +1,4 @@
-"""Persist host-owned plugin settings independently of runtime objects."""
+"""Service-owned persistence for installed plugin records."""
 
 from __future__ import annotations
 
@@ -8,31 +8,15 @@ from contextlib import closing
 from pathlib import Path
 from typing import Self
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    field_validator,
-    model_validator,
-)
+from pydantic import field_validator, model_validator
 
-from .errors import PluginProtectedError
+from opsmesh.plugins.config import PluginConfiguration
 
 SCHEMA_VERSION = 3
 
 
-class PluginConfiguration(BaseModel):
-    """Plugin values and consumer-owned configuration for dependencies."""
-
-    model_config = ConfigDict(
-        frozen=True, extra="forbid", hide_input_in_errors=True
-    )
-
-    config: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
-    dependencies: dict[str, dict[str, JsonValue]] = Field(
-        default_factory=dict, repr=False
-    )
+class PluginProtectedError(RuntimeError):
+    """The action conflicts with the service's plugin protection policy."""
 
 
 class PluginRecord(PluginConfiguration):
@@ -49,7 +33,7 @@ class PluginRecord(PluginConfiguration):
     @model_validator(mode="before")
     @classmethod
     def identify_explicit_configuration(cls, values: object) -> object:
-        """Treat explicitly supplied values, including empty objects, as saved."""
+        """Treat explicit values, including empty objects, as saved."""
         if isinstance(values, dict) and "config_initialized" not in values:
             values = dict(values)
             values["config_initialized"] = (
@@ -88,18 +72,20 @@ class PluginRecord(PluginConfiguration):
 
 
 class PluginStorage:
-    """Persist plugin configuration without managing host processes.
+    """Persist service-owned plugin catalog records in SQLite.
 
     Connections are short-lived and never cross threads. Async callers use
     a worker thread; no transaction remains open while plugin code runs.
     """
 
     def __init__(self, root: Path) -> None:
+        """Locate the catalog in the service data directory."""
         self.root = root.resolve()
         self.path = self.root / "state.sqlite3"
         self._opened = False
 
     def __enter__(self) -> Self:
+        """Prepare the directory and initialize or migrate the schema."""
         self.root.mkdir(parents=True, exist_ok=True)
         self._opened = True
         try:
@@ -110,6 +96,7 @@ class PluginStorage:
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Prevent new connections after leaving the catalog context."""
         self._opened = False
 
     def _connect(self) -> sqlite3.Connection:
@@ -204,7 +191,7 @@ class PluginStorage:
                 "DELETE FROM plugins WHERE module = ?", (module,)
             )
 
-    def set_protected(self, module: str) -> None:
+    def set_protected(self, module: str) -> PluginRecord:
         """Protect a record during exclusive offline maintenance."""
         record = self.get(module)
         values = record.model_dump()
@@ -216,3 +203,7 @@ class PluginStorage:
                 "UPDATE plugins SET record=? WHERE module=?",
                 (protected.model_dump_json(), module),
             )
+        return protected
+
+
+__all__ = ["SCHEMA_VERSION", "PluginRecord", "PluginStorage"]

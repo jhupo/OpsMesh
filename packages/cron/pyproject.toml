@@ -21,5 +21,8 @@ package-dir = {"opsmesh.plugins.cron" = "src"}
 [project.entry-points."opsmesh.plugins"]
 cron = "opsmesh.plugins.cron"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+cron = "opsmesh.plugins.cron"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.cron" = ["py.typed", "migrations/*.py"]

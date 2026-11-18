@@ -41,11 +41,11 @@ journalctl -u opsmesh -f
 python -m venv .venv
 # Activate the virtual environment for your shell.
 python -m pip install -r requirements-dev.lock
-python -m pip install --no-deps -e . -e packages/channels \
+python -m pip install --no-deps -e . -e packages/service -e packages/channels \
   -e packages/filesystem -e packages/database -e packages/execution -e packages/cron
 ```
 
-只安装框架包时使用 `python -m pip install -e .`。上面的开发锁用于整个仓库验证，包含插件测试需要的依赖，不是框架的运行依赖。仅运行受改动影响的测试，例如：
+只安装框架包时使用 `python -m pip install -e .`；`opsmesh` 命令由独立的 `opsmesh-service` 包提供。上面的开发锁用于整个仓库验证，包含插件测试需要的依赖，不是框架的运行依赖。仅运行受改动影响的测试，例如：
 
 ```bash
 python -m pytest tests/unit/test_execution_runner.py tests/unit/test_execution_tracing.py -q
@@ -57,7 +57,8 @@ knowledge 使用独立依赖锁，不随基础开发环境下载 PyTorch。开�
 
 ```text
 src/opsmesh/        # 独立框架发行包
-packages/          # 通道、执行、存储、数据库、知识库与定时器插件发行包
+packages/service/  # 官方服务进程和管理 CLI
+packages/          # 同时包含六个独立插件发行包
 examples/          # 普通对话、沙箱对话与客户端示例
 tests/             # 框架及插件的行为验证
 deploy/            # 仅部署框架的安装器、systemd 与可选 Docker
@@ -71,7 +72,7 @@ licenses/          # 上游许可文本
 
 ## 发布与文档
 
-`v<version>` tag 触发工作流；版本必须匹配核心和六个插件。验证成功后，Release 同时附带七个包的 wheel／源码包、两种架构的框架可执行包、独立基础插件运行包和校验文件。knowledge 的本地模型运行环境单独构建，不增加框架或基础运行包体积。发布渠道为 GitHub Release，见 [发布说明](docs/releases.md)。
+`v<version>` tag 触发工作流；版本必须匹配框架、服务和六个插件。验证成功后，Release 同时附带八个包的 wheel／源码包、两种架构的服务可执行包、独立基础插件运行包和校验文件。knowledge 的本地模型运行环境单独构建，不增加服务或基础运行包体积。发布渠道为 GitHub Release，见 [发布说明](docs/releases.md)。
 
 - [架构与职责](docs/plugin-architecture.md)
 - [通道和执行回调](docs/channels-and-callbacks.md)

@@ -26,6 +26,9 @@ package-dir = {"opsmesh.plugins.database" = "src"}
 [project.entry-points."opsmesh.plugins"]
 database = "opsmesh.plugins.database"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+database = "opsmesh.plugins.database"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.database" = ["py.typed", "_alembic/script.py.mako"]
 

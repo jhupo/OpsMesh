@@ -10,13 +10,17 @@ from typing import Any
 
 from opsmesh.utils import path_to_module_name
 
-from .manager import PluginManager
+from .manager import (
+    PluginManager,
+    _active_sources,
+    get_plugin_manager,
+    register_plugin_manager,
+)
 from .model import Plugin
 from .registry import (
     _current_plugin,
-    _managers,
-    _module_name_to_plugin_id,
     get_plugin,
+    get_plugin_by_module_name,
 )
 
 
@@ -39,10 +43,18 @@ def load_plugin(
         if isinstance(module_path, Path)
         else module_path
     )
-    manager = PluginManager(
-        [module_path], config=config, dependencies=dependencies
-    )
-    _managers.append(manager)
+    source = _active_sources().by_module.get(module_path)
+    if source is None:
+        manager = PluginManager(
+            [module_path], config=config, dependencies=dependencies
+        )
+        register_plugin_manager(manager)
+    elif config is not None or dependencies is not None:
+        raise RuntimeError(
+            f"Configuration is already registered for {module_path}"
+        )
+    else:
+        manager = source.manager
     return manager.load_plugin(module_path)
 
 
@@ -53,7 +65,7 @@ def load_plugins(*plugin_dir: str) -> set[Plugin]:
         plugin_dir: Directories to search.
     """
     manager = PluginManager(search_path=plugin_dir)
-    _managers.append(manager)
+    register_plugin_manager(manager)
     return manager.load_all_plugins()
 
 
@@ -67,7 +79,7 @@ def load_all_plugins(
         plugin_dir: The set of directories to search.
     """
     manager = PluginManager(module_path, plugin_dir)
-    _managers.append(manager)
+    register_plugin_manager(manager)
     return manager.load_all_plugins()
 
 
@@ -165,13 +177,11 @@ def load_from_toml(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
     )
 
 
-def _find_manager_by_name(name: str) -> PluginManager | None:
-    for manager in reversed(_managers):
-        if (
-            name in manager.controlled_modules
-            or name in manager.controlled_modules.values()
-        ):
-            return manager
+def _get_loaded_plugin(name: str) -> Plugin | None:
+    plugin = get_plugin_by_module_name(name)
+    if plugin is not None and plugin.module_name == name:
+        return plugin
+    return get_plugin(name)
 
 
 def require(name: str) -> ModuleType:
@@ -183,12 +193,7 @@ def require(name: str) -> ModuleType:
     Raises:
         RuntimeError: The plugin could not be loaded.
     """
-    if "." in name:
-        # name is a module name
-        plugin = get_plugin(_module_name_to_plugin_id(name))
-    else:
-        # name is a plugin id or simple module name (equals to plugin id)
-        plugin = get_plugin(name)
+    plugin = _get_loaded_plugin(name)
 
     owner = _current_plugin.get()
     if (
@@ -201,7 +206,7 @@ def require(name: str) -> ModuleType:
     # if plugin not loaded
     if plugin is None:
         # plugin already declared, module name / plugin id
-        if manager := _find_manager_by_name(name):
+        if manager := get_plugin_manager(name):
             if not manager.enabled:
                 raise RuntimeError(f'Plugin dependency "{name}" is disabled')
             plugin = manager.load_plugin(name)
@@ -216,6 +221,9 @@ def require(name: str) -> ModuleType:
                     f"Multiple installed plugins use the name {name!r}"
                 )
             module_name = next(iter(candidates)).module if candidates else name
+            manager = get_plugin_manager(module_name)
+            if manager is not None and not manager.enabled:
+                raise RuntimeError(f'Plugin dependency "{name}" is disabled')
             plugin = load_plugin(module_name)
 
     if plugin is None:
@@ -252,7 +260,7 @@ def inherit_supported_adapters(*names: str) -> set[str] | None:
     final_supported: set[str] | None = None
 
     for name in names:
-        plugin = get_plugin(_module_name_to_plugin_id(name))
+        plugin = _get_loaded_plugin(name)
         if plugin is None:
             raise RuntimeError(
                 f'Plugin "{name}" is not loaded! You should require it first.'

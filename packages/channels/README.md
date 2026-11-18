@@ -382,8 +382,8 @@ admission and handler dependencies.
 
 ### Native HTTP integration
 
-For additional HTTP endpoints, use `channels.api.get_app()` during the consumer
-`on_started` callback and mount a native FastAPI router or sub-application. The consuming
+For additional HTTP endpoints, receive the driver with `@on_ready(with_driver=True)`
+and use `channels.api.get_app(driver)` to mount a native FastAPI router or sub-application. The consuming
 plugin owns authentication, request admission, cleanup and removal on shutdown
 for those routes. They do not inherit message authentication or framework
 dispatch. Conversation commands use the fixed message endpoint instead.

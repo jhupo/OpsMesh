@@ -26,16 +26,11 @@ if importlib.util.find_spec("opsmesh.plugins.knowledge") is None:
 pytest.importorskip("pgvector.sqlalchemy", exc_type=ImportError)
 pytest.importorskip("agents", exc_type=ImportError)
 
-from opsmesh.config import Config, Env
-from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import registry
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin, PluginStatus
 
-previous_driver = driver_state._driver
 previous_plugins = registry._plugins
-driver_state._driver = Driver(Env(), Config())
 registry._plugins = previous_plugins.copy()
 try:
     for dependency in ("database", "filesystem"):
@@ -47,7 +42,6 @@ try:
         "opsmesh.plugins.knowledge", exc_type=ImportError
     )
 finally:
-    driver_state._driver = previous_driver
     registry._plugins = previous_plugins
 
 from agents import Agent, RunConfig, Runner
@@ -193,6 +187,10 @@ async def runtime(tmp_path, monkeypatch):
         registry,
         "_plugins",
         {item.id_: item for item in (owner, caller, stranger)},
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     settings = Settings(chunk_tokens=32, overlap_tokens=4)
     resource = lifecycle.KnowledgeRuntime(settings, owner)
@@ -956,7 +954,7 @@ async def test_startup_cancellation_waits_for_model_loader(
 
 @pytest.mark.anyio
 async def test_consumer_resolves_knowledge_during_framework_ready(runtime):
-    from opsmesh.lifecycle import Lifespan
+    from opsmesh.plugins.activation import Lifespan
 
     base = await knowledge.create("Owned")
     lifespan = Lifespan()

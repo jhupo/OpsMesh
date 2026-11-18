@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import email
 import subprocess
 import sys
@@ -23,15 +24,21 @@ PLUGIN_NAMES = (
 
 def projects(root: Path) -> tuple[Path, ...]:
     """Check that one release tag addresses all distribution versions."""
-    directories = (root, *(root / "packages" / name for name in PLUGIN_NAMES))
+    service = root / "packages/service"
+    directories = (
+        root, service, *(root / "packages" / name for name in PLUGIN_NAMES)
+    )
     versions = set()
     for directory in directories:
         metadata = tomllib.loads((directory / "pyproject.toml").read_text())
         versions.add(metadata["project"]["version"])
     if len(versions) != 1:
-        raise ValueError("Host and plugin distribution versions must match")
+        raise ValueError("Framework, service and plugin versions must match")
     version = versions.pop()
-    for directory in directories[1:]:
+    service_metadata = tomllib.loads((service / "pyproject.toml").read_text())
+    if service_metadata["project"]["dependencies"] != [f"opsmesh=={version}"]:
+        raise ValueError("Service must depend on the matching core version")
+    for directory in directories[2:]:
         required = (directory / "requirements-core.txt").read_text().strip()
         if required != f"opsmesh=={version}":
             raise ValueError(f"Host dependency version differs in {directory}")
@@ -47,7 +54,7 @@ def verify_wheel(path: Path) -> None:
         )
         metadata = email.message_from_bytes(archive.read(metadata_path))
         name = metadata["Name"]
-        module = "opsmesh"
+        module = "opsmesh_service" if name == "opsmesh-service" else "opsmesh"
         code_roots = {
             member.split("/")[0]
             for member in members
@@ -58,6 +65,13 @@ def verify_wheel(path: Path) -> None:
                 f"Unexpected code packages in {name}: {code_roots}"
             )
         if name == "opsmesh":
+            if any(
+                member.startswith("opsmesh/bootstrap/")
+                or member in {"opsmesh/main.py", "opsmesh/plugins/storage.py"}
+                or member.endswith(".dist-info/entry_points.txt")
+                for member in members
+            ):
+                raise ValueError("Framework wheel contains service files")
             if any(
                 member.startswith(f"opsmesh/plugins/{plugin}/")
                 for member in members
@@ -86,7 +100,31 @@ def verify_wheel(path: Path) -> None:
                 for requirement in metadata.get_all("Requires-Dist", [])
             ):
                 raise ValueError("The framework depends on a plugin runtime")
-        if name != "opsmesh":
+        if name == "opsmesh-service":
+            entry_points = configparser.ConfigParser()
+            for member in members:
+                if member.endswith(".dist-info/entry_points.txt"):
+                    entry_points.read_string(archive.read(member).decode())
+            if (
+                entry_points.sections() != ["console_scripts"]
+                or dict(entry_points["console_scripts"])
+                != {"opsmesh": "opsmesh_service.cli:main"}
+            ):
+                raise ValueError("Unexpected service wheel entry points")
+            modules = (
+                "__init__",
+                "catalog",
+                "cli",
+                "control",
+                "host",
+                "service",
+            )
+            expected = {
+                f"opsmesh_service/{module}.py" for module in modules
+            }
+            if not expected.issubset(members):
+                raise ValueError("The service wheel is missing runtime modules")
+        elif name != "opsmesh":
             prefix = f"opsmesh/plugins/{name.removeprefix('opsmesh-')}/"
             code = [
                 member
@@ -124,7 +162,7 @@ def main() -> None:
             check=True,
         )
     wheels = list(output.glob("*.whl"))
-    if len(wheels) != len(PLUGIN_NAMES) + 1:
+    if len(wheels) != len(PLUGIN_NAMES) + 2:
         raise ValueError("Use a clean output directory for the release wheels")
     for wheel in wheels:
         verify_wheel(wheel)

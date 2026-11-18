@@ -8,10 +8,12 @@ from typing import get_type_hints
 import pytest
 from pydantic import TypeAdapter
 
-from opsmesh.plugins import load as plugin_load
-from opsmesh.plugins import manager as plugin_manager
 from opsmesh.plugins import registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import (
+    PluginManager,
+    plugin_environment,
+    register_plugin_manager,
+)
 from opsmesh.plugins.model import PluginMetadata
 
 
@@ -28,11 +30,12 @@ def test_metadata_supports_runtime_type_inspection():
 def plugin_path(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(registry, "_plugins", {})
-    managers = []
-    monkeypatch.setattr(registry, "_managers", managers)
-    monkeypatch.setattr(plugin_manager, "_managers", managers)
-    monkeypatch.setattr(plugin_load, "_managers", managers)
-    yield tmp_path
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
+    with plugin_environment():
+        yield tmp_path
     for name, module in list(sys.modules.items()):
         if name.startswith("metadata_test_") and isinstance(
             module, ModuleType
@@ -44,7 +47,7 @@ def load_source(path, name, source):
     (path / f"{name}.py").write_text(source, encoding="utf-8")
     importlib.invalidate_caches()
     manager = PluginManager([name])
-    registry._managers.append(manager)
+    register_plugin_manager(manager)
     return manager.load_plugin(name)
 
 
@@ -118,7 +121,7 @@ async def test_failed_plugin_removes_hooks_and_lifecycle_without_touching_host(
     from opsmesh.adapters import Channel
     from opsmesh.dispatch import hooks
     from opsmesh.drivers import Driver
-    from opsmesh.lifecycle import Lifespan
+    from opsmesh.plugins.activation import Lifespan
 
     module = ModuleType("metadata_test_resources")
     module.lifespan = Lifespan()
@@ -180,8 +183,8 @@ async def test_revoke_preserves_other_owners_and_cleans_in_reverse_order(
     plugin_path,
 ):
     from opsmesh.dispatch import hooks
-    from opsmesh.lifecycle import Lifespan
     from opsmesh.plugins import revoke_plugin
+    from opsmesh.plugins.activation import Lifespan
 
     module = ModuleType("metadata_test_shared")
     module.lifespan = Lifespan()

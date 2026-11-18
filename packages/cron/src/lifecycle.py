@@ -7,6 +7,7 @@ from opsmesh import (
     on_started,
     on_startup,
 )
+from opsmesh.drivers import Driver
 from opsmesh.plugins.database import get_database
 
 from .config import Settings
@@ -23,8 +24,8 @@ def get_scheduler() -> Scheduler:
     return _scheduler
 
 
-@on_startup
-async def startup() -> None:
+@on_startup(with_driver=True)
+async def startup(driver: Driver) -> None:
     """Acquire the namespace lock and prepare paused native timers."""
     global _scheduler
     if _scheduler is not None:
@@ -33,7 +34,7 @@ async def startup() -> None:
         )
     scheduler = Scheduler(get_database(), get_plugin_config(Settings))
     _scheduler = scheduler
-    await scheduler.startup()
+    await scheduler.startup(driver)
 
 
 @on_started

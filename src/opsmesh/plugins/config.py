@@ -5,14 +5,31 @@ from copy import deepcopy
 from pathlib import Path, PureWindowsPath
 from typing import TypeVar
 
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+)
 
 from .model import Plugin
 from .registry import _current_plugin, get_plugin, get_plugin_by_module_name
 
-from .storage import PluginConfiguration
-
 C = TypeVar("C", bound=BaseModel)
+
+
+class PluginConfiguration(BaseModel):
+    """Plugin values and consumer-owned configuration for dependencies."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", hide_input_in_errors=True
+    )
+
+    config: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
+    dependencies: dict[str, dict[str, JsonValue]] = Field(
+        default_factory=dict, repr=False
+    )
 
 
 def get_plugin_config(config: type[C]) -> C:
@@ -63,14 +80,16 @@ def _dependency_provider(owner: Plugin, name: str) -> Plugin:
         or name not in (provider.id_, provider.module_name)
     ):
         raise ValueError(
-            f"{owner.module_name}.dependencies.{name}: dependency is not declared"
+            f"{owner.module_name}.dependencies.{name}: "
+            "dependency is not declared"
         )
     if (
         provider.metadata is None
         or provider.metadata.dependency_config is None
     ):
         raise ValueError(
-            f"{owner.module_name}.dependencies.{name}: provider has no configuration schema"
+            f"{owner.module_name}.dependencies.{name}: "
+            "provider has no configuration schema"
         )
     return provider
 
@@ -85,7 +104,8 @@ def validate_dependency_config(
         provider = _dependency_provider(owner, name)
         if provider.id_ in seen:
             raise ValueError(
-                f"{owner.module_name}.dependencies.{name}: duplicate dependency alias"
+                f"{owner.module_name}.dependencies.{name}: "
+                "duplicate dependency alias"
             )
         seen.add(provider.id_)
         try:

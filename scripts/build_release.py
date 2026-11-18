@@ -32,7 +32,7 @@ def main() -> None:
     )
     if architecture is None:
         raise SystemExit("Only x86_64 and aarch64 releases are supported")
-    version = importlib.metadata.version("opsmesh")
+    version = importlib.metadata.version("opsmesh-service")
     subprocess.run(
         [
             sys.executable,
@@ -70,7 +70,7 @@ def main() -> None:
         "architecture": architecture,
         "python": platform.python_version(),
         "glibc": platform.libc_ver()[1],
-        "dependencies": runtime_dependencies("opsmesh"),
+        "dependencies": runtime_dependencies("opsmesh-service"),
     }
     (bundle / "BUILD.json").write_text(json.dumps(metadata, indent=2) + "\n")
     (bundle / "GLIBC_MIN").write_text(platform.libc_ver()[1] + "\n")

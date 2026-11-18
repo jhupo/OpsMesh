@@ -7,7 +7,7 @@ import anyio
 import pytest
 
 from opsmesh import config
-from opsmesh import lifecycle as _lifespan
+from opsmesh.plugins import activation as _lifespan
 
 
 @pytest.mark.anyio
@@ -52,17 +52,18 @@ def test_explicit_plugins_load_in_fresh_interpreter(tmp_path):
             "-c",
             """
 import opsmesh as framework
-plugin = framework.load_plugin('isolated_plugin')
-assert plugin is not None
-assert plugin.matcher == {plugin.module.notice}
-assert plugin.module.notice.plugin is plugin
-assert framework.get_plugin(plugin.id_) is plugin
-assert framework.get_plugin_by_module_name('isolated_plugin.child') is plugin
-assert plugin in framework.get_loaded_plugins()
-from opsmesh.matchers import matchers
-assert plugin.module.notice in matchers[plugin.module.notice.priority]
-from opsmesh.dispatch import hooks
-assert not hooks._event_preprocessors
+with framework.plugin_environment():
+    plugin = framework.load_plugin('isolated_plugin')
+    assert plugin is not None
+    assert plugin.matcher == {plugin.module.notice}
+    assert plugin.module.notice.plugin is plugin
+    assert framework.get_plugin(plugin.id_) is plugin
+    assert framework.get_plugin_by_module_name('isolated_plugin.child') is plugin
+    assert plugin in framework.get_loaded_plugins()
+    from opsmesh.matchers import matchers
+    assert plugin.module.notice in matchers[plugin.module.notice.priority]
+    from opsmesh.dispatch import hooks
+    assert not hooks._event_preprocessors
 """,
         ],
         env=environment,

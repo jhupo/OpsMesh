@@ -340,6 +340,10 @@ def callback_owner(monkeypatch):
 
     owners = []
     monkeypatch.setattr(registry, "_plugins", {})
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
 
     @contextmanager
     def register(name):
@@ -352,6 +356,7 @@ def callback_owner(monkeypatch):
             plugin.status = PluginStatus.READY
             plugin.dependencies = [] if name == "execution" else ["execution"]
             registry._plugins[name] = plugin
+            registry._module_plugins[plugin.module_name] = plugin
             owners.append(plugin)
         token = registry._current_plugin.set(plugin)
         try:

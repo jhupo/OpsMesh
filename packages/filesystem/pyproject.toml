@@ -26,6 +26,9 @@ package-dir = {"opsmesh.plugins.filesystem" = "src"}
 [project.entry-points."opsmesh.plugins"]
 filesystem = "opsmesh.plugins.filesystem"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+filesystem = "opsmesh.plugins.filesystem"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.filesystem" = ["py.typed"]
 

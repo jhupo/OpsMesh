@@ -17,9 +17,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
-[project.scripts]
-opsmesh = "opsmesh.cli:main"
-
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 

@@ -29,6 +29,10 @@ def plugins(monkeypatch):
     monkeypatch.setattr(
         registry, "_plugins", {item.id_: item for item in (provider, caller)}
     )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     return provider, caller
 
 
@@ -183,6 +187,10 @@ def test_sync_owner_uses_loaded_plugin_in_opsmesh_namespace(monkeypatch):
     )
     plugin = Plugin("custom", module, module.__name__, PluginManager())
     monkeypatch.setattr(registry, "_plugins", {plugin.id_: plugin})
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
+    )
     assert module.owner() is plugin
 
 
@@ -205,6 +213,10 @@ def test_sync_provider_resolves_its_actual_dependent(monkeypatch):
     caller.dependencies = [provider.id_]
     monkeypatch.setattr(
         registry, "_plugins", {item.id_: item for item in (provider, caller)}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     assert caller_module.lookup() is caller
 

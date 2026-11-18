@@ -7,7 +7,7 @@ from typing import Any
 
 from opsmesh.config import Config
 from opsmesh.drivers import Driver
-from opsmesh.lifecycle import LIFESPAN_FUNC
+from opsmesh.plugins.lifecycle import LIFESPAN_FUNC
 
 from .channel import Channel
 

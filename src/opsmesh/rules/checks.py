@@ -13,8 +13,10 @@ from argparse import ArgumentParser as ArgParser
 from argparse import Namespace as Namespace
 from collections.abc import Sequence
 from contextvars import ContextVar
+from functools import lru_cache
 from gettext import gettext
 from itertools import chain, product
+from threading import Lock
 from typing import (
     IO,
     TYPE_CHECKING,
@@ -43,7 +45,6 @@ from opsmesh.consts import (
     SHELL_ARGV,
     STARTSWITH_KEY,
 )
-from opsmesh.drivers import get_driver
 from opsmesh.exceptions import ParserExit
 from opsmesh.params import (
     Command,
@@ -80,17 +81,63 @@ parser_message: ContextVar[str] = ContextVar("parser_message")
 
 
 class TrieRule:
-    """Index command prefixes and populate parsed command state."""
+    """Index declared commands using the incoming channel's configuration."""
 
-    prefix: CharTrie = CharTrie()
+    _commands: dict[object, tuple[tuple[str, ...], ...]] = {}
+    # Serialize builds with invalidation so an in-flight build cannot republish
+    # prefixes from a registration that has already been removed.
+    _lock = Lock()
 
     @classmethod
-    def add_prefix(cls, prefix: str, value: TRIE_VALUE) -> None:
-        """Register a command prefix, warning when it is already registered."""
-        if prefix in cls.prefix:
-            logger.warning(f'Duplicated prefix rule "{prefix}"')
-            return
-        cls.prefix[prefix] = value
+    def register(
+        cls, cmds: Sequence[str | tuple[str, ...]]
+    ) -> list[tuple[str, ...]]:
+        """Register command names without consulting the runtime."""
+        from opsmesh.plugins.registry import (
+            get_current_plugin,
+            track_registration,
+        )
+
+        commands = [(cmd,) if isinstance(cmd, str) else cmd for cmd in cmds]
+        if not commands:
+            return commands
+
+        registration = object()
+        owner = get_current_plugin()
+        with cls._lock:
+            cls._commands[registration] = tuple(commands)
+            cls._prefix_for.cache_clear()
+
+        def remove() -> None:
+            with cls._lock:
+                if cls._commands.pop(registration, None) is not None:
+                    cls._prefix_for.cache_clear()
+
+        track_registration(remove, owner.module if owner is not None else None)
+        return commands
+
+    @classmethod
+    @lru_cache(maxsize=32)
+    def _prefix_for(
+        cls, starts: frozenset[str], separators: frozenset[str]
+    ) -> CharTrie:
+        trie = CharTrie()
+        for command in chain.from_iterable(cls._commands.values()):
+            variants = (
+                ((start, command[0]) for start in starts)
+                if len(command) == 1
+                else (
+                    (start, sep.join(command))
+                    for start, sep in product(starts, separators)
+                )
+            )
+            for start, name in variants:
+                prefix = f"{start}{name}"
+                if prefix in trie:
+                    logger.warning('Duplicated prefix rule "%s"', prefix)
+                else:
+                    trie[prefix] = TRIE_VALUE(start, command)
+        return trie
 
     @classmethod
     def get_value(
@@ -112,7 +159,10 @@ class TrieRule:
         message_seg: MessageSegment = message[0]
         if message_seg.is_text():
             segment_text = str(message_seg).lstrip()
-            if pf := cls.prefix.longest_prefix(segment_text):
+            config = channel.adapter.config
+            with cls._lock:
+                trie = cls._prefix_for(config.command_start, config.command_sep)
+            if pf := trie.longest_prefix(segment_text):
                 value: TRIE_VALUE = pf.value
                 prefix[RAW_CMD_KEY] = pf.key
                 prefix[CMD_START_KEY] = value.command_start
@@ -433,28 +483,7 @@ def command(
     Note:
     Whitespace between the command and its arguments is not required.
     """
-    config = get_driver().config
-    command_start = config.command_start
-    command_sep = config.command_sep
-    commands: list[tuple[str, ...]] = []
-    for command in cmds:
-        if isinstance(command, str):
-            command = (command,)
-
-        commands.append(command)
-
-        if len(command) == 1:
-            for start in command_start:
-                TrieRule.add_prefix(
-                    f"{start}{command[0]}", TRIE_VALUE(start, command)
-                )
-        else:
-            for start, sep in product(command_start, command_sep):
-                TrieRule.add_prefix(
-                    f"{start}{sep.join(command)}", TRIE_VALUE(start, command)
-                )
-
-    return Rule(CommandRule(commands, force_whitespace))
+    return Rule(CommandRule(TrieRule.register(cmds), force_whitespace))
 
 
 class ArgumentParser(ArgParser):
@@ -658,28 +687,7 @@ def shell_command(
     if parser is not None and not isinstance(parser, ArgumentParser):
         raise TypeError("`parser` must be a framework ArgumentParser instance")
 
-    config = get_driver().config
-    command_start = config.command_start
-    command_sep = config.command_sep
-    commands: list[tuple[str, ...]] = []
-    for command in cmds:
-        if isinstance(command, str):
-            command = (command,)
-
-        commands.append(command)
-
-        if len(command) == 1:
-            for start in command_start:
-                TrieRule.add_prefix(
-                    f"{start}{command[0]}", TRIE_VALUE(start, command)
-                )
-        else:
-            for start, sep in product(command_start, command_sep):
-                TrieRule.add_prefix(
-                    f"{start}{sep.join(command)}", TRIE_VALUE(start, command)
-                )
-
-    return Rule(ShellCommandRule(commands, parser))
+    return Rule(ShellCommandRule(TrieRule.register(cmds), parser))
 
 
 class RegexRule:

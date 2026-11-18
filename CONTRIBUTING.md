@@ -8,7 +8,7 @@ Use Python 3.11 or newer in a virtual environment. Install the repository's deve
 
 ```bash
 python -m pip install -r requirements-dev.lock
-python -m pip install --no-deps -e . -e packages/channels \
+python -m pip install --no-deps -e . -e packages/service -e packages/channels \
   -e packages/filesystem -e packages/database -e packages/execution -e packages/cron
 ```
 
@@ -22,7 +22,7 @@ separate, explicit provisioning step described in the plugin README.
 ## Package boundaries
 
 - `src/opsmesh` owns the framework, driver, host and CLI. It must start with an empty plugin manifest and without official plugin dependencies.
-- `packages/*` are separately installable distributions with their own dependency declarations and READMEs. A plugin may use framework interfaces; the framework must not import a plugin.
+- `packages/service` owns process startup, the CLI, and the plugin catalog. The other `packages/*` projects are plugins. Both may use framework interfaces; the framework must not import the service or a plugin.
 - `require()` expresses plugin loading and lifecycle dependencies. `Depends()` resolves invocation parameters and scoped resources.
 - Agent plugins define native SDK objects. Execution adapts native runs and observation; it does not own business sessions or usage ledgers.
 - The installer manages only the framework service. Plugin installation and database migrations are explicit administrative actions.

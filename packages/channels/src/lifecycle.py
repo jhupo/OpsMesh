@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from opsmesh import get_driver, on_plugin_loaded
+from opsmesh import on_plugin_loaded, on_startup
+from opsmesh.drivers import Driver
 from opsmesh.plugins import Plugin, get_dependency_config
 from opsmesh.plugins.registry import get_plugin_by_module_name
 
@@ -29,20 +30,20 @@ def adapter_type(protocol: str) -> type[ChannelAdapter]:
     return getattr(module, name)
 
 
-def protocol_adapter(protocol: str) -> ChannelAdapter:
+def protocol_adapter(driver: Driver, protocol: str) -> ChannelAdapter:
     """Return the adapter that prepared the protocol's connections."""
     adapter_class = adapter_type(protocol)
     try:
-        return get_driver().get_adapter(adapter_class)
+        return driver.get_adapter(adapter_class)
     except KeyError:
         raise LookupError(f"{protocol} connections are not prepared") from None
 
 
-def _ensure_adapter(protocol: str) -> ChannelAdapter:
+def _ensure_adapter(driver: Driver, protocol: str) -> ChannelAdapter:
     try:
-        return protocol_adapter(protocol)
+        return protocol_adapter(driver, protocol)
     except LookupError:
-        return get_driver().register_adapter(adapter_type(protocol))
+        return driver.register_adapter(adapter_type(protocol))
 
 
 @on_plugin_loaded
@@ -52,7 +53,8 @@ def configure_connections(plugin: Plugin) -> None:
     if provider is None or provider.id_ not in plugin.dependencies:
         return
 
-    async def prepare() -> None:
+    @on_startup(with_driver=True, before=True)
+    async def prepare(driver: Driver) -> None:
         settings = get_dependency_config(ChannelConnections)
         declared: list[Channel] = []
         try:
@@ -60,7 +62,7 @@ def configure_connections(plugin: Plugin) -> None:
                 accounts = getattr(settings, protocol)
                 if not accounts:
                     continue
-                adapter = _ensure_adapter(protocol)
+                adapter = _ensure_adapter(driver, protocol)
                 for name, account in accounts.items():
                     declared.append(adapter.declare(account, name=name))
             for channel in declared:
@@ -77,5 +79,3 @@ def configure_connections(plugin: Plugin) -> None:
                     "Channel preparation and cleanup failed", errors
                 ) from None
             raise
-
-    get_driver().on_startup(prepare)

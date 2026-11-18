@@ -100,7 +100,7 @@ channels 自己只维护消息入口、健康检查和传输生命周期。业�
 
 ### 原生 HTTP 接口
 
-确需额外 HTTP 接口时，调用插件在 `on_ready` 中通过 `channels.api.get_app(connection="main")` 获取已准备但尚未监听的 FastAPI 应用，使用原生 FastAPI 路由、中间件或挂载独立子应用。监听在 `on_started` 阶段由 channels 完成，此后不再支持修改中间件。业务对话和命令不使用这些自定义路由，统一走固定消息入口。
+确需额外 HTTP 接口时，调用插件用 `@on_ready(with_driver=True)` 接收 `driver`，再通过 `channels.api.get_app(driver, connection="main")` 获取已准备但尚未监听的 FastAPI 应用，使用原生 FastAPI 路由、中间件或挂载独立子应用。监听在 `on_started` 阶段由 channels 完成，此后不再支持修改中间件。业务对话和命令不使用这些自定义路由，统一走固定消息入口。
 
 一个命名连接自动归属声明它的消费插件，并收集该插件的框架 Matcher；端点固定为 `/plugins/{plugin_id}/messages`。插件启用、停止和撤销通过框架生命周期生效，不动态生成业务 URL 路由。
 

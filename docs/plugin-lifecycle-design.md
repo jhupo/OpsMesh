@@ -4,18 +4,20 @@
 
 ## 核心职责
 
-PluginMetadata 描述作者声明，Plugin 保存运行归属，PluginManager 加载声明，Lifespan 管理资源。插件通过 require、Matcher、Dependent 和 on_* 使用框架。
+PluginMetadata 描述作者声明，Plugin 保存运行归属，PluginManager 加载声明。每个 Driver 实例内部拥有一个 Lifespan，负责该运行时中插件资源的激活、准入、排空和释放；它不是服务进程的安装或代码版本管理器。插件通过 require、Matcher、Dependent 和 on_* 使用框架。
+
+`Lifespan` 实现在 `plugins/activation.py`。Service 构造 Driver 并进入和退出 `driver.lifespan()`；`plugins/lifecycle.py` 在插件加载时将回调登记到所属插件，不访问 Driver。需要访问 Driver 的启动或就绪回调显式声明 `with_driver=True`，由执行器调用时传入实例。不引入 `runtime` 顶层包。
 
 | 对象 | 责任 |
 |---|---|
 | PluginMetadata | 作者声明名称、说明、配置类型等 |
 | Plugin | 模块、依赖、状态、配置、静态及启动期注册归属 |
-| PluginManager | 发现、同步加载、异步 start_plugin/stop_plugin 入口 |
-| Lifespan | 宿主阶段、依赖顺序、资源启停和排空 |
-| plugins/registry.py | 唯一索引、Hook 归属和注册撤销 |
+| PluginManager | 发现和同步加载模块，不处理资源启停 |
+| Driver.Lifespan | 当前 Driver 实例的阶段屏障、依赖顺序、资源启停、调用排空和释放 |
+| plugins/registry.py | 已加载插件索引、依赖和注册撤销 |
 | plugins/invocation.py | 框架调用持有及结束通知；不理解 HTTP、SDK 或业务会话 |
-| plugins/storage.py | 本地插件记录与配置，完全不处理安装包 |
-| app.py | 配置读取、进程锁、记录发现及持久管理入口 |
+| opsmesh_service.catalog | 本地插件记录、SQLite 配置持久化，不处理安装包 |
+| opsmesh_service.host | 服务侧配置读取、数据目录锁、记录发现及持久管理入口 |
 
 通用 Dependent 继续只处理参数和依赖清理。插件状态检查放在 Matcher 分发、插件回调注册和通道请求边界，不能让底层依赖解析器依赖插件管理。
 
@@ -39,13 +41,13 @@ LOADED → STARTING → READY → STOPPING → STOPPED。失败保持 FAILED；�
 
 反复启动 READY、停止已清理 STOPPED 均为幂等操作。每次启动增加内存 activation generation，用于拒绝旧队列项；不持久化，不是插件版本机制。
 
-protected 指定常驻核心插件，required 指定启动失败策略。核心记录同时启用 enabled、autoload、required；普通管理操作禁止停止、停用、资源重启或撤销核心插件。检查涵盖受影响子插件和消费者。宿主整体退出与失败启动回滚仍清理核心资源。
+Service 的 `protected` 指定常驻插件，`required` 指定启动失败策略。受保护记录同时启用 `enabled`、`autoload`、`required`；Service 禁止普通管理操作停止、停用或重启受保护插件。框架只检查运行时依赖、在途调用和清理不变量。宿主整体退出与失败启动回滚仍清理常驻资源。
 
-不提供 unload/reload 源码承诺。停用和资源重启不删除 sys.modules；替换已导入源码、第三方依赖或原生扩展需要宿主重启。下载安装、文件删除及包版本管理属于管理插件或部署工具。
+不提供 unload/reload 源码承诺。停用和资源重启不删除 sys.modules；替换已导入源码、第三方依赖或原生扩展需要服务进程重启，或切换到隔离 Worker。下载安装、文件删除、包版本管理和 Worker 版本交接属于 Host/Service 或部署工具，不属于 Driver.Lifespan。
 
 ## 启停顺序
 
-宿主保留全局 startup、ready、started 屏障，先完成初始化和就绪，再打开输入。单插件按依赖顺序启动，on_ready 完成后允许进入 on_started；输入启动失败立即撤销就绪状态。
+宿主冷启动和单插件恢复共用激活步骤。配置在每次激活的 startup 阶段准备和校验一次。宿主在全局 startup、ready、started 屏障中推进所有插件，输入在全局就绪后开放。单插件按依赖顺序推进，on_ready 完成后进入 on_started。输入启动失败立即关闭新调用准入并回滚资源。
 
 单插件停止顺序为：
 
@@ -55,13 +57,13 @@ protected 指定常驻核心插件，required 指定启动失败策略。核心�
 4. 等待在途调用和依赖清理，超时请求取消，再等待 finally。
 5. 调用 on_shutdown，撤销启动期注册，标记 STOPPED。
 
-宿主关闭先拒绝新管理操作，等待或取消已受理管理动作完成，再取得最终插件集合。quiescing 关闭新工作准入，保持已有调用所需的回复连接，排空消费者后按依赖逆序释放资源。管理锁不跨网络排空持有。消费者清理失败时保留其提供方，失败记录供重试。
+宿主关闭先拒绝新管理操作，等待或取消已受理管理动作完成，再取得最终插件集合。先关闭所有入口并保留已有调用所需的回复连接，再按依赖逆序调用与单插件停止共用的排空、释放和启动期注册清理步骤。管理锁在宿主进入排空前释放。消费者清理失败时保留其提供方，失败记录供重试。
 
 单插件关闭采用有界超时。asyncio 无法强制终止阻塞线程或吞掉取消的插件；最终进程退出仍由部署服务管理。生命周期回调必须可取消并自行释放创建的后台资源。
 
 资源启动失败时先关闭新调用准入，再执行清理；包括已经进入 READY、但 on_started 尚未成功的情况。Matcher 的依赖清理与准入持有分别结束，只有清理完整返回才释放占用。排空通过调用任务的取消作用域请求取消，使清理能在屏蔽区内完成；重复排空不反复以 Task.cancel 打断清理。外部代码再次直接取消任务仍可能中断 finalizer，此时保留占用并让停止报告失败，不把已终止的任务等同于已释放的资源；无法完成的清理由宿主进程退出处理。
 
-管理操作由宿主任务组持有并串行执行。管理请求取消不会直接留下半次启停；禁止生命周期回调嵌套等待管理，也禁止处理器等待停止自身或自己的依赖。
+管理操作由 Driver 的运行时任务组持有并串行执行，Host 只负责把服务侧请求协调到这个运行时。管理请求取消不会直接留下半次启停；禁止生命周期回调嵌套等待管理，也禁止处理器等待停止自身或自己的依赖。
 
 ## 调用与注册归属
 
@@ -89,11 +91,11 @@ execution 复用 plugin_call。原生 Agent.as_tool/handoff 等由 SDK 在外层
 
 channels 自己管理 API HTTP 监听、QQ Gateway、钉钉连接和有界队列。框架不认识协议类型、Token、消息签名、模型、Agent 或 Session。
 
-消费者启动期声明的机器人绑定在停止时移除，再次启动重新构造。静态绑定保留定义并关闭连接。共享传输按活动消费者计数，停止一个消费者不关闭其他消费者的连接；最后一个使用者退出后释放传输。
+消费者启动时按自己的依赖配置声明具名连接。Driver 缓存协议适配器，适配器按消费者和连接名保存已准备的连接，Driver 的在线索引只登记已上线的连接。停止一个消费者会排空并释放它拥有的连接，其他消费者的连接继续服务。
 
-目前驱动中缓存的 QQ/钉钉适配器不在线替换；更改其共享协议参数（如队列并发、QQ Gateway 参数）后需要重启宿主，再启动时会显式检查，不能用旧实例冒充新配置已生效。消费者自己的机器人账号绑定和 Agent 参数可以通过资源重启重建；API 入口在 channels 启动时重新构造。
+机器人队列并发、QQ Gateway 参数和 HTTP 监听配置均属于具体连接。向允许重启的消费者应用依赖配置时，会重新构造该消费者的连接。channels 模块和适配器实例随宿主运行。内置保护与扩展在线管理的拟议改造见[扩展插件在线管理方案与内置 channels 架构审查](plans/plugin-online-lifecycle.md)。
 
-单插件停用时，已经开始执行的框架调用等待或取消；尚未执行的机器人队列项明确取消并记录日志。队列项携带接收时的运行代数，不能在插件重启后进入新的 Agent。队列仍是内存队列，没有投递可靠性或持久任务保证。
+停止输入后，队列先排空已接收的工作，超时则请求取消工作任务并释放剩余队列项。队列项持有接收时的调用准入和运行代数，跨代的事件或已失去回复资源的事件会在分发前丢弃。队列保存在内存中。
 
 API 路由随所属插件 READY 状态开放，关闭期间返回不可用。流和附件等资源由通道现有响应清理机制管理。管理页面、控制 API 和业务会话操作都不是框架的新职责。
 
@@ -101,19 +103,21 @@ API 路由随所属插件 READY 状态开放，关闭期间返回不可用。流
 
 ```text
 src/opsmesh/
-├── app.py
-├── cli.py
-├── lifecycle.py
+├── drivers/
+│   ├── base.py             # 具体 Driver、适配器和连接索引
+│   └── lifecycle.py        # core 生命周期引擎与插件生命周期声明
 ├── plugins/
 │   ├── model.py
 │   ├── manager.py
 │   ├── load.py
 │   ├── config.py
-│   ├── storage.py
 │   ├── invocation.py
 │   └── registry.py
 ├── dispatch/
 └── dependencies/           # 保持通用参数与清理职责
+packages/service/src/opsmesh_service/
+├── host.py                 # 宿主装配与管理
+└── catalog.py              # 插件目录及 SQLite
 packages/channels/src/
 ├── lifecycle.py            # 按消费插件注册框架生命周期回调
 ├── adapter.py              # 已准备连接与操作准入

@@ -1,45 +1,205 @@
-"""Plugin discovery and import-hook integration.
+"""Discover plugin sources and import them in a host-owned environment."""
 
-See https://docs.python.org/3/reference/import.html#import-hooks.
-"""
+from __future__ import annotations
 
 import importlib
-import importlib.util
 import logging
 import pkgutil
 import sys
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+)
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
+from dataclasses import dataclass
 from importlib.abc import Loader, MetaPathFinder
-from itertools import chain
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from threading import Lock
 from types import ModuleType
 from typing import Any
 
 from opsmesh.utils import path_to_module_name
 
-from .admission import check_plugin_load
-from .errors import PluginReloadError
+from .admission import PluginAdmission, PluginLoadRequest, check_plugin_load
+from .errors import PluginLoadDenied, PluginReloadError
 from .model import Plugin, PluginMetadata
 from .registry import (
-    _current_plugin,
-    _managers,
-    _module_name_to_plugin_id,
     _new_plugin,
+    _registration_scope,
     _revoke_plugin,
     get_plugin,
+    plugin_scope,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _module_origin(module_name: str) -> str | None:
-    """Resolve a module's source origin without importing it."""
+@dataclass(frozen=True)
+class _PluginSource:
+    plugin_id: str
+    module_name: str
+    parent_id: str | None
+    manager: PluginManager
+
+    def request(self, origin: str | None) -> PluginLoadRequest:
+        return PluginLoadRequest(self.plugin_id, self.module_name, origin)
+
+
+def _parent_modules(module_name: str) -> Iterator[str]:
+    while "." in module_name:
+        module_name, _ = module_name.rsplit(".", 1)
+        yield module_name
+
+
+class _PluginSources:
+    """One source index shared by explicit loads and Python's import hook."""
+
+    def __init__(self, admission: PluginAdmission | None) -> None:
+        self.admission = admission
+        self.by_id: dict[str, _PluginSource] = {}
+        self.by_module: dict[str, _PluginSource] = {}
+        self._parent_modules: set[str] = set()
+
+    def resolve(self, name: str) -> _PluginSource | None:
+        return self.by_module.get(name) or self.by_id.get(name)
+
+    def register(self, manager: PluginManager) -> None:
+        pending: dict[str, _PluginSource] = {}
+        ids: set[str] = set()
+        for module in sorted(manager._module_names):
+            if existing := self.by_module.get(module):
+                if existing.manager is manager:
+                    continue
+                raise RuntimeError(
+                    f"Plugin module already registered: {module}"
+                )
+            if module in self._parent_modules:
+                raise RuntimeError(
+                    f"Register parent plugin before its children: {module}"
+                )
+            parent = next(
+                (
+                    source
+                    for name in _parent_modules(module)
+                    if (source := pending.get(name) or self.by_module.get(name))
+                ),
+                None,
+            )
+            plugin_id = module.rsplit(".", 1)[-1]
+            if parent is not None:
+                plugin_id = f"{parent.plugin_id}:{plugin_id}"
+            if plugin_id in self.by_id or plugin_id in ids:
+                raise RuntimeError(
+                    f"Plugin already exists: {plugin_id}! "
+                    "Check your plugin name"
+                )
+            pending[module] = _PluginSource(
+                plugin_id, module, parent.plugin_id if parent else None, manager
+            )
+            ids.add(plugin_id)
+        for module, source in pending.items():
+            self.by_id[source.plugin_id] = source
+            self.by_module[module] = source
+            self._parent_modules.update(_parent_modules(module))
+
+
+_sources: _PluginSources | None = None
+_environment_claim = Lock()
+_approved_import: ContextVar[tuple[_PluginSource, str | None] | None] = (
+    ContextVar("_approved_import", default=None)
+)
+
+
+@contextmanager
+def plugin_environment(
+    *, admission: PluginAdmission | None = None
+) -> Iterator[None]:
+    """Own plugin sources, import interception and loaded declarations.
+
+    Only one environment can own a Python process at a time. Shut down all
+    plugin resources before leaving it. Exiting does not unload Python modules.
+    """
+    global _sources
+    if not _environment_claim.acquire(blocking=False):
+        raise RuntimeError("A plugin environment already owns this process")
     try:
-        spec = importlib.util.find_spec(module_name)
-    except (ImportError, AttributeError, ValueError):
-        return None
-    return None if spec is None else spec.origin
+        _sources = _PluginSources(admission)
+        finder = PluginFinder(_sources)
+        sys.meta_path.insert(0, finder)
+        try:
+            with _registration_scope():
+                yield
+        finally:
+            sys.meta_path.remove(finder)
+    finally:
+        _sources = None
+        _environment_claim.release()
+
+
+def _active_sources() -> _PluginSources:
+    if _sources is None:
+        raise RuntimeError(
+            "Plugin loading requires an active plugin_environment()"
+        )
+    return _sources
+
+
+def register_plugin_manager(manager: PluginManager) -> None:
+    """Register sources without importing them, parents before children."""
+    _active_sources().register(manager)
+
+
+def get_plugin_manager(name: str) -> PluginManager | None:
+    """Find the manager for an exact module name or plugin identifier."""
+    source = _sources.resolve(name) if _sources is not None else None
+    return source.manager if source is not None else None
+
+
+def get_available_plugin_names() -> set[str]:
+    """Return registered source identifiers, including unloaded plugins."""
+    return set(_sources.by_id) if _sources is not None else set()
+
+
+def _find_module_spec(
+    fullname: str, path: Sequence[str] | None
+) -> ModuleSpec | None:
+    for finder in tuple(sys.meta_path):
+        if not isinstance(finder, PluginFinder):
+            spec = finder.find_spec(fullname, path)
+            if spec is not None:
+                return spec
+    return None
+
+
+def _module_origin(module_name: str) -> str | None:
+    """Resolve the proposed origin without executing unimported parents."""
+    path = None
+    for name in (*reversed(tuple(_parent_modules(module_name))), module_name):
+        if name in sys.modules:
+            module = sys.modules[name]
+            spec = getattr(module, "__spec__", None)
+            path = getattr(module, "__path__", None)
+        else:
+            try:
+                spec = _find_module_spec(name, path)
+            except KeyError as error:
+                # Some namespace finders need their parent to be imported.
+                if error.args != (name.rpartition(".")[0],):
+                    raise
+                return None
+            path = spec.submodule_search_locations if spec else None
+        if name == module_name:
+            return spec.origin if spec else None
+        if path is None:
+            return None
+    return None
 
 
 class PluginManager:
@@ -59,7 +219,6 @@ class PluginManager:
         config: Mapping[str, Any] | None = None,
         dependencies: Mapping[str, Mapping[str, Any]] | None = None,
         required: bool = False,
-        protected: bool = False,
     ):
         self.config_values = (
             deepcopy(dict(config)) if config is not None else None
@@ -67,91 +226,27 @@ class PluginManager:
         self.dependency_config_values = deepcopy(dict(dependencies or {}))
         self.required = bool(required)
         """Whether a startup failure of this plugin must abort the host."""
-        self.protected = bool(protected)
         self.enabled = True
         self.prepare_config: Callable[[Plugin], Awaitable[None]] | None = None
         """Optional host callback preparing configuration before startup."""
-        # simple plugin not in search path
-        self.plugins: set[str] = set(plugins or [])
-        self.search_path: set[str] = set(search_path or [])
-
-        # cache plugins
-        self._third_party_plugin_ids: dict[str, str] = {}
-        self._searched_plugin_ids: dict[str, str] = {}
-        self._prepare_plugins()
-
-    def __repr__(self) -> str:
-        return f"PluginManager(available_plugins={self.controlled_modules})"
-
-    @property
-    def third_party_plugins(self) -> set[str]:
-        """The explicitly configured plugin identifiers."""
-        return set(self._third_party_plugin_ids.keys())
-
-    @property
-    def searched_plugins(self) -> set[str]:
-        """The discovered plugin identifiers."""
-        return set(self._searched_plugin_ids.keys())
+        self._module_names = frozenset(plugins or ()) | frozenset(
+            self._discover_modules(search_path or ())
+        )
 
     @property
     def available_plugins(self) -> set[str]:
         """All plugin identifiers available through this manager."""
-        return self.third_party_plugins | self.searched_plugins
-
-    @property
-    def controlled_modules(self) -> dict[str, str]:
-        """The mapping of managed plugin identifiers to module paths."""
-        return dict(
-            chain(
-                self._third_party_plugin_ids.items(),
-                self._searched_plugin_ids.items(),
-            )
-        )
-
-    def _previous_controlled_modules(self) -> dict[str, str]:
-        _pre_managers: list[PluginManager]
-        if self in _managers:
-            _pre_managers = _managers[: _managers.index(self)]
-        else:
-            _pre_managers = _managers[:]
-
+        sources = _active_sources()
         return {
-            plugin_id: module_name
-            for manager in _pre_managers
-            for plugin_id, module_name in manager.controlled_modules.items()
+            source.plugin_id
+            for module in self._module_names
+            if (source := sources.by_module.get(module))
+            and source.manager is self
         }
 
-    def _prepare_plugins(self) -> set[str]:
-        """Discover plugins and cache their identifiers."""
-        # get all previous ready to load plugins
-        previous_plugin_ids = self._previous_controlled_modules()
-
-        # if self not in global managers, merge self's controlled modules
-        def get_controlled_modules():
-            return (
-                previous_plugin_ids
-                if self in _managers
-                else {**previous_plugin_ids, **self.controlled_modules}
-            )
-
-        # check third party plugins
-        for plugin in self.plugins:
-            plugin_id = _module_name_to_plugin_id(
-                plugin, get_controlled_modules()
-            )
-            if (
-                plugin_id in self._third_party_plugin_ids
-                or plugin_id in previous_plugin_ids
-            ):
-                raise RuntimeError(
-                    f"Plugin already exists: "
-                    f"{plugin_id}! Check your plugin name"
-                )
-            self._third_party_plugin_ids[plugin_id] = plugin
-
-        # check plugins in search path
-        for module_info in pkgutil.iter_modules(self.search_path):
-            # ignore if startswith "_"
+    @staticmethod
+    def _discover_modules(search_path: Iterable[str]) -> Iterator[str]:
+        for module_info in pkgutil.iter_modules(search_path):
             if module_info.name.startswith("_"):
                 continue
 
@@ -165,40 +260,7 @@ class PluginManager:
             if not module_spec.origin:
                 continue
 
-            # get module name from path, pkgutil does not return the actual
-            # module name
-            module_path = Path(module_spec.origin).resolve()
-            module_name = path_to_module_name(module_path)
-            plugin_id = _module_name_to_plugin_id(
-                module_name, get_controlled_modules()
-            )
-
-            if (
-                plugin_id in previous_plugin_ids
-                or plugin_id in self._third_party_plugin_ids
-                or plugin_id in self._searched_plugin_ids
-            ):
-                raise RuntimeError(
-                    f"Plugin already exists: "
-                    f"{plugin_id}! Check your plugin name"
-                )
-
-            self._searched_plugin_ids[plugin_id] = module_name
-
-        return self.available_plugins
-
-    def _resolve_module_name(self, name: str) -> str:
-        """Resolve a plugin id or module name owned by this manager."""
-        if name in self._third_party_plugin_ids:
-            return self._third_party_plugin_ids[name]
-        if name in self._searched_plugin_ids:
-            return self._searched_plugin_ids[name]
-        if (
-            name in self._third_party_plugin_ids.values()
-            or name in self._searched_plugin_ids.values()
-        ):
-            return name
-        raise RuntimeError(f"Plugin not found: {name}! Check your plugin name")
+            yield path_to_module_name(Path(module_spec.origin).resolve())
 
     def load_plugin(self, name: str) -> Plugin | None:
         """Load a plugin managed by this instance.
@@ -208,17 +270,20 @@ class PluginManager:
         Args:
             name: The plugin module name or identifier.
         """
-        try:
-            module_name = self._resolve_module_name(name)
-        except RuntimeError as error:
-            logger.error("%s", error)
+        sources = _active_sources()
+        source = sources.resolve(name)
+        if source is None or source.manager is not self:
+            logger.error("Plugin is not registered with this manager: %s", name)
             return None
-
-        plugin_id = _module_name_to_plugin_id(module_name)
-        check_plugin_load(plugin_id, module_name, _module_origin(module_name))
-
+        module_name = source.module_name
+        plugin_id = source.plugin_id
+        origin = _module_origin(module_name)
+        check_plugin_load(sources.admission, source.request(origin))
+        token = _approved_import.set((source, origin))
         try:
             module = importlib.import_module(module_name)
+        except (PluginLoadDenied, PluginReloadError):
+            raise
         except Exception as error:
             logger.error(
                 'Failed to import plugin "%s"',
@@ -226,6 +291,8 @@ class PluginManager:
                 exc_info=(type(error), error, error.__traceback__),
             )
             return None
+        finally:
+            _approved_import.reset(token)
 
         plugin = getattr(module, "__plugin__", None)
         if not isinstance(plugin, Plugin):
@@ -256,32 +323,19 @@ class PluginManager:
         return set(
             filter(
                 None,
-                (self.load_plugin(name) for name in self.available_plugins),
+                (
+                    self.load_plugin(name)
+                    for name in sorted(self.available_plugins)
+                ),
             )
         )
-
-    async def start_plugin(self, name: str) -> None:
-        """Load declarations if needed, then start plugin resources."""
-        from opsmesh.drivers import get_driver
-
-        plugin = self.load_plugin(name)
-        if plugin is None:
-            raise RuntimeError(f"Cannot load plugin: {name}")
-        await get_driver().start_plugin(plugin)
-
-    async def stop_plugin(self, name: str) -> None:
-        """Stop resources while retaining loaded code and declarations."""
-        from opsmesh.drivers import get_driver
-
-        from .registry import get_plugin_by_module_name
-
-        plugin = get_plugin_by_module_name(self._resolve_module_name(name))
-        if plugin is not None:
-            await get_driver().stop_plugin(plugin)
 
 
 class PluginFinder(MetaPathFinder):
     """Add plugin ownership to source, bytecode, and frozen imports."""
+
+    def __init__(self, sources: _PluginSources) -> None:
+        self.sources = sources
 
     def find_spec(
         self,
@@ -290,92 +344,70 @@ class PluginFinder(MetaPathFinder):
         target: ModuleType | None = None,
     ):
         """Resolve a managed plugin without intercepting unrelated imports."""
-        manager = next(
-            (
-                item
-                for item in reversed(_managers)
-                if fullname in item.controlled_modules.values()
-            ),
-            None,
-        )
-        if manager is None:
+        source = self.sources.by_module.get(fullname)
+        if source is None:
             return None
-        for finder in sys.meta_path:
-            if isinstance(finder, PluginFinder):
-                continue
-            module_spec = finder.find_spec(fullname, path, target)
-            if module_spec is not None:
-                if module_spec.loader is not None:
-                    module_spec.loader = PluginLoader(
-                        manager, fullname, module_spec.loader
-                    )
-                return module_spec
-        return None
+        if target is not None:
+            raise PluginReloadError(
+                f'Plugin "{source.plugin_id}" requires a fresh process'
+            )
+        spec = _find_module_spec(fullname, path)
+        if spec is not None and spec.loader is not None:
+            spec.loader = PluginLoader(
+                source, self.sources.admission, spec.loader
+            )
+        return spec
 
 
 class PluginLoader(Loader):
     """Execute plugin modules within their registration context."""
 
     def __init__(
-        self, manager: PluginManager, fullname: str, delegate: Loader
+        self,
+        source: _PluginSource,
+        admission: PluginAdmission | None,
+        delegate: Loader,
     ) -> None:
-        self.manager = manager
-        self.name = fullname
+        self.source = source
+        self.admission = admission
         self.delegate = delegate
-        self.loaded = False
 
     def __getattr__(self, name: str) -> Any:
         """Preserve the underlying loader's resource and inspection APIs."""
         return getattr(self.delegate, name)
 
     def create_module(self, spec) -> ModuleType | None:
-        """Reuse a loaded plugin module when its identity is registered."""
-        if self.name in sys.modules:
-            self.loaded = True
-            return sys.modules[self.name]
-        # return None to use default module creation
+        """Apply admission before an underlying loader can execute code."""
+        if _approved_import.get() != (self.source, spec.origin):
+            check_plugin_load(self.admission, self.source.request(spec.origin))
         return self.delegate.create_module(spec)
 
     def exec_module(self, module: ModuleType) -> None:
         """Execute plugin source and restore the prior plugin context."""
-        if self.loaded:
-            return
-
-        # create plugin before executing
-        plugin = _new_plugin(self.name, module, self.manager)
+        source = self.source
+        plugin = _new_plugin(
+            source.plugin_id, source.parent_id, module, source.manager
+        )
         module.__plugin__ = plugin
 
-        # enter plugin context
-        _plugin_token = _current_plugin.set(plugin)
-
         try:
-            self.delegate.exec_module(module)
-            if getattr(module, "__plugin__", None) is not plugin:
-                raise TypeError(
-                    'Plugin code must not overwrite "__plugin__"; '
-                    'declare "__plugin_meta__" instead'
-                )
-            metadata = getattr(module, "__plugin_meta__", None)
-            if metadata is not None and not isinstance(
-                metadata, PluginMetadata
-            ):
-                raise TypeError("Plugin metadata must be PluginMetadata")
-            plugin.metadata = metadata
-            from opsmesh.lifecycle import bind_plugin_lifecycle
+            with plugin_scope(plugin):
+                self.delegate.exec_module(module)
+                if getattr(module, "__plugin__", None) is not plugin:
+                    raise TypeError(
+                        'Plugin code must not overwrite "__plugin__"; '
+                        'declare "__plugin_meta__" instead'
+                    )
+                metadata = getattr(module, "__plugin_meta__", None)
+                if metadata is not None and not isinstance(
+                    metadata, PluginMetadata
+                ):
+                    raise TypeError("Plugin metadata must be PluginMetadata")
+                plugin.metadata = metadata
+                from .hooks import bind_plugin_hooks, notify_plugin_loaded
 
-            from .hooks import bind_plugin_hooks, notify_plugin_loaded
-
-            bind_plugin_hooks(plugin)
-            notify_plugin_loaded(plugin)
-            bind_plugin_lifecycle(plugin)
+                bind_plugin_hooks(plugin)
+                notify_plugin_loaded(plugin)
         except BaseException:
             _revoke_plugin(plugin)
             raise
-        finally:
-            # leave plugin context
-            _current_plugin.reset(_plugin_token)
-
-        return
-
-
-sys.meta_path.insert(0, PluginFinder())

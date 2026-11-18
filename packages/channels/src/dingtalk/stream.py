@@ -97,12 +97,12 @@ class DingTalkStream(DingTalkStreamClient):
 
     async def run(self) -> None:
         """Reconnect until stopped; never detach reader or keepalive tasks."""
-        self.pre_start()
         try:
             with anyio.CancelScope() as scope:
                 self._scope = scope
                 if self._stopping:
                     return
+                self.pre_start()
                 while True:
                     try:
                         await self._receive()
@@ -116,10 +116,19 @@ class DingTalkStream(DingTalkStreamClient):
                         if not self._stopping:
                             self.channel.inbound_task_disconnected()
                     await anyio.sleep(self.channel.settings.reconnect_delay)
+        except Exception as error:
+            logger.error(
+                "DingTalk connection %s failed (%s)",
+                self.channel.self_id,
+                type(error).__name__,
+            )
+            self.channel.mark_failed("DingTalk SDK connection failed")
         finally:
             self._scope = None
-            self._finished.set()
-            self.channel.inbound_task_finished()
+            try:
+                self.channel.inbound_task_finished()
+            finally:
+                self._finished.set()
 
     async def _receive(self) -> None:
         uri = await self._connection_uri()

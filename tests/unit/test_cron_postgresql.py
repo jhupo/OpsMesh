@@ -23,20 +23,23 @@ pytestmark = [
 @pytest.fixture
 async def postgres_cron(monkeypatch):
     from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver, base
+    from opsmesh.drivers import Driver
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
     from opsmesh.plugins.manager import PluginManager
     from opsmesh.plugins.model import Plugin, PluginStatus
 
     saved_matchers = dict(matchers.items())
-    monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database_api = importlib.import_module("opsmesh.plugins.database")
     database_plugin = Plugin(
         "database", database_api, database_api.__name__, PluginManager()
     )
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, "database": database_plugin}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     api = importlib.import_module("opsmesh.plugins.cron")
     declaration_module = importlib.import_module(
@@ -54,6 +57,10 @@ async def postgres_cron(monkeypatch):
     consumer.status = PluginStatus.READY
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, consumer.id_: consumer}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     database = database_api.Database(
         database_api.Settings(dsn=os.environ["OPSMESH_TEST_DSN"])
@@ -84,6 +91,7 @@ async def postgres_cron(monkeypatch):
 
         with registry.plugin_scope(consumer):
             yield SimpleNamespace(
+                driver=Driver(Env(), Config()),
                 api=api,
                 scheduler=scheduler,
                 declarations=declaration_module.declarations,
@@ -105,12 +113,12 @@ async def test_namespace_lock_is_exclusive_and_released(postgres_cron):
     first = cron.scheduler()
     second = cron.scheduler()
     different = cron.scheduler(cron.namespace + "_other")
-    await first.startup()
+    await first.startup(cron.driver)
     with pytest.raises(cron.api.SchedulerUnavailable, match="active scheduler"):
-        await second.startup()
-    await different.startup()
+        await second.startup(cron.driver)
+    await different.startup(cron.driver)
     await first.shutdown()
-    await second.startup()
+    await second.startup(cron.driver)
     assert second.available
     assert different.available
 
@@ -119,7 +127,7 @@ async def test_code_overrides_survive_restart(postgres_cron):
     cron = postgres_cron
     cron.api.on_interval(3600, name="digest")
     first = cron.scheduler()
-    await first.startup()
+    await first.startup(cron.driver)
     await first.ready()
     record = (await first.schedules.list(cron.owner))[0]
     definition = cron.api.ScheduleDefinition.model_validate(record.definition)
@@ -140,7 +148,7 @@ async def test_code_overrides_survive_restart(postgres_cron):
     await first.shutdown()
 
     restored = cron.scheduler()
-    await restored.startup()
+    await restored.startup(cron.driver)
     await restored.ready()
     records = await restored.schedules.list(cron.owner)
     view = restored.view(records[0])
@@ -160,7 +168,7 @@ async def test_expired_date_is_not_replayed(postgres_cron):
     cron = postgres_cron
     cron.api.on_date(datetime.now(UTC) - timedelta(hours=1), name="expired")
     runtime = cron.scheduler()
-    await runtime.startup()
+    await runtime.startup(cron.driver)
     await runtime.ready()
     record = (await runtime.schedules.list(cron.owner))[0]
     assert record.expired
@@ -177,7 +185,7 @@ async def test_records_are_scoped_and_stale_revision_cannot_fire(postgres_cron):
         calls.append(True)
 
     runtime = cron.scheduler()
-    await runtime.startup()
+    await runtime.startup(cron.driver)
     record = await runtime.schedules.add(
         cron.owner,
         cron.api.ScheduleDefinition(

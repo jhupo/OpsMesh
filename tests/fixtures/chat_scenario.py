@@ -15,7 +15,6 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from opsmesh.drivers import get_driver
 from opsmesh.plugins.channels import UserContext
 from opsmesh.plugins.channels.qq.events import parse_callback as qq_callback
 
@@ -119,8 +118,8 @@ async def run_scenario(plugin, api_channel):
             ]
         ]
     )
-    channel = (
-        get_driver().get_adapter("qq").get_connection(plugin.id_, "primary")
+    channel = api_channel.adapter.driver.get_adapter("qq").get_connection(
+        plugin.id_, "primary"
     )
     responses = []
 
@@ -205,7 +204,7 @@ async def run_scenario(plugin, api_channel):
             },
             connection_id="bot",
         )
-        assert not await addressed_message(group)
+        assert not await addressed_message(channel, group)
 
         first = data_of(await api.post("/new First"))["session"]
         sid = first["id"]

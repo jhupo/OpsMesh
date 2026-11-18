@@ -19,16 +19,11 @@ if importlib.util.find_spec("opsmesh.plugins.knowledge") is None:
 pytest.importorskip("pgvector.sqlalchemy", exc_type=ImportError)
 pytest.importorskip("agents", exc_type=ImportError)
 
-from opsmesh.config import Config, Env
-from opsmesh.drivers import Driver
-from opsmesh.drivers import base as driver_state
 from opsmesh.plugins import registry
 from opsmesh.plugins.manager import PluginManager
 from opsmesh.plugins.model import Plugin
 
-previous_driver = driver_state._driver
 previous_plugins = registry._plugins
-driver_state._driver = Driver(Env(), Config())
 registry._plugins = previous_plugins.copy()
 try:
     for dependency in ("database", "filesystem"):
@@ -38,7 +33,6 @@ try:
         )
     pytest.importorskip("opsmesh.plugins.knowledge", exc_type=ImportError)
 finally:
-    driver_state._driver = previous_driver
     registry._plugins = previous_plugins
 
 from alembic.operations import Operations

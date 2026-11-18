@@ -26,6 +26,9 @@ package-dir = {"opsmesh.plugins.channels" = "src"}
 [project.entry-points."opsmesh.plugins"]
 channels = "opsmesh.plugins.channels"
 
+[project.entry-points."opsmesh.builtin_plugins"]
+channels = "opsmesh.plugins.channels"
+
 [tool.setuptools.package-data]
 "opsmesh.plugins.channels" = ["py.typed"]
 

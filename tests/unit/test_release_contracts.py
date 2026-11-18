@@ -11,9 +11,9 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from opsmesh_service.catalog import PluginRecord, PluginStorage
 
 from opsmesh.plugins.database import migrations, schema
-from opsmesh.plugins.storage import PluginRecord, PluginStorage
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -171,23 +171,21 @@ def test_release_execution_probe_needs_no_database(tmp_path):
     script = """
 import asyncio
 import sys
-from opsmesh.drivers import base as driver_state
 from opsmesh.config import Config, Env
 from opsmesh.plugins import registry
-from opsmesh.plugins.manager import PluginManager
+from opsmesh.plugins.manager import PluginManager, register_plugin_manager
 from opsmesh.drivers import Driver
 
 driver = Driver(Env(), Config())
-driver_state.set_driver(driver)
 for module, values in {
     "opsmesh.plugins.filesystem": {"root": sys.argv[1]},
     "opsmesh.plugins.channels": {},
 }.items():
-    registry.register_plugin_manager(
+    register_plugin_manager(
         PluginManager([module], config=values)
     )
 manager = PluginManager(["release_probe"])
-registry.register_plugin_manager(manager)
+register_plugin_manager(manager)
 plugin = manager.load_plugin("release_probe")
 assert plugin is not None
 
@@ -198,8 +196,13 @@ async def main():
 
 asyncio.run(main())
 """
+    payload = script
+    managed = (
+        "from opsmesh.plugins import plugin_environment\n"
+        f"with plugin_environment(): exec({payload!r})"
+    )
     result = subprocess.run(
-        [sys.executable, "-c", script, str(tmp_path / "data")],
+        [sys.executable, "-c", managed, str(tmp_path / "data")],
         env={
             **os.environ,
             "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(tmp_path)]),
@@ -261,13 +264,18 @@ async def check():
         [
             sys.executable,
             "-m",
-            "opsmesh.app",
+            "opsmesh_service.cli",
             "--manifest",
             str(manifest),
             "--command",
             "release_test:check",
         ],
-        env={**os.environ, "PYTHONPATH": str(Path("src").resolve())},
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                [str(ROOT / "src"), str(ROOT / "packages/service/src")]
+            ),
+        },
         capture_output=True,
         text=True,
         timeout=15,
@@ -286,13 +294,18 @@ def test_command_cannot_import_an_undeclared_plugin(tmp_path):
         [
             sys.executable,
             "-m",
-            "opsmesh.app",
+            "opsmesh_service.cli",
             "--manifest",
             str(manifest),
             "--command",
             "forbidden:check",
         ],
-        env={**os.environ, "PYTHONPATH": str(Path("src").resolve())},
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                [str(ROOT / "src"), str(ROOT / "packages/service/src")]
+            ),
+        },
         capture_output=True,
         text=True,
         timeout=15,

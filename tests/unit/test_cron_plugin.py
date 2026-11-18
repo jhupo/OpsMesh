@@ -10,23 +10,26 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from opsmesh.config import Config, Env
+from opsmesh.drivers import Driver
 from opsmesh.plugins.manager import PluginManager
 
 
 @pytest.fixture
 def cron(monkeypatch):
-    from opsmesh.config import Config, Env
-    from opsmesh.drivers import Driver, base
     from opsmesh.matchers import matchers
     from opsmesh.plugins import registry
     from opsmesh.plugins.model import Plugin, PluginStatus
 
     saved_matchers = dict(matchers.items())
-    monkeypatch.setattr(base, "_driver", Driver(Env(), Config()))
     database = importlib.import_module("opsmesh.plugins.database")
     database_plugin = Plugin("database", database, database.__name__, PluginManager())
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, "database": database_plugin}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     module = importlib.import_module("opsmesh.plugins.cron")
     declaration_module = importlib.import_module(
@@ -47,6 +50,10 @@ def cron(monkeypatch):
     consumer.status = PluginStatus.READY
     monkeypatch.setattr(
         registry, "_plugins", {**registry._plugins, consumer.id_: consumer}
+    )
+    monkeypatch.setattr(
+        registry, "_module_plugins",
+        {plugin.module_name: plugin for plugin in registry._plugins.values()},
     )
     with registry.plugin_scope(consumer):
         yield SimpleNamespace(
@@ -173,7 +180,7 @@ def make_scheduler(cron, record):
     runtime._check_lock = AsyncMock()
     runtime.channel = cron.scheduler.ScheduleChannel(
         cron.scheduler.ScheduleAdapter(
-            importlib.import_module("opsmesh.drivers").get_driver()
+            Driver(Env(), Config())
         ),
         "test-cron",
     )
@@ -363,6 +370,7 @@ async def test_old_timer_cannot_enter_a_reloaded_plugin(cron, monkeypatch):
         replacement.status = PluginStatus.READY
         replacement.generation = cron.owner.generation
         monkeypatch.setitem(registry._plugins, cron.owner.id_, replacement)
+        monkeypatch.setitem(registry._module_plugins, replacement.module_name, replacement)
         await old_job.func(*old_job.args)
         runtime.schedules.get.assert_not_awaited()
         assert not runtime.view(record).runnable

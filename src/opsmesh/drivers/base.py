@@ -18,7 +18,8 @@ from opsmesh.dependencies.params import (
     DependParam,
 )
 from opsmesh.exceptions import SkippedException
-from opsmesh.lifecycle import LIFESPAN_FUNC, Lifespan
+from opsmesh.plugins.activation import Lifespan
+from opsmesh.plugins.lifecycle import LIFESPAN_FUNC
 from opsmesh.typing import (
     T_ConnectionHook,
     T_DependencyCache,
@@ -50,7 +51,7 @@ class Driver:
         """The runtime-owned deployment configuration snapshot."""
         self._adapters: dict[str, Adapter] = {}
         self._channels: dict[str, Channel] = {}
-        self._lifespan = Lifespan()
+        self._lifespan = Lifespan(self)
 
     def __repr__(self) -> str:
         return (
@@ -120,7 +121,7 @@ class Driver:
             yield
 
     def check_plugin_stoppable(self, plugin: Plugin) -> None:
-        """Reject stopping a protected plugin or one with active consumers."""
+        """Reject stopping a plugin with active consumers or its own call."""
         self._lifespan.check_stoppable(plugin)
 
     async def start_plugin(self, plugin: Plugin) -> None:
@@ -241,37 +242,3 @@ class Driver:
     def on_quiescing(self, func: LIFESPAN_FUNC) -> LIFESPAN_FUNC:
         """Stop and drain external inputs before stopping consumers."""
         return self._lifespan.on_quiescing(func)
-
-
-_driver: Driver | None = None
-
-
-def get_driver() -> Driver:
-    """Return the initialized framework driver.
-
-    Raises:
-        ValueError: Framework initialization has not completed.
-    """
-    if _driver is None:
-        raise ValueError("Framework has not been initialized.")
-    return _driver
-
-
-def is_initialized() -> bool:
-    """Return whether framework initialization has completed."""
-    return _driver is not None
-
-
-def set_driver(driver: Driver) -> None:
-    """Bind the framework driver after its construction succeeds.
-
-    Args:
-        driver: The protocol-independent driver owned by the host.
-
-    Raises:
-        RuntimeError: The host already has an initialized runtime.
-    """
-    global _driver
-    if _driver is not None:
-        raise RuntimeError("Framework has already been initialized.")
-    _driver = driver
