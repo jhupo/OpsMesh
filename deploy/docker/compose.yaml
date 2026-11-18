@@ -14,7 +14,7 @@ services:
     volumes:
       - ../host.json:/etc/opsmesh/host.json:ro
       - opsmesh-data:/var/lib/opsmesh
-    tmpfs: [/tmp]
+    tmpfs: [/tmp, '/run/opsmesh:uid=10001,gid=10001,mode=0700']
 
 volumes:
   opsmesh-data:

@@ -75,18 +75,23 @@ class HostManifest(BaseModel):
     environment: str = Field(default="development", pattern=r"^[a-zA-Z0-9_-]+$")
     framework: Config = Field(default_factory=Config)
     data_dir: Path = Path("./data")
+    runtime_dir: Path | None = None
 
 
 def load_manifest(path: str | Path) -> HostManifest:
-    """Resolve the host data directory relative to its configuration file."""
+    """Resolve host paths relative to the manifest."""
     path = Path(path).resolve()
     manifest = HostManifest.model_validate_json(
         path.read_text(encoding="utf-8")
     )
-    root = manifest.data_dir
-    if not root.is_absolute():
-        root = path.parent / root
-    return manifest.model_copy(update={"data_dir": root.resolve()})
+    return manifest.model_copy(
+        update={
+            "data_dir": (path.parent / manifest.data_dir).resolve(),
+            "runtime_dir": (path.parent / manifest.runtime_dir).resolve()
+            if manifest.runtime_dir is not None
+            else None,
+        }
+    )
 
 
 class Host:

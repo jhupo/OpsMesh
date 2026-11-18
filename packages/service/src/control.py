@@ -25,13 +25,14 @@ _MAX_CLIENTS = 16
 ACTIONS = ("status", "load", "start", "stop", "restart")
 
 
-def endpoint(root: Path) -> Path:
+def endpoint(root: Path, runtime_dir: Path | None = None) -> Path:
     """Use the same endpoint for clients and the host holding the data lock."""
-    return root / "control" / "host.sock"
+    return (
+        runtime_dir if runtime_dir is not None else root / "control"
+    ) / "host.sock"
 
 
 def _prepare_endpoint(path: Path) -> None:
-    path.parent.mkdir(mode=0o700, exist_ok=True)
     directory = path.parent.lstat()
     if (
         not stat.S_ISDIR(directory.st_mode)
@@ -47,7 +48,7 @@ def _prepare_endpoint(path: Path) -> None:
         return
     if not stat.S_ISSOCK(existing.st_mode) or existing.st_uid != os.geteuid():
         raise FileExistsError("Control endpoint is not an owned socket")
-    # The host still holds the data lock. This can only be its stale socket.
+    # The caller holds the runtime directory lock; this socket is stale.
     path.unlink()
 
 
@@ -81,12 +82,30 @@ async def _dispatch(host: Host, line: bytes) -> dict:
 
 
 @asynccontextmanager
-async def serve_control(host: Host) -> AsyncIterator[None]:
+async def serve_control(
+    host: Host, *, runtime_dir: Path | None = None
+) -> AsyncIterator[None]:
     """Accept one bounded request per local connection."""
     if os.name != "posix":
         yield
         return
-    path = endpoint(host.storage.root)
+    import fcntl
+
+    path = endpoint(host.storage.root, runtime_dir)
+    path.parent.mkdir(mode=0o700, exist_ok=True)
+    directory = os.open(
+        path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    )
+    try:
+        fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        async with _listen_control(host, path):
+            yield
+    finally:
+        os.close(directory)
+
+
+@asynccontextmanager
+async def _listen_control(host: Host, path: Path) -> AsyncIterator[None]:
     _prepare_endpoint(path)
     sessions = 0
     closing = False
@@ -133,9 +152,11 @@ async def serve_control(host: Host) -> AsyncIterator[None]:
         path.unlink(missing_ok=True)
 
 
-async def send_control(root: Path, action: str, module: str) -> dict:
+async def send_control(
+    root: Path, action: str, module: str, *, runtime_dir: Path | None = None
+) -> dict:
     """Send a request to the existing service without opening its catalog."""
-    path = endpoint(root)
+    path = endpoint(root, runtime_dir)
     try:
         reader, writer = await asyncio.open_unix_connection(path)
     except (OSError, AttributeError) as error:

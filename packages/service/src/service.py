@@ -38,7 +38,7 @@ async def serve(
         async with (
             load_host(manifest) as host,
             host.driver.lifespan(),
-            serve_control(host),
+            serve_control(host, runtime_dir=manifest.runtime_dir),
         ):
             _notify("READY=1")
             try:

@@ -2,15 +2,15 @@
 
 服务的发行包、源码归属、管理入口和迁移批次以[框架库与插件管理服务设计](framework-service-design.md)为准。本文保留在线操作与通道审查的细节。
 
-源码基线为 `6626a6df`。已登记扩展可在线查询、加载、停止、恢复和重启资源。CLI 使用 `--online-plugin-action <动作> --module <完整模块名>`。内置身份由各插件包声明。在线制品登记、持久操作记录、配置回退、卸载和 Worker 切换仍是后续设计。
+v0.5.8 中，已登记扩展可在线查询、加载、停止、恢复和重启资源。CLI 使用 `--online-plugin-action <动作> --module <完整模块名>`。内置身份由各插件包声明。在线制品登记、持久操作记录、配置回退、卸载和 Worker 切换仍是后续设计。现行命令见 [Linux 部署](../linux-deployment.md)。
 
 ## 1. 运维边界
 
-**只有扩展插件是在线加载、停止、重启、更新和卸载的目标。** 内置插件的代码、依赖和插件级资源随宿主部署维护。当前仓库的内置插件范围取六个随项目发布的包：channels、execution、database、filesystem、knowledge、cron。安装可以按需进行。管理端可查询其状态；要更换内置版本、应用需要重启内置实例的配置或改变其启用策略，进入宿主维护流程。
+**现有的在线资源启停和未来的代码更新、卸载只面向普通扩展。** 内置插件的代码、依赖和插件级资源随宿主部署维护。当前仓库的内置插件范围取六个随项目发布的包：channels、execution、database、filesystem、knowledge、cron。安装可以按需进行。管理端可查询其状态；要更换内置版本、应用需要重启内置实例的配置或改变其启用策略，进入宿主维护流程。
 
 例如，扩展 A 使用 channels 声明 QQ 账号，扩展 B 使用 channels 声明钉钉账号。停止 A 时，A 的 QQ 连接停止接收，已有调用完成回复后关闭连接；B 继续接收消息。重新启动 A 会重新构造 A 的连接。整个过程中 channels 插件本身、已启动的内置提供方以及 B 的生命周期都不发生切换。若修改的是 QQ 协议实现或内置 SDK 版本，应随内置包离线发布。
 
-| 用户操作 | 内置插件 | 已准入的普通扩展 |
+| 目标操作（含未实现项） | 内置插件 | 已准入的普通扩展 |
 |---|---|---|
 | status / 依赖影响预览 | 可查询 | 可查询 |
 | register / load | 由部署、宿主启动策略决定 | 在线登记受信任的制品、加载声明 |
@@ -29,7 +29,7 @@
 
 ## 2. channels 与框架的职责是否吻合
 
-**判断：主结构吻合。建议保留 Driver → Adapter → Channel 的分工，在 channels 内精简机器人公共逻辑。** 宿主负责依赖、调用准入、在途排空、Hook 和插件状态；channels 将平台输入转换成框架事件，再使用框架分发和调用接口，FastAPI、QQ 和钉钉协议实现均位于插件侧。通道提供方本身不需要增加插件更新、版本选择或包管理接口。[框架 Adapter](../../src/opsmesh/adapters/adapter.py) · [框架 Channel.call](../../src/opsmesh/adapters/channel.py) · [通道入口](../../packages/channels/src/lifecycle.py)
+框架的 Driver 提供事件分发、插件生命周期和调用准入，不持有适配器或连接。channels 插件内部由 Adapter 管理连接，Channel 将平台输入转换为框架事件并调用分发接口，同时负责发送与连接清理。FastAPI、QQ 和钉钉协议均由 channels 实现；通道提供方不负责插件更新或包管理。[框架事件](../../src/opsmesh/events.py) · [通道 Adapter](../../packages/channels/src/adapter.py) · [通道 Channel](../../packages/channels/src/channel.py)
 
 | 看起来相似的实现 | 应当保留的区别 |
 |---|---|
@@ -42,8 +42,8 @@
 
 | 优先级 | 具体发现 | 修改建议与验收 |
 |---|---|---|
-| 先修正确性 | 钉钉 `run()` 在 try/finally 外调用 `pre_start()`。初始化抛错会跳过完成通知，后台异常还能传播到共享任务组。[DingTalkStream](../../packages/channels/src/dingtalk/stream.py) | 将初始化放入受保护范围，普通协议异常只标记本连接失败；finally 清理任务引用并唤醒等待者，宿主取消正常传播。注入初始化异常时，wait_closed 能结束，另一插件继续工作 |
-| 先修正确性 | QQ 致命异常先标记 failed，随后 `inbound_task_finished()` 通过离线逻辑写 disconnected，覆盖失败原因。[QQStream](../../packages/channels/src/qq/gateway.py) · [CallbackChannel](../../packages/channels/src/channel.py) | 把“撤下在线索引”与“写入连接终态”分开。让共同的任务结束路径保留致命失败，普通断网允许重连，显式 close 完成后才记 closed。覆盖握手前停止、断网重连、致命错误后查询 |
+| 通道回归验收 | 钉钉初始化失败只能标记当前连接失败，仍需通知等待者并清理任务引用。[DingTalkStream](../../packages/channels/src/dingtalk/stream.py) | 注入初始化异常，验证 `wait_closed()` 能结束且其他插件继续工作 |
+| 通道回归验收 | QQ 入站任务结束不得把致命失败覆盖成普通断线。[QQStream](../../packages/channels/src/qq/gateway.py) · [CallbackChannel](../../packages/channels/src/channel.py) | 验证握手前停止、断网重连、致命错误后查询状态，以及显式关闭 |
 | 合并相同配置约束 | 两个机器人设置重复定义队列容量、并发、去重、请求及关闭超时；`ConnectionSettings` Protocol 又列出了部分字段。[QQ 配置](../../packages/channels/src/qq/config.py) · [钉钉配置](../../packages/channels/src/dingtalk/config.py) | 提取无协议依赖的机器人公共配置模型，由两个现有公开模型继承；可用于 CallbackChannel 的类型约束并移除重复声明。保留字段名、默认值、错误位置与协议专属范围，如两个不同的 max_message_length。公共模型放在不导入协议模块的叶子文件以避免循环导入 |
 | 删除短小的重复实现 | 两个 Channel 仅凭据引用字段、错误类型不同，取环境变量、去空白、报错完全相同；两个 `_close_resources` 都只调用 client.close。[QQChannel](../../packages/channels/src/qq/channel.py) · [DingTalkChannel](../../packages/channels/src/dingtalk/channel.py) | 共用一个读凭据函数，保留两个配置异常类型和 disabled 跳过读取的行为；在现有 CallbackChannel 给出关闭客户端的默认实现。协议保留自己的客户端构造和任务创建 |
 | 合并相同发送步骤 | 两个 Adapter 的 stream 分支重复校验 format、创建或沿用 Delivery、检查归属、把 message_id 传给发送器。钉钉另有 card 分支；钉钉的消息与通知入口重复把入队结果转成 ACK。[QQAdapter](../../packages/channels/src/qq/adapter.py) · [DingTalkAdapter](../../packages/channels/src/dingtalk/adapter.py) | 在现有 streaming 模块中抽取机器人发送适配函数，接收发送回调及可选 card 回调。ACK 转换用钉钉模块局部函数即可。验证分段顺序、delivery 所属检查、无卡片时聚合、有卡片时增量及队列满时的 ACK |

@@ -28,7 +28,7 @@
 
 相对 data_dir 按 host.json 所在目录解析。插件模块、配置和启动意图通过 CLI 或 Host 管理接口登记到 SQLite。
 
-宿主只创建 state.sqlite3 和 host.lock。插件安装目录、临时解压目录及业务文件布局由对应插件决定，框架不强制 plugins/、staging/ 或技能工具目录。
+宿主在数据目录内创建 `state.sqlite3` 和 `host.lock`；Linux 服务使用 `<runtime_dir>/host.sock` 作为本机管理入口，未配置时使用数据目录内的 `control/host.sock`。标准安装目录见[部署文档](linux-deployment.md)，不由核心框架规定。
 
 ## 存储记录
 
@@ -101,7 +101,7 @@ opsmesh --manifest /etc/opsmesh/host.json --plugin-action register \
   --module example_core --enabled --autoload --required --protected
 ```
 
-JSON 文件是 CLI 的一次性输入，保存后不会被运行过程读取。依赖有必填参数时先配置依赖。冻结宿主的外部运行包需要登记其绝对 site 导入根；后续入口点发现由宿主准备阶段完成。服务运行时独占锁阻止离线 CLI 修改，在线管理 API 由管理插件实现。
+JSON 文件是 CLI 的一次性输入，保存后不会被运行过程读取。依赖有必填参数时先配置依赖。冻结宿主的外部运行包需要登记其绝对 site 导入根；后续入口点发现由宿主准备阶段完成。服务运行时的独占锁阻止离线 CLI 修改；服务自己的本机 socket 只提供 `status`、`load`、`start`、`stop` 和 `restart`，不对外开放持久配置接口。
 
 ## 插件携带的配置文件
 

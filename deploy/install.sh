@@ -48,20 +48,43 @@ case $(uname -m) in
 esac
 glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null) || fail "glibc is required; musl/Alpine is unsupported"
 glibc=${glibc#glibc }
-install -d -m 0755 /opt/opsmesh /opt/opsmesh/releases
-exec 9>/opt/opsmesh/install.lock
+prefix=/usr/local/lib/opsmesh
+releases=$prefix/releases
+cli=/usr/local/bin/opsmesh
+entrypoint=$prefix/current/opsmesh
+install -d -m 0755 "$prefix" "$releases" /usr/local/bin
+exec 9>"$prefix/install.lock"
 flock -n 9 || fail "Another installation is running"
-previous=$(readlink -f /opt/opsmesh/current || true)
+previous=''
+if [[ -L $prefix/current ]]; then
+    previous=$(readlink -e "$prefix/current") || fail "Broken current release link"
+    [[ $previous == "$releases/"* && -x $previous/opsmesh ]] || fail "Invalid current release"
+elif [[ -e $prefix/current ]]; then
+    fail "Refusing to overwrite $prefix/current"
+fi
+if [[ -e $cli || -L $cli ]]; then
+    [[ -L $cli && $(readlink "$cli") == "$entrypoint" ]] || fail "Refusing to overwrite $cli"
+fi
 
 switch_binary() {
-    ln -s "$1" "/opt/opsmesh/current.next.$$"
-    mv -Tf "/opt/opsmesh/current.next.$$" /opt/opsmesh/current
+    ln -s "$1" "$prefix/current.next.$$"
+    mv -Tf "$prefix/current.next.$$" "$prefix/current"
+}
+
+has_standard_unit() {
+    local unit="$1/deploy/systemd/opsmesh.service"
+    [[ -f $unit ]] && grep -Fxq "ExecStart=$cli --manifest /etc/opsmesh/host.json" "$unit"
 }
 
 if $rollback; then
     [[ -z $archive && -z $checksums && -z $manifest && -z $environment ]] || fail "--rollback cannot replace configuration or install an archive"
-    target=$(readlink -f /opt/opsmesh/previous || true)
-    [[ $target == /opt/opsmesh/releases/* && -x $target/opsmesh && -f $target/deploy/systemd/opsmesh.service ]] || fail "No previous release"
+    target=$(readlink -e "$prefix/previous" || true)
+    [[ -n $previous && $target == "$releases/"* && -x $target/opsmesh ]] && has_standard_unit "$target" || fail "No previous release with the standard layout"
+    [[ -L $cli ]] || fail "Missing installed command: $cli"
+    installed_unit=/etc/systemd/system/opsmesh.service
+    unit_backup=$(mktemp /etc/opsmesh/.rollback-unit.XXXXXX)
+    trap 'rm -f -- "$unit_backup"' EXIT
+    cp -p "$installed_unit" "$unit_backup"
     systemctl stop opsmesh
     if ! systemd-run --quiet --wait --pipe --collect \
         --property=User=opsmesh --property=Group=opsmesh \
@@ -71,13 +94,13 @@ if $rollback; then
         systemctl start opsmesh || true
         fail "Rollback configuration check failed"
     fi
-    if ! { install -m 0644 "$target/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service &&
-        systemctl daemon-reload && switch_binary "$target" && systemctl start opsmesh; }; then
-        if [[ -n $previous ]]; then
-            switch_binary "$previous" || true
-            install -m 0644 "$previous/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service || true
-            systemctl daemon-reload || true
-        fi
+    if ! { install -m 0644 "$target/deploy/systemd/opsmesh.service" "$installed_unit" &&
+        switch_binary "$target" && systemctl daemon-reload && systemctl start opsmesh; }; then
+        systemctl stop opsmesh || true
+        switch_binary "$previous" || true
+        cp -p "$unit_backup" "$installed_unit" || true
+        systemctl daemon-reload || true
+        systemctl reset-failed opsmesh || true
         systemctl start opsmesh || true
         fail "Previous framework release could not start with current configuration"
     fi
@@ -97,9 +120,10 @@ actual=$(sha256sum "$archive")
 getent passwd opsmesh >/dev/null || useradd --system --user-group --home-dir /var/lib/opsmesh --shell /usr/sbin/nologin opsmesh
 install -d -m 0750 -o root -g opsmesh /etc/opsmesh
 install -d -m 0750 -o opsmesh -g opsmesh /var/lib/opsmesh
-stage=$(mktemp -d /opt/opsmesh/releases/.staging.XXXXXX)
+stage=$(mktemp -d "$releases/.staging.XXXXXX")
 config_backup=$(mktemp -d /etc/opsmesh/.backup.XXXXXX)
-changed=false stopped=false unit_changed=false success=false
+changed=false stopped=false was_active=false unit_changed=false cli_created=false success=false
+if systemctl is-active --quiet opsmesh; then was_active=true; fi
 cleanup() {
     local status=$?
     set +e
@@ -122,18 +146,22 @@ cleanup() {
             fi
             systemctl daemon-reload
         fi
-        if $stopped && [[ -n $previous ]]; then
+        if $stopped; then
             systemctl stop opsmesh || true
-            switch_binary "$previous"
-            systemctl start opsmesh || true
-        elif $stopped; then
-            systemctl stop opsmesh || true
-            systemctl disable opsmesh || true
-            rm -f /opt/opsmesh/current
+            if [[ -n $previous ]]; then
+                switch_binary "$previous"
+            else
+                rm -f "$prefix/current"
+            fi
+            if $was_active; then
+                systemctl reset-failed opsmesh || true
+                systemctl start opsmesh || true
+            fi
         fi
+        if $cli_created; then rm -f "$cli"; fi
     fi
     rm -rf -- "$stage" "$config_backup"
-    rm -f "/opt/opsmesh/current.next.$$"
+    rm -f "$prefix/current.next.$$"
     exit "$status"
 }
 trap cleanup EXIT
@@ -147,17 +175,18 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "$stage/members"; then
     fail "Invalid archive paths"
 fi
 tar -xzf "$archive" --strip-components=1 --no-same-owner -C "$stage"
-[[ -x $stage/opsmesh && -f $stage/GLIBC_MIN && -f $stage/deploy/host.example.json && -f $stage/deploy/systemd/opsmesh.service ]] || fail "Not an OpsMesh framework release"
+[[ -x $stage/opsmesh && -f $stage/GLIBC_MIN && -f $stage/deploy/host.example.json ]] || fail "Not an OpsMesh framework release"
+has_standard_unit "$stage" || fail "Use the installer shipped with this archive; its systemd unit must use $cli"
 minimum=$(cat "$stage/GLIBC_MIN")
 [[ $minimum =~ ^[0-9]+\.[0-9]+$ ]] || fail "Invalid runtime requirements"
 [[ $(printf '%s\n' "$minimum" "$glibc" | sort -V | head -1) == "$minimum" ]] || fail "glibc $minimum or newer is required"
 "$stage/opsmesh" --version
-release="/opt/opsmesh/releases/${filename%.tar.gz}-${expected:0:12}"
+release="$releases/${filename%.tar.gz}-${expected:0:12}"
 rm -f "$stage/members"
 chmod 0755 "$stage"
 if [[ ! -e $release ]]; then
     mv "$stage" "$release"
-    stage=$(mktemp -d /opt/opsmesh/releases/.staging.XXXXXX)
+    stage=$(mktemp -d "$releases/.staging.XXXXXX")
 fi
 changed=true
 if [[ -z $manifest && ! -f /etc/opsmesh/host.json ]]; then
@@ -181,11 +210,15 @@ check_configuration
 unit_changed=true
 install -m 0644 "$release/deploy/systemd/opsmesh.service" /etc/systemd/system/opsmesh.service
 switch_binary "$release"
+if [[ ! -L $cli ]]; then
+    ln -s "$entrypoint" "$cli"
+    cli_created=true
+fi
 systemctl daemon-reload
 systemctl enable opsmesh
 systemctl start opsmesh
-if [[ -n $previous && $previous != "$release" ]]; then
-    ln -sfn "$previous" /opt/opsmesh/previous
+if [[ -n $previous && $previous != "$release" ]] && has_standard_unit "$previous"; then
+    ln -sfn "$previous" "$prefix/previous"
 fi
 success=true
-printf 'Installed %s\nLogs: journalctl -u opsmesh -f\n' "$release"
+printf 'Installed %s\nCommand: %s\nLogs: journalctl -u opsmesh -f\n' "$release" "$cli"

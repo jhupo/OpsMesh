@@ -17,11 +17,11 @@ wheel 用于普通 Python 环境；可执行宿主使用独立插件运行包。
 
 ## 本地构建
 
-在隔离构建环境中安装核心与构建依赖，再构建 Python 包：
+在隔离构建环境中安装框架、服务与构建依赖，再构建 Python 包：
 
 ```bash
 python -m pip install -r requirements.lock -r packaging/requirements.lock
-python -m pip install --no-deps --no-build-isolation .
+python -m pip install --no-deps --no-build-isolation . ./packages/service
 python scripts/build_packages.py --output dist/python
 ```
 
