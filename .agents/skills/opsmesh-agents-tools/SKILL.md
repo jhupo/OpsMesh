@@ -5,7 +5,7 @@ description: 智能体插件中的原生 SDK 工具、Guardrails、MCP 与技能
 
 # 插件工具、技能和 MCP
 
-先读 [当前架构](../../../docs/plugin-architecture.md) 的 filesystem 和原生工具/MCP 章节。
+查阅 [filesystem 源码](../../../packages/filesystem/src/) 和 [SDK 职责矩阵](../../references/openai-agents-boundaries.md)。插件示例仍使用迁移前的框架接口。
 
 - 工具按 SDK 原生 function_tool、FunctionTool 或托管类型定义；由工具插件导出，智能体插件 require 后直接加入 Agent.tools。
 - 不建立 execution 工具中心、通用转换层或新的工具装饰器。filesystem 返回源码/内容路径，不隐含导入执行。

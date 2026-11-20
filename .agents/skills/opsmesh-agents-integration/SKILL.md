@@ -5,7 +5,7 @@ description: 插件中的原生 Agent 定义、SDK 边界、模型配置及调�
 
 # 原生 Agent 与插件边界
 
-先读 [当前架构](../../../docs/plugin-architecture.md) 和 [SDK 职责矩阵](../../references/openai-agents-boundaries.md)。修改前核对当前源码公开接口，不能仅凭设计文件假定能力已实现。
+先读 [SDK 职责矩阵](../../references/openai-agents-boundaries.md)。[框架架构](../../../docs/framework.md)和[网关流程](../../../docs/gateway.md)说明已完成的框架 Gateway 接口；HTTP 业务适配器及配套包迁移不能据此视为已完成。下文涉及配套插件的接口应以相应包的源码为准。
 
 - 核心发行包位于 src/opsmesh；官方插件位于 packages/<name>/src/opsmesh_<name>，独立声明依赖并随 tag 发布。通过 require("execution") 等加载，不能把 SDK、数据库或插件包重新加入核心依赖。
 - Framework 只处理通用插件、事件、依赖和生命周期，不导入 SDK。

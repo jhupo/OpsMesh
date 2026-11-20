@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-knowledge"
-version = "0.5.9"
+version = "0.6.0"
 description = "Owned PostgreSQL knowledge bases and native Agents SDK tools"
 readme = "README.md"
 license = "MIT"
@@ -16,16 +16,11 @@ dynamic = ["dependencies"]
 dependencies = {file = ["requirements-core.txt", "requirements-plugins.txt", "requirements.txt"]}
 
 [tool.setuptools]
-package-dir = {"opsmesh.plugins.knowledge" = "src"}
-
-[project.entry-points."opsmesh.plugins"]
-knowledge = "opsmesh.plugins.knowledge"
-
-[project.entry-points."opsmesh.builtin_plugins"]
-knowledge = "opsmesh.plugins.knowledge"
+packages = ["knowledge", "knowledge.migrations"]
+package-dir = {knowledge = "src"}
 
 [tool.setuptools.package-data]
-"opsmesh.plugins.knowledge" = ["py.typed", "migrations/*.py"]
+knowledge = ["config.json", "py.typed"]
 
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"

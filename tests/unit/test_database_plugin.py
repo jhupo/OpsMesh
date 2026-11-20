@@ -11,11 +11,11 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import opsmesh.plugins.database as database
+import database
+from database import connections, migrations, schema
 from opsmesh.dependencies import Dependent
-from opsmesh.dependencies.params import DefaultParam, DependParam
+from opsmesh.internal.params import DefaultParam, DependParam
 from opsmesh.params import Depends
-from opsmesh.plugins.database import connections, migrations, schema
 from tools.database_history.history import convert_history, read_manifest
 
 
@@ -31,8 +31,8 @@ def source(directory: Path, owner: str, head: str = "initial"):
 
 @pytest.fixture(autouse=True)
 def clean_registry(monkeypatch):
-    monkeypatch.setattr(schema, "registry", schema.SchemaRegistry())
     monkeypatch.setattr(connections, "_database", None)
+    monkeypatch.delenv("OPSMESH_DATABASE_DSN", raising=False)
 
 
 def test_settings_require_async_postgresql():
@@ -55,12 +55,13 @@ def test_nested_owner_has_a_stable_safe_table(tmp_path):
 def test_schema_registration_is_atomic_and_reversible(tmp_path):
     item = source(tmp_path, "parent:child")
     declaration = database.DatabaseSchema(item.directory, item.head)
-    release = schema.registry.add(item.owner, declaration)
+    registry = schema.SchemaRegistry()
+    release = registry.add(item.owner, declaration)
     with pytest.raises(database.MigrationError):
-        schema.registry.add(item.owner, declaration)
-    assert schema.registry.get(item.owner) == item
+        registry.add(item.owner, declaration)
+    assert registry.get(item.owner) == item
     release()
-    assert not schema.registry.sources()
+    assert not registry.sources()
 
 
 def test_migrations_reject_cross_plugin_revision_edges(tmp_path):

@@ -2,26 +2,28 @@
 
 Changes are recorded here before publication. A section in this file is not proof that a matching release has been published.
 
-## 0.5.9 — 2026-11-18
+## 0.6.0 - 2026-11-20
 
-- Install the Linux CLI in `/usr/local/bin` and keep versioned program and
-  plugin code separate from configuration and persistent state. Preserve
-  the installed systemd unit when an upgrade or rollback fails.
-- Support an explicit service runtime directory. New systemd and Docker
-  deployments use `/run/opsmesh/host.sock`; existing data and plugin settings
-  are retained when upgrading.
+- Restore the NoneBot2-based core with standalone Driver, Adapter, Gateway
+  and Matcher APIs. Plugins use `opsmesh.plugin` for loading and metadata.
+- Load `config_file` from the plugin directory. Flat `dependencies.<plugin>`
+  config belongs to the declaring consumer; its dedicated gateways route only
+  to that consumer's Matchers. No compatibility shim for old channel bindings.
+- Ship independent QQ and DingTalk wheels; remove the combined Channels
+  distribution and its HTTP business adapter.
+- Ship the single-process Linux `opsmesh` service and systemd installer.
+  Plugin operations take verified wheels; supervised upgrades keep a single
+  installed version on success. See the [migration and recovery notes](docs/linux-plugin-service.md).
+- Release Database, Filesystem and Knowledge as standalone plugins. Cron,
+  Execution and their legacy consumers remain in source for migration and do
+  not have 0.6.0 release wheels.
 
 ## 0.5.8 — 2026-11-18
 
-- Split the process, CLI, local control socket, and SQLite plugin catalog
-  into the `opsmesh-service` distribution. The core exposes an explicit
+- The core exposes an explicit
   driver and protocol-neutral events; the channels plugin owns connections,
   adapters, transport events, and channel hooks.
-- Allow online status, load, start, stop, and restart for eligible plugins.
-  Installing or replacing plugin code and removing it from disk still require
-  a service restart. The Linux service reports ready only after its local
-  control socket is available.
-- Upgrade the framework, service, and official plugins together. Plugins
+- Plugins
   using `opsmesh.adapters` or the global framework driver must migrate before
   deployment; the removed APIs are not retained as aliases.
 
@@ -61,8 +63,6 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## 0.5.5 — 2026-11-16
 
-- Support PluginMetadata.config_file for first-start JSON configuration import and explicit re-import. Preserve saved values across restarts.
-- Migrate host records to schema 3, retaining existing configuration, including empty objects.
 - Configure consumer-owned QQ and DingTalk accounts through dependencies.channels, without duplicate Settings declarations or manual connection calls.
 - Add native group Rules and a split-file example for multiple agents on one robot.
 - Fix disabled QQ credential handling, metadata type inspection, configuration snapshot isolation, and connection lifecycle cleanup.
@@ -98,14 +98,14 @@ Changes are recorded here before publication. A section in this file is not proo
 
 ## 0.5.0 — 2026-11-12
 
-- Host manifests only need entry plugins and configuration overrides; `require()` loads dependencies, while explicit disabling and origin checks remain enforced. Configuration namespaces default to module names.
+- `require()` loads dependencies. Configuration namespaces default to module names.
 
 - Flatten the core into `opsmesh`, removing the `framework`, `access` and runtime wrapper modules. Driver owns adapter registration and connected channel lookup.
 - Publish independent plugin packages under `opsmesh.plugins.*`, with flat source directories and standard entry-point names such as `require("channels")`.
 - Replace the custom HTTP stack with native FastAPI/Starlette. API owns its authenticated listener; QQ owns its Webhook listener; channels only coordinates lifecycle phases.
 - Switch DingTalk to the official Stream SDK with bounded asynchronous requests, reconnection and cancellable connection ownership.
 - Preserve framework Event/Message/Matcher/Dependent dispatch and close streaming dependencies on errors, timeouts and disconnects.
-- Keep plugin settings on their owners. Make the systemd environment file optional; the installer deploys only the framework.
+- Keep plugin settings on their owners.
 
 ### Upgrade notes
 
@@ -121,7 +121,6 @@ aliases or old HTTP configuration paths.
 - Split the framework and official channels, execution, filesystem and database plugins into separate Python distributions.
 - Replace `opsmesh.plugins.*` imports and configuration namespaces with `opsmesh.plugins.channels`, `opsmesh.plugins.execution`, `opsmesh.plugins.filesystem` and `opsmesh.plugins.database`.
 - Publish plugin wheels, source distributions and optional Linux plugin runtime archives alongside the framework release.
-- Make the Linux installer deploy only the framework service, with an empty initial plugin manifest and no automatic database checks or migrations.
 - Keep execution focused on native Runner calls, cleanup, framework callbacks and tracing; move business usage persistence outside its responsibilities.
 - Isolate database migration histories by plugin and retain an explicit conversion path for older shared histories.
 - Consolidate documentation around the current package and runtime contracts.

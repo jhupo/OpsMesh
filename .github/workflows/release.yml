@@ -15,11 +15,12 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
+      - run: python -m pip install -r packaging/requirements.lock
       - name: Match tag to project version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python -c 'import os,tomllib; from pathlib import Path; projects=[Path("pyproject.toml"),*Path("packages").glob("*/pyproject.toml")]; assert len(projects)==8; versions={tomllib.loads(p.read_text())["project"]["version"] for p in projects}; assert versions == {os.environ["RELEASE_TAG"].removeprefix("v")}'
+          python -c 'import os,sys,tomllib; from pathlib import Path; sys.path.insert(0, "scripts"); from build_packages import projects; versions={tomllib.loads((p/"pyproject.toml").read_text())["project"]["version"] for p in projects(Path.cwd())}; assert versions == {os.environ["RELEASE_TAG"].removeprefix("v")}'
   build:
     needs: version
     uses: ./.github/workflows/ci.yml
@@ -34,24 +35,24 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: release-*
-          merge-multiple: true
+          name: release-python
           path: release
-      - name: Prepare checksums and installer
+      - name: Prepare checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          cp deploy/install.sh release/install.sh
+          git archive --format=tar.gz --output="release/opsmesh-deploy-${RELEASE_TAG}.tar.gz" HEAD deploy
           cd release
-          sha256sum ./*.tar.gz ./*.whl ./install.sh | sed 's|  ./|  |' > SHA256SUMS
+          sha256sum ./*.tar.gz ./*.whl | sed 's|  ./|  |' > SHA256SUMS
           sha256sum --check SHA256SUMS
       - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: |
             release/*.tar.gz
             release/*.whl
-            release/install.sh
             release/SHA256SUMS
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" release/*.tar.gz release/*.whl release/SHA256SUMS release/install.sh --verify-tag --generate-notes
+        run: gh release create "$RELEASE_TAG" release/*.tar.gz release/*.whl release/SHA256SUMS --verify-tag --generate-notes

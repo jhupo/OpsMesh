@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh"
-version = "0.5.9"
-description = "Embedded event framework for plugin-based agent applications"
+version = "0.6.0"
+description = "NoneBot2-based asynchronous event framework for OpsMesh"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "licenses/*"]
@@ -17,6 +17,20 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
+[project.optional-dependencies]
+aiohttp = ["aiohttp[speedups]>=3.11.0,<4.0.0"]
+fastapi = ["fastapi>=0.93.0,<1.0.0", "uvicorn[standard]>=0.20.0,<1.0.0"]
+httpx = ["httpx[http2]>=0.26.0,<1.0.0"]
+quart = ["quart>=0.18.0,<1.0.0", "uvicorn[standard]>=0.20.0,<1.0.0"]
+websockets = ["websockets>=15.0"]
+all = [
+    "aiohttp[speedups]>=3.11.0,<4.0.0",
+    "fastapi>=0.93.0,<1.0.0",
+    "httpx[http2]>=0.26.0,<1.0.0",
+    "uvicorn[standard]>=0.20.0,<1.0.0",
+    "websockets>=15.0",
+]
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
@@ -25,7 +39,7 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opsmesh*"]
+include = ["opsmesh", "opsmesh.*"]
 
 [tool.setuptools.package-data]
 "opsmesh" = ["py.typed", "**/*.pyi"]
@@ -34,3 +48,5 @@ include = ["opsmesh*"]
 Repository = "https://github.com/jhupo/OpsMesh"
 Issues = "https://github.com/jhupo/OpsMesh/issues"
 Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
+# NoneBot2 v2.5.0
+Upstream = "https://github.com/nonebot/nonebot2/tree/c0f9a494bcd308c2ec530ba60c167f9145d21aec"

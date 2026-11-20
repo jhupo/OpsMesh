@@ -6,8 +6,9 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from sys import _getframe
 
-from opsmesh.plugins import registry
+from opsmesh.plugin import Plugin, get_plugin_by_module_name
 
 from .config import Settings
 from .errors import FilesystemError, PathNotFound, PathRejected
@@ -72,11 +73,16 @@ class Roots:
         )
 
 
-def resolve_caller_plugin() -> registry.Plugin:
+def resolve_caller_plugin() -> Plugin:
     """Return the loaded plugin that invoked a public filesystem function."""
-    plugin = registry.get_current_plugin()
-    if plugin is not None:
-        return plugin
+    frame = _getframe(1)
+    while frame is not None:
+        module = frame.f_globals.get("__name__", "")
+        if module != __package__ and not module.startswith(__package__ + "."):
+            if plugin := get_plugin_by_module_name(module):
+                return plugin
+            break
+        frame = frame.f_back
     raise FilesystemError("Cannot determine the calling plugin")
 
 

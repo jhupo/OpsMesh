@@ -5,7 +5,7 @@ description: 智能体插件中的 SandboxAgent、Skill 目录、Manifest 和沙
 
 # 原生沙箱与文件来源
 
-先读 [当前架构](../../../docs/plugin-architecture.md) 的原生 Agent/MCP/会话章节，再核对当前 SDK 源码。
+核对[沙箱示例](../../../examples/sandbox/)及当前 SDK 源码；示例仍使用迁移前的框架接口。
 
 - SandboxAgent 属于原生 Agent 体系，execution 不建立独立沙箱执行引擎。
 - 智能体插件负责 Manifest、Skills、SandboxRunConfig、客户端和资源作用域；filesystem 只提供持久文件及受控普通目录。

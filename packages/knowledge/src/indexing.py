@@ -11,8 +11,6 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import and_, delete, func, or_, select, update
 
-from opsmesh.plugins.invocation import plugin_call
-
 from .errors import InvalidDocument, ModelConfigurationError
 from .models import ChunkRecord, DocumentRecord, KnowledgeBaseRecord, now
 
@@ -327,12 +325,11 @@ class IndexWorker:
         """Recover persisted work until input admission is closed."""
         while not self.stopping:
             try:
-                async with plugin_call(self.runtime.owner.id_):
-                    claim = await self.claim()
-                    if claim is not None:
-                        await self.process(claim)
-                        continue
-                    await self.recover_bases()
+                claim = await self.claim()
+                if claim is not None:
+                    await self.process(claim)
+                    continue
+                await self.recover_bases()
             except Exception as error:
                 logger.warning(
                     "Knowledge indexing resource failure; retrying (%s)",

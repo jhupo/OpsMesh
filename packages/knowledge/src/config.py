@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 MODEL_REVISION = "7999e1d3359715c523056ef9478215996d62a620"
 MODEL_NAME = "BAAI/bge-small-zh-v1.5"
@@ -13,6 +13,31 @@ QUERY_INSTRUCTION = (
 )
 EMBEDDING_DIMENSIONS = 512
 MODEL_TOKEN_LIMIT = 512
+
+ToolOperation = Literal[
+    "create_knowledge_base",
+    "list_knowledge_bases",
+    "get_knowledge_base",
+    "search_knowledge",
+    "list_documents",
+    "get_document",
+    "read_document",
+    "add_document",
+    "replace_document",
+    "delete_document",
+    "reindex_document",
+]
+
+
+class ToolSettings(BaseModel):
+    """Name prefix and per-operation approval overrides for native tools."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    alias: str = Field(
+        default="knowledge", pattern=r"^[A-Za-z][A-Za-z0-9_]{0,39}$"
+    )
+    approval: dict[ToolOperation, StrictBool] = Field(default_factory=dict)
 
 
 class Settings(BaseModel):
@@ -49,6 +74,7 @@ class Settings(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=20)
     retry_seconds: float = Field(default=5, gt=0, le=3600)
     orphan_grace_seconds: float = Field(default=86_400, ge=3600)
+    tools: ToolSettings = Field(default_factory=ToolSettings)
 
     @model_validator(mode="after")
     def coherent_bounds(self):

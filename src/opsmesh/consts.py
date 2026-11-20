@@ -1,4 +1,11 @@
-"""State keys shared by event dispatch and matcher handlers."""
+"""本模块包含了 OpsMesh 事件处理过程中使用到的常量。
+
+FrontMatter:
+    mdx:
+        format: md
+    sidebar_position: 9
+    description: opsmesh.consts 模块
+"""
 
 import os
 import sys
@@ -6,53 +13,49 @@ from typing import Literal
 
 # used by Matcher
 RECEIVE_KEY: Literal["_receive_{id}"] = "_receive_{id}"
-"""State key for a received event."""
+"""`receive` 存储 key"""
 LAST_RECEIVE_KEY: Literal["_last_receive"] = "_last_receive"
-"""State key for the most recently received event."""
+"""`last_receive` 存储 key"""
 ARG_KEY: Literal["{key}"] = "{key}"
-"""State key for a collected argument."""
+"""`arg` 存储 key"""
 REJECT_TARGET: Literal["_current_target"] = "_current_target"
-"""State key for the current rejection target."""
+"""当前 `reject` 目标存储 key"""
 REJECT_CACHE_TARGET: Literal["_next_target"] = "_next_target"
-"""State key for the next rejection target."""
+"""下一个 `reject` 目标存储 key"""
 PAUSE_PROMPT_RESULT_KEY: Literal["_pause_result"] = "_pause_result"
-"""State key for the result of sending a pause prompt."""
-REJECT_PROMPT_RESULT_KEY: Literal["_reject_{key}_result"] = (
-    "_reject_{key}_result"
-)
-"""State key for the result of sending a rejection prompt."""
+"""`pause` prompt 发送结果存储 key"""
+REJECT_PROMPT_RESULT_KEY: Literal["_reject_{key}_result"] = "_reject_{key}_result"
+"""`reject` prompt 发送结果存储 key"""
 
 # used by Rule
 PREFIX_KEY: Literal["_prefix"] = "_prefix"
-"""State key for the parsed command prefix."""
+"""命令前缀存储 key"""
 
 CMD_KEY: Literal["command"] = "command"
-"""State key for the command tuple."""
+"""命令元组存储 key"""
 RAW_CMD_KEY: Literal["raw_command"] = "raw_command"
-"""State key for the raw command text."""
+"""命令文本存储 key"""
 CMD_ARG_KEY: Literal["command_arg"] = "command_arg"
-"""State key for command arguments."""
+"""命令参数存储 key"""
 CMD_START_KEY: Literal["command_start"] = "command_start"
-"""State key for the command start marker."""
+"""命令开头存储 key"""
 CMD_WHITESPACE_KEY: Literal["command_whitespace"] = "command_whitespace"
-"""State key for whitespace between a command and its arguments."""
+"""命令与参数间空白符存储 key"""
 
 SHELL_ARGS: Literal["_args"] = "_args"
-"""State key for parsed shell-command arguments."""
+"""shell 命令 parse 后参数字典存储 key"""
 SHELL_ARGV: Literal["_argv"] = "_argv"
-"""State key for the original shell-command argument list."""
+"""shell 命令原始参数列表存储 key"""
 
 REGEX_MATCHED: Literal["_matched"] = "_matched"
-"""State key for the regular-expression match."""
+"""正则匹配结果存储 key"""
 STARTSWITH_KEY: Literal["_startswith"] = "_startswith"
-"""State key for the prefix that triggered a matcher."""
+"""响应触发前缀 key"""
 ENDSWITH_KEY: Literal["_endswith"] = "_endswith"
-"""State key for the suffix that triggered a matcher."""
+"""响应触发后缀 key"""
 FULLMATCH_KEY: Literal["_fullmatch"] = "_fullmatch"
-"""State key for the full message that triggered a matcher."""
+"""响应触发完整消息 key"""
 KEYWORD_KEY: Literal["_keyword"] = "_keyword"
-"""State key for the keyword that triggered a matcher."""
+"""响应触发关键字 key"""
 
-WINDOWS = sys.platform.startswith("win") or (
-    sys.platform == "cli" and os.name == "nt"
-)
+WINDOWS = sys.platform.startswith("win") or (sys.platform == "cli" and os.name == "nt")

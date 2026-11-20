@@ -4,9 +4,9 @@ import os
 
 import pytest
 
-import opsmesh.plugins.filesystem as filesystem
-from opsmesh.plugins.filesystem import files
-from opsmesh.plugins.filesystem._paths import Roots, owned_path
+import filesystem
+from filesystem import files
+from filesystem._paths import Roots, owned_path
 
 
 @pytest.fixture

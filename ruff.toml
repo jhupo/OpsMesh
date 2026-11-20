@@ -21,7 +21,7 @@ extend-immutable-calls = [
 ]
 
 [lint.isort]
-known-first-party = ["opsmesh", "opsmesh.plugins.channels", "opsmesh.plugins.database", "opsmesh.plugins.execution", "opsmesh.plugins.filesystem"]
+known-first-party = ["opsmesh", "opsmesh.plugins.database", "opsmesh.plugins.execution", "opsmesh.plugins.filesystem"]
 
 [format]
 docstring-code-format = true

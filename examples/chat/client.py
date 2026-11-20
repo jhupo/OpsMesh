@@ -336,7 +336,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("OPSMESH_URL", "http://192.168.232.129:8080"),
+        default=os.environ.get("OPSMESH_URL", "http://127.0.0.1:8080"),
     )
     parser.add_argument("--plugin", default="example_chat")
     parser.add_argument(

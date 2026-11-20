@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from database import Base
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     DateTime,
@@ -17,8 +18,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-
-from opsmesh.plugins.database import Base
 
 from .config import EMBEDDING_DIMENSIONS
 

@@ -5,19 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from os import environ
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select, text
 
-from opsmesh import on_shutdown, on_started, on_startup, on_stopping
-from opsmesh.plugins import require
-from opsmesh.plugins.config import get_plugin_config
-from opsmesh.plugins.invocation import plugin_call
-from opsmesh.plugins.registry import get_current_plugin, plugin_scope
+from opsmesh.plugin import get_plugin_by_module_name, get_plugin_config, require
 from opsmesh.utils import run_sync
 
-from .config import Settings
+from .config import Settings, ToolSettings
 from .embeddings import Encoder, load_model
 from .errors import KnowledgeClosed, ModelConfigurationError
 from .models import DocumentRecord, KnowledgeBaseRecord
@@ -37,6 +34,9 @@ class KnowledgeRuntime:
         self.data: Path | None = None
         self.encoder: Encoder | None = None
         self.accepting = False
+        self._active = 0
+        self._drained = asyncio.Event()
+        self._drained.set()
         self.worker = None
         self.worker_task: asyncio.Task | None = None
 
@@ -47,20 +47,26 @@ class KnowledgeRuntime:
 
     @asynccontextmanager
     async def access(self):
-        """Retain knowledge and its dependencies for the entire public call."""
+        """Keep resources alive until every accepted call leaves."""
         if not self.accepting:
             raise KnowledgeClosed("The knowledge plugin is not accepting work")
-        async with plugin_call(self.owner.id_):
+        self._active += 1
+        self._drained.clear()
+        try:
             yield self
+        finally:
+            self._active -= 1
+            if not self._active:
+                self._drained.set()
 
     async def startup(self) -> None:
         """Capture knowledge file space and verify model and database state."""
         database = require("database")
         self.filesystem = require("filesystem")
         self.database = database.get_database()
-        with plugin_scope(self.owner):
-            self.data = self.filesystem.data_dir()
-            cache = self.filesystem.cache_dir()
+        await database.check_migrations(self.owner.id_)
+        self.data = self.filesystem.data_dir()
+        cache = self.filesystem.cache_dir()
         model_path = (
             self.settings.model_path
             or cache / "models" / self.settings.model_revision
@@ -112,16 +118,14 @@ class KnowledgeRuntime:
 
     async def write_source(self, relative: str, content: bytes) -> None:
         """Publish a unique original file under knowledge's captured owner."""
-        with plugin_scope(self.owner):
-            await self.filesystem.write_file(
-                self.data / relative, content, replace=False
-            )
+        await self.filesystem.write_file(
+            self.data / relative, content, replace=False
+        )
 
     async def remove_source(self, relative: str) -> None:
         """Deletion is best effort after SQL visibility has already changed."""
         try:
-            with plugin_scope(self.owner):
-                await self.filesystem.delete(self.data / relative)
+            await self.filesystem.delete(self.data / relative)
         except Exception:
             logger.warning(
                 "Knowledge source cleanup deferred to orphan maintenance",
@@ -201,6 +205,7 @@ class KnowledgeRuntime:
     async def shutdown(self) -> None:
         """Release the model only after worker and encoding completion."""
         await self.stop()
+        await self._drained.wait()
         if self.encoder is not None:
             await self.encoder.shutdown()
             self.encoder = None
@@ -216,34 +221,26 @@ def get_runtime() -> KnowledgeRuntime:
     return _runtime
 
 
-@on_startup
 async def startup() -> None:
     """Retain partial startup resources so framework cleanup can retry."""
     global _runtime
     if _runtime is not None:
         raise KnowledgeClosed("Previous knowledge resources still need cleanup")
-    owner = get_current_plugin()
+    owner = get_plugin_by_module_name(__name__)
     if owner is None:
         raise KnowledgeClosed("Knowledge must start in its own plugin scope")
-    runtime = KnowledgeRuntime(get_plugin_config(Settings), owner)
+    settings = get_plugin_config(Settings)
+    overrides = {}
+    if model_path := environ.get("OPSMESH_KNOWLEDGE_MODEL_PATH"):
+        overrides["model_path"] = Path(model_path)
+    if tools := environ.get("OPSMESH_KNOWLEDGE_TOOLS"):
+        overrides["tools"] = ToolSettings.model_validate_json(tools)
+    runtime = KnowledgeRuntime(settings.model_copy(update=overrides), owner)
     _runtime = runtime
     await runtime.startup()
+    await runtime.start_worker()
 
 
-@on_started
-async def started() -> None:
-    """Activate the background worker after the readiness barrier."""
-    await get_runtime().start_worker()
-
-
-@on_stopping
-async def stopping() -> None:
-    """Stop new claims before the framework drains accepted calls."""
-    if _runtime is not None:
-        await _runtime.stop()
-
-
-@on_shutdown
 async def shutdown() -> None:
     """Forget the activation only after its resources finish closing."""
     global _runtime

@@ -1,5 +1,7 @@
 # Cron
 
+> **Migration note:** This README describes the pre-restoration implementation. Its commands and examples do not target the restored NoneBot2 core. See the [repository overview](../../README.md) for current interfaces and migration status.
+
 `require("cron")` loads the PostgreSQL-backed timer plugin. Migrate the plugin
 schema with the database command before starting it. One scheduler holds an
 exclusive PostgreSQL advisory lock for its configured namespace; reserve one

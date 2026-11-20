@@ -1,0 +1,36 @@
+[Unit]
+Description=OpsMesh plugin management service
+After=local-fs.target network.target
+StartLimitIntervalSec=120
+StartLimitBurst=15
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=opsmesh
+Group=opsmesh
+SupplementaryGroups=opsmesh-admin
+ExecStart=/opt/opsmesh/current/bin/opsmesh serve
+Restart=on-failure
+RestartForceExitStatus=75
+RestartPreventExitStatus=78
+RestartSec=1s
+TimeoutStartSec=90s
+TimeoutStopSec=45s
+KillMode=control-group
+StateDirectory=opsmesh
+StateDirectoryMode=0700
+LogsDirectory=opsmesh
+LogsDirectoryMode=0750
+RuntimeDirectory=opsmesh
+RuntimeDirectoryMode=0711
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/opsmesh-inbox /var/backups/opsmesh
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target

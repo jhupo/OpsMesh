@@ -5,10 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from opsmesh import on_plugin_loaded, on_startup
-from opsmesh.plugins import require
-from opsmesh.plugins.model import Plugin
-from opsmesh.plugins.registry import track_registration
+from opsmesh.plugin import get_loaded_plugins
 
 from .errors import MigrationError
 
@@ -102,22 +99,16 @@ class SchemaRegistry:
         return tuple(self._sources.values())
 
 
-registry = SchemaRegistry()
-
-
-@on_plugin_loaded
-def bind_schema(plugin: Plugin) -> None:
-    """Check a consumer's schema before its startup hooks run."""
-    if plugin.metadata is None or "database" not in plugin.metadata.extra:
-        return
-    schema = plugin.metadata.extra["database"]
-    if not isinstance(schema, DatabaseSchema):
-        raise TypeError("Plugin database metadata must be DatabaseSchema")
-    require("database")
-    track_registration(registry.add(plugin.id_, schema))
-
-    @on_startup(before=True)
-    async def check() -> None:
-        from .migrations import check_migrations
-
-        await check_migrations(plugin.id_)
+def discover_schemas() -> SchemaRegistry:
+    """Use the framework's loaded plugins as the source of declarations."""
+    registry = SchemaRegistry()
+    for plugin in sorted(get_loaded_plugins(), key=lambda item: item.id_):
+        if plugin.metadata is None or "database" not in plugin.metadata.extra:
+            continue
+        schema = plugin.metadata.extra["database"]
+        if not isinstance(schema, DatabaseSchema):
+            raise MigrationError(
+                "Plugin database metadata must be DatabaseSchema"
+            )
+        registry.add(plugin.id_, schema)
+    return registry

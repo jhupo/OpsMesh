@@ -1,0 +1,1 @@
+"""Managed plugin lifecycle."""

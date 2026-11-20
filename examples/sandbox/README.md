@@ -1,5 +1,7 @@
 # Native sandbox conversation plugin
 
+> **Migration note:** This README describes the pre-restoration implementation. Its commands and examples do not target the restored NoneBot2 core. See the [repository overview](../../README.md) for current interfaces and migration status.
+
 A native `SandboxAgent` with persistent SDK history and one workspace per
 owned session. The plugin passes native `SQLAlchemySession` and
 `SandboxRunConfig` objects to `execution.stream`. It consumes and sends
@@ -7,14 +9,11 @@ the native stream before closing execution, workspace and history scopes.
 
 ## Loading
 
-Install channels, execution, database and filesystem separately. Register
-`example_sandbox` with the absolute `examples/sandbox` import root and
-`conversation_support` with the absolute `examples/common` import root.
-Frozen hosts also register the official bundle's `site/` root; see
-[Linux deployment](../../docs/linux-deployment.md).
+This example requires channels, execution, database, filesystem, and the
+shared `examples/common` code.
 
 Configure PostgreSQL and the filesystem root before enabling this example.
-Save this plugin's settings through the host plugin configuration command:
+Example settings:
 
 ```json
 {
@@ -32,21 +31,15 @@ Save this plugin's settings through the host plugin configuration command:
 The request's `user` profile is converted to `UserContext` but is not
 authenticated; protect the plugin's HTTP routes with your own middleware or an
 external gateway. Use different ports when running chat and sandbox HTTP
-connections together. Omit the API dependency for a bot-only setup.
+connections together. Omit the `api` binding for a bot-only setup.
 
-For robots, fill `dependencies.channels.qq.<name>` or
-`dependencies.channels.dingtalk.<name>` with the account and secret reference.
-Channels opens and closes these connections with this plugin; the sandbox
-plugin does not duplicate channel settings or declare connections in code.
+For robots, add `qq` or `dingtalk` under `dependencies.channels` and put the
+account and secret reference under the connection name. Channels opens and closes these
+connections with this plugin. This example runs in-process.
 
 The SDK reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`. Execution owns
 tracing configuration. Settings take effect when plugin resources start.
-Before startup, load this plugin in the manifest and apply its migration:
-
-```sh
-opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh.plugins.database.commands:migrate
-```
+The database migration must be applied before startup.
 
 Loading declarations does not start a sandbox or connect to PostgreSQL.
 Startup checks the migration before initializing resources.

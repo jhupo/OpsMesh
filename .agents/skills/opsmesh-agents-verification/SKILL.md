@@ -5,7 +5,7 @@ description: 原生 Usage、Trace、Langfuse 属性与执行观测验证。用�
 
 # 执行观测与验证
 
-先读 [插件架构](../../../docs/plugin-architecture.md) 的 execution 和验收章节；具体回调契约见 [通道与执行回调](../../../docs/channels-and-callbacks.md)。
+查阅 [execution 源码](../../../packages/execution/src/) 中的回调和追踪实现。以下是插件的验证要求，不是当前框架的运行保证。
 
 - execution 无数据库依赖、调用表、Usage 账本或统计报表。读取原生 RunResult/RunResultStreaming 的 context_wrapper.usage，不重新定义 UsageTotals、CallRecord 或覆盖状态枚举。
 - before_run 是执行前检查；原生 hooks/Guardrails 保留异常语义。on_run_end(result, error, trace_id) 是结束观察通知，其失败不覆盖成功结果或原异常，不触发模型重试。

@@ -1,0 +1,3 @@
+g opsmesh-admin - -
+u opsmesh - "OpsMesh service" /var/lib/opsmesh /usr/sbin/nologin
+m opsmesh opsmesh-admin

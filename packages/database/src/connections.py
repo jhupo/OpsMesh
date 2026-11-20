@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from opsmesh import on_shutdown, on_startup
-from opsmesh.plugins.config import get_plugin_config
+from opsmesh.plugin import get_plugin_config
 
 from .config import Settings
 from .errors import DatabaseUnavailableError
@@ -48,7 +47,7 @@ class Database:
         if self._engine is not None:
             return
         self._engine = create_async_engine(
-            self._settings.dsn,
+            self._settings.connection_dsn(),
             echo=self._settings.echo,
             pool_size=self._settings.pool_size,
             max_overflow=self._settings.max_overflow,
@@ -143,7 +142,6 @@ async def transaction() -> AsyncIterator[AsyncSession]:
         yield value
 
 
-@on_startup
 async def _startup() -> None:
     global _database
     if _database is not None:
@@ -160,7 +158,6 @@ async def _startup() -> None:
     _database = owner
 
 
-@on_shutdown
 async def _shutdown() -> None:
     global _database
     if _database is not None:

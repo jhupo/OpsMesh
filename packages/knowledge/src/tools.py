@@ -1,10 +1,30 @@
-"""Native Agents SDK tools bound to selected library capabilities."""
+"""Native Agents SDK tools bound to a library or a calling plugin."""
 
 from __future__ import annotations
 
 import re
+from uuid import UUID
 
 from agents import FunctionTool, function_tool
+
+from .config import ToolSettings
+from .errors import KnowledgeError
+
+_APPROVAL_BY_DEFAULT = frozenset(
+    {
+        "create_knowledge_base",
+        "add_document",
+        "replace_document",
+        "delete_document",
+        "reindex_document",
+    }
+)
+
+
+def _tool_error(_context, error: Exception) -> str:
+    if isinstance(error, KnowledgeError):
+        return str(error)
+    return "The knowledge operation failed. Check the inputs and current state."
 
 
 def _prefix(alias: str) -> str:
@@ -26,9 +46,147 @@ def unique_tools(*groups: list[FunctionTool]) -> list[FunctionTool]:
     return tools
 
 
+def build_tools(options: ToolSettings | None = None) -> list[FunctionTool]:
+    """Expose the calling plugin's libraries under a fixed approval policy."""
+    from .knowledge_bases import (
+        KnowledgeBase,
+        _create_owned,
+        _list_owned,
+        caller_owner,
+    )
+    from .lifecycle import get_runtime
+
+    owner = caller_owner()
+    runtime = get_runtime()
+    options = runtime.settings.tools if options is None else options
+    prefix = _prefix(options.alias)
+
+    def base(knowledge_base_id: UUID) -> KnowledgeBase:
+        return KnowledgeBase(runtime, knowledge_base_id, owner)
+
+    async def create_knowledge_base(name: str, description: str = "") -> dict:
+        """Create an empty knowledge base and return its knowledge_base_id."""
+        library = await _create_owned(
+            runtime, owner, name, description=description
+        )
+        return {"knowledge_base_id": str(library.id)}
+
+    async def list_knowledge_bases(
+        limit: int | None = None, offset: int = 0
+    ) -> dict:
+        """List owned knowledge bases and index status with pagination."""
+        bases = await _list_owned(runtime, owner, limit=limit, offset=offset)
+        return {
+            "knowledge_bases": [item.model_dump(mode="json") for item in bases]
+        }
+
+    async def get_knowledge_base(knowledge_base_id: UUID) -> dict:
+        """Get metadata and index status for an owned knowledge base by ID."""
+        info = await base(knowledge_base_id).info()
+        return info.model_dump(mode="json")
+
+    async def search_knowledge(
+        knowledge_base_id: UUID, query: str, limit: int | None = None
+    ) -> dict:
+        """Find relevant excerpts and citation keys in one knowledge base."""
+        hits = await base(knowledge_base_id).search(query, limit=limit)
+        return {"hits": [hit.model_dump(mode="json") for hit in hits]}
+
+    async def list_documents(
+        knowledge_base_id: UUID, limit: int | None = None, offset: int = 0
+    ) -> dict:
+        """List document metadata and indexing status with pagination."""
+        documents = await base(knowledge_base_id).documents.list(
+            limit=limit, offset=offset
+        )
+        return {
+            "documents": [item.model_dump(mode="json") for item in documents]
+        }
+
+    async def get_document(knowledge_base_id: UUID, document_id: UUID) -> dict:
+        """Get one document's metadata and indexing status without its text."""
+        info = await base(knowledge_base_id).documents.get(document_id)
+        return info.model_dump(mode="json")
+
+    async def read_document(
+        knowledge_base_id: UUID,
+        document_id: UUID,
+        start: int = 0,
+        end: int | None = None,
+        index_key: UUID | None = None,
+    ) -> dict:
+        """Read a bounded text range; reject a stale citation key if supplied.
+
+        Args:
+            knowledge_base_id: Owned knowledge-base ID.
+            document_id: Document ID within that knowledge base.
+            start: Inclusive character offset, starting at zero.
+            end: Exclusive character offset, or the configured bounded default.
+            index_key: Optional citation key from a previous search.
+        """
+        result = await base(knowledge_base_id).documents.read(
+            document_id, start=start, end=end, index_key=index_key
+        )
+        return result.model_dump(mode="json")
+
+    async def add_document(
+        knowledge_base_id: UUID, name: str, text: str
+    ) -> dict:
+        """Add complete UTF-8 text as a new document for indexing."""
+        info = await base(knowledge_base_id).documents.add(text, name=name)
+        return info.model_dump(mode="json")
+
+    async def replace_document(
+        knowledge_base_id: UUID, document_id: UUID, text: str
+    ) -> dict:
+        """Replace a document's full text and invalidate older citations."""
+        info = await base(knowledge_base_id).documents.update(document_id, text)
+        return info.model_dump(mode="json")
+
+    async def delete_document(
+        knowledge_base_id: UUID, document_id: UUID
+    ) -> dict:
+        """Delete a document and remove it from retrieval."""
+        await base(knowledge_base_id).documents.delete(document_id)
+        return {"deleted": True}
+
+    async def reindex_document(
+        knowledge_base_id: UUID, document_id: UUID
+    ) -> dict:
+        """Submit a document for reindexing and return its status."""
+        info = await base(knowledge_base_id).documents.reindex(document_id)
+        return info.model_dump(mode="json")
+
+    return [
+        function_tool(
+            operation,
+            name_override=prefix + operation.__name__,
+            docstring_style="google",
+            failure_error_function=_tool_error,
+            needs_approval=options.approval.get(
+                operation.__name__, operation.__name__ in _APPROVAL_BY_DEFAULT
+            ),
+        )
+        for operation in (
+            create_knowledge_base,
+            list_knowledge_bases,
+            get_knowledge_base,
+            search_knowledge,
+            list_documents,
+            get_document,
+            read_document,
+            add_document,
+            replace_document,
+            delete_document,
+            reindex_document,
+        )
+    ]
+
+
 def read_tools(knowledge_base, alias: str) -> list[FunctionTool]:
     """Build native tools whose closures retain one authorized library."""
     prefix = _prefix(alias)
+
     @function_tool(
         name_override=prefix + "search_knowledge", docstring_style="google"
     )

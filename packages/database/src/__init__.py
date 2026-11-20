@@ -1,10 +1,13 @@
 """PostgreSQL connections and declarative plugin schema ownership."""
 
-from opsmesh.plugins import PluginMetadata
+from opsmesh import get_driver
+from opsmesh.plugin import PluginMetadata, get_plugin_by_module_name
 
 from .config import Settings
 from .connections import (
     Database,
+    _shutdown,
+    _startup,
     get_database,
     get_engine,
     get_sessionmaker,
@@ -28,7 +31,12 @@ __plugin_meta__ = PluginMetadata(
     usage="Require database and declare DatabaseSchema in plugin metadata.",
     type="library",
     config=Settings,
+    config_file="config.json",
 )
+
+if get_plugin_by_module_name(__name__) is not None:
+    get_driver().on_startup(_startup)
+    get_driver().on_shutdown(_shutdown)
 
 __all__ = [
     "Base",
