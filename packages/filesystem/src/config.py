@@ -14,7 +14,7 @@ class Settings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    root: Path
+    root: Path = Path("/var/lib/opsmesh/files")
     max_archive_bytes: int = Field(default=64 * 1024 * 1024, gt=0)
     max_extracted_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     max_file_bytes: int = Field(default=64 * 1024 * 1024, gt=0)

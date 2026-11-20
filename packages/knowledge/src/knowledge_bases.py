@@ -5,13 +5,14 @@ from __future__ import annotations
 import builtins
 import json
 from dataclasses import dataclass
+from sys import _getframe
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 
-from opsmesh.plugins.registry import get_current_plugin
+from opsmesh.plugin import get_plugin_by_module_name
 
 from .errors import InvalidDocument, KnowledgeNotFound
 from .models import DocumentRecord, KnowledgeBaseRecord, now
@@ -64,8 +65,9 @@ def page_bounds(limit: int | None, offset: int, settings) -> int:
 
 
 def caller_owner() -> str:
-    """Take ownership from the framework's trusted plugin scope."""
-    caller = get_current_plugin()
+    """Resolve the loaded module that directly entered the public API."""
+    module = _getframe(2).f_globals.get("__name__", "")
+    caller = get_plugin_by_module_name(module)
     if caller is None:
         raise KnowledgeNotFound(
             "Knowledge operations require a calling plugin scope"
@@ -254,7 +256,20 @@ async def create(
     from .lifecycle import get_runtime
 
     owner = caller_owner()
-    runtime = get_runtime()
+    return await _create_owned(
+        get_runtime(), owner, name, description=description, metadata=metadata
+    )
+
+
+async def _create_owned(
+    runtime,
+    owner: str,
+    name: str,
+    *,
+    description: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> KnowledgeBase:
+    """Create using an owner already bound by the caller or tool factory."""
     if (
         len(description) > MAX_DESCRIPTION_CHARS
         or "\x00" in description
@@ -295,7 +310,13 @@ async def list(
     from .lifecycle import get_runtime
 
     owner = caller_owner()
-    runtime = get_runtime()
+    return await _list_owned(get_runtime(), owner, limit=limit, offset=offset)
+
+
+async def _list_owned(
+    runtime, owner: str, *, limit: int | None = None, offset: int = 0
+) -> builtins.list[KnowledgeBaseInfo]:
+    """List using an owner already bound by the caller or tool factory."""
     limit = page_bounds(limit, offset, runtime.settings)
     async with runtime.access(), runtime.database.session() as session:
         records = await session.scalars(

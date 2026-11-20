@@ -1,15 +1,20 @@
 """Exercise atomic file operations and archive round trips."""
 
 import io
+import sys
 import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-import opsmesh.plugins.filesystem as filesystem
-from opsmesh.plugins.filesystem import _files, files
-from opsmesh.plugins.filesystem._paths import Roots
+import filesystem
+from filesystem import _files, files
+from filesystem._paths import Roots
+
+requires_linux_rename = pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux atomic directory publication"
+)
 
 
 @pytest.fixture
@@ -88,6 +93,7 @@ async def test_delete_removes_files_and_trees(space):
 
 
 @pytest.mark.anyio
+@requires_linux_rename
 async def test_publish_directory_creates_a_new_target(space):
     source = filesystem.data_file("source")
     (source / "nested").mkdir(parents=True)
@@ -170,6 +176,7 @@ def test_concurrent_exclusive_file_writes_have_one_winner(tmp_path):
     assert list(tmp_path.iterdir()) == [target]
 
 
+@requires_linux_rename
 def test_concurrent_publication_has_one_winner(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
@@ -197,6 +204,7 @@ def test_concurrent_publication_has_one_winner(tmp_path):
     ]
 
 
+@requires_linux_rename
 def test_publication_rejects_target_created_during_copy(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()
@@ -223,6 +231,7 @@ def test_publication_rejects_target_created_during_copy(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
+@requires_linux_rename
 async def test_archive_extract_and_export_round_trip(space):
     archive = _zip(
         {
@@ -271,6 +280,7 @@ async def test_archive_stream_must_be_binary(space):
 
 
 @pytest.mark.anyio
+@requires_linux_rename
 async def test_successful_extraction_removes_staged_upload(space):
     destination = filesystem.data_file("skill")
     await filesystem.extract_archive(

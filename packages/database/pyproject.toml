@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opsmesh-database"
-version = "0.5.9"
+version = "0.6.0"
 description = "OpsMesh database plugin"
 readme = "README.md"
 license = "MIT"
@@ -21,16 +21,11 @@ classifiers = [
 dependencies = {file = ["requirements-core.txt", "requirements.txt"]}
 
 [tool.setuptools]
-package-dir = {"opsmesh.plugins.database" = "src"}
-
-[project.entry-points."opsmesh.plugins"]
-database = "opsmesh.plugins.database"
-
-[project.entry-points."opsmesh.builtin_plugins"]
-database = "opsmesh.plugins.database"
+packages = ["database", "database._alembic"]
+package-dir = {database = "src"}
 
 [tool.setuptools.package-data]
-"opsmesh.plugins.database" = ["py.typed", "_alembic/script.py.mako"]
+database = ["config.json", "py.typed", "_alembic/script.py.mako"]
 
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"

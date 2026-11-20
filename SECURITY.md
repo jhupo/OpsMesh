@@ -12,11 +12,11 @@ Include affected versions and packages, the impact, minimal reproduction steps a
 
 ## Trust boundaries
 
-- Python plugins run inside the host process with the service account's permissions. Loading admission and plugin-owned paths are not a sandbox for hostile Python code.
+- Imported Python plugins execute with the permissions of the importing process. Plugin-owned paths are not a sandbox for hostile Python code.
 - Only administrators should deploy plugin source, migration scripts or dependency directories. Do not load untrusted uploads directly as plugins.
 - API credentials and bot signature checks authenticate channel requests. Business plugins remain responsible for resource authorization and credential separation.
 - Local sandbox workspace isolation is not equivalent to operating-system or container isolation.
 - Trace metadata may contain application data. Keep secrets out of logs and metadata, and configure sensitive input/output collection deliberately.
-- Systemd hardening and filesystem path checks reduce accidental access; they do not replace host isolation and least-privilege deployment.
+- Filesystem path checks do not replace host isolation and least-privilege deployment.
 
 Release checksums establish file integrity. Verify release provenance against the intended repository when accepting binaries. Plugin packages and their transitive dependencies are part of the application's supply chain.

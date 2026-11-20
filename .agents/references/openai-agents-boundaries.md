@@ -1,6 +1,6 @@
 # SDK 与插件责任边界
 
-以 [插件架构](../../docs/plugin-architecture.md) 为准。核对锁文件和当前安装 SDK 的公开签名；不要根据旧设计恢复 modules/capabilities/IAM/Jobs、Usage 账本或能力版本中心。
+本表描述插件与 SDK 的职责，不是框架已实现接口的清单。核对插件源码、锁文件和当前安装 SDK 的公开签名；不要根据旧设计恢复 modules/capabilities/IAM/Jobs、Usage 账本或能力版本中心。
 
 | 原生能力 | 使用者 | 补充职责 |
 |---|---|---|

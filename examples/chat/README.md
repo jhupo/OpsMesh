@@ -1,5 +1,7 @@
 # Chat plugin
 
+> **Migration note:** This README describes the pre-restoration implementation. Its commands and examples do not target the restored NoneBot2 core. See the [repository overview](../../README.md) for current interfaces and migration status.
+
 A native SDK `Agent` with owned `SQLAlchemySession` history. API and bot
 messages use the same framework command and ordinary-message matchers.
 The plugin consumes `execution.stream` inside its history lock and awaits
@@ -8,12 +10,8 @@ closing native execution resources.
 
 ## Loading and configuration
 
-Install channels, execution and database independently. Register `example_chat`
-with the absolute `examples/chat` import root and `conversation_support` with
-the absolute `examples/common` import root. Frozen hosts also register the
-official bundle's `site/` root; see [Linux deployment](../../docs/linux-deployment.md).
-The host SQLite database stores plugin records and values. Configure
-PostgreSQL before enabling the example.
+This example requires channels, execution, database, and the shared
+`examples/common` code. Configure PostgreSQL before running the example.
 
 ```json
 {
@@ -28,30 +26,23 @@ PostgreSQL before enabling the example.
 }
 ```
 
-Save settings with `--plugin-action configure --module example_chat --config PATH`
-while the host is stopped, then enable its entry. Optional settings include
-`name`, `instructions`, `mcp_url` and `mcp_token_ref`.
+Optional settings include `name`, `instructions`, `mcp_url` and `mcp_token_ref`.
 Channels converts the request's `user` profile into `UserContext`; it does not
 authenticate it. This example treats the profile as an identity claim and leaves
 HTTP authentication to the plugin: install your own middleware or an external
-gateway when requests must be verified. Omit the API dependency for a bot-only
+gateway when requests must be verified. Omit the `api` binding for a bot-only
 setup.
 
-Robot accounts belong in `dependencies.channels.qq.<name>` or
-`dependencies.channels.dingtalk.<name>`; channels validates and starts them
-automatically. See [group assistants](../groups/README.md) for code-defined
+For robot accounts, add `qq` or `dingtalk` under `dependencies.channels` and
+put the account and secret reference under the connection name. This example
+runs in-process and uses channel streaming and structured output.
+See [group assistants](../groups/README.md) for code-defined
 group rules and multiple agents on one robot.
 The SDK reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL`. Tracing follows
 execution's configuration. Configuration changes require a resource restart.
 
-Before starting, apply the declared migration with the existing host manifest:
-
-```sh
-opsmesh --manifest /etc/opsmesh/host.json \
-  --command opsmesh.plugins.database.commands:migrate
-```
-
-The migration owns `example_chat_conversations`, `example_chat_sdk_sessions`
+The database migration must be applied before startup. It owns
+`example_chat_conversations`, `example_chat_sdk_sessions`
 and `example_chat_sdk_messages`. Startup checks the revision; the SDK owns
 history reads and writes. Each consumer of `conversation_support` has separate
 tables, models and migrations.
@@ -147,7 +138,7 @@ not follow redirects or automatically retry.
 Attachments are uploaded before sending ordered text and attachment segments.
 The client accepts at most eight files, each up to 8 MiB. Chat supports images,
 PDFs and UTF-8 text; sandbox writes attachments to its native workspace.
-See [message formats and retention](../../docs/multimodal-messages.md).
+This example uses the removed Channels attachment interface. Current attachment support is documented by the [QQ](../../packages/qq/README.md) and [DingTalk](../../packages/dingtalk/README.md) adapters.
 
 Focused tests use real migrations, native SDK sessions and deterministic
 `ScriptedModel` streams. They cover selection isolation, commands, ownership,

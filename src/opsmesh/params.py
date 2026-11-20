@@ -1,9 +1,17 @@
-"""Dependency descriptors for event and matcher handler parameters."""
+"""本模块定义了依赖注入的各类参数。
+
+FrontMatter:
+    mdx:
+        format: md
+    sidebar_position: 4
+    description: opsmesh.params 模块
+"""
 
 from collections.abc import Callable
 from re import Match
 from typing import Any, Literal, overload
 
+from opsmesh.adapters import Event, Message, MessageSegment
 from opsmesh.consts import (
     CMD_ARG_KEY,
     CMD_KEY,
@@ -22,26 +30,20 @@ from opsmesh.consts import (
     SHELL_ARGV,
     STARTSWITH_KEY,
 )
-from opsmesh.dependencies.context import Context as Context
-from opsmesh.dependencies.params import Arg as Arg
-from opsmesh.dependencies.params import ArgParam as ArgParam
-from opsmesh.dependencies.params import ArgPlainText as ArgPlainText
-from opsmesh.dependencies.params import (
-    ArgPromptResult as ArgPromptResult,
-)
-from opsmesh.dependencies.params import ArgStr as ArgStr
-from opsmesh.dependencies.params import DefaultParam as DefaultParam
-from opsmesh.dependencies.params import DependParam as DependParam
-from opsmesh.dependencies.params import Depends as Depends
-from opsmesh.dependencies.params import EventParam as EventParam
-from opsmesh.dependencies.params import (
-    ExceptionParam as ExceptionParam,
-)
-from opsmesh.dependencies.params import MatcherParam as MatcherParam
-from opsmesh.dependencies.params import StateParam as StateParam
-from opsmesh.events import Event
-from opsmesh.matchers import Matcher
-from opsmesh.messages import Message, MessageSegment
+from opsmesh.internal.params import Arg as Arg
+from opsmesh.internal.params import ArgParam as ArgParam
+from opsmesh.internal.params import ArgPlainText as ArgPlainText
+from opsmesh.internal.params import ArgPromptResult as ArgPromptResult
+from opsmesh.internal.params import ArgStr as ArgStr
+from opsmesh.internal.params import GatewayParam as GatewayParam
+from opsmesh.internal.params import DefaultParam as DefaultParam
+from opsmesh.internal.params import DependParam as DependParam
+from opsmesh.internal.params import Depends as Depends
+from opsmesh.internal.params import EventParam as EventParam
+from opsmesh.internal.params import ExceptionParam as ExceptionParam
+from opsmesh.internal.params import MatcherParam as MatcherParam
+from opsmesh.internal.params import StateParam as StateParam
+from opsmesh.matcher import Matcher
 from opsmesh.typing import T_State
 
 
@@ -50,7 +52,7 @@ async def _event_type(event: Event) -> str:
 
 
 def EventType() -> str:
-    """Return a dependency descriptor for the event type."""
+    """{ref}`opsmesh.adapters.Event` 类型参数"""
     return Depends(_event_type)
 
 
@@ -59,7 +61,7 @@ async def _event_message(event: Event) -> Message:
 
 
 def EventMessage() -> Any:
-    """Return a dependency descriptor for the event message."""
+    """{ref}`opsmesh.adapters.Event` 消息参数"""
     return Depends(_event_message)
 
 
@@ -68,7 +70,7 @@ async def _event_plain_text(event: Event) -> str:
 
 
 def EventPlainText() -> str:
-    """Return a dependency descriptor for the event's plain text."""
+    """{ref}`opsmesh.adapters.Event` 纯文本消息参数"""
     return Depends(_event_plain_text)
 
 
@@ -77,7 +79,7 @@ async def _event_to_me(event: Event) -> bool:
 
 
 def EventToMe() -> bool:
-    """Inject whether the event targets the receiving identity."""
+    """{ref}`opsmesh.adapters.Event` `to_me` 参数"""
     return Depends(_event_to_me)
 
 
@@ -86,7 +88,7 @@ def _command(state: T_State) -> Message:
 
 
 def Command() -> tuple[str, ...]:
-    """Return a dependency descriptor for the matched command tuple."""
+    """消息命令元组"""
     return Depends(_command)
 
 
@@ -95,7 +97,7 @@ def _raw_command(state: T_State) -> Message:
 
 
 def RawCommand() -> str:
-    """Return a dependency descriptor for the raw command text."""
+    """消息命令文本"""
     return Depends(_raw_command)
 
 
@@ -104,7 +106,7 @@ def _command_arg(state: T_State) -> Message:
 
 
 def CommandArg() -> Any:
-    """Return a dependency descriptor for command arguments."""
+    """消息命令参数"""
     return Depends(_command_arg)
 
 
@@ -113,7 +115,7 @@ def _command_start(state: T_State) -> str:
 
 
 def CommandStart() -> str:
-    """Return a dependency descriptor for the command start marker."""
+    """消息命令开头"""
     return Depends(_command_start)
 
 
@@ -122,7 +124,7 @@ def _command_whitespace(state: T_State) -> str:
 
 
 def CommandWhitespace() -> str:
-    """Return a dependency descriptor for whitespace after the command."""
+    """消息命令与参数之间的空白"""
     return Depends(_command_whitespace)
 
 
@@ -131,7 +133,7 @@ def _shell_command_args(state: T_State) -> Any:
 
 
 def ShellCommandArgs() -> Any:
-    """Return a dependency descriptor for parsed shell-command arguments."""
+    """shell 命令解析后的参数字典"""
     return Depends(_shell_command_args, use_cache=False)
 
 
@@ -140,7 +142,7 @@ def _shell_command_argv(state: T_State) -> list[str | MessageSegment]:
 
 
 def ShellCommandArgv() -> Any:
-    """Inject the raw shell-command argument list."""
+    """shell 命令原始参数列表"""
     return Depends(_shell_command_argv, use_cache=False)
 
 
@@ -149,7 +151,7 @@ def _regex_matched(state: T_State) -> Match[str]:
 
 
 def RegexMatched() -> Match[str]:
-    """Return a dependency descriptor for the regular-expression match."""
+    """正则匹配结果"""
     return Depends(_regex_matched, use_cache=False)
 
 
@@ -179,7 +181,7 @@ def RegexStr(
 
 
 def RegexStr(*groups: str | int) -> str | tuple[str | Any, ...] | Any:
-    """Return a dependency descriptor for matched regular-expression text."""
+    """正则匹配结果文本"""
     return Depends(_regex_str(groups), use_cache=False)
 
 
@@ -188,7 +190,7 @@ def _regex_group(state: T_State) -> tuple[Any, ...]:
 
 
 def RegexGroup() -> tuple[Any, ...]:
-    """Return a dependency descriptor for the matched group tuple."""
+    """正则匹配结果 group 元组"""
     return Depends(_regex_group, use_cache=False)
 
 
@@ -197,7 +199,7 @@ def _regex_dict(state: T_State) -> dict[str, Any]:
 
 
 def RegexDict() -> dict[str, Any]:
-    """Return a dependency descriptor for the matched named-group mapping."""
+    """正则匹配结果 group 字典"""
     return Depends(_regex_dict, use_cache=False)
 
 
@@ -206,7 +208,7 @@ def _startswith(state: T_State) -> str:
 
 
 def Startswith() -> str:
-    """Return a dependency descriptor for the prefix that triggered matching."""
+    """响应触发前缀"""
     return Depends(_startswith, use_cache=False)
 
 
@@ -215,7 +217,7 @@ def _endswith(state: T_State) -> str:
 
 
 def Endswith() -> str:
-    """Return a dependency descriptor for the suffix that triggered matching."""
+    """响应触发后缀"""
     return Depends(_endswith, use_cache=False)
 
 
@@ -224,7 +226,7 @@ def _fullmatch(state: T_State) -> str:
 
 
 def Fullmatch() -> str:
-    """Inject the full message that triggered matching."""
+    """响应触发完整消息"""
     return Depends(_fullmatch, use_cache=False)
 
 
@@ -233,12 +235,12 @@ def _keyword(state: T_State) -> str:
 
 
 def Keyword() -> str:
-    """Inject the keyword that triggered matching."""
+    """响应触发关键字"""
     return Depends(_keyword, use_cache=False)
 
 
 def Received(id: str | None = None, default: Any = None) -> Any:
-    """Return a dependency descriptor for a received event."""
+    """`receive` 事件参数"""
 
     def _received(matcher: "Matcher") -> Any:
         return matcher.get_receive(id or "", default)
@@ -247,7 +249,7 @@ def Received(id: str | None = None, default: Any = None) -> Any:
 
 
 def LastReceived(default: Any = None) -> Any:
-    """Return a dependency descriptor for the last received event."""
+    """`last_receive` 事件参数"""
 
     def _last_received(matcher: "Matcher") -> Any:
         return matcher.get_last_receive(default)
@@ -256,7 +258,7 @@ def LastReceived(default: Any = None) -> Any:
 
 
 def ReceivePromptResult(id: str | None = None) -> Any:
-    """Return a dependency descriptor for a receive prompt's send result."""
+    """`receive` prompt 发送结果"""
 
     def _receive_prompt_result(matcher: "Matcher") -> Any:
         return matcher.state.get(
@@ -267,7 +269,7 @@ def ReceivePromptResult(id: str | None = None) -> Any:
 
 
 def PausePromptResult() -> Any:
-    """Return a dependency descriptor for a pause prompt's send result."""
+    """`pause` prompt 发送结果"""
 
     def _pause_prompt_result(matcher: "Matcher") -> Any:
         return matcher.state.get(PAUSE_PROMPT_RESULT_KEY)
@@ -280,6 +282,7 @@ __autodoc__ = {
     "ArgStr": True,
     "Depends": True,
     "ArgParam": True,
+    "GatewayParam": True,
     "EventParam": True,
     "StateParam": True,
     "DependParam": True,

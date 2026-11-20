@@ -6,11 +6,11 @@ import io
 import uuid
 from dataclasses import dataclass
 from functools import partial
+from os import environ
 from pathlib import Path
 from typing import BinaryIO
 
-from opsmesh import on_shutdown, on_startup
-from opsmesh.plugins.config import get_plugin_config
+from opsmesh.plugin import get_plugin_config
 from opsmesh.utils import run_sync
 
 from . import _files as files
@@ -146,15 +146,14 @@ async def export_archive(source: str | Path) -> ArchiveExport:
     return ArchiveExport(destination)
 
 
-@on_startup
 async def _startup() -> None:
     global _roots, _settings
     settings = get_plugin_config(Settings)
-    _roots = Roots.prepare(settings.root)
+    root = environ.get("OPSMESH_FILESYSTEM_ROOT")
+    _roots = Roots.prepare(Path(root) if root else settings.root)
     _settings = settings
 
 
-@on_shutdown
 async def _shutdown() -> None:
     global _roots, _settings
     _roots = None
@@ -171,7 +170,11 @@ def _space() -> PluginSpace:
     roots = _roots
     if roots is None:
         raise FilesystemClosed("The filesystem plugin is not running")
-    return roots.for_plugin(resolve_caller_plugin().module_name)
+    module = resolve_caller_plugin().module_name
+    # Keep the deployed knowledge source path valid across the wheel move.
+    if module == "knowledge":
+        module = "opsmesh.plugins.knowledge"
+    return roots.for_plugin(module)
 
 
 def _owned(path: str | Path, *, must_exist: bool) -> Path:

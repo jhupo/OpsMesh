@@ -5,7 +5,7 @@ description: 轻量 execution、原生 Runner、流式资源与插件回调。�
 
 # SDK 执行与调用插件职责
 
-先读 [插件架构](../../../docs/plugin-architecture.md) 的 execution 与原生会话章节。
+下文描述的是待迁移的 execution 插件。执行、回调和会话行为以 [execution 源码](../../../packages/execution/src/) 为准。
 
 - execution 只执行已构造 Agent/SandboxAgent，直接返回原生 RunResult；stream 在异步上下文内提供原生 RunResultStreaming。不要恢复 AgentLoop、调用状态表、Usage 账本、数据库依赖或能力装配中心。
 - 原生 RunConfig、Session、RunState、hooks 由调用插件提供。调用者通过原生结果读取输出、interruptions 和 Usage，不加平行 Result 类。

@@ -1,0 +1,11 @@
+# Absolute, non-overlapping paths. Start with no enabled plugins.
+data = "/var/lib/opsmesh"
+run = "/run/opsmesh"
+logs = "/var/log/opsmesh"
+inbox = "/var/lib/opsmesh-inbox"
+backups = "/var/backups/opsmesh"
+group = "opsmesh-admin"
+driver = "~none"
+# Administrator lifecycle policy; plugin configuration belongs to the framework.
+protected = []
+restart_safe = []

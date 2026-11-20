@@ -10,15 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, Integer, MetaData, Table, Text
 from sqlalchemy.engine import Connection
 
-from opsmesh.plugins.database.connections import Database
-from opsmesh.plugins.database.errors import MigrationError
-from opsmesh.plugins.database.migrations import (
+from database.connections import Database
+from database.errors import MigrationError
+from database.migrations import (
     CUTOVER_TABLE,
     current_revisions,
     lock_migrations,
     revision_graph,
 )
-from opsmesh.plugins.database.schema import MigrationSource
+from database.schema import MigrationSource
 
 
 class HistoricalSource(BaseModel):

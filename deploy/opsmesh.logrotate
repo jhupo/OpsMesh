@@ -1,0 +1,10 @@
+/var/log/opsmesh/opsmeshd.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su opsmesh opsmesh
+    create 0640 opsmesh opsmesh
+}

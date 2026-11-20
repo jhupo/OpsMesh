@@ -2,13 +2,14 @@
 
 from pathlib import Path
 
-from opsmesh.plugins import PluginMetadata, require
+from opsmesh import get_driver
+from opsmesh.plugin import PluginMetadata, get_plugin_by_module_name, require
 
 database = require("database")
 require("filesystem")
 
-from . import lifecycle as _lifecycle  # noqa: E402, F401
-from .config import Settings  # noqa: E402
+from . import lifecycle as _lifecycle  # noqa: E402
+from .config import Settings, ToolSettings  # noqa: E402
 from .errors import (  # noqa: E402
     EncodingBusy,
     IndexUnavailable,
@@ -27,20 +28,25 @@ from .schemas import (  # noqa: E402
     KnowledgeBaseInfo,
     SearchHit,
 )
-from .tools import unique_tools  # noqa: E402
+from .tools import build_tools, unique_tools  # noqa: E402
 
 __plugin_meta__ = PluginMetadata(
     name="knowledge",
     description="Owned PostgreSQL knowledge bases and local BGE retrieval",
-    usage="Require knowledge and add a library's native tools to Agent.tools.",
+    usage="Require knowledge and add its native tools to Agent.tools.",
     type="library",
     config=Settings,
+    config_file="config.json",
     extra={
         "database": database.DatabaseSchema(
             Path(__file__).with_name("migrations"), "knowledge_0001"
         )
     },
 )
+
+if get_plugin_by_module_name(__name__) is not None:
+    get_driver().on_startup(_lifecycle.startup)
+    get_driver().on_shutdown(_lifecycle.shutdown)
 
 __all__ = [
     "DocumentInfo",
@@ -58,6 +64,8 @@ __all__ = [
     "SearchHit",
     "Settings",
     "StaleReference",
+    "ToolSettings",
+    "build_tools",
     "create",
     "get",
     "list",

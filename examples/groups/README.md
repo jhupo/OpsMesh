@@ -1,31 +1,23 @@
 # Group assistants
 
+> **Migration note:** This README describes the pre-restoration implementation. Its commands and examples do not target the restored NoneBot2 core. See the [repository overview](../../README.md) for current interfaces and migration status.
+
 This text-only example owns two native SDK agents and one robot connection.
 `handlers.py` uses native framework Rules to send group A to the sales agent
 and group B to the technical agent. Private messages and unmatched groups do
 not invoke a model. Replace the placeholder group IDs in that file with IDs
 received from the platform. There is no route table in configuration.
 
-Install the channels and execution plugins, then register `group_assistant`
-with this directory as its import root. Set the SDK model credentials and
-`DINGTALK_CLIENT_SECRET` in the service environment. Fill in
-`group_assistant/settings.json` before the first activation. Metadata declares
-this file, so the host validates and saves it automatically on first startup.
-Register the plugin without `--config` to use its declared file.
-
-After initialization, saved SQLite values take precedence. To explicitly import
-an edited file while the host is stopped:
-
-```sh
-opsmesh --manifest /etc/opsmesh/host.json --plugin-action import-config \
-  --module group_assistant
-```
-
-Enable the plugin after registration. Channels validates `dependencies.channels`
-and opens the named robot after the plugin becomes ready. No channel fields
-are defined in this plugin's Settings and no connection function is called.
-The same code works with QQ by replacing `dingtalk.main` with `qq.main` using
-`app_id` and `secret_ref`; its group identifiers are QQ group openids.
+This example requires the channels and execution plugins, model credentials,
+and `DINGTALK_CLIENT_SECRET` in the process environment. The example's
+`group_assistant/settings.json` documents its configuration shape.
+The plugin declares its robot at
+`dependencies.channels.dingtalk.main`.
+Channels validates the protocol settings and opens the named robot after the
+plugin becomes ready. No channel fields are defined in the plugin's Settings.
+For QQ, use `dependencies.channels.qq.main` with `app_id` and `secret_ref`;
+its group identifiers are QQ group openids.
+`in_group()` uses protocol-specific event data.
 
 These handlers run independent turns without conversation history. A plugin
 requiring continuity supplies its own native SDK Session, keyed by connection,

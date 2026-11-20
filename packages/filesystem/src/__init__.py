@@ -1,6 +1,7 @@
 """Plugin file spaces and public file operations."""
 
-from opsmesh.plugins import PluginMetadata
+from opsmesh import get_driver
+from opsmesh.plugin import PluginMetadata, get_plugin_by_module_name
 
 from .config import Settings
 from .errors import (
@@ -12,6 +13,8 @@ from .errors import (
 )
 from .files import (
     ArchiveExport,
+    _shutdown,
+    _startup,
     cache_dir,
     cache_file,
     config_dir,
@@ -32,7 +35,12 @@ __plugin_meta__ = PluginMetadata(
     usage="Load this plugin before plugins that persist or read files.",
     type="library",
     config=Settings,
+    config_file="config.json",
 )
+
+if get_plugin_by_module_name(__name__) is not None:
+    get_driver().on_startup(_startup)
+    get_driver().on_shutdown(_shutdown)
 
 __all__ = [
     "Settings",

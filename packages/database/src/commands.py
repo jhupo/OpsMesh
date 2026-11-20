@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 
-from opsmesh.plugins.config import get_plugin_config
+from opsmesh.plugin import get_plugin_config
 
 from .config import Settings
 from .connections import Database

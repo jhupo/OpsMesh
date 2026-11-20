@@ -5,7 +5,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from opsmesh.plugins.database import Database, Settings
+from database import Database, Settings
 
 from .history import convert_shared_history
 

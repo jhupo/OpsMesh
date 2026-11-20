@@ -71,9 +71,10 @@ def revision_graph(source: MigrationSource) -> ScriptDirectory:
 
 
 def _sources(owner: str | None) -> tuple[MigrationSource, ...]:
+    registry = schema.discover_schemas()
     if owner is None:
-        return schema.registry.sources()
-    return (schema.registry.get(owner),)
+        return registry.sources()
+    return (registry.get(owner),)
 
 
 def validate_migrations(owner: str | None = None) -> None:
@@ -161,9 +162,9 @@ def upgrade_source(connection: Connection, source: MigrationSource) -> None:
 
 
 async def run_migrations(database: Database | None = None) -> None:
-    """Apply registered schemas in dependency load order in one transaction."""
+    """Apply independent schemas in one transaction."""
     validate_migrations()
-    sources = schema.registry.sources()
+    sources = _sources(None)
     if not sources:
         return
     database = database or get_database()

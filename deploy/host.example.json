@@ -1,6 +1,0 @@
-{
-  "environment": "production",
-  "framework": {},
-  "data_dir": "/var/lib/opsmesh",
-  "runtime_dir": "/run/opsmesh"
-}

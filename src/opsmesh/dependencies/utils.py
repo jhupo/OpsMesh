@@ -1,21 +1,26 @@
-"""Resolve callable annotations and validate dependency values."""
+"""
+FrontMatter:
+    mdx:
+        format: md
+    sidebar_position: 1
+    description: opsmesh.dependencies.utils 模块
+"""
 
-import inspect
-import logging
 from collections.abc import Callable
+import inspect
 from typing import Any, ForwardRef, cast
-
 from typing_extensions import TypeAliasType
 
-from opsmesh.compat import ModelField
-from opsmesh.exceptions import TypeMisMatch
-from opsmesh.typing import evaluate_forwardref, is_type_alias_type
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from opsmesh.compat import ModelField
+from opsmesh.exception import TypeMisMatch
+from opsmesh.typing import evaluate_forwardref, is_type_alias_type
 
 
 def get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:
-    """Return a callable signature with resolved type annotations."""
+    """获取可调用对象签名"""
+
     signature = inspect.signature(call)
     globalns = getattr(call, "__globals__", {})
     typed_params = [
@@ -30,20 +35,17 @@ def get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:
     return inspect.Signature(typed_params)
 
 
-def get_typed_annotation(
-    param: inspect.Parameter, globalns: dict[str, Any]
-) -> Any:
-    """Resolve a parameter's type annotation."""
+def get_typed_annotation(param: inspect.Parameter, globalns: dict[str, Any]) -> Any:
+    """获取参数的类型注解"""
+
     annotation = param.annotation
     if isinstance(annotation, str):
         annotation = ForwardRef(annotation)
         try:
             annotation = evaluate_forwardref(annotation, globalns, globalns)
         except Exception as e:
-            logger.warning(
-                "Cannot resolve annotation for parameter %s",
-                param.name,
-                exc_info=(type(e), e, e.__traceback__),
+            logger.opt(colors=True, exception=e).warning(
+                f'Unknown ForwardRef["{param.annotation}"] for parameter {param.name}'
             )
             return inspect.Parameter.empty
     if is_type_alias_type(annotation):
@@ -53,8 +55,9 @@ def get_typed_annotation(
 
 
 def check_field_type(field: ModelField, value: Any) -> Any:
-    """Validate a value against its field annotation."""
+    """检查字段类型是否匹配"""
+
     try:
         return field.validate_value(value)
-    except ValueError as error:
-        raise TypeMisMatch(field, value) from error
+    except ValueError:
+        raise TypeMisMatch(field, value)

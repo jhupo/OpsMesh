@@ -1,12 +1,12 @@
-"""Shared helpers for typing, execution, imports, and serialization."""
+"""本模块包含了 OpsMesh 的一些工具函数
 
-import asyncio
-import contextlib
-import dataclasses
-import importlib
-import inspect
-import json
-import logging
+FrontMatter:
+    mdx:
+        format: md
+    sidebar_position: 8
+    description: opsmesh.utils 模块
+"""
+
 from collections import deque
 from collections.abc import (
     AsyncGenerator,
@@ -16,16 +16,21 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+import contextlib
 from contextlib import AbstractContextManager, asynccontextmanager
+import dataclasses
 from enum import Enum
 from functools import partial, wraps
+import importlib
+import inspect
+import json
 from pathlib import Path
+import re
 from typing import (
     Any,
     Final,
     Generic,
     Literal,
-    ParamSpec,
     TypeAlias,
     TypeVar,
     final,
@@ -33,12 +38,14 @@ from typing import (
     get_origin,
     overload,
 )
+from typing_extensions import ParamSpec, override
 
 import anyio
 import anyio.to_thread
+from exceptiongroup import BaseExceptionGroup, catch
 from pydantic import BaseModel
-from typing_extensions import override
 
+from opsmesh.log import logger
 from opsmesh.typing import (
     all_literal_values,
     is_none_type,
@@ -48,8 +55,6 @@ from opsmesh.typing import (
 )
 
 from .compat import custom_validation
-
-logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -62,8 +67,6 @@ E = TypeVar("E", bound=BaseException)
 @final
 @custom_validation
 class Unset(Enum):
-    """False-valued singleton marker for an omitted value."""
-
     _UNSET = "<UNSET>"
 
     def __repr__(self) -> str:
@@ -98,7 +101,6 @@ UNSET: Final[UnsetType] = Unset._UNSET
 
 
 def exclude_unset(data: Any) -> Any:
-    """Recursively remove omitted values from dictionaries and lists."""
     if isinstance(data, dict):
         return data.__class__(
             (k, exclude_unset(v)) for k, v in data.items() if v is not UNSET
@@ -110,10 +112,21 @@ def exclude_unset(data: Any) -> Any:
     return data
 
 
+def escape_tag(s: str) -> str:
+    """用于记录带颜色日志时转义 `<tag>` 类型特殊标签
+
+    参考: [loguru color 标签](https://loguru.readthedocs.io/en/stable/api/logger.html#color)
+
+    参数:
+        s: 需要转义的字符串
+    """
+    return re.sub(r"</?((?:[fb]g\s)?[^<>\s]*)>", r"\\\g<0>", s)
+
+
 def deep_update(
     mapping: dict[K, Any], *updating_mappings: dict[K, Any]
 ) -> dict[K, Any]:
-    """Recursively merge dictionaries into a new mapping."""
+    """深度更新合并字典"""
     updated_mapping = mapping.copy()
     for updating_mapping in updating_mappings:
         for k, v in updating_mapping.items():
@@ -131,7 +144,7 @@ def deep_update(
 def lenient_issubclass(
     cls: Any, class_or_tuple: type[Any] | tuple[type[Any], ...]
 ) -> bool:
-    """Check subclass membership, treating invalid class arguments as False."""
+    """检查 cls 是否是 class_or_tuple 中的一个类型子类并忽略类型错误。"""
     try:
         return isinstance(cls, type) and issubclass(cls, class_or_tuple)
     except TypeError:
@@ -141,26 +154,25 @@ def lenient_issubclass(
 def generic_check_issubclass(
     cls: Any, class_or_tuple: type[Any] | tuple[type[Any], ...]
 ) -> bool:
-    """Check subclass membership while accounting for typing annotations.
+    """检查 cls 是否是 class_or_tuple 中的一个类型子类。
 
-    Special cases:
+    特别的：
 
-    - For TypeVar annotations,
-      inspect the bound or constraints
-      and accept subclasses or None.
-    - For typing.Union and types.UnionType,
-      every member must be an accepted subclass or None.
-    - For Literal annotations,
-      every value must be an instance of an accepted class.
-    - For parameterized generics such as list or dict,
-      inspect the generic's origin class.
+    - 如果 cls 是 `typing.TypeVar` 类型，
+      则会检查其 `__bound__` 或 `__constraints__`
+      是否是 class_or_tuple 中一个类型的子类或 None。
+    - 如果 cls 是 `typing.Union` 或 `types.UnionType` 类型，
+      则会检查其中的所有类型是否是 class_or_tuple 中一个类型的子类或 None。
+    - 如果 cls 是 `typing.Literal` 类型，
+      则会检查其中的所有值是否是 class_or_tuple 中一个类型的实例。
+    - 如果 cls 是 `typing.List`、`typing.Dict` 等泛型类型，
+      则会检查其原始类型是否是 class_or_tuple 中一个类型的子类。
     """
     # if the target is a TypeVar, we check it first
     if isinstance(cls, TypeVar):
         if cls.__constraints__:
             return all(
-                is_none_type(type_)
-                or generic_check_issubclass(type_, class_or_tuple)
+                is_none_type(type_) or generic_check_issubclass(type_, class_or_tuple)
                 for type_ in cls.__constraints__
             )
         elif cls.__bound__:
@@ -174,8 +186,7 @@ def generic_check_issubclass(
     origin = get_origin(cls)
     if origin_is_union(origin):
         return all(
-            is_none_type(type_)
-            or generic_check_issubclass(type_, class_or_tuple)
+            is_none_type(type_) or generic_check_issubclass(type_, class_or_tuple)
             for type_ in get_args(cls)
         )
     elif origin_is_literal(origin):
@@ -194,7 +205,7 @@ def generic_check_issubclass(
 
 
 def type_is_complex(type_: type[Any]) -> bool:
-    """Check whether an annotation requires complex-value parsing."""
+    """检查 type_ 是否是复杂类型"""
     origin = get_origin(type_)
     return _type_is_complex_inner(type_) or _type_is_complex_inner(origin)
 
@@ -209,58 +220,43 @@ def _type_is_complex_inner(type_: type[Any] | None) -> bool:
 
 
 def is_coroutine_callable(call: Callable[..., Any]) -> bool:
-    """Check whether a callable is an asynchronous coroutine function."""
+    """检查 call 是否是一个 callable 协程函数"""
     if inspect.isroutine(call):
         return inspect.iscoroutinefunction(call)
     if inspect.isclass(call):
         return False
-    func_ = getattr(call, "__call__", None)  # noqa: B004
+    func_ = getattr(call, "__call__", None)
     return inspect.iscoroutinefunction(func_)
 
 
 def is_gen_callable(call: Callable[..., Any]) -> bool:
-    """Check whether a callable is a generator function."""
+    """检查 call 是否是一个生成器函数"""
     if inspect.isgeneratorfunction(call):
         return True
-    func_ = getattr(call, "__call__", None)  # noqa: B004
+    func_ = getattr(call, "__call__", None)
     return inspect.isgeneratorfunction(func_)
 
 
 def is_async_gen_callable(call: Callable[..., Any]) -> bool:
-    """Check whether a callable is an asynchronous generator function."""
+    """检查 call 是否是一个异步生成器函数"""
     if inspect.isasyncgenfunction(call):
         return True
-    func_ = getattr(call, "__call__", None)  # noqa: B004
+    func_ = getattr(call, "__call__", None)
     return inspect.isasyncgenfunction(func_)
 
 
 def run_sync(call: Callable[P, R]) -> Callable[P, Coroutine[None, None, R]]:
-    """Wrap a synchronous callable for asynchronous execution.
+    """一个用于包装 sync function 为 async function 的装饰器
 
-    Args:
-        call: The synchronous callable to wrap.
+    参数:
+        call: 被装饰的同步函数
     """
 
     @wraps(call)
     async def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        worker = asyncio.create_task(
-            anyio.to_thread.run_sync(partial(call, *args, **kwargs))
+        return await anyio.to_thread.run_sync(
+            partial(call, *args, **kwargs), abandon_on_cancel=True
         )
-        try:
-            return await asyncio.shield(worker)
-        except asyncio.CancelledError:
-            # Dependencies must outlive a thread that cannot be cancelled.
-            with anyio.CancelScope(shield=True):
-                while not worker.done():
-                    try:
-                        await asyncio.shield(worker)
-                    except asyncio.CancelledError:
-                        continue
-                    except BaseException:
-                        break
-            if not worker.cancelled():
-                worker.exception()
-            raise
 
     return _wrapper
 
@@ -269,38 +265,15 @@ def run_sync(call: Callable[P, R]) -> Callable[P, Coroutine[None, None, R]]:
 async def run_sync_ctx_manager(
     cm: AbstractContextManager[T],
 ) -> AsyncGenerator[T, None]:
-    """Adapt a synchronous context manager with cancellation-safe cleanup."""
-    entered = False
-
-    def enter() -> T:
-        nonlocal entered
-        value = cm.__enter__()
-        entered = True
-        return value
-
+    """一个用于包装 sync context manager 为 async context manager 的执行函数"""
     try:
-        with anyio.CancelScope(shield=True):
-            value = await run_sync(enter)()
-    except BaseException as error:
-        if entered:
-            # Cancellation can arrive after acquisition but before yield.
-            with anyio.CancelScope(shield=True):
-                await run_sync(cm.__exit__)(
-                    type(error), error, error.__traceback__
-                )
-        raise
-    try:
-        yield value
-    except BaseException as error:
-        with anyio.CancelScope(shield=True):
-            suppressed = await run_sync(cm.__exit__)(
-                type(error), error, error.__traceback__
-            )
-        if not suppressed:
-            raise
+        yield await run_sync(cm.__enter__)()
+    except Exception as e:
+        ok = await run_sync(cm.__exit__)(type(e), e, None)
+        if not ok:
+            raise e
     else:
-        with anyio.CancelScope(shield=True):
-            await run_sync(cm.__exit__)(None, None, None)
+        await run_sync(cm.__exit__)(None, None, None)
 
 
 @overload
@@ -324,33 +297,33 @@ async def run_coro_with_catch(
     exc: tuple[type[Exception], ...],
     return_on_err: R | None = None,
 ) -> T | R | None:
-    """Run a coroutine and return a fallback for selected exceptions.
+    """运行协程并当遇到指定异常时返回指定值。
 
-    Args:
-        coro: The coroutine to run.
-        exc: The exception type or types to catch.
-        return_on_err: The fallback returned when an exception is caught.
+    参数:
+        coro: 要运行的协程
+        exc: 要捕获的异常
+        return_on_err: 当发生异常时返回的值
 
-    Returns:
-        The coroutine result, or the fallback after a caught exception.
+    返回:
+        协程的返回值或发生异常时的指定值
     """
-    try:
+
+    with catch({exc: lambda exc_group: None}):
         return await coro
-    except* exc:
-        pass
 
     return return_on_err
 
 
 async def run_coro_with_shield(coro: Coroutine[Any, Any, T]) -> T:
-    """Run a coroutine while shielding it from cancellation.
+    """运行协程并在取消时屏蔽取消异常。
 
-    Args:
-        coro: The coroutine to run.
+    参数:
+        coro: 要运行的协程
 
-    Returns:
-        The coroutine's return value.
+    返回:
+        协程的返回值
     """
+
     with anyio.CancelScope(shield=True):
         return await coro
 
@@ -360,7 +333,6 @@ async def run_coro_with_shield(coro: Coroutine[Any, Any, T]) -> T:
 def flatten_exception_group(
     exc_group: BaseExceptionGroup[E],
 ) -> Generator[E, None, None]:
-    """Yield leaf exceptions from nested exception groups."""
     for exc in exc_group.exceptions:
         if isinstance(exc, BaseExceptionGroup):
             yield from flatten_exception_group(exc)
@@ -369,14 +341,14 @@ def flatten_exception_group(
 
 
 def get_name(obj: Any) -> str:
-    """Return a callable or object's display name."""
+    """获取对象的名称"""
     if inspect.isfunction(obj) or inspect.isclass(obj):
         return obj.__name__
     return obj.__class__.__name__
 
 
 def path_to_module_name(path: Path) -> str:
-    """Convert a source path into a dotted module name."""
+    """转换路径为模块名"""
     rel_path = path.resolve().relative_to(Path.cwd().resolve())
     if rel_path.stem == "__init__":
         return ".".join(rel_path.parts[:-1])
@@ -387,7 +359,7 @@ def path_to_module_name(path: Path) -> str:
 def resolve_dot_notation(
     obj_str: str, default_attr: str, default_prefix: str | None = None
 ) -> Any:
-    """Resolve and import an object using dotted module notation."""
+    """解析并导入点分表示法的对象"""
     modulename, _, cls = obj_str.partition(":")
     if default_prefix is not None and modulename.startswith("~"):
         modulename = default_prefix + modulename[1:]
@@ -401,7 +373,7 @@ def resolve_dot_notation(
 
 
 class classproperty(Generic[T]):
-    """A descriptor exposing a class-level property."""
+    """类属性装饰器"""
 
     def __init__(self, func: Callable[[Any], T]) -> None:
         self.func = func
@@ -411,7 +383,7 @@ class classproperty(Generic[T]):
 
 
 class DataclassEncoder(json.JSONEncoder):
-    """A JSON encoder supporting message segments and other dataclasses."""
+    """可以序列化 {ref}`opsmesh.adapters.Message`(List[Dataclass]) 的 `JSONEncoder`"""
 
     @override
     def default(self, o):
@@ -421,33 +393,24 @@ class DataclassEncoder(json.JSONEncoder):
 
 
 def logger_wrapper(logger_name: str):
-    """Create a logger bound to an adapter name.
+    """用于打印 adapter 的日志。
 
-    Args:
-        logger_name: The adapter name used in logs.
+    参数:
+        logger_name: adapter 的名称
 
-    Returns:
-        The adapter logging callable.
+    返回:
+        日志记录函数
 
-        Logging callable arguments:
+        日志记录函数的参数:
 
-        level: The log level.
-        message: The log message.
-        exception: Optional exception information.
+        - level: 日志等级
+        - message: 日志信息
+        - exception: 异常信息
     """
 
     def log(level: str, message: str, exception: Exception | None = None):
-        levels = {
-            **logging.getLevelNamesMapping(),
-            "TRACE": logging.DEBUG,
-            "SUCCESS": logging.INFO,
-        }
-        logger.log(
-            levels[level.upper()],
-            f"{logger_name} | {message}",
-            exc_info=(type(exception), exception, exception.__traceback__)
-            if exception is not None
-            else None,
+        logger.opt(colors=True, exception=exception).log(
+            level, f"<m>{escape_tag(logger_name)}</m> | {message}"
         )
 
     return log
