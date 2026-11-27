@@ -49,4 +49,6 @@ jobs:
       - name: Bandit static security scan
         run: bandit -r src/opsmesh -ll -ii
       - name: Dependency CVE audit (pip-audit)
-        run: pip-audit --skip-editable --strict
+        run: |
+          pip-audit -r requirements.txt --strict
+          pip-audit --skip-editable
