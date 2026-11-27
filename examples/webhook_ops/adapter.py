@@ -76,7 +76,7 @@ class WebhookEvent(Event):
         return WebhookMessage(self.content)
 
     @override
-    def is_targeted(self) -> bool:
+    def is_tome(self) -> bool:
         return self.direct
 
 

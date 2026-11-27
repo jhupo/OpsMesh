@@ -10,7 +10,7 @@ from opsmesh.log import logger
 from opsmesh.params import ArgPlainText, CommandArg, Depends
 from opsmesh.permission import SUPERUSER
 from opsmesh.plugin import PluginMetadata
-from opsmesh.rule import targeted
+from opsmesh.rule import to_me
 
 
 class DeployConfig(BaseModel):
@@ -26,7 +26,7 @@ __plugin_meta__ = PluginMetadata(
 )
 
 cfg = get_plugin_config(DeployConfig)
-deploy = on_command("deploy", rule=targeted(), permission=SUPERUSER)
+deploy = on_command("deploy", rule=to_me(), permission=SUPERUSER)
 
 
 async def audit_context(event: Event) -> AsyncGenerator[str, None]:

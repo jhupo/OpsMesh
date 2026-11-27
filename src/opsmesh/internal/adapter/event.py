@@ -70,6 +70,6 @@ class Event(abc.ABC, BaseModel):
         return self.get_message().extract_plain_text()
 
     @abc.abstractmethod
-    def is_targeted(self) -> bool:
-        """获取事件是否直接指向当前网关实例的方法。"""
+    def is_tome(self) -> bool:
+        """获取事件是否与当前网关实例有关的方法。"""
         raise NotImplementedError

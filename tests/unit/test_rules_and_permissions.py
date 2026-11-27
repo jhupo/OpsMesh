@@ -27,7 +27,7 @@ from opsmesh.rule import (
     regex,
     shell_command,
     startswith,
-    targeted,
+    to_me,
 )
 
 
@@ -92,7 +92,7 @@ class _Event(Event):
     def get_message(self) -> _Msg:
         return _Msg(self.text)
 
-    def is_targeted(self) -> bool:
+    def is_tome(self) -> bool:
         return self.direct
 
 
@@ -106,7 +106,7 @@ def _make_gw(**cfg_kwargs) -> tuple[NoneDriver, _Gateway]:
 
 
 @pytest.mark.anyio
-async def test_text_regex_targeted_and_is_type_rules():
+async def test_text_regex_tome_and_is_type_rules():
     _, gw = _make_gw()
     ev = _Event(text="Deploy v2.1 DONE", direct=True)
     state: dict = {}
@@ -116,7 +116,7 @@ async def test_text_regex_targeted_and_is_type_rules():
     assert await fullmatch("deploy v2.1 done", ignorecase=True)(gw, ev, state) is True
     assert await keyword("v2.1")(gw, ev, state) is True
     assert await regex(r"v(?P<ver>\d+\.\d+)")(gw, ev, state) is True
-    assert await targeted()(gw, ev, state) is True
+    assert await to_me()(gw, ev, state) is True
     assert await is_type(_Event)(gw, ev, state) is True
     assert await is_type(_OtherEvent)(gw, ev, state) is False
 

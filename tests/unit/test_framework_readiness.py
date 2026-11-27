@@ -17,10 +17,10 @@ from opsmesh.drivers.none import Driver as NoneDriver
 from opsmesh.exception import ActionNotAvailable, MockInvokeResult
 from opsmesh.matcher import Matcher
 from opsmesh.message import handle_event
-from opsmesh.params import Depends, EventTargeted
+from opsmesh.params import Depends, EventToMe
 from opsmesh.permission import SUPERUSER
 from opsmesh.plugin import MatcherGroup, on_command, on_message
-from opsmesh.rule import TrieRule, targeted
+from opsmesh.rule import TrieRule, to_me
 
 
 class TextSeg(MessageSegment["TextMsg"]):
@@ -70,7 +70,7 @@ class ProbeEvent(Event):
     kind: str = "notice"
     payload: str = "probe"
     user_id: str = "user_1"
-    targeted_flag: bool = False
+    to_me_flag: bool = False
 
     def get_type(self) -> str:
         return self.kind
@@ -90,8 +90,8 @@ class ProbeEvent(Event):
     def get_message(self) -> TextMsg:
         return TextMsg(self.payload)
 
-    def is_targeted(self) -> bool:
-        return self.targeted_flag
+    def is_tome(self) -> bool:
+        return self.to_me_flag
 
 
 def create_driver(**config_kwargs) -> NoneDriver:
@@ -391,36 +391,36 @@ async def test_superuser_permission_matcher_group_and_command_default_block(
 
 
 @pytest.mark.anyio
-async def test_event_time_targeted_and_non_message_pause_continuation():
+async def test_event_time_tome_and_non_message_pause_continuation():
     driver = create_driver()
     gw = create_gateway(driver)
     seen: list[tuple[str, bool, datetime]] = []
 
-    flow = Matcher.new("webhook", rule=targeted(), block=True)
+    flow = Matcher.new("webhook", rule=to_me(), block=True)
 
     @flow.handle()
-    async def step_1(event: Event, is_target: bool = EventTargeted()):
-        seen.append(("step1", is_target, event.get_time()))
+    async def step_1(event: Event, is_tome: bool = EventToMe()):
+        seen.append(("step1", is_tome, event.get_time()))
         await flow.pause("waiting-callback")
 
     @flow.handle()
     async def step_2(event: Event):
-        seen.append(("step2", event.is_targeted(), event.get_time()))
+        seen.append(("step2", event.is_tome(), event.get_time()))
         await flow.finish("done")
 
     try:
-        ev_ignored = ProbeEvent(kind="webhook", payload="init", targeted_flag=False)
+        ev_ignored = ProbeEvent(kind="webhook", payload="init", to_me_flag=False)
         await handle_event(gw, ev_ignored)
         assert seen == []
 
-        ev_init = ProbeEvent(kind="webhook", payload="init", targeted_flag=True)
+        ev_init = ProbeEvent(kind="webhook", payload="init", to_me_flag=True)
         await handle_event(gw, ev_init)
         assert len(seen) == 1
         assert seen[0][0] == "step1"
         assert gw.sent == ["waiting-callback"]
 
         # Non-message ("webhook") resumes automatically on next "webhook" event
-        ev_cb = ProbeEvent(kind="webhook", payload="cb", targeted_flag=False)
+        ev_cb = ProbeEvent(kind="webhook", payload="cb", to_me_flag=False)
         await handle_event(gw, ev_cb)
         assert len(seen) == 2
         assert seen[1][0] == "step2"

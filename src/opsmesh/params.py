@@ -74,13 +74,13 @@ def EventPlainText() -> str:
     return Depends(_event_plain_text)
 
 
-async def _event_targeted(event: Event) -> bool:
-    return event.is_targeted()
+async def _event_tome(event: Event) -> bool:
+    return event.is_tome()
 
 
-def EventTargeted() -> bool:
-    """{ref}`opsmesh.adapters.Event` `is_targeted` 参数"""
-    return Depends(_event_targeted)
+def EventToMe() -> bool:
+    """{ref}`opsmesh.adapters.Event` `is_tome` 参数"""
+    return Depends(_event_tome)
 
 
 def _command(state: T_State) -> Message:
