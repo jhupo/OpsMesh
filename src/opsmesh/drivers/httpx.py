@@ -1,8 +1,6 @@
 """[HTTPX](https://www.python-httpx.org/) 驱动适配
 
 ```bash
-nb driver install httpx
-# 或者
 pip install opsmesh[httpx]
 ```
 
@@ -145,6 +143,7 @@ class Session(HTTPClientSession):
             headers=tuple(setup.headers.items()),
             cookies=setup.cookies.jar,
             timeout=self._get_timeout(setup.timeout),
+            **exclude_unset({"follow_redirects": setup.auto_redirects}),
         )
         return Response(
             response.status_code,
@@ -172,6 +171,7 @@ class Session(HTTPClientSession):
             headers=tuple(setup.headers.items()),
             cookies=setup.cookies.jar,
             timeout=self._get_timeout(setup.timeout),
+            **exclude_unset({"follow_redirects": setup.auto_redirects}),
         ) as response:
             response_headers = response.headers.multi_items()
             async for chunk in response.aiter_bytes(chunk_size=chunk_size):
@@ -240,7 +240,7 @@ class Mixin(HTTPClientMixin):
         headers: HeaderTypes = None,
         cookies: CookieTypes = None,
         version: str | HTTPVersion = HTTPVersion.H11,
-        timeout: TimeoutTypes = None,
+        timeout: TimeoutTypes | UnsetType = UNSET,
         proxy: str | None = None,
     ) -> Session:
         return Session(

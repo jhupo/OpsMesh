@@ -12,8 +12,8 @@ from opsmesh.internal.matcher import Matcher as Matcher
 from opsmesh.internal.matcher import MatcherManager as MatcherManager
 from opsmesh.internal.matcher import MatcherProvider as MatcherProvider
 from opsmesh.internal.matcher import MatcherSource as MatcherSource
-from opsmesh.internal.matcher import current_gateway as current_gateway
 from opsmesh.internal.matcher import current_event as current_event
+from opsmesh.internal.matcher import current_gateway as current_gateway
 from opsmesh.internal.matcher import current_handler as current_handler
 from opsmesh.internal.matcher import current_matcher as current_matcher
 from opsmesh.internal.matcher import matchers as matchers

@@ -33,7 +33,7 @@ from typing import (
 from pygtrie import CharTrie
 
 from opsmesh import get_driver
-from opsmesh.adapters import Gateway, Event, Message, MessageSegment
+from opsmesh.adapters import Event, Gateway, Message, MessageSegment
 from opsmesh.consts import (
     CMD_ARG_KEY,
     CMD_KEY,
@@ -52,7 +52,7 @@ from opsmesh.consts import (
 from opsmesh.exception import ParserExit
 from opsmesh.internal.rule import Rule as Rule
 from opsmesh.log import logger
-from opsmesh.params import Command, CommandArg, CommandWhitespace, EventToMe
+from opsmesh.params import Command, CommandArg, CommandWhitespace, EventTargeted
 from opsmesh.typing import T_State
 
 T = TypeVar("T")
@@ -717,28 +717,28 @@ def regex(regex: str, flags: int | re.RegexFlag = 0) -> Rule:
     return Rule(RegexRule(regex, flags))
 
 
-class ToMeRule:
-    """检查事件是否指向当前网关。"""
+class TargetedRule:
+    """检查事件是否直接指向当前网关实例。"""
 
     __slots__ = ()
 
     def __repr__(self) -> str:
-        return "ToMe()"
+        return "Targeted()"
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, ToMeRule)
+        return isinstance(other, TargetedRule)
 
     def __hash__(self) -> int:
         return hash((self.__class__,))
 
-    async def __call__(self, to_me: bool = EventToMe()) -> bool:
-        return to_me
+    async def __call__(self, is_targeted: bool = EventTargeted()) -> bool:
+        return is_targeted
 
 
-def to_me() -> Rule:
-    """匹配指向当前网关的事件。"""
+def targeted() -> Rule:
+    """匹配直接指向当前网关实例的事件。"""
 
-    return Rule(ToMeRule())
+    return Rule(TargetedRule())
 
 
 class IsTypeRule:

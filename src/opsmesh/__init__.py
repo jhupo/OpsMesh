@@ -18,7 +18,7 @@
 - `on_regex` => {ref}``on_regex` <opsmesh.plugin.on.on_regex>`
 - `on_type` => {ref}``on_type` <opsmesh.plugin.on.on_type>`
 - `CommandGroup` => {ref}``CommandGroup` <opsmesh.plugin.on.CommandGroup>`
-- `Matchergroup` => {ref}``MatcherGroup` <opsmesh.plugin.on.MatcherGroup>`
+- `MatcherGroup` => {ref}``MatcherGroup` <opsmesh.plugin.on.MatcherGroup>`
 - `load_plugin` => {ref}``load_plugin` <opsmesh.plugin.load.load_plugin>`
 - `load_plugins` => {ref}``load_plugins` <opsmesh.plugin.load.load_plugins>`
 - `load_all_plugins` => {ref}``load_all_plugins` <opsmesh.plugin.load.load_all_plugins>`
@@ -52,7 +52,6 @@ from typing import Any, TypeVar, overload
 import loguru
 
 from opsmesh.adapters import Adapter, Gateway
-from opsmesh.compat import model_dump
 from opsmesh.config import DOTENV_TYPE, Config, Env
 from opsmesh.drivers import ASGIMixin, Driver, combine_driver
 from opsmesh.log import logger as logger
@@ -88,6 +87,28 @@ def get_driver() -> Driver:
     if _driver is None:
         raise ValueError("OpsMesh has not been initialized.")
     return _driver
+
+
+def register_adapter(adapter: type[A], **kwargs: Any) -> A:
+    """向全局 {ref}`opsmesh.drivers.Driver` 注册一个协议适配器并返回该实例。
+
+    参数:
+        adapter: 适配器类
+        kwargs: 传递给适配器构造函数的额外参数
+
+    返回:
+        注册后的 {ref}`opsmesh.adapters.Adapter` 实例
+
+    异常:
+        ValueError: 全局 {ref}`opsmesh.drivers.Driver` 对象尚未初始化
+            ({ref}`opsmesh.init <opsmesh.init>` 尚未调用)
+
+    用法:
+        ```python
+        adapter = opsmesh.register_adapter(MyAdapter)
+        ```
+    """
+    return get_driver().register_adapter(adapter, **kwargs)
 
 
 @overload
@@ -158,7 +179,7 @@ def get_app() -> Any:
         Server App 对象
 
     异常:
-        AssertionError: 全局 Driver 对象不是 {ref}`opsmesh.drivers.ASGIMixin` 类型
+        TypeError: 全局 Driver 对象不是 {ref}`opsmesh.drivers.ASGIMixin` 类型
         ValueError: 全局 {ref}`opsmesh.drivers.Driver` 对象尚未初始化
             ({ref}`opsmesh.init <opsmesh.init>` 尚未调用)
 
@@ -168,7 +189,8 @@ def get_app() -> Any:
         ```
     """
     driver = get_driver()
-    assert isinstance(driver, ASGIMixin), "app object is only available for asgi driver"
+    if not isinstance(driver, ASGIMixin):
+        raise TypeError("app object is only available for asgi driver")
     return driver.server_app
 
 
@@ -180,7 +202,7 @@ def get_asgi() -> Any:
         ASGI 对象
 
     异常:
-        AssertionError: 全局 Driver 对象不是 {ref}`opsmesh.drivers.ASGIMixin` 类型
+        TypeError: 全局 Driver 对象不是 {ref}`opsmesh.drivers.ASGIMixin` 类型
         ValueError: 全局 {ref}`opsmesh.drivers.Driver` 对象尚未初始化
             ({ref}`opsmesh.init <opsmesh.init>` 尚未调用)
 
@@ -190,9 +212,8 @@ def get_asgi() -> Any:
         ```
     """
     driver = get_driver()
-    assert isinstance(driver, ASGIMixin), (
-        "asgi object is only available for asgi driver"
-    )
+    if not isinstance(driver, ASGIMixin):
+        raise TypeError("asgi object is only available for asgi driver")
     return driver.asgi
 
 
@@ -314,7 +335,7 @@ def init(*, _env_file: DOTENV_TYPE | None = None, **kwargs: Any) -> None:
             f"Current <y><b>Env: {escape_tag(env.environment)}</b></y>"
         )
         logger.opt(colors=True).debug(
-            f"Loaded <y><b>Config</b></y>: {escape_tag(str(model_dump(config)))}"
+            f"Loaded <y><b>Config</b></y>: {escape_tag(str(config.model_dump()))}"
         )
 
         DriverClass = _resolve_combine_expr(config.driver)
@@ -322,7 +343,7 @@ def init(*, _env_file: DOTENV_TYPE | None = None, **kwargs: Any) -> None:
 
 
 def run(*args: Any, **kwargs: Any) -> None:
-    """启动 OpsMesh，即运行全局 {ref}`opsmesh.drivers.Driver` 对象。
+    """运行 OpsMesh 框架（启动全局 {ref}`opsmesh.drivers.Driver` 事件循环与传输服务）。
 
     参数:
         args: 传入 {ref}`opsmesh.drivers.Driver.run` 的位置参数
@@ -333,10 +354,7 @@ def run(*args: Any, **kwargs: Any) -> None:
         opsmesh.run(host="127.0.0.1", port=8080)
         ```
     """
-    from opsmesh.plugin.config import prepare_plugins
-
     driver = get_driver()
-    prepare_plugins(driver, get_loaded_plugins(), get_adapters().keys())
     logger.success("Running OpsMesh...")
     driver.run(*args, **kwargs)
 
@@ -355,7 +373,6 @@ from opsmesh.plugin import load_from_json as load_from_json
 from opsmesh.plugin import load_from_toml as load_from_toml
 from opsmesh.plugin import load_plugin as load_plugin
 from opsmesh.plugin import load_plugins as load_plugins
-from opsmesh.plugin import unload_plugin as unload_plugin
 from opsmesh.plugin import on as on
 from opsmesh.plugin import on_command as on_command
 from opsmesh.plugin import on_endswith as on_endswith

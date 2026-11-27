@@ -1,8 +1,6 @@
 """[AIOHTTP](https://aiohttp.readthedocs.io/en/stable/) 驱动适配器。
 
 ```bash
-nb driver install aiohttp
-# 或者
 pip install opsmesh[aiohttp]
 ```
 
@@ -46,6 +44,7 @@ from opsmesh.internal.driver import (
     Timeout,
     TimeoutTypes,
 )
+from opsmesh.log import logger
 from opsmesh.utils import UNSET, UnsetType, exclude_unset
 
 try:
@@ -168,6 +167,7 @@ class Session(HTTPClientSession):
             headers=setup.headers,
             proxy=setup.proxy or self._proxy,
             timeout=self._get_timeout(setup.timeout),
+            **exclude_unset({"allow_redirects": setup.auto_redirects}),
         ) as response:
             return Response(
                 response.status,
@@ -209,6 +209,7 @@ class Session(HTTPClientSession):
             headers=setup.headers,
             proxy=setup.proxy or self._proxy,
             timeout=self._get_timeout(setup.timeout),
+            **exclude_unset({"allow_redirects": setup.auto_redirects}),
         ) as response:
             response_headers = response.headers.copy()
             # aiohttp does not guarantee fixed-size chunks; re-chunk to exact size
@@ -324,6 +325,22 @@ class Mixin(HTTPClientMixin, WebSocketClientMixin):
                 )
             )
 
+        heartbeat = None
+        if setup.ping_interval is not UNSET:
+            heartbeat = setup.ping_interval
+
+        if isinstance(setup.timeout, Timeout) and setup.timeout.ping is not UNSET:
+            logger.warning(
+                "aiohttp driver does not expose a separate ping timeout; "
+                "the configured ping timeout will be ignored."
+            )
+
+        if setup.auto_redirects is not UNSET:
+            logger.warning(
+                "aiohttp driver websocket method does not expose redirects parameter; "
+                "the configured auto_redirects will be ignored."
+            )
+
         async with aiohttp.ClientSession(version=version, trust_env=True) as session:
             async with session.ws_connect(
                 setup.url,
@@ -331,6 +348,8 @@ class Mixin(HTTPClientMixin, WebSocketClientMixin):
                 timeout=timeout,
                 headers=setup.headers,
                 proxy=setup.proxy,
+                autoping=heartbeat is not None,
+                heartbeat=heartbeat,
             ) as ws:
                 yield WebSocket(request=setup, session=session, websocket=ws)
 

@@ -1,7 +1,8 @@
 from collections.abc import AsyncGenerator
 
 from opsmesh.adapters import Event
-from opsmesh.message import IgnoredException, event_preprocessor
+from opsmesh.exception import IgnoredException
+from opsmesh.message import event_preprocessor
 from opsmesh.params import Depends
 from opsmesh.plugin import PluginMetadata
 
@@ -10,7 +11,7 @@ __plugin_meta__ = PluginMetadata(
     description="限制同一会话内同时只能运行一个响应器",
     usage="加载插件后自动生效",
     type="application",
-    homepage="https://github.com/nonebot/nonebot2/blob/master/nonebot/plugins/single_session.py",
+    homepage="https://github.com/jhupo/OpsMesh",
     config=None,
     supported_adapters=None,
 )
@@ -30,12 +31,14 @@ async def matcher_mutex(event: Event) -> AsyncGenerator[bool, None]:
             result = event_id != current_event_id
         else:
             _running_matcher[session_id] = current_event_id
-        yield result
-        if not result:
-            del _running_matcher[session_id]
+        try:
+            yield result
+        finally:
+            if not result:
+                _running_matcher.pop(session_id, None)
 
 
 @event_preprocessor
-async def preprocess(mutex: bool = Depends(matcher_mutex)):
+async def preprocess(mutex: bool = Depends(matcher_mutex)) -> None:
     if mutex:
         raise IgnoredException("Another matcher running")

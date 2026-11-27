@@ -16,13 +16,14 @@ from opsmesh.utils import UNSET, UnsetType
 class Timeout:
     """Request 超时配置。"""
 
-    total: float | None | UnsetType = UNSET
-    connect: float | None | UnsetType = UNSET
-    read: float | None | UnsetType = UNSET
-    close: float | None | UnsetType = UNSET
+    total: float | UnsetType | None = UNSET
+    connect: float | UnsetType | None = UNSET
+    read: float | UnsetType | None = UNSET
+    close: float | UnsetType | None = UNSET
+    ping: float | UnsetType | None = UNSET
 
 
-DEFAULT_TIMEOUT = Timeout(total=None, connect=5.0, read=30.0, close=10.0)
+DEFAULT_TIMEOUT = Timeout(total=None, connect=5.0, read=30.0, close=10.0, ping=20.0)
 
 
 RawURL: TypeAlias = tuple[bytes, bytes, int | None, bytes]
@@ -30,15 +31,15 @@ RawURL: TypeAlias = tuple[bytes, bytes, int | None, bytes]
 SimpleQuery: TypeAlias = str | int | float
 QueryVariable: TypeAlias = SimpleQuery | list[SimpleQuery]
 QueryTypes: TypeAlias = (
-    None | str | Mapping[str, QueryVariable] | list[tuple[str, SimpleQuery]]
+    str | Mapping[str, QueryVariable] | list[tuple[str, SimpleQuery]] | None
 )
 
 HeaderTypes: TypeAlias = (
-    None | CIMultiDict[str] | dict[str, str] | list[tuple[str, str]]
+    CIMultiDict[str] | dict[str, str] | list[tuple[str, str]] | None
 )
 
 CookieTypes: TypeAlias = (
-    "None | Cookies | CookieJar | dict[str, str] | list[tuple[str, str]]"
+    "Cookies | CookieJar | dict[str, str] | list[tuple[str, str]] | None"
 )
 
 ContentTypes: TypeAlias = str | bytes | None
@@ -52,6 +53,7 @@ FileTypes: TypeAlias = (
 )
 FilesTypes: TypeAlias = dict[str, FileTypes] | list[tuple[str, FileTypes]] | None
 TimeoutTypes: TypeAlias = float | Timeout | None
+PingIntervalTypes: TypeAlias = float | None
 
 
 class HTTPVersion(Enum):
@@ -76,6 +78,8 @@ class Request:
         version: str | HTTPVersion = HTTPVersion.H11,
         timeout: TimeoutTypes | UnsetType = UNSET,
         proxy: str | None = None,
+        ping_interval: PingIntervalTypes | UnsetType = UNSET,
+        auto_redirects: bool | UnsetType = UNSET,
     ):
         # method
         self.method: str = (
@@ -89,6 +93,10 @@ class Request:
         self.timeout: TimeoutTypes | UnsetType = timeout
         # proxy
         self.proxy: str | None = proxy
+        # ping interval
+        self.ping_interval: PingIntervalTypes | UnsetType = ping_interval
+        # auto redirects
+        self.auto_redirects: bool | UnsetType = auto_redirects
 
         # url
         if isinstance(url, tuple):
@@ -204,7 +212,7 @@ class WebSocket(abc.ABC):
         elif isinstance(data, bytes):
             await self.send_bytes(data)
         else:
-            raise TypeError("WebSocker send method expects str or bytes!")
+            raise TypeError("WebSocket send method expects str or bytes!")
 
     @abc.abstractmethod
     async def send_text(self, data: str) -> None:
@@ -304,7 +312,7 @@ class Cookies(MutableMapping):
             self.jar.set_cookie(cookie)
 
     def as_header(self, request: Request) -> dict[str, str]:
-        urllib_request = self._CookieCompatRequest(request)
+        urllib_request = self._CookieRequest(request)
         self.jar.add_cookie_header(urllib_request)
         return urllib_request.added_headers
 
@@ -333,7 +341,7 @@ class Cookies(MutableMapping):
         )
         return f"{self.__class__.__name__}({cookies_repr})"
 
-    class _CookieCompatRequest(urllib.request.Request):
+    class _CookieRequest(urllib.request.Request):
         def __init__(self, request: Request) -> None:
             super().__init__(
                 url=str(request.url),

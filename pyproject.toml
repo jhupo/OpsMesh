@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=84.1.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 dynamic = ["dependencies"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Operating System :: POSIX :: Linux",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
 ]
 
@@ -40,6 +40,7 @@ dependencies = {file = ["requirements.txt"]}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["opsmesh", "opsmesh.*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 "opsmesh" = ["py.typed", "**/*.pyi"]
@@ -47,6 +48,5 @@ include = ["opsmesh", "opsmesh.*"]
 [project.urls]
 Repository = "https://github.com/jhupo/OpsMesh"
 Issues = "https://github.com/jhupo/OpsMesh/issues"
-Documentation = "https://github.com/jhupo/OpsMesh/tree/master/docs"
 # NoneBot2 v2.5.0
 Upstream = "https://github.com/nonebot/nonebot2/tree/c0f9a494bcd308c2ec530ba60c167f9145d21aec"

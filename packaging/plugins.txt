@@ -1,6 +1,0 @@
-# Optional Linux plugin runtime; never installed into the frozen host.
--r ../packages/cron/requirements.txt
--r ../packages/database/requirements.txt
--r ../packages/execution/requirements.txt
--r ../packages/filesystem/requirements.txt
--r ../packages/execution/requirements-langfuse.txt

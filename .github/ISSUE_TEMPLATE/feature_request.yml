@@ -1,0 +1,26 @@
+name: 功能建议 / RFC
+description: 提议新的框架特性、驱动支持或架构优化方案
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 背景与痛点
+      description: 描述你在实际业务中遇到的问题，以及为什么当前框架无法优雅解决。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案与 API 设想
+      description: 请描述期望的接口签名、使用示例或架构边界。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与权衡
+      description: 是否考虑过用外部插件或适配器实现？为什么更适合纳入核心框架？

@@ -1,8 +1,6 @@
 """[websockets](https://websockets.readthedocs.io/) 驱动适配
 
 ```bash
-nb driver install websockets
-# 或者
 pip install opsmesh[websockets]
 ```
 
@@ -22,8 +20,8 @@ from contextlib import asynccontextmanager
 from functools import wraps
 import logging
 from types import CoroutineType
-from typing import TYPE_CHECKING, Any, TypeVar
-from typing_extensions import ParamSpec, override
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
+from typing_extensions import override
 
 from opsmesh.drivers import (
     DEFAULT_TIMEOUT,
@@ -36,7 +34,7 @@ from opsmesh.drivers import WebSocket as BaseWebSocket
 from opsmesh.drivers.none import Driver as NoneDriver
 from opsmesh.exception import WebSocketClosed
 from opsmesh.log import LoguruHandler
-from opsmesh.utils import UNSET, exclude_unset
+from opsmesh.utils import UNSET, UnsetType, exclude_unset
 
 try:
     from websockets import ClientConnection, ConnectionClosed, connect
@@ -77,14 +75,16 @@ class Mixin(WebSocketClientMixin):
     @override
     @asynccontextmanager
     async def websocket(self, setup: Request) -> AsyncGenerator["WebSocket", None]:
-        timeout_kwargs: dict[str, float | None] = {}
+        timeout_kwargs: dict[str, float | UnsetType | None] = {}
         if isinstance(setup.timeout, Timeout):
             open_timeout = (
                 setup.timeout.connect or setup.timeout.read or setup.timeout.total
             )
-            timeout_kwargs = exclude_unset(
-                {"open_timeout": open_timeout, "close_timeout": setup.timeout.close}
-            )
+            timeout_kwargs = {
+                "open_timeout": open_timeout,
+                "close_timeout": setup.timeout.close,
+                "ping_timeout": setup.timeout.ping,
+            }
         elif setup.timeout is not UNSET:
             timeout_kwargs = {
                 "open_timeout": setup.timeout,
@@ -95,18 +95,30 @@ class Mixin(WebSocketClientMixin):
             open_timeout = (
                 DEFAULT_TIMEOUT.connect or DEFAULT_TIMEOUT.read or DEFAULT_TIMEOUT.total
             )
-            timeout_kwargs = exclude_unset(
-                {
-                    "open_timeout": open_timeout,
-                    "close_timeout": DEFAULT_TIMEOUT.close,
-                }
+            timeout_kwargs = {
+                "open_timeout": open_timeout,
+                "close_timeout": DEFAULT_TIMEOUT.close,
+                "ping_timeout": DEFAULT_TIMEOUT.ping,
+            }
+
+        kwargs = exclude_unset(
+            {
+                **timeout_kwargs,
+                "ping_interval": setup.ping_interval,
+            }
+        )
+
+        if setup.auto_redirects is not UNSET:
+            logger.warning(
+                "websockets driver websocket method does not expose "
+                "redirects parameter; the configured auto_redirects will be ignored."
             )
 
         connection = connect(
             str(setup.url),
             additional_headers={**setup.headers, **setup.cookies.as_header(setup)},
             proxy=setup.proxy if setup.proxy is not None else True,
-            **timeout_kwargs,  # type: ignore
+            **kwargs,  # type: ignore
         )
         async with connection as ws:
             yield WebSocket(request=setup, websocket=ws)

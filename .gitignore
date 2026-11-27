@@ -1,6 +1,4 @@
 .venv/
-.venv-linux/
-dist-linux/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -11,17 +9,6 @@ __pycache__/
 htmlcov/
 build/
 dist/
-.data/
 .env
 .env.*
-*.pem
-*.key
 !.env.example
-!deploy/test.env.example
-.ruff-infra-report.txt
-
-backup/
-data/
-/deploy/host.json
-/deploy/opsmesh.env
-/.build-venv/

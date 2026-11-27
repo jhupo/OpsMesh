@@ -23,7 +23,6 @@ from enum import Enum
 from functools import partial, wraps
 import importlib
 import inspect
-import json
 from pathlib import Path
 import re
 from typing import (
@@ -31,6 +30,7 @@ from typing import (
     Final,
     Generic,
     Literal,
+    ParamSpec,
     TypeAlias,
     TypeVar,
     final,
@@ -38,12 +38,11 @@ from typing import (
     get_origin,
     overload,
 )
-from typing_extensions import ParamSpec, override
 
 import anyio
 import anyio.to_thread
-from exceptiongroup import BaseExceptionGroup, catch
-from pydantic import BaseModel
+from pydantic import BaseModel, GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 from opsmesh.log import logger
 from opsmesh.typing import (
@@ -54,8 +53,6 @@ from opsmesh.typing import (
     type_has_args,
 )
 
-from .compat import custom_validation
-
 P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
@@ -65,7 +62,6 @@ E = TypeVar("E", bound=BaseException)
 
 
 @final
-@custom_validation
 class Unset(Enum):
     _UNSET = "<UNSET>"
 
@@ -85,8 +81,10 @@ class Unset(Enum):
         return self._UNSET
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls._validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_plain_validator_function(cls._validate)
 
     @classmethod
     def _validate(cls, value: Any):
@@ -308,8 +306,10 @@ async def run_coro_with_catch(
         协程的返回值或发生异常时的指定值
     """
 
-    with catch({exc: lambda exc_group: None}):
+    try:
         return await coro
+    except* exc:
+        pass
 
     return return_on_err
 
@@ -380,16 +380,6 @@ class classproperty(Generic[T]):
 
     def __get__(self, instance: Any, owner: type[Any] | None = None) -> T:
         return self.func(type(instance) if owner is None else owner)
-
-
-class DataclassEncoder(json.JSONEncoder):
-    """可以序列化 {ref}`opsmesh.adapters.Message`(List[Dataclass]) 的 `JSONEncoder`"""
-
-    @override
-    def default(self, o):
-        if dataclasses.is_dataclass(o):
-            return {f.name: getattr(o, f.name) for f in dataclasses.fields(o)}
-        return super().default(o)
 
 
 def logger_wrapper(logger_name: str):

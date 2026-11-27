@@ -1,8 +1,6 @@
 """[Quart](https://pgjones.gitlab.io/quart/index.html) 驱动适配
 
 ```bash
-nb driver install quart
-# 或者
 pip install opsmesh[quart]
 ```
 
@@ -24,8 +22,7 @@ from typing_extensions import override
 
 from pydantic import BaseModel
 
-from opsmesh.compat import model_dump, type_validate_python
-from opsmesh.config import Config as NoneBotConfig
+from opsmesh.config import Config as OpsMeshConfig
 from opsmesh.config import Env
 from opsmesh.drivers import ASGIMixin, HTTPServerSetup, WebSocketServerSetup
 from opsmesh.drivers import Driver as BaseDriver
@@ -80,10 +77,10 @@ class Config(BaseModel):
 class Driver(BaseDriver, ASGIMixin):
     """Quart 驱动框架"""
 
-    def __init__(self, env: Env, config: NoneBotConfig):
+    def __init__(self, env: Env, config: OpsMeshConfig):
         super().__init__(env, config)
 
-        self.quart_config = type_validate_python(Config, model_dump(config))
+        self.quart_config = Config.model_validate(config.model_dump())
 
         self._server_app = Quart(
             self.__class__.__qualname__, **self.quart_config.quart_extra
@@ -148,7 +145,7 @@ class Driver(BaseDriver, ASGIMixin):
         **kwargs,
     ):
         """使用 `uvicorn` 启动 Quart"""
-        super().run(host, port, app, **kwargs)
+        super().run(host, port, *args, app=app, **kwargs)
         LOGGING_CONFIG = {
             "version": 1,
             "disable_existing_loggers": False,

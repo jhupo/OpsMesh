@@ -1,7 +1,0 @@
-{
-  "config": {
-    "model": "example-model",
-    "greeting": "hello"
-  },
-  "dependencies": {}
-}

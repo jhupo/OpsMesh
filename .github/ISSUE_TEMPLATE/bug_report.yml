@@ -1,0 +1,41 @@
+name: Bug 报告
+description: 反馈框架运行异常、类型缺陷或不符合文档预期的行为
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 感谢反馈问题！请尽量提供可复现的最小代码片段与环境信息。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰描述实际发生的行为与预期行为之间的差异。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现步骤 / 代码
+      description: 请附上可直接复现问题的最小脚本与配置片段。
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志与堆栈
+      description: 请粘贴完整 Traceback（注意脱敏 Token 与密钥）。
+      render: text
+
+  - type: input
+    id: env
+    attributes:
+      label: 运行环境
+      description: Python 版本、OpsMesh 版本、操作系统与使用的 Driver/Adapter
+      placeholder: "Python 3.11.x / OpsMesh 0.6.0 / Ubuntu 24.04 / ~fastapi+~httpx"
+    validations:
+      required: true

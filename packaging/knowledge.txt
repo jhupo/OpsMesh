@@ -1,3 +1,0 @@
-# Optional local embedding runtime, separate from the standard plugin bundle.
--r plugins.txt
--r ../packages/knowledge/requirements.txt

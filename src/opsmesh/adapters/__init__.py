@@ -9,12 +9,16 @@ FrontMatter:
     description: opsmesh.adapters 模块
 """
 
+from pkgutil import extend_path
+
 from opsmesh.internal.adapter import Adapter as Adapter
-from opsmesh.internal.adapter import Gateway as Gateway
 from opsmesh.internal.adapter import Event as Event
+from opsmesh.internal.adapter import Gateway as Gateway
 from opsmesh.internal.adapter import Message as Message
 from opsmesh.internal.adapter import MessageSegment as MessageSegment
 from opsmesh.internal.adapter import MessageTemplate as MessageTemplate
+
+__path__ = extend_path(__path__, __name__)
 
 __autodoc__ = {
     "Gateway": True,

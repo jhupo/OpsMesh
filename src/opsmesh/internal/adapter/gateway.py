@@ -3,55 +3,65 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import anyio
-from exceptiongroup import BaseExceptionGroup, catch
 
 from opsmesh.config import Config
-from opsmesh.exception import MockApiException
+from opsmesh.dependencies import Dependent
+from opsmesh.exception import MockInvokeResult
+from opsmesh.internal.params import DefaultParam, DependParam, GatewayParam
 from opsmesh.log import logger
-from opsmesh.typing import T_CalledHook, T_CallingHook
+from opsmesh.typing import (
+    T_AfterInvokeHook,
+    T_BeforeInvokeHook,
+    T_ConnectHook,
+    T_DisconnectHook,
+)
 from opsmesh.utils import flatten_exception_group
 
 if TYPE_CHECKING:
     from .adapter import Adapter
     from .event import Event
     from .message import Message, MessageSegment
+    from .template import MessageTemplate
 
-    class _ApiCall(Protocol):
-        async def __call__(self, **kwargs: Any) -> Any: ...
+    class _ActionCall(Protocol):
+        async def __call__(self, **params: Any) -> Any: ...
+
+
+CONNECTION_HOOK_PARAMS = (DependParam, GatewayParam, DefaultParam)
 
 
 class Gateway(abc.ABC):
-    """适配器管理的事件来源实例。事件回复和协议 API 调用由该实例交给适配器处理。
+    """适配器管理的网关实例。事件回复和出站动作调用由该实例交给适配器处理。
 
     参数:
         adapter: 协议适配器实例
-        id: 在当前 Driver 中唯一的网关实例标识，不是单次事件的 ID
-        owner_plugin_id: 专属网关的使用方插件 ID；None 表示共享网关
+        id: 在当前 Driver 中唯一的网关实例标识
     """
 
-    _calling_hooks: ClassVar[set[T_CallingHook]] = set()
-    """call_api 时执行的函数"""
-    _called_hooks: ClassVar[set[T_CalledHook]] = set()
-    """call_api 后执行的函数"""
+    _connect_hooks: ClassVar[set[Dependent[Any]]] = set()
+    """网关登记时执行的钩子函数"""
+    _disconnect_hooks: ClassVar[set[Dependent[Any]]] = set()
+    """网关注销时执行的钩子函数"""
+    _before_invoke_hooks: ClassVar[set[T_BeforeInvokeHook]] = set()
+    """`invoke` 前执行的钩子函数"""
+    _after_invoke_hooks: ClassVar[set[T_AfterInvokeHook]] = set()
+    """`invoke` 后执行的钩子函数"""
 
-    def __init__(
-        self, adapter: "Adapter", id: str, *, owner_plugin_id: str | None = None
-    ):
+    def __init__(self, adapter: "Adapter", id: str):
         self.adapter: "Adapter" = adapter
         """协议适配器实例"""
         self.id: str = id
         """网关实例标识"""
-        self.owner_plugin_id = owner_plugin_id
 
     def __repr__(self) -> str:
         return f"Gateway(type={self.type!r}, id={self.id!r})"
 
-    def __getattr__(self, name: str) -> "_ApiCall":
-        if name.startswith("__") and name.endswith("__"):
+    def __getattr__(self, action: str) -> "_ActionCall":
+        if action.startswith("__") and action.endswith("__"):
             raise AttributeError(
-                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+                f"'{self.__class__.__name__}' object has no attribute '{action}'"
             )
-        return partial(self.call_api, name)
+        return partial(self.invoke, action)
 
     @property
     def type(self) -> str:
@@ -63,133 +73,85 @@ class Gateway(abc.ABC):
         """全局 OpsMesh 配置"""
         return self.adapter.config
 
-    def _allows_callback(self, callback: Any) -> bool:
-        if self.owner_plugin_id is None:
-            return True
+    def connect(self) -> None:
+        """将当前网关实例登记到所属适配器与驱动器。"""
+        self.adapter.connect(self)
 
-        from opsmesh.plugin import get_plugin_by_module_name
+    def disconnect(self) -> None:
+        """将当前网关实例从所属适配器与驱动器注销。"""
+        self.adapter.disconnect(self)
 
-        while isinstance(callback, partial):
-            callback = callback.func
-        plugin = get_plugin_by_module_name(getattr(callback, "__module__", ""))
-        return bool(
-            plugin and plugin.enabled and plugin.id_ == self.owner_plugin_id
-        )
-
-    async def call_api(self, api: str, **data: Any) -> Any:
-        """调用适配器提供的协议 API，可直接调用本方法或使用对应的网关属性。
+    async def invoke(self, action: str, **params: Any) -> Any:
+        """调用适配器提供的出站动作，可直接调用本方法或通过网关同名属性调用。
 
         参数:
-            api: API 名称
-            data: API 数据
+            action: 动作名称
+            params: 动作参数
 
         用法:
             ```python
-            await gateway.call_api("send_msg", message="hello world")
-            await gateway.send_msg(message="hello world")
+            await gateway.invoke("publish", topic="sys/ready")
+            await gateway.publish(topic="sys/ready")
             ```
         """
-
         result: Any = None
-        skip_call: bool = False
+        skip_invoke: bool = False
         exception: Exception | None = None
 
-        if self._calling_hooks:
-            logger.debug("Running on_calling hooks...")
-
-            def _handle_mock_api_exception(
-                exc_group: BaseExceptionGroup[MockApiException],
-            ) -> None:
-                nonlocal skip_call, result
-
-                excs = [
-                    exc
-                    for exc in flatten_exception_group(exc_group)
-                    if isinstance(exc, MockApiException)
-                ]
-                if not excs:
-                    return
-                elif len(excs) > 1:
+        if self._before_invoke_hooks:
+            logger.debug("Running before_invoke hooks...")
+            try:
+                async with anyio.create_task_group() as tg:
+                    for hook in self._before_invoke_hooks:
+                        tg.start_soon(hook, self, action, params)
+            except* MockInvokeResult as exc_group:
+                excs = list(flatten_exception_group(exc_group))
+                if len(excs) > 1:
                     logger.warning(
-                        "Multiple hooks want to mock API result. Use the first one."
+                        "Multiple hooks want to mock invoke result. Use the first one."
                     )
-
-                skip_call = True
+                skip_invoke = True
                 result = excs[0].result
-
                 logger.debug(
-                    f"Calling API {api} is cancelled. Return {result!r} instead."
+                    f"Invoking action {action} is cancelled. Return {result!r} instead."
                 )
-
-            def _handle_exception(exc_group: BaseExceptionGroup[Exception]) -> None:
+            except* Exception as exc_group:
                 for exc in flatten_exception_group(exc_group):
                     logger.opt(colors=True, exception=exc).error(
-                        "<r><bg #f8bbd0>Error when running on_calling hook. "
+                        "<r><bg #f8bbd0>Error when running before_invoke hook. "
                         "Running cancelled!</bg #f8bbd0></r>"
                     )
 
-            with catch(
-                {
-                    MockApiException: _handle_mock_api_exception,
-                    Exception: _handle_exception,
-                }
-            ):
-                async with anyio.create_task_group() as tg:
-                    for hook in self._calling_hooks:
-                        if self._allows_callback(hook):
-                            tg.start_soon(hook, self, api, data)
-
-        if not skip_call:
+        if not skip_invoke:
             try:
-                result = await self.adapter._call_api(self, api, **data)
+                result = await self.adapter._invoke(self, action, **params)
             except Exception as e:
                 exception = e
 
-        if self._called_hooks:
-            logger.debug("Running on_called hooks...")
-
-            def _handle_mock_api_exception(
-                exc_group: BaseExceptionGroup[MockApiException],
-            ) -> None:
-                nonlocal result, exception
-
-                excs = [
-                    exc
-                    for exc in flatten_exception_group(exc_group)
-                    if isinstance(exc, MockApiException)
-                ]
-                if not excs:
-                    return
-                elif len(excs) > 1:
+        if self._after_invoke_hooks:
+            logger.debug("Running after_invoke hooks...")
+            try:
+                async with anyio.create_task_group() as tg:
+                    for hook in self._after_invoke_hooks:
+                        tg.start_soon(hook, self, exception, action, params, result)
+            except* MockInvokeResult as exc_group:
+                excs = list(flatten_exception_group(exc_group))
+                if len(excs) > 1:
                     logger.warning(
-                        "Multiple hooks want to mock API result. Use the first one."
+                        "Multiple hooks want to mock invoke result. Use the first one."
                     )
-
                 result = excs[0].result
                 exception = None
                 logger.debug(
-                    f"Calling API {api} result is mocked. Return {result} instead."
+                    f"Invoking action {action} result is mocked. "
+                    f"Return {result!r} instead."
                 )
-
-            def _handle_exception(exc_group: BaseExceptionGroup[Exception]) -> None:
+            except* Exception as exc_group:
                 for exc in flatten_exception_group(exc_group):
                     logger.opt(colors=True, exception=exc).error(
-                        "<r><bg #f8bbd0>Error when running on_called hook. "
+                        "<r><bg #f8bbd0>Error when running after_invoke hook. "
                         "Running cancelled!</bg #f8bbd0></r>"
                     )
-
-            with catch(
-                {
-                    MockApiException: _handle_mock_api_exception,
-                    Exception: _handle_exception,
-                }
-            ):
-                async with anyio.create_task_group() as tg:
-                    for hook in self._called_hooks:
-                        if self._allows_callback(hook):
-                            tg.start_soon(
-                                hook, self, exception, api, data, result
-                            )
 
         if exception:
             raise exception
@@ -199,42 +161,36 @@ class Gateway(abc.ABC):
     async def send(
         self,
         event: "Event",
-        message: "str | Message | MessageSegment",
+        message: "str | Message | MessageSegment | MessageTemplate",
         **kwargs: Any,
     ) -> Any:
-        """通过当前网关向指定事件发送消息。
-
-        参数:
-            event: 上报事件
-            message: 要发送的消息
-            kwargs: 任意额外参数
-        """
+        """通过当前网关向指定事件发送响应消息。"""
         raise NotImplementedError
 
     @classmethod
-    def on_calling(cls, func: T_CallingHook) -> T_CallingHook:
-        """调用 api 预处理。
-
-        钩子函数参数:
-
-        - gateway: 当前 gateway 对象
-        - api: 调用的 api 名称
-        - data: api 调用的参数字典
-        """
-        cls._calling_hooks.add(func)
+    def on_connect(cls, func: T_ConnectHook) -> T_ConnectHook:
+        """注册网关登记时执行的钩子函数。"""
+        cls._connect_hooks.add(
+            Dependent[Any].parse(call=func, allow_types=CONNECTION_HOOK_PARAMS)
+        )
         return func
 
     @classmethod
-    def on_called(cls, func: T_CalledHook) -> T_CalledHook:
-        """调用 api 后处理。
+    def on_disconnect(cls, func: T_DisconnectHook) -> T_DisconnectHook:
+        """注册网关注销时执行的钩子函数。"""
+        cls._disconnect_hooks.add(
+            Dependent[Any].parse(call=func, allow_types=CONNECTION_HOOK_PARAMS)
+        )
+        return func
 
-        钩子函数参数:
+    @classmethod
+    def before_invoke(cls, func: T_BeforeInvokeHook) -> T_BeforeInvokeHook:
+        """注册动作调用前置钩子（参数: gateway, action, params）。"""
+        cls._before_invoke_hooks.add(func)
+        return func
 
-        - gateway: 当前 gateway 对象
-        - exception: 调用 api 时发生的错误
-        - api: 调用的 api 名称
-        - data: api 调用的参数字典
-        - result: api 调用的返回
-        """
-        cls._called_hooks.add(func)
+    @classmethod
+    def after_invoke(cls, func: T_AfterInvokeHook) -> T_AfterInvokeHook:
+        """注册动作调用后置钩子（参数: gateway, exception, action, params, result）。"""
+        cls._after_invoke_hooks.add(func)
         return func

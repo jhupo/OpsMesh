@@ -1,4 +1,0 @@
-include provision_model.py
-include requirements-core.txt
-include requirements-plugins.txt
-include requirements.txt

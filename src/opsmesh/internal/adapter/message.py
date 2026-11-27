@@ -2,17 +2,17 @@ import abc
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-from typing import (  # noqa: UP035
+from typing import (
     Any,
     Generic,
+    Self,
     SupportsIndex,
-    Type,
     TypeVar,
     overload,
 )
-from typing_extensions import Self
 
-from opsmesh.compat import custom_validation, type_validate_python
+from pydantic import GetCoreSchemaHandler, TypeAdapter
+from pydantic_core import CoreSchema, core_schema
 
 from .template import MessageTemplate
 
@@ -20,7 +20,6 @@ TMS = TypeVar("TMS", bound="MessageSegment")
 TM = TypeVar("TM", bound="Message")
 
 
-@custom_validation
 @dataclass
 class MessageSegment(abc.ABC, Generic[TM]):
     """消息段基类"""
@@ -32,7 +31,7 @@ class MessageSegment(abc.ABC, Generic[TM]):
 
     @classmethod
     @abc.abstractmethod
-    def get_message_class(cls) -> Type[TM]:  # noqa: UP006
+    def get_message_class(cls) -> type[TM]:
         """获取消息数组类型"""
         raise NotImplementedError
 
@@ -56,8 +55,10 @@ class MessageSegment(abc.ABC, Generic[TM]):
         return self.get_message_class()(other) + self
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls._validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_plain_validator_function(cls._validate)
 
     @classmethod
     def _validate(cls, value) -> Self:
@@ -97,7 +98,6 @@ class MessageSegment(abc.ABC, Generic[TM]):
         raise NotImplementedError
 
 
-@custom_validation
 class Message(list[TMS], abc.ABC):
     """消息序列
 
@@ -107,7 +107,7 @@ class Message(list[TMS], abc.ABC):
 
     def __init__(
         self,
-        message: str | None | Iterable[TMS] | TMS = None,
+        message: str | Iterable[TMS] | TMS | None = None,
     ):
         super().__init__()
         if message is None:
@@ -147,8 +147,10 @@ class Message(list[TMS], abc.ABC):
         return "".join(str(seg) for seg in self)
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls._validate
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_plain_validator_function(cls._validate)
 
     @classmethod
     def _validate(cls, value) -> Self:
@@ -159,9 +161,10 @@ class Message(list[TMS], abc.ABC):
         elif isinstance(value, str):
             pass
         elif isinstance(value, dict):
-            value = type_validate_python(cls.get_segment_class(), value)
+            value = TypeAdapter(cls.get_segment_class()).validate_python(value)
         elif isinstance(value, Iterable):
-            value = [type_validate_python(cls.get_segment_class(), v) for v in value]
+            seg_adapter = TypeAdapter(cls.get_segment_class())
+            value = [seg_adapter.validate_python(v) for v in value]
         else:
             raise ValueError(
                 f"Expected str, dict or iterable for Message, got {type(value)}"
