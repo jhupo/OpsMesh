@@ -31,15 +31,15 @@ RawURL: TypeAlias = tuple[bytes, bytes, int | None, bytes]
 SimpleQuery: TypeAlias = str | int | float
 QueryVariable: TypeAlias = SimpleQuery | list[SimpleQuery]
 QueryTypes: TypeAlias = (
-    None | str | Mapping[str, QueryVariable] | list[tuple[str, SimpleQuery]]
+    str | Mapping[str, QueryVariable] | list[tuple[str, SimpleQuery]] | None
 )
 
 HeaderTypes: TypeAlias = (
-    None | CIMultiDict[str] | dict[str, str] | list[tuple[str, str]]
+    CIMultiDict[str] | dict[str, str] | list[tuple[str, str]] | None
 )
 
 CookieTypes: TypeAlias = (
-    "None | Cookies | CookieJar | dict[str, str] | list[tuple[str, str]]"
+    "Cookies | CookieJar | dict[str, str] | list[tuple[str, str]] | None"
 )
 
 ContentTypes: TypeAlias = str | bytes | None
