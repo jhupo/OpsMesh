@@ -10,9 +10,7 @@ FrontMatter:
 from datetime import datetime, timedelta
 import inspect
 import re
-from types import ModuleType
 from typing import Any
-import warnings
 
 from opsmesh.adapters import Event
 from opsmesh.dependencies import Dependent
@@ -46,36 +44,6 @@ def store_matcher(matcher: type[Matcher]) -> None:
     # only store the matcher defined when plugin loading
     if plugin := _current_plugin.get():
         plugin.matcher.add(matcher)
-
-
-def get_matcher_plugin(depth: int = 1) -> Plugin | None:  # pragma: no cover
-    """获取事件响应器定义所在插件。
-
-    **Deprecated**, 请使用 {ref}`opsmesh.plugin.on.get_matcher_source` 获取信息。
-
-    参数:
-        depth: 调用栈深度
-    """
-    warnings.warn(
-        "`get_matcher_plugin` is deprecated, please use `get_matcher_source` instead",
-        DeprecationWarning,
-    )
-    return (source := get_matcher_source(depth + 1)) and source.plugin
-
-
-def get_matcher_module(depth: int = 1) -> ModuleType | None:  # pragma: no cover
-    """获取事件响应器定义所在模块。
-
-    **Deprecated**, 请使用 {ref}`opsmesh.plugin.on.get_matcher_source` 获取信息。
-
-    参数:
-        depth: 调用栈深度
-    """
-    warnings.warn(
-        "`get_matcher_module` is deprecated, please use `get_matcher_source` instead",
-        DeprecationWarning,
-    )
-    return (source := get_matcher_source(depth + 1)) and source.module
 
 
 def get_matcher_source(depth: int = 0) -> MatcherSource | None:
@@ -170,7 +138,7 @@ def on_metaevent(*args, _depth: int = 0, **kwargs) -> type[Matcher]:
 
 
 def on_message(*args, _depth: int = 0, **kwargs) -> type[Matcher]:
-    """注册一个消息事件响应器。
+    """注册一个消息事件响应器（默认 `block=True`）。
 
     参数:
         rule: 事件响应规则
@@ -179,7 +147,7 @@ def on_message(*args, _depth: int = 0, **kwargs) -> type[Matcher]:
         temp: 是否为临时事件响应器（仅执行一次）
         expire_time: 事件响应器最终有效时间点，过时即被删除
         priority: 事件响应器优先级
-        block: 是否阻止事件向更低优先级传递
+        block: 是否阻止事件向更低优先级传递，默认为 `True`
         state: 默认 state
     """
     kwargs.setdefault("block", True)
@@ -339,7 +307,6 @@ def on_command(
     """
 
     commands = {cmd} | (aliases or set())
-    kwargs.setdefault("block", False)
     return on_message(
         command(*commands, force_whitespace=force_whitespace) & rule,
         **kwargs,
@@ -580,7 +547,7 @@ class MatcherGroup(_Group):
             block: 是否阻止事件向更低优先级传递
             state: 默认 state
         """
-        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type", "permission"})
+        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type"})
         matcher = on_metaevent(**final_kwargs)
         self.matchers.append(matcher)
         return matcher
@@ -616,7 +583,7 @@ class MatcherGroup(_Group):
             block: 是否阻止事件向更低优先级传递
             state: 默认 state
         """
-        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type", "permission"})
+        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type"})
         matcher = on_notice(**final_kwargs)
         self.matchers.append(matcher)
         return matcher
@@ -634,7 +601,7 @@ class MatcherGroup(_Group):
             block: 是否阻止事件向更低优先级传递
             state: 默认 state
         """
-        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type", "permission"})
+        final_kwargs = self._get_final_kwargs(kwargs, exclude={"type"})
         matcher = on_request(**final_kwargs)
         self.matchers.append(matcher)
         return matcher
@@ -806,7 +773,7 @@ class MatcherGroup(_Group):
         return matcher
 
     def on_type(
-        self, types: type[Event] | tuple[type[Event]], **kwargs
+        self, types: type[Event] | tuple[type[Event], ...], **kwargs
     ) -> type[Matcher]:
         """注册一个事件响应器，并且当事件为指定类型时响应。
 

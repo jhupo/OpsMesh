@@ -1,27 +1,28 @@
 from collections.abc import Callable
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
-from enum import Enum
+from enum import StrEnum
 import inspect
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     Literal,
+    Self,
     cast,
     get_args,
     get_origin,
 )
-from typing_extensions import Self, override
+from typing_extensions import override
 
 import anyio
-from exceptiongroup import BaseExceptionGroup, catch
 from pydantic.fields import FieldInfo as PydanticFieldInfo
+from pydantic_core import PydanticUndefined
 
-from opsmesh.compat import FieldInfo, ModelField, PydanticUndefined
 from opsmesh.consts import ARG_KEY, REJECT_PROMPT_RESULT_KEY
 from opsmesh.dependencies import Dependent, Param
 from opsmesh.dependencies.utils import check_field_type
 from opsmesh.exception import SkippedException
+from opsmesh.internal.field import FieldInfo, ModelField
 from opsmesh.typing import (
     _STATE_FLAG,
     T_DependencyCache,
@@ -40,7 +41,7 @@ from opsmesh.utils import (
 )
 
 if TYPE_CHECKING:
-    from opsmesh.adapters import Gateway, Event, Message
+    from opsmesh.adapters import Event, Gateway, Message
     from opsmesh.matcher import Matcher
 
 
@@ -97,7 +98,7 @@ def Depends(
     return DependsInner(dependency, use_cache=use_cache, validate=validate)
 
 
-class CacheState(str, Enum):
+class CacheState(StrEnum):
     """子依赖缓存状态"""
 
     PENDING = "PENDING"
@@ -225,9 +226,8 @@ class DependParam(Param):
         dependency: T_Handler
         # sub dependency is not specified, use type annotation
         if depends_inner.dependency is None:
-            assert type_annotation is not inspect.Signature.empty, (
-                "Dependency cannot be empty"
-            )
+            if type_annotation is inspect.Signature.empty:
+                raise ValueError("Dependency cannot be empty")
             dependency = type_annotation
         else:
             dependency = depends_inner.dependency
@@ -247,7 +247,8 @@ class DependParam(Param):
         cls, value: Any, allow_types: tuple[type[Param], ...]
     ) -> "Param | None":
         if isinstance(value, DependsInner):
-            assert value.dependency, "Dependency cannot be empty"
+            if not value.dependency:
+                raise ValueError("Dependency cannot be empty")
             dependent = Dependent[Any].parse(
                 call=value.dependency, allow_types=allow_types
             )
@@ -269,16 +270,14 @@ class DependParam(Param):
         # solve sub dependency with current cache
         exc: BaseExceptionGroup[SkippedException] | None = None
 
-        def _handle_skipped(exc_group: BaseExceptionGroup[SkippedException]):
-            nonlocal exc
-            exc = exc_group
-
-        with catch({SkippedException: _handle_skipped}):
+        try:
             sub_values = await sub_dependent.solve(
                 stack=stack,
                 dependency_cache=dependency_cache,
                 **kwargs,
             )
+        except* SkippedException as exc_group:
+            exc = exc_group
 
         if exc is not None:
             raise exc
@@ -288,9 +287,8 @@ class DependParam(Param):
             return await dependency_cache[call].wait()
 
         if is_gen_callable(call) or is_async_gen_callable(call):
-            assert isinstance(stack, AsyncExitStack), (
-                "Generator dependency should be called in context"
-            )
+            if not isinstance(stack, AsyncExitStack):
+                raise RuntimeError("Generator dependency should be called in context")
             if is_gen_callable(call):
                 cm = run_sync_ctx_manager(contextmanager(call)(**sub_values))
             else:
@@ -327,8 +325,7 @@ class DependParam(Param):
 class GatewayParam(Param):
     """{ref}`opsmesh.adapters.Gateway` 注入参数。
 
-    本注入解析所有类型为且仅为 {ref}`opsmesh.adapters.Gateway` 及其子类或 `None` 的参数。
-
+    解析类型为 {ref}`opsmesh.adapters.Gateway` 及其子类或 `None` 的参数。
     """
 
     def __init__(self, *args, checker: ModelField | None = None, **kwargs: Any) -> None:
@@ -357,9 +354,6 @@ class GatewayParam(Param):
                     name=param.name, annotation=param.annotation, field_info=FieldInfo()
                 )
             return cls(checker=checker)
-        # legacy: param is named "gateway" and has no type annotation
-        elif param.annotation == param.empty and param.name == "gateway":
-            return cls()
 
     @override
     async def _solve(  # pyright: ignore[reportIncompatibleMethodOverride]
@@ -376,11 +370,9 @@ class GatewayParam(Param):
 
 
 class EventParam(Param):
-    """{ref}`opsmesh.adapters.Event` 注入参数
+    """{ref}`opsmesh.adapters.Event` 注入参数。
 
-    本注入解析所有类型为且仅为 {ref}`opsmesh.adapters.Event` 及其子类或 `None` 的参数。
-
-    为保证兼容性，本注入还会解析名为 `event` 且没有类型注解的参数。
+    解析所有类型为 {ref}`opsmesh.adapters.Event` 及其子类或 `None` 的参数。
     """
 
     def __init__(self, *args, checker: ModelField | None = None, **kwargs: Any) -> None:
@@ -409,9 +401,6 @@ class EventParam(Param):
                     name=param.name, annotation=param.annotation, field_info=FieldInfo()
                 )
             return cls(checker=checker)
-        # legacy: param is named "event" and has no type annotation
-        elif param.annotation == param.empty and param.name == "event":
-            return cls()
 
     @override
     async def _solve(  # pyright: ignore[reportIncompatibleMethodOverride]
@@ -428,12 +417,7 @@ class EventParam(Param):
 
 
 class StateParam(Param):
-    """事件处理状态注入参数
-
-    本注入解析所有类型为 `T_State` 的参数。
-
-    为保证兼容性，本注入还会解析名为 `state` 且没有类型注解的参数。
-    """
+    """事件处理状态注入参数，解析所有类型为 `T_State` 的参数。"""
 
     def __repr__(self) -> str:
         return "StateParam()"
@@ -443,13 +427,9 @@ class StateParam(Param):
     def _check_param(
         cls, param: inspect.Parameter, allow_types: tuple[type[Param], ...]
     ) -> Self | None:
-        # param type is T_State
         if origin_is_annotated(
             get_origin(param.annotation)
         ) and _STATE_FLAG in get_args(param.annotation):
-            return cls()
-        # legacy: param is named "state" and has no type annotation
-        elif param.annotation == param.empty and param.name == "state":
             return cls()
 
     @override
@@ -460,11 +440,9 @@ class StateParam(Param):
 
 
 class MatcherParam(Param):
-    """事件响应器实例注入参数
+    """事件响应器实例注入参数。
 
-    本注入解析所有类型为且仅为 {ref}`opsmesh.matcher.Matcher` 及其子类或 `None` 的参数。
-
-    为保证兼容性，本注入还会解析名为 `matcher` 且没有类型注解的参数。
+    解析所有类型为 {ref}`opsmesh.matcher.Matcher` 及其子类或 `None` 的参数。
     """
 
     def __init__(self, *args, checker: ModelField | None = None, **kwargs: Any) -> None:
@@ -493,9 +471,6 @@ class MatcherParam(Param):
                     name=param.name, annotation=param.annotation, field_info=FieldInfo()
                 )
             return cls(checker=checker)
-        # legacy: param is named "matcher" and has no type annotation
-        elif param.annotation == param.empty and param.name == "matcher":
-            return cls()
 
     @override
     async def _solve(  # pyright: ignore[reportIncompatibleMethodOverride]
@@ -609,11 +584,9 @@ class ArgParam(Param):
 
 
 class ExceptionParam(Param):
-    """{ref}`opsmesh.message.run_postprocessor` 的异常注入参数
+    """{ref}`opsmesh.message.run_postprocessor` 的异常注入参数。
 
-    本注入解析所有类型为 `Exception` 或 `None` 的参数。
-
-    为保证兼容性，本注入还会解析名为 `exception` 且没有类型注解的参数。
+    解析所有类型为 `Exception` 及其子类或 `None` 的参数。
     """
 
     def __repr__(self) -> str:
@@ -624,11 +597,7 @@ class ExceptionParam(Param):
     def _check_param(
         cls, param: inspect.Parameter, allow_types: tuple[type[Param], ...]
     ) -> Self | None:
-        # param type is Exception(s) or subclass(es) of Exception or None
         if generic_check_issubclass(param.annotation, Exception):
-            return cls()
-        # legacy: param is named "exception" and has no type annotation
-        elif param.annotation == param.empty and param.name == "exception":
             return cls()
 
     @override

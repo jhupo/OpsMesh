@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞私密上报
+    url: https://github.com/jhupo/OpsMesh/security/advisories/new
+    about: 请勿在公开 Issue 中披露安全漏洞，通过 Security Advisory 私密提交。

@@ -13,8 +13,8 @@ from typing_extensions import TypeAliasType
 
 from loguru import logger
 
-from opsmesh.compat import ModelField
 from opsmesh.exception import TypeMisMatch
+from opsmesh.internal.field import ModelField
 from opsmesh.typing import evaluate_forwardref, is_type_alias_type
 
 

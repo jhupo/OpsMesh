@@ -14,11 +14,12 @@ from typing import TYPE_CHECKING, Any, Type  # noqa: UP035
 
 from pydantic import BaseModel
 
-from opsmesh.adapters import Adapter
 from opsmesh.matcher import Matcher
 from opsmesh.utils import resolve_dot_notation
 
 if TYPE_CHECKING:
+    from opsmesh.adapters import Adapter
+
     from .manager import PluginManager
 
 
@@ -37,7 +38,7 @@ class PluginMetadata:
     homepage: str | None = None
     """插件主页"""
     config: Type[BaseModel] | None = None  # noqa: UP006
-    """插件配置项"""
+    """插件配置项模型"""
     supported_adapters: set[str] | None = None
     """插件支持的适配器模块路径
 
@@ -47,15 +48,6 @@ class PluginMetadata:
     """
     extra: dict[Any, Any] = field(default_factory=dict)
     """插件额外信息，可由插件编写者自由扩展定义"""
-    protected: bool = False
-    """是否禁止通过插件管理器停用或卸载。"""
-
-    config_file: str | None = None
-    """JSON configuration path relative to the entry module."""
-    adapter: Type[Adapter] | None = None  # noqa: UP006
-    """Adapter registered by the framework before the Driver starts."""
-    dependency_config: Type[BaseModel] | None = None  # noqa: UP006
-    """Schema for this plugin's configuration supplied by one consumer."""
 
     def get_supported_adapters(self) -> set[Type["Adapter"]] | None:  # noqa: UP006
         """获取当前已安装的插件支持适配器类列表"""
@@ -91,8 +83,6 @@ class Plugin:
     """子插件集合"""
     metadata: PluginMetadata | None = None
     """插件元信息"""
-    enabled: bool = field(default=False, init=False)
-    """所属 Matcher 是否接收新事件；不表示后台任务的状态。"""
 
     @property
     def id_(self) -> str:

@@ -23,19 +23,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, get_args, get_origin
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.networks import IPvAnyAddress
+from pydantic_core import PydanticUndefined, PydanticUndefinedType
 
-from opsmesh.compat import (
-    PYDANTIC_V2,
-    ConfigDict,
-    LegacyUnionField,
-    ModelField,
-    PydanticUndefined,
-    PydanticUndefinedType,
-    model_config,
-    model_fields,
-)
+from opsmesh.internal.field import ModelField, model_fields
 from opsmesh.log import logger
 from opsmesh.typing import origin_is_union
 from opsmesh.utils import deep_update, lenient_issubclass, type_is_complex
@@ -54,7 +46,7 @@ class BaseSettingsSource(abc.ABC):
 
     @property
     def config(self) -> "SettingsConfig":
-        return model_config(self.settings_cls)
+        return self.settings_cls.model_config  # type: ignore
 
     @abc.abstractmethod
     def __call__(self) -> dict[str, Any]:
@@ -285,21 +277,11 @@ class DotEnvSettingsSource(BaseSettingsSource):
         return d
 
 
-if PYDANTIC_V2:  # pragma: pydantic-v2
-
-    class SettingsConfig(ConfigDict, total=False):
-        env_file: DOTENV_TYPE | None
-        env_file_encoding: str
-        case_sensitive: bool
-        env_nested_delimiter: str | None
-
-else:  # pragma: pydantic-v1
-
-    class SettingsConfig(ConfigDict):
-        env_file: DOTENV_TYPE | None
-        env_file_encoding: str
-        case_sensitive: bool
-        env_nested_delimiter: str | None
+class SettingsConfig(ConfigDict, total=False):
+    env_file: DOTENV_TYPE | None
+    env_file_encoding: str
+    case_sensitive: bool
+    env_nested_delimiter: str | None
 
 
 class BaseSettings(BaseModel):
@@ -308,22 +290,13 @@ class BaseSettings(BaseModel):
         def __getattr__(self, name: str) -> Any:  # pragma: no cover
             return self.__dict__.get(name)
 
-    if PYDANTIC_V2:  # pragma: pydantic-v2
-        model_config = SettingsConfig(
-            extra="allow",
-            env_file=".env",
-            env_file_encoding="utf-8",
-            case_sensitive=False,
-            env_nested_delimiter="__",
-        )
-    else:  # pragma: pydantic-v1
-
-        class Config(SettingsConfig):
-            extra = "allow"  # type: ignore
-            env_file = ".env"
-            env_file_encoding = "utf-8"
-            case_sensitive = False
-            env_nested_delimiter = "__"
+    model_config = SettingsConfig(
+        extra="allow",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        env_nested_delimiter="__",
+    )
 
     def __init__(
         __settings_self__,  # pyright: ignore[reportSelfClsParameterName]
@@ -332,7 +305,7 @@ class BaseSettings(BaseModel):
         _env_nested_delimiter: str | None = None,
         **values: Any,
     ) -> None:
-        settings_config = model_config(__settings_self__.__class__)
+        settings_config = __settings_self__.__class__.model_config
         env_file = (
             _env_file
             if _env_file is not ENV_FILE_SENTINEL
@@ -397,10 +370,8 @@ class Env(BaseSettings):
 class Config(BaseSettings):
     """OpsMesh 主要配置。大小写不敏感。
 
-    除了 OpsMesh 的配置项外，还可以自行添加配置项到 `.env.{environment}` 文件中。
-    这些配置将会在 json 反序列化后一起带入 `Config` 类中。
-
-    配置方法参考: [配置](https://nonebot.dev/docs/appendices/config)
+    除了 OpsMesh 的内置配置项外，还可以自行添加配置项到 `.env.{environment}` 文件中。
+    这些配置将会在 JSON 反序列化后一起合入 `Config` 实例中。
     """
 
     if TYPE_CHECKING:
@@ -408,22 +379,20 @@ class Config(BaseSettings):
 
     # opsmesh configs
     driver: str = "~fastapi"
-    """OpsMesh 运行所使用的 `Driver` 。继承自 {ref}`opsmesh.drivers.Driver` 。
+    """OpsMesh 运行所使用的 `Driver` ，继承自 {ref}`opsmesh.drivers.Driver` 。
 
     配置格式为 `<module>[:<Driver>][+<module>[:<Mixin>]]*`。
 
     `~` 为 `opsmesh.drivers.` 的缩写。
-
-    配置方法参考: [配置驱动器](https://nonebot.dev/docs/advanced/driver#%E9%85%8D%E7%BD%AE%E9%A9%B1%E5%8A%A8%E5%99%A8)
     """
     host: IPvAnyAddress = IPv4Address("127.0.0.1")  # type: ignore
     """OpsMesh {ref}`opsmesh.drivers.ReverseDriver` 服务端监听的 IP/主机名。"""
     port: int = Field(default=8080, ge=1, le=65535)
     """OpsMesh {ref}`opsmesh.drivers.ReverseDriver` 服务端监听的端口。"""
-    log_level: int | str = LegacyUnionField(default="INFO")
+    log_level: int | str = Field(default="INFO", union_mode="left_to_right")
     """OpsMesh 日志输出等级，可以为 `int` 类型等级或等级名称。
 
-    参考 [记录日志](https://nonebot.dev/docs/appendices/log)，[loguru 日志等级](https://loguru.readthedocs.io/en/stable/api/logger.html#levels)。
+    参考 [loguru 日志等级](https://loguru.readthedocs.io/en/stable/api/logger.html#levels)。
 
     :::tip 提示
     日志等级名称应为大写，如 `INFO`。
@@ -437,24 +406,20 @@ class Config(BaseSettings):
     """
 
     # gateway connection configs
-    api_timeout: float | None = 30.0
-    """API 请求超时时间，单位: 秒。"""
+    invoke_timeout: float | None = 30.0
+    """网关动作调用超时时间，单位: 秒。"""
 
     # gateway runtime configs
     superusers: set[str] = set()
-    """超级用户。
+    """超级用户主体标识集合，格式为 `"{adapter}:{user_id}"`。
 
     用法:
         ```conf
-        SUPERUSERS=["12345789"]
+        SUPERUSERS=["console:root", "webhook:ops"]
         ```
     """
-    nickname: set[str] = set()
-    """网关在聊天协议中的昵称。"""
     command_start: set[str] = {"/"}
     """命令的起始标记，用于判断一条消息是不是命令。
-
-    参考[命令响应规则](https://nonebot.dev/docs/advanced/matcher#command)。
 
     用法:
         ```conf
@@ -464,15 +429,13 @@ class Config(BaseSettings):
     command_sep: set[str] = {"."}
     """命令的分隔标记，用于将文本形式的命令切分为元组（实际的命令名）。
 
-    参考[命令响应规则](https://nonebot.dev/docs/advanced/matcher#command)。
-
     用法:
         ```conf
         COMMAND_SEP=["."]
         ```
     """
     session_expire_timeout: timedelta = timedelta(minutes=2)
-    """等待用户回复的超时时间。
+    """会话续接等待超时时间。
 
     用法:
         ```conf
@@ -488,14 +451,7 @@ class Config(BaseSettings):
     # custom configs can be assigned during opsmesh.init
     # or from env file using json loads
 
-    if PYDANTIC_V2:  # pragma: pydantic-v2
-        model_config = SettingsConfig(env_file=(".env", ".env.prod"))
-    else:  # pragma: pydantic-v1
-
-        class Config(  # pyright: ignore[reportIncompatibleVariableOverride]
-            SettingsConfig
-        ):
-            env_file = ".env", ".env.prod"
+    model_config = SettingsConfig(env_file=(".env", ".env.prod"))
 
 
 __autodoc__ = {

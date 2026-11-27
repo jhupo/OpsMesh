@@ -35,12 +35,12 @@ from opsmesh.internal.params import ArgParam as ArgParam
 from opsmesh.internal.params import ArgPlainText as ArgPlainText
 from opsmesh.internal.params import ArgPromptResult as ArgPromptResult
 from opsmesh.internal.params import ArgStr as ArgStr
-from opsmesh.internal.params import GatewayParam as GatewayParam
 from opsmesh.internal.params import DefaultParam as DefaultParam
 from opsmesh.internal.params import DependParam as DependParam
 from opsmesh.internal.params import Depends as Depends
 from opsmesh.internal.params import EventParam as EventParam
 from opsmesh.internal.params import ExceptionParam as ExceptionParam
+from opsmesh.internal.params import GatewayParam as GatewayParam
 from opsmesh.internal.params import MatcherParam as MatcherParam
 from opsmesh.internal.params import StateParam as StateParam
 from opsmesh.matcher import Matcher
@@ -74,13 +74,13 @@ def EventPlainText() -> str:
     return Depends(_event_plain_text)
 
 
-async def _event_to_me(event: Event) -> bool:
-    return event.is_tome()
+async def _event_targeted(event: Event) -> bool:
+    return event.is_targeted()
 
 
-def EventToMe() -> bool:
-    """{ref}`opsmesh.adapters.Event` `to_me` 参数"""
-    return Depends(_event_to_me)
+def EventTargeted() -> bool:
+    """{ref}`opsmesh.adapters.Event` `is_targeted` 参数"""
+    return Depends(_event_targeted)
 
 
 def _command(state: T_State) -> Message:

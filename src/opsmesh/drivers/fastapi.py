@@ -1,8 +1,6 @@
 """[FastAPI](https://fastapi.tiangolo.com/) 驱动适配
 
 ```bash
-nb driver install fastapi
-# 或者
 pip install opsmesh[fastapi]
 ```
 
@@ -25,8 +23,7 @@ from typing_extensions import override
 
 from pydantic import BaseModel
 
-from opsmesh.compat import model_dump, type_validate_python
-from opsmesh.config import Config as NoneBotConfig
+from opsmesh.config import Config as OpsMeshConfig
 from opsmesh.config import Env
 from opsmesh.drivers import ASGIMixin, HTTPServerSetup, WebSocketServerSetup
 from opsmesh.drivers import Driver as BaseDriver
@@ -88,10 +85,10 @@ class Config(BaseModel):
 class Driver(BaseDriver, ASGIMixin):
     """FastAPI 驱动框架。"""
 
-    def __init__(self, env: Env, config: NoneBotConfig):
+    def __init__(self, env: Env, config: OpsMeshConfig):
         super().__init__(env, config)
 
-        self.fastapi_config: Config = type_validate_python(Config, model_dump(config))
+        self.fastapi_config: Config = Config.model_validate(config.model_dump())
 
         self._server_app = FastAPI(
             lifespan=self._lifespan_manager,
@@ -151,11 +148,8 @@ class Driver(BaseDriver, ASGIMixin):
 
     @contextlib.asynccontextmanager
     async def _lifespan_manager(self, app: FastAPI):
-        await self._lifespan.startup()
-        try:
+        async with self._lifespan:
             yield
-        finally:
-            await self._lifespan.shutdown()
 
     @override
     def run(
@@ -167,7 +161,7 @@ class Driver(BaseDriver, ASGIMixin):
         **kwargs,
     ):
         """使用 `uvicorn` 启动 FastAPI"""
-        super().run(host, port, app=app, **kwargs)
+        super().run(host, port, *args, app=app, **kwargs)
         LOGGING_CONFIG = {
             "version": 1,
             "disable_existing_loggers": False,

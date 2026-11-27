@@ -28,8 +28,6 @@ from . import (
     _module_name_to_plugin_id,
     _new_plugin,
     _revert_plugin,
-    get_loaded_plugins,
-    get_plugin,
 )
 from .model import Plugin, PluginMetadata
 
@@ -199,63 +197,6 @@ class PluginManager:
             logger.opt(colors=True, exception=e).error(
                 f'<r><bg #f8bbd0>Failed to import "{escape_tag(name)}"</bg #f8bbd0></r>'
             )
-
-    def _check_owner(self, plugin: Plugin) -> None:
-        if plugin.manager is not self or get_plugin(plugin.id_) is not plugin:
-            raise RuntimeError(f"Plugin {plugin.id_} is not loaded by this manager")
-
-    def enable_plugin(self, plugin: Plugin) -> None:
-        self._check_owner(plugin)
-        plugin.enabled = True
-
-    def disable_plugin(self, plugin: Plugin) -> None:
-        self._check_owner(plugin)
-        if plugin.metadata and plugin.metadata.protected:
-            raise RuntimeError(f"Protected plugin: {plugin.id_}")
-        plugin.enabled = False
-
-    def unload_plugin(self, plugin: Plugin) -> None:
-        """解除已停用插件的 Matcher、模块缓存及加载登记，不删除制品文件。
-
-        调用方负责先结束在途处理、释放外部资源和其他模块持有的引用。
-        """
-        from opsmesh.matcher import matchers
-
-        self._check_owner(plugin)
-        if plugin.metadata and plugin.metadata.protected:
-            raise RuntimeError(f"Protected plugin: {plugin.id_}")
-        if plugin.enabled:
-            raise RuntimeError(f"Disable plugin {plugin.id_} before unloading it")
-        name = plugin.module_name
-        prefix = name + "."
-        if plugin.sub_plugins or any(p.module_name.startswith(prefix) for p in get_loaded_plugins()):
-            raise RuntimeError(f"Unload child plugins of {name} first")
-        if sys.modules.get(name) is not plugin.module:
-            raise RuntimeError(f"Module binding changed for {name}")
-
-        # 会话续接和运行时创建的 Matcher 不一定在 plugin.matcher 中。
-        for group in matchers.values():
-            for matcher in tuple(group):
-                if matcher in plugin.matcher or matcher.plugin is plugin:
-                    matcher.destroy()
-        plugin.matcher.clear()
-        plugin_id = plugin.id_
-        _revert_plugin(plugin)
-        self.plugins.discard(name)
-        self._third_party_plugin_ids.pop(plugin_id, None)
-        self._searched_plugin_ids.pop(plugin_id, None)
-        if not self.controlled_modules:
-            _managers.remove(self)
-
-        # 只清理精确的包命名空间，不能误删名称相似的兄弟插件。
-        modules = [key for key in sys.modules if key == name or key.startswith(prefix)]
-        for key in sorted(modules, key=len, reverse=True):
-            module = sys.modules.pop(key)
-            parent_name, _, attr = key.rpartition(".")
-            parent = sys.modules.get(parent_name)
-            if parent is not None and attr in vars(parent) and vars(parent)[attr] is module:
-                delattr(parent, attr)
-        importlib.invalidate_caches()
 
     def load_all_plugins(self) -> set[Plugin]:
         """加载所有可用插件。"""

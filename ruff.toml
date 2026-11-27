@@ -1,27 +1,21 @@
 target-version = "py311"
-line-length = 80
-extend-exclude = ["backup", ".venv-linux", "dist-linux"]
+line-length = 88
 
 [lint]
-select = ["E", "F", "I", "UP", "B", "D"]
-
-[lint.pydocstyle]
-convention = "google"
+select = ["F", "W", "E", "I", "UP", "ASYNC", "C4", "S", "T10", "T20", "PYI", "PT", "Q", "TID", "RUF"]
+ignore = ["E402", "UP037", "RUF001", "RUF002", "RUF003"]
 
 [lint.per-file-ignores]
-"tests/**/*.py" = ["D"]
-# Embedded framework protocols document constructors on their classes.
-"src/opsmesh/**/*.py" = ["D105", "D107"]
-
-[lint.flake8-bugbear]
-# These factories build immutable injection descriptors at definition time.
-extend-immutable-calls = [
-    "opsmesh.params.CommandArg",
-    "opsmesh.plugins.database.DatabaseAccess",
-]
+"tests/*" = ["S101", "S105"]
 
 [lint.isort]
-known-first-party = ["opsmesh", "opsmesh.plugins.database", "opsmesh.plugins.execution", "opsmesh.plugins.filesystem"]
+force-sort-within-sections = true
+known-first-party = ["opsmesh", "tests/*"]
+extra-standard-library = ["typing_extensions"]
 
-[format]
-docstring-code-format = true
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[lint.pyupgrade]
+keep-runtime-typing = true

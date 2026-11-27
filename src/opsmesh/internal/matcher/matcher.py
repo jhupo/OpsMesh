@@ -1,8 +1,8 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import inspect
 from pathlib import Path
 import sys
@@ -10,17 +10,13 @@ from types import ModuleType
 from typing import (  # noqa: UP035
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     NoReturn,
+    Self,
     Type,
     TypeVar,
     overload,
 )
-from typing_extensions import Self
-import warnings
-
-from exceptiongroup import BaseExceptionGroup, catch
 
 from opsmesh.consts import (
     ARG_KEY,
@@ -40,19 +36,19 @@ from opsmesh.exception import (
     StopPropagation,
 )
 from opsmesh.internal.adapter import (
-    Gateway,
     Event,
+    Gateway,
     Message,
     MessageSegment,
     MessageTemplate,
 )
 from opsmesh.internal.params import (
     ArgParam,
-    GatewayParam,
     DefaultParam,
     DependParam,
     Depends,
     EventParam,
+    GatewayParam,
     MatcherParam,
     StateParam,
 )
@@ -202,8 +198,6 @@ class Matcher(metaclass=MatcherMeta):
         priority: int = 1,
         block: bool = False,
         *,
-        plugin: "Plugin | None" = None,
-        module: ModuleType | None = None,
         source: MatcherSource | None = None,
         expire_time: datetime | timedelta | None = None,
         default_state: T_State | None = None,
@@ -223,8 +217,6 @@ class Matcher(metaclass=MatcherMeta):
             temp: 是否为临时事件响应器，即触发一次后删除
             priority: 响应优先级
             block: 是否阻止事件向更低优先级的响应器传播
-            plugin: **Deprecated.** 事件响应器所在插件
-            module: **Deprecated.** 事件响应器所在模块
             source: 事件响应器源代码上下文信息
             expire_time: 事件响应器最终有效时间点，过时即被删除
             default_state: 默认状态 `state`
@@ -234,30 +226,8 @@ class Matcher(metaclass=MatcherMeta):
         返回:
             Type[Matcher]: 新的事件响应器类
         """
-        if plugin is not None:
-            warnings.warn(
-                (
-                    "Pass `plugin` context info to create Matcher is deprecated. "
-                    "Use `source` instead."
-                ),
-                DeprecationWarning,
-            )
-        if module is not None:
-            warnings.warn(
-                (
-                    "Pass `module` context info to create Matcher is deprecated. "
-                    "Use `source` instead."
-                ),
-                DeprecationWarning,
-            )
-        source = source or (
-            MatcherSource(
-                plugin_id=plugin and plugin.id_,
-                module_name=module and module.__name__,
-            )
-            if plugin is not None or module is not None
-            else None
-        )
+        if isinstance(expire_time, datetime) and expire_time.utcoffset() is not None:
+            expire_time = expire_time.astimezone(UTC)
 
         NewMatcher = type(
             cls.__name__,
@@ -287,7 +257,7 @@ class Matcher(metaclass=MatcherMeta):
                     and (
                         expire_time
                         if isinstance(expire_time, datetime)
-                        else datetime.now() + expire_time
+                        else datetime.now(UTC) + expire_time
                     )
                 ),
                 "priority": priority,
@@ -780,7 +750,7 @@ class Matcher(metaclass=MatcherMeta):
                 dependency_cache=dependency_cache,
             )
             if updater
-            else "message"
+            else event.get_type()
         )
 
     async def update_permission(
@@ -832,34 +802,29 @@ class Matcher(metaclass=MatcherMeta):
             f"gateway={gateway}, event={event!r}, state={state!r}"
         )
 
-        def _handle_stop_propagation(exc_group: BaseExceptionGroup[StopPropagation]):
-            self.block = True
-
         with self.ensure_context(gateway, event):
             try:
-                with catch({StopPropagation: _handle_stop_propagation}):
-                    # Refresh preprocess state
-                    self.state.update(state)
+                # Refresh preprocess state
+                self.state.update(state)
 
-                    while self.remain_handlers:
-                        handler = self.remain_handlers.pop(0)
-                        current_handler.set(handler)
-                        logger.debug(f"Running handler {handler}")
+                while self.remain_handlers:
+                    handler = self.remain_handlers.pop(0)
+                    current_handler.set(handler)
+                    logger.debug(f"Running handler {handler}")
 
-                        def _handle_skipped(
-                            exc_group: BaseExceptionGroup[SkippedException],
-                        ):
-                            logger.debug(f"Handler {handler} skipped")
-
-                        with catch({SkippedException: _handle_skipped}):
-                            await handler(
-                                matcher=self,
-                                gateway=gateway,
-                                event=event,
-                                state=self.state,
-                                stack=stack,
-                                dependency_cache=dependency_cache,
-                            )
+                    try:
+                        await handler(
+                            matcher=self,
+                            gateway=gateway,
+                            event=event,
+                            state=self.state,
+                            stack=stack,
+                            dependency_cache=dependency_cache,
+                        )
+                    except* SkippedException:
+                        logger.debug(f"Handler {handler} skipped")
+            except* StopPropagation:
+                self.block = True
             finally:
                 logger.info(f"{self} running complete")
 
@@ -874,12 +839,13 @@ class Matcher(metaclass=MatcherMeta):
     ):
         exc: FinishedException | RejectedException | PausedException | None = None
 
-        def _handle_special_exception(
-            exc_group: BaseExceptionGroup[
-                FinishedException | RejectedException | PausedException
-            ],
-        ):
-            nonlocal exc
+        try:
+            await self.simple_run(gateway, event, state, stack, dependency_cache)
+        except* (
+            FinishedException,
+            RejectedException,
+            PausedException,
+        ) as exc_group:
             excs = list(flatten_exception_group(exc_group))
             if len(excs) > 1:
                 logger.warning(
@@ -903,17 +869,6 @@ class Matcher(metaclass=MatcherMeta):
                 excs[0], (FinishedException, RejectedException, PausedException)
             ):
                 exc = excs[0]
-
-        with catch(
-            {
-                (
-                    FinishedException,
-                    RejectedException,
-                    PausedException,
-                ): _handle_special_exception
-            }
-        ):
-            await self.simple_run(gateway, event, state, stack, dependency_cache)
 
         if isinstance(exc, FinishedException):
             pass

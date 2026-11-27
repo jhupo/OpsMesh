@@ -1,6 +1,5 @@
 from contextlib import AsyncExitStack
-from typing import ClassVar, NoReturn
-from typing_extensions import Self
+from typing import ClassVar, NoReturn, Self
 
 import anyio
 
@@ -9,8 +8,8 @@ from opsmesh.exception import SkippedException
 from opsmesh.typing import T_DependencyCache, T_PermissionChecker
 from opsmesh.utils import run_coro_with_catch
 
-from .adapter import Gateway, Event
-from .params import GatewayParam, DefaultParam, DependParam, EventParam, Param
+from .adapter import Event, Gateway
+from .params import DefaultParam, DependParam, EventParam, GatewayParam, Param
 
 
 class Permission:
@@ -79,7 +78,10 @@ class Permission:
             # calculate the result first to avoid data racing
             is_passed = await run_coro_with_catch(
                 checker(
-                    gateway=gateway, event=event, stack=stack, dependency_cache=dependency_cache
+                    gateway=gateway,
+                    event=event,
+                    stack=stack,
+                    dependency_cache=dependency_cache,
                 ),
                 (SkippedException,),
                 False,
@@ -139,7 +141,8 @@ class User:
         except Exception:
             return False
         return bool(
-            session in self.users and (self.perm is None or await self.perm(gateway, event))
+            session in self.users
+            and (self.perm is None or await self.perm(gateway, event))
         )
 
     @classmethod

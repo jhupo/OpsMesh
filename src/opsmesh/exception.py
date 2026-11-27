@@ -3,13 +3,13 @@
 这些异常并非所有需要用户处理，在 OpsMesh 内部运行时被捕获，并进行对应操作。
 
 ```bash
-NoneBotException
+OpsMeshException
 ├── ParserExit
 ├── ProcessException
 |   ├── IgnoredException
 |   ├── SkippedException
 |   |   └── TypeMisMatch
-|   ├── MockApiException
+|   ├── MockInvokeResult
 |   └── StopPropagation
 ├── MatcherException
 |   ├── PausedException
@@ -17,7 +17,7 @@ NoneBotException
 |   └── FinishedException
 ├── AdapterException
 |   ├── NoLogException
-|   ├── ApiNotAvailable
+|   ├── ActionNotAvailable
 |   ├── NetworkError
 |   └── ActionFailed
 └── DriverException
@@ -33,10 +33,10 @@ FrontMatter:
 
 from typing import Any
 
-from opsmesh.compat import ModelField
+from opsmesh.internal.field import ModelField
 
 
-class NoneBotException(Exception):
+class OpsMeshException(Exception):
     """所有 OpsMesh 发生的异常基类。"""
 
     def __str__(self) -> str:
@@ -44,7 +44,7 @@ class NoneBotException(Exception):
 
 
 # Rule Exception
-class ParserExit(NoneBotException):
+class ParserExit(OpsMeshException):
     """{ref}`opsmesh.rule.shell_command` 处理消息失败时返回的异常。"""
 
     def __init__(self, status: int = 0, message: str | None = None) -> None:
@@ -60,7 +60,7 @@ class ParserExit(NoneBotException):
 
 
 # Processor Exception
-class ProcessException(NoneBotException):
+class ProcessException(OpsMeshException):
     """事件处理过程中发生的异常基类。"""
 
 
@@ -105,13 +105,13 @@ class TypeMisMatch(SkippedException):
     def __repr__(self) -> str:
         return (
             f"TypeMisMatch(param={self.param.name}, "
-            f"type={self.param._type_display()}, value={self.value!r}>"
+            f"type={self.param._type_display()}, value={self.value!r})"
         )
 
 
-class MockApiException(ProcessException):
-    """指示 OpsMesh 阻止本次 API 调用或修改本次调用返回值，并返回自定义内容。
-    可由 api hook 抛出。
+class MockInvokeResult(ProcessException):
+    """指示 OpsMesh 阻止本次网关动作调用或修改本次调用返回值，并返回自定义内容。
+    可由 `before_invoke` / `after_invoke` 钩子抛出。
 
     参数:
         result: 返回的内容
@@ -121,7 +121,7 @@ class MockApiException(ProcessException):
         self.result = result
 
     def __repr__(self) -> str:
-        return f"MockApiException(result={self.result!r})"
+        return f"MockInvokeResult(result={self.result!r})"
 
 
 class StopPropagation(ProcessException):
@@ -142,56 +142,35 @@ class StopPropagation(ProcessException):
 
 
 # Matcher Exceptions
-class MatcherException(NoneBotException):
+class MatcherException(OpsMeshException):
     """所有 Matcher 发生的异常基类。"""
 
 
 class PausedException(MatcherException):
-    """指示 OpsMesh 结束当前 `Handler` 并等待下一条消息后继续下一个 `Handler`。
-    可用于用户输入新信息。
+    """指示 OpsMesh 结束当前 `Handler` 并等待下一条事件后继续下一个 `Handler`。
+    可用于等待后续输入。
 
     可以在 `Handler` 中通过 {ref}`opsmesh.matcher.Matcher.pause` 抛出。
-
-    用法:
-        ```python
-        @matcher.handle()
-        async def handler():
-            await matcher.pause("some message")
-        ```
     """
 
 
 class RejectedException(MatcherException):
-    """指示 OpsMesh 结束当前 `Handler` 并等待下一条消息后重新运行当前 `Handler`。
-    可用于用户重新输入。
+    """指示 OpsMesh 结束当前 `Handler` 并等待下一条事件后重新运行当前 `Handler`。
+    可用于要求重新输入。
 
     可以在 `Handler` 中通过 {ref}`opsmesh.matcher.Matcher.reject` 抛出。
-
-    用法:
-        ```python
-        @matcher.handle()
-        async def handler():
-            await matcher.reject("some message")
-        ```
     """
 
 
 class FinishedException(MatcherException):
-    """指示 OpsMesh 结束当前 `Handler` 且后续 `Handler` 不再被运行。可用于结束用户会话。
+    """指示 OpsMesh 结束当前 `Handler` 且后续 `Handler` 不再被运行。可用于结束会话。
 
     可以在 `Handler` 中通过 {ref}`opsmesh.matcher.Matcher.finish` 抛出。
-
-    用法:
-        ```python
-        @matcher.handle()
-        async def handler():
-            await matcher.finish("some message")
-        ```
     """
 
 
 # Adapter Exceptions
-class AdapterException(NoneBotException):
+class AdapterException(OpsMeshException):
     """代表 `Adapter` 抛出的异常，所有的 `Adapter` 都要在内部继承自这个 `Exception`。
 
     参数:
@@ -210,22 +189,22 @@ class NoLogException(AdapterException):
     """
 
 
-class ApiNotAvailable(AdapterException):
-    """在 API 连接不可用时抛出。"""
+class ActionNotAvailable(AdapterException):
+    """在目标动作不可用或未就绪时抛出。"""
 
 
 class NetworkError(AdapterException):
     """在网络出现问题时抛出，
-    如: API 请求地址不正确, API 请求无返回或返回状态非正常等。
+    如: 请求地址不正确, 请求无返回或返回状态非正常等。
     """
 
 
 class ActionFailed(AdapterException):
-    """API 请求成功返回数据，但 API 操作失败。"""
+    """底层通信成功返回数据，但目标动作执行失败。"""
 
 
 # Driver Exceptions
-class DriverException(NoneBotException):
+class DriverException(OpsMeshException):
     """`Driver` 抛出的异常基类。"""
 
 

@@ -6,16 +6,23 @@ from typing import Any
 from opsmesh.config import Config
 from opsmesh.internal.driver import (
     ASGIMixin,
+    CookieTypes,
     Driver,
+    HeaderTypes,
     HTTPClientMixin,
+    HTTPClientSession,
     HTTPServerSetup,
+    HTTPVersion,
+    QueryTypes,
     Request,
     Response,
+    TimeoutTypes,
     WebSocket,
     WebSocketClientMixin,
     WebSocketServerSetup,
 )
 from opsmesh.internal.driver._lifespan import LIFESPAN_FUNC
+from opsmesh.utils import UNSET, UnsetType
 
 from .gateway import Gateway
 
@@ -79,6 +86,39 @@ class Adapter(abc.ABC):
             raise TypeError("Current driver does not support http client")
         return await self.driver.request(setup)
 
+    async def stream_request(
+        self,
+        setup: Request,
+        *,
+        chunk_size: int = 1024,
+    ) -> AsyncGenerator[Response, None]:
+        """进行一个 HTTP 客户端流式请求"""
+        if not isinstance(self.driver, HTTPClientMixin):
+            raise TypeError("Current driver does not support http client")
+        async for response in self.driver.stream_request(setup, chunk_size=chunk_size):
+            yield response
+
+    def get_session(
+        self,
+        params: QueryTypes = None,
+        headers: HeaderTypes = None,
+        cookies: CookieTypes = None,
+        version: str | HTTPVersion = HTTPVersion.H11,
+        timeout: TimeoutTypes | UnsetType = UNSET,
+        proxy: str | None = None,
+    ) -> HTTPClientSession:
+        """获取一个可复用的 HTTP 客户端会话"""
+        if not isinstance(self.driver, HTTPClientMixin):
+            raise TypeError("Current driver does not support http client")
+        return self.driver.get_session(
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            version=version,
+            timeout=timeout,
+            proxy=proxy,
+        )
+
     @asynccontextmanager
     async def websocket(self, setup: Request) -> AsyncGenerator[WebSocket, None]:
         """建立一个 WebSocket 客户端连接请求"""
@@ -91,14 +131,15 @@ class Adapter(abc.ABC):
         return self.driver._lifespan.on_ready(func)
 
     @abc.abstractmethod
-    async def _call_api(self, gateway: Gateway, api: str, **data: Any) -> Any:
-        """`Adapter` 实际调用 api 的逻辑实现函数，实现该方法以调用 api。
+    async def _invoke(self, gateway: Gateway, action: str, **params: Any) -> Any:
+        """`Adapter` 实际执行出站动作的逻辑实现函数。
 
         参数:
-            api: API 名称
-            data: API 数据
+            gateway: Gateway 实例
+            action: 动作名称
+            params: 动作参数
         """
         raise NotImplementedError
 
 
-__autodoc__ = {"Adapter._call_api": True}
+__autodoc__ = {"Adapter._invoke": True}

@@ -4,9 +4,9 @@ from typing import Any, TypeAlias, cast
 
 import anyio
 from anyio.abc import TaskGroup
-from exceptiongroup import suppress
 
-from opsmesh.utils import is_coroutine_callable, run_sync
+from opsmesh.log import logger
+from opsmesh.utils import flatten_exception_group, is_coroutine_callable, run_sync
 
 SYNC_LIFESPAN_FUNC: TypeAlias = Callable[[], Any]
 ASYNC_LIFESPAN_FUNC: TypeAlias = Callable[[], Awaitable[Any]]
@@ -16,6 +16,8 @@ LIFESPAN_FUNC: TypeAlias = SYNC_LIFESPAN_FUNC | ASYNC_LIFESPAN_FUNC
 class Lifespan:
     def __init__(self) -> None:
         self._task_group: TaskGroup | None = None
+        self._started: anyio.Event = anyio.Event()
+        self._start_error: BaseException | None = None
 
         self._startup_funcs: list[LIFESPAN_FUNC] = []
         self._ready_funcs: list[LIFESPAN_FUNC] = []
@@ -56,17 +58,34 @@ class Lifespan:
                 await run_sync(cast(SYNC_LIFESPAN_FUNC, func))()
 
     async def startup(self) -> None:
-        # create background task group
-        self.task_group = anyio.create_task_group()
-        await self.task_group.__aenter__()
+        # each lifecycle owns its own completion signal
+        self._started = anyio.Event()
+        self._start_error = None
 
-        # run startup funcs
-        if self._startup_funcs:
-            await self._run_lifespan_func(self._startup_funcs)
+        try:
+            # create background task group
+            self.task_group = anyio.create_task_group()
+            await self.task_group.__aenter__()
 
-        # run ready funcs
-        if self._ready_funcs:
-            await self._run_lifespan_func(self._ready_funcs)
+            # run startup funcs
+            if self._startup_funcs:
+                await self._run_lifespan_func(self._startup_funcs)
+
+            # run ready funcs
+            if self._ready_funcs:
+                await self._run_lifespan_func(self._ready_funcs)
+        except BaseException as e:
+            self._start_error = e
+            raise
+        finally:
+            self._started.set()
+
+    async def wait_started(self) -> None:
+        """Wait for startup and ready funcs, re-raising their failure."""
+        if not self._started.is_set():
+            await self._started.wait()
+        if self._start_error is not None:
+            raise self._start_error
 
     async def shutdown(
         self,
@@ -79,16 +98,26 @@ class Lifespan:
             # reverse shutdown funcs to ensure stack order
             await self._run_lifespan_func(reversed(self._shutdown_funcs))
 
-        # shutdown background task group
-        self.task_group.cancel_scope.cancel()
+        if self._task_group is not None:
+            # shutdown background task group
+            self._task_group.cancel_scope.cancel()
 
-        with suppress(Exception):
-            await self.task_group.__aexit__(exc_type, exc_val, exc_tb)
+            try:
+                await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
+            except* Exception as exc_group:
+                for exc in flatten_exception_group(exc_group):
+                    logger.opt(exception=exc).debug(
+                        "Error occurred while shutting down task group."
+                    )
 
-        self._task_group = None
+            self._task_group = None
 
     async def __aenter__(self) -> None:
-        await self.startup()
+        try:
+            await self.startup()
+        except BaseException:
+            await self.shutdown()
+            raise
 
     async def __aexit__(
         self,

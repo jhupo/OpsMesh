@@ -1,0 +1,3 @@
+[tool.opsmesh]
+plugins = ["opsmesh.plugins.single_session"]
+plugin_dirs = ["plugins"]

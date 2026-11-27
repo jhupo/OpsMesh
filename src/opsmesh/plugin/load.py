@@ -8,22 +8,16 @@ FrontMatter:
 """
 
 from collections.abc import Iterable
-from itertools import chain
 import json
 from pathlib import Path
+import tomllib
 from types import ModuleType
 
-from opsmesh.log import logger
 from opsmesh.utils import path_to_module_name
 
 from . import _managers, _module_name_to_plugin_id, get_plugin
 from .manager import PluginManager
 from .model import Plugin
-
-try:  # pragma: py-gte-311
-    import tomllib  # pyright: ignore[reportMissingImports]
-except ModuleNotFoundError:  # pragma: py-lt-311
-    import tomli as tomllib  # pyright: ignore[reportMissingImports]
 
 
 def load_plugin(module_path: str | Path) -> Plugin | None:
@@ -68,7 +62,7 @@ def load_all_plugins(
     return manager.load_all_plugins()
 
 
-def load_from_json(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
+def load_from_json(file_path: str | Path, encoding: str = "utf-8") -> set[Plugin]:
     """导入指定 json 文件中的 `plugins` 以及 `plugin_dirs` 下多个插件。
     以 `_` 开头的插件不会被导入!
 
@@ -94,12 +88,14 @@ def load_from_json(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
         raise TypeError("json file must contains a dict!")
     plugins = data.get("plugins")
     plugin_dirs = data.get("plugin_dirs")
-    assert isinstance(plugins, list), "plugins must be a list of plugin name"
-    assert isinstance(plugin_dirs, list), "plugin_dirs must be a list of directories"
+    if not isinstance(plugins, list):
+        raise TypeError("plugins must be a list of plugin name")
+    if not isinstance(plugin_dirs, list):
+        raise TypeError("plugin_dirs must be a list of directories")
     return load_all_plugins(set(plugins), set(plugin_dirs))
 
 
-def load_from_toml(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
+def load_from_toml(file_path: str | Path, encoding: str = "utf-8") -> set[Plugin]:
     """导入指定 toml 文件 `[tool.opsmesh]` 中的
     `plugins` 以及 `plugin_dirs` 下多个插件。
     以 `_` 开头的插件不会被导入!
@@ -109,19 +105,6 @@ def load_from_toml(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
         encoding: 指定 toml 文件编码
 
     用法:
-        新格式:
-
-        ```toml title=pyproject.toml
-        [tool.opsmesh]
-        plugin_dirs = ["some_dir"]
-
-        [tool.opsmesh.plugins]
-        some-store-plugin = ["some_store_plugin"]
-        "@local" = ["some_local_plugin"]
-        ```
-
-        旧格式:
-
         ```toml title=pyproject.toml
         [tool.opsmesh]
         plugins = ["some_plugin"]
@@ -140,22 +123,13 @@ def load_from_toml(file_path: str, encoding: str = "utf-8") -> set[Plugin]:
         raise ValueError("Cannot find '[tool.opsmesh]' in given toml file!")
     if not isinstance(opsmesh_data, dict):
         raise TypeError("'[tool.opsmesh]' must be a Table!")
-    plugins = opsmesh_data.get("plugins", {})
+    plugins = opsmesh_data.get("plugins", [])
     plugin_dirs = opsmesh_data.get("plugin_dirs", [])
-    assert isinstance(plugins, (list, dict)), (
-        "plugins must be a list or a dict of plugin name"
-    )
-    assert isinstance(plugin_dirs, list), "plugin_dirs must be a list of directories"
-    if isinstance(plugins, list):
-        logger.warning("Legacy project format found! Upgrade with `nb upgrade-format`.")
-    return load_all_plugins(
-        set(
-            chain.from_iterable(plugins.values())
-            if isinstance(plugins, dict)
-            else plugins
-        ),
-        plugin_dirs,
-    )
+    if not isinstance(plugins, list):
+        raise TypeError("plugins must be a list of plugin name")
+    if not isinstance(plugin_dirs, list):
+        raise TypeError("plugin_dirs must be a list of directories")
+    return load_all_plugins(set(plugins), set(plugin_dirs))
 
 
 def load_builtin_plugin(name: str) -> Plugin | None:

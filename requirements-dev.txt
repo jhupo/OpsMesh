@@ -1,14 +1,7 @@
 -r requirements.txt
--r packages/cron/requirements.txt
--r packages/database/requirements.txt
--r packages/execution/requirements.txt
--r packages/execution/requirements-langfuse.txt
--r packages/filesystem/requirements.txt
-pgvector==0.5.1
-aiosqlite==0.22.1
-build==1.4.0
-pydantic-settings==2.16.2
-pytest==8.4.2
-ruff==0.15.17
--r packages/qq/requirements.txt
--r packages/dingtalk/requirements.txt
+fastapi>=0.93.0,<1.0.0
+httpx>=0.26.0,<1.0.0
+uvicorn>=0.20.0,<1.0.0
+pytest>=8.0.0,<9.0.0
+ruff>=0.9.0
+build>=1.0.0

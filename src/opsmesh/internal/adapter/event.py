@@ -1,38 +1,26 @@
 import abc
-from typing import Any, TypeVar
+from datetime import UTC, datetime
 
-from pydantic import BaseModel
-
-from opsmesh.compat import PYDANTIC_V2, ConfigDict
-from opsmesh.utils import DataclassEncoder
+from pydantic import BaseModel, ConfigDict, Field
 
 from .message import Message
-
-E = TypeVar("E", bound="Event")
 
 
 class Event(abc.ABC, BaseModel):
     """Event 基类。提供获取关键信息的方法，其余信息可直接获取。"""
 
-    if PYDANTIC_V2:  # pragma: pydantic-v2
-        model_config = ConfigDict(extra="allow")
-    else:  # pragma: pydantic-v1
+    model_config = ConfigDict(extra="allow")
 
-        class Config(ConfigDict):
-            extra = "allow"  # type: ignore
-            json_encoders = {Message: DataclassEncoder}  # noqa: RUF012
+    time: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    """事件发生时间（UTC）"""
 
-    if not PYDANTIC_V2:  # pragma: pydantic-v1
-
-        @classmethod
-        def validate(cls: type["E"], value: Any) -> "E":
-            if isinstance(value, Event) and not isinstance(value, cls):
-                raise TypeError(f"{value} is incompatible with Event type {cls}")
-            return super().validate(value)
+    def get_time(self) -> datetime:
+        """获取事件发生时间的方法。"""
+        return self.time
 
     @abc.abstractmethod
     def get_type(self) -> str:
-        """获取事件类型的方法，类型通常为 OpsMesh 内置的四种类型。"""
+        """获取事件类型的方法。"""
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -61,14 +49,12 @@ class Event(abc.ABC, BaseModel):
 
     @abc.abstractmethod
     def get_user_id(self) -> str:
-        """获取事件主体 id 的方法，通常是用户 id 。"""
+        """获取事件主体 id 的方法。"""
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_session_id(self) -> str:
-        """获取会话 id 的方法，用于判断当前事件属于哪一个会话，
-        通常是用户 id、群组 id 组合。
-        """
+        """获取会话 id 的方法，用于判断当前事件属于哪一个会话。"""
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -84,6 +70,6 @@ class Event(abc.ABC, BaseModel):
         return self.get_message().extract_plain_text()
 
     @abc.abstractmethod
-    def is_tome(self) -> bool:
-        """获取事件是否指向当前网关的方法。"""
+    def is_targeted(self) -> bool:
+        """获取事件是否直接指向当前网关实例的方法。"""
         raise NotImplementedError

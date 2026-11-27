@@ -1,10 +1,5 @@
 """本模块定义了 OpsMesh 模块中共享的一些类型。
 
-使用 Python 的 Type Hint 语法，
-参考 [`PEP 484`](https://www.python.org/dev/peps/pep-0484/),
-[`PEP 526`](https://www.python.org/dev/peps/pep-0526/) 和
-[`typing`](https://docs.python.org/3/library/typing.html)。
-
 FrontMatter:
     mdx:
         format: md
@@ -15,10 +10,8 @@ FrontMatter:
 import sys
 import types
 import typing as t
-from typing import TYPE_CHECKING, TypeAlias, TypeVar, get_args, get_origin
+from typing import TYPE_CHECKING, ParamSpec, TypeAlias, TypeVar, get_args, get_origin
 import typing_extensions as t_ext
-from typing_extensions import ParamSpec, override
-import warnings
 
 if TYPE_CHECKING:
     from opsmesh.adapters import Gateway
@@ -31,18 +24,6 @@ P = ParamSpec("P")
 T_Wrapped: TypeAlias = t.Callable[P, T]
 
 
-def overrides(InterfaceClass: object):
-    """标记一个方法为父类 interface 的 implement"""
-
-    warnings.warn(
-        "overrides is deprecated and will be removed in a future version, "
-        "use @typing_extensions.override instead. "
-        "See [PEP 698](https://peps.python.org/pep-0698/) for more details.",
-        DeprecationWarning,
-    )
-    return override
-
-
 def type_has_args(type_: type[t.Any]) -> bool:
     return isinstance(type_, (t._GenericAlias, types.GenericAlias, types.UnionType))  # type: ignore
 
@@ -53,7 +34,7 @@ def origin_is_union(origin: type[t.Any] | None) -> bool:
 
 def origin_is_literal(origin: type[t.Any] | None) -> bool:
     """判断是否是 Literal 类型"""
-    return origin is t.Literal or origin is t_ext.Literal
+    return origin is t.Literal
 
 
 def _literal_values(type_: type[t.Any]) -> tuple[t.Any, ...]:
@@ -70,10 +51,10 @@ def all_literal_values(type_: type[t.Any]) -> list[t.Any]:
 
 def origin_is_annotated(origin: type[t.Any] | None) -> bool:
     """判断是否是 Annotated 类型"""
-    return origin is t_ext.Annotated
+    return origin is t.Annotated
 
 
-NONE_TYPES = {None, type(None), t.Literal[None], t_ext.Literal[None], types.NoneType}  # noqa: PYI061
+NONE_TYPES = {None, types.NoneType, t.Literal[None]}  # noqa: PYI061
 
 
 def is_none_type(type_: type[t.Any]) -> bool:
@@ -96,15 +77,10 @@ else:
 def evaluate_forwardref(
     ref: t.ForwardRef, globalns: dict[str, t.Any], localns: dict[str, t.Any]
 ) -> t.Any:
-    # Python 3.13/3.12.4+ made `recursive_guard` a kwarg,
-    # so name it explicitly to avoid:
-    # TypeError: ForwardRef._evaluate()
-    # missing 1 required keyword-only argument: 'recursive_guard'
     return ref._evaluate(globalns, localns, recursive_guard=frozenset())
 
 
 # state
-# use annotated flag to avoid ForwardRef recreate generic type (py >= 3.11)
 class StateFlag:
     def __repr__(self) -> str:
         return "StateFlag()"
@@ -117,137 +93,45 @@ T_State: TypeAlias = t.Annotated[dict[t.Any, t.Any], _STATE_FLAG]
 
 _DependentCallable: TypeAlias = t.Callable[..., T] | t.Callable[..., t.Awaitable[T]]
 
-# driver hooks
+# gateway connection hooks
 T_ConnectHook: TypeAlias = _DependentCallable[t.Any]
-"""网关登记时钩子函数
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""网关登记时钩子函数"""
 T_DisconnectHook: TypeAlias = _DependentCallable[t.Any]
-"""网关注销时钩子函数
+"""网关注销时钩子函数"""
 
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- DefaultParam: 带有默认值的参数
-"""
-
-# api hooks
-T_CallingHook: TypeAlias = t.Callable[
+# gateway invoke hooks
+T_BeforeInvokeHook: TypeAlias = t.Callable[
     ["Gateway", str, dict[str, t.Any]], t.Awaitable[t.Any]
 ]
-"""`gateway.call_api` 钩子函数"""
-T_CalledHook: TypeAlias = t.Callable[
+"""`gateway.invoke` 前置钩子函数，参数分别为 gateway, action, params"""
+T_AfterInvokeHook: TypeAlias = t.Callable[
     ["Gateway", Exception | None, str, dict[str, t.Any], t.Any], t.Awaitable[t.Any]
 ]
-"""`gateway.call_api` 后执行的函数，参数分别为 gateway, exception, api, data, result"""
+"""`gateway.invoke` 后置钩子，参数为 gateway, exception, action, params, result"""
 
 # event hooks
 T_EventPreProcessor: TypeAlias = _DependentCallable[t.Any]
-"""事件预处理函数 EventPreProcessor 类型
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""事件预处理函数 EventPreProcessor 类型"""
 T_EventPostProcessor: TypeAlias = _DependentCallable[t.Any]
-"""事件后处理函数 EventPostProcessor 类型
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""事件后处理函数 EventPostProcessor 类型"""
 
 # matcher run hooks
 T_RunPreProcessor: TypeAlias = _DependentCallable[t.Any]
-"""事件响应器运行前预处理函数 RunPreProcessor 类型
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- MatcherParam: Matcher 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""事件响应器运行前预处理函数 RunPreProcessor 类型"""
 T_RunPostProcessor: TypeAlias = _DependentCallable[t.Any]
-"""事件响应器运行后后处理函数 RunPostProcessor 类型
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- MatcherParam: Matcher 对象
-- ExceptionParam: 异常对象（可能为 None）
-- DefaultParam: 带有默认值的参数
-"""
+"""事件响应器运行后后处理函数 RunPostProcessor 类型"""
 
 # rule, permission
 T_RuleChecker: TypeAlias = _DependentCallable[bool]
-"""RuleChecker 即判断是否响应事件的处理函数。
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""RuleChecker 即判断是否响应事件的处理函数。"""
 T_PermissionChecker: TypeAlias = _DependentCallable[bool]
-"""PermissionChecker 即判断事件是否满足权限的处理函数。
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""PermissionChecker 即判断事件是否满足权限的处理函数。"""
 
 T_Handler: TypeAlias = _DependentCallable[t.Any]
 """Handler 处理函数。"""
 T_TypeUpdater: TypeAlias = _DependentCallable[str]
-"""TypeUpdater 在 Matcher.pause, Matcher.reject 时被运行，用于更新响应的事件类型。
-默认会更新为 `message`。
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- MatcherParam: Matcher 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""TypeUpdater 在 Matcher.pause, Matcher.reject 时被运行，用于更新响应的事件类型。"""
 T_PermissionUpdater: TypeAlias = _DependentCallable["Permission"]
-"""PermissionUpdater 在 Matcher.pause, Matcher.reject 时被运行，用于更新会话对象权限。
-默认会更新为当前事件的触发对象。
-
-依赖参数:
-
-- DependParam: 子依赖参数
-- GatewayParam: Gateway 对象
-- EventParam: Event 对象
-- StateParam: State 对象
-- MatcherParam: Matcher 对象
-- DefaultParam: 带有默认值的参数
-"""
+"""PermissionUpdater 在 Matcher.pause/reject 时运行，用于更新会话对象权限。"""
 T_DependencyCache: TypeAlias = dict[_DependentCallable[t.Any], "DependencyCache"]
 """依赖缓存, 用于存储依赖函数的返回值"""

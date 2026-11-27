@@ -1,2 +1,0 @@
-opsmesh-database==0.6.0
-opsmesh-filesystem==0.6.0

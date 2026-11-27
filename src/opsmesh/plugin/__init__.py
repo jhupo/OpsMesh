@@ -18,7 +18,7 @@
 - `on_regex` => {ref}``on_regex` <opsmesh.plugin.on.on_regex>`
 - `on_type` => {ref}``on_type` <opsmesh.plugin.on.on_type>`
 - `CommandGroup` => {ref}``CommandGroup` <opsmesh.plugin.on.CommandGroup>`
-- `Matchergroup` => {ref}``MatcherGroup` <opsmesh.plugin.on.MatcherGroup>`
+- `MatcherGroup` => {ref}``MatcherGroup` <opsmesh.plugin.on.MatcherGroup>`
 - `load_plugin` => {ref}``load_plugin` <opsmesh.plugin.load.load_plugin>`
 - `load_plugins` => {ref}``load_plugins` <opsmesh.plugin.load.load_plugins>`
 - `load_all_plugins` => {ref}``load_all_plugins` <opsmesh.plugin.load.load_all_plugins>`
@@ -40,14 +40,12 @@ FrontMatter:
 
 from contextvars import ContextVar
 from itertools import chain
-from sys import _getframe
 from types import ModuleType
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from opsmesh import get_driver
-from opsmesh.compat import model_dump, type_validate_python
 from opsmesh.config import BaseSettings
 
 C = TypeVar("C", bound=BaseModel)
@@ -173,51 +171,12 @@ def get_available_plugin_names() -> set[str]:
 
 
 def get_plugin_config(config: type[C]) -> C:
-    """获取调用方插件的文件配置；未声明文件时仍读取全局配置。"""
-    caller = _getframe(1).f_globals.get("__name__", "")
-    plugin = get_plugin_by_module_name(caller)
-    if plugin is not None:
-        metadata = plugin.metadata or getattr(plugin.module, "__plugin_meta__", None)
-        if isinstance(metadata, PluginMetadata) and metadata.config_file is not None:
-            if metadata.config is not config:
-                raise TypeError(
-                    f"{plugin.id_}: use the config model declared in PluginMetadata"
-                )
-            from .config import read_file_config
-
-            return read_file_config(plugin, metadata.config_file, config)
-    return _get_global_plugin_config(config)
-
-
-def get_plugin_dependency_configs(config: type[C]) -> dict[str, C]:
-    """Read configs supplied to this provider, keyed by consumer plugin ID."""
-    caller = _getframe(1).f_globals.get("__name__", "")
-    plugin = get_plugin_by_module_name(caller)
-    if plugin is None:
-        raise RuntimeError("Only provider plugins can read dependency configs")
-    metadata = plugin.metadata
-    if metadata is None:
-        metadata = getattr(plugin.module, "__plugin_meta__", None)
-    if (
-        not isinstance(metadata, PluginMetadata)
-        or metadata.dependency_config is not config
-    ):
-        raise TypeError(f"{plugin.id_}: use its declared dependency_config model")
-    if not plugin.enabled:
-        raise RuntimeError(f"{plugin.id_}: provider is not enabled")
-
-    from .config import read_consumer_configs
-
-    return read_consumer_configs(plugin.id_, config, get_loaded_plugins())
-
-
-def _get_global_plugin_config(config: type[C]) -> C:
+    """从全局配置获取当前插件需要的配置项。"""
     global_config = get_driver().config
-    return type_validate_python(
-        config,
+    return TypeAdapter(config).validate_python(
         BaseSettings._settings_build_values(
             config,
-            model_dump(global_config),
+            global_config.model_dump(),
             env_file=global_config._env_file,
             env_file_encoding=global_config._env_file_encoding,
             env_nested_delimiter=global_config._env_nested_delimiter,
@@ -233,7 +192,6 @@ from .load import load_from_json as load_from_json
 from .load import load_from_toml as load_from_toml
 from .load import load_plugin as load_plugin
 from .load import load_plugins as load_plugins
-from .unload import unload_plugin as unload_plugin
 from .load import require as require
 from .manager import PluginManager
 from .model import Plugin as Plugin

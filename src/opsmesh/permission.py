@@ -11,7 +11,7 @@ FrontMatter:
     description: opsmesh.permission 模块
 """
 
-from opsmesh.adapters import Gateway, Event
+from opsmesh.adapters import Event, Gateway
 from opsmesh.internal.permission import USER as USER
 from opsmesh.internal.permission import Permission as Permission
 from opsmesh.internal.permission import User as User
@@ -89,27 +89,24 @@ METAEVENT: Permission = Permission(MetaEvent())
 
 
 class SuperUser:
-    """检查当前事件是否是消息事件且属于超级管理员"""
+    """检查当前事件主体是否属于超级用户（`config.superusers`）"""
 
     __slots__ = ()
 
     def __repr__(self) -> str:
-        return "Superuser()"
+        return "SuperUser()"
 
     async def __call__(self, gateway: Gateway, event: Event) -> bool:
         try:
             user_id = event.get_user_id()
         except Exception:
             return False
-        return (
-            f"{gateway.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}"
-            in gateway.config.superusers
-            or user_id in gateway.config.superusers  # 兼容旧配置
-        )
+        adapter_scope = gateway.adapter.get_name().split(maxsplit=1)[0].lower()
+        return f"{adapter_scope}:{user_id}" in gateway.config.superusers
 
 
 SUPERUSER: Permission = Permission(SuperUser())
-"""匹配任意超级用户事件"""
+"""匹配任意超级用户主体事件"""
 
 __autodoc__ = {
     "Permission": True,

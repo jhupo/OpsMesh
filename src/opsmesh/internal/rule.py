@@ -2,14 +2,20 @@ from contextlib import AsyncExitStack
 from typing import ClassVar, NoReturn
 
 import anyio
-from exceptiongroup import BaseExceptionGroup, catch
 
 from opsmesh.dependencies import Dependent
 from opsmesh.exception import SkippedException
 from opsmesh.typing import T_DependencyCache, T_RuleChecker, T_State
 
-from .adapter import Gateway, Event
-from .params import GatewayParam, DefaultParam, DependParam, EventParam, Param, StateParam
+from .adapter import Event, Gateway
+from .params import (
+    DefaultParam,
+    DependParam,
+    EventParam,
+    GatewayParam,
+    Param,
+    StateParam,
+)
 
 
 class Rule:
@@ -76,12 +82,6 @@ class Rule:
 
         result = True
 
-        def _handle_skipped_exception(
-            exc_group: BaseExceptionGroup[SkippedException],
-        ) -> None:
-            nonlocal result
-            result = False
-
         async def _run_checker(checker: Dependent[bool]) -> None:
             nonlocal result
             # calculate the result first to avoid data racing
@@ -94,10 +94,12 @@ class Rule:
             )
             result &= is_passed
 
-        with catch({SkippedException: _handle_skipped_exception}):
+        try:
             async with anyio.create_task_group() as tg:
                 for checker in self.checkers:
                     tg.start_soon(_run_checker, checker)
+        except* SkippedException:
+            result = False
 
         return result
 
