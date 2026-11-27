@@ -30,7 +30,7 @@
 | `get_user_id() -> str` | 是 | 触发主体标识（配合 `SUPERUSER` 形成 `"{adapter}:{user_id}"`） |
 | `get_session_id() -> str` | 是 | 会话上下文标识（用于多轮会话续接、`USER` 权限与 `single_session` 互斥） |
 | `get_message() -> Message` | 是 | 返回事件消息体；无消息体的通知/元事件可抛出 `ValueError` |
-| `is_targeted() -> bool` | 是 | 标记事件是否直接指向当前网关实例（供 `targeted()` 规则与 `EventTargeted()` 依赖使用） |
+| `is_tome() -> bool` | 是 | 标记事件是否与当前网关实例直接有关（供 `to_me()` 规则与 `EventToMe()` 依赖使用） |
 | `get_log_string() -> str` | 否 | 自定义日志文本；抛出 `NoLogException` 可静默隐藏该事件日志（如高频心跳） |
 | `get_plaintext() -> str` | 否 | 默认调用 `self.get_message().extract_plain_text()` |
 

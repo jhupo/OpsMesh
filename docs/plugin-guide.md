@@ -89,7 +89,7 @@ svc_stop = svc.command("stop")
 
 ## 四、规则（`Rule`）与权限（`Permission`）
 
-- **`Rule` 仅支持 `&`（逻辑与）组合**：所有 checker 全部返回 `True` 才触发响应器。常用内置规则：`startswith`、`endswith`、`fullmatch`、`keyword`、`command`、`shell_command`、`regex`、`targeted`、`is_type`。
+- **`Rule` 仅支持 `&`（逻辑与）组合**：所有 checker 全部返回 `True` 才触发响应器。常用内置规则：`startswith`、`endswith`、`fullmatch`、`keyword`、`command`、`shell_command`、`regex`、`to_me`、`is_type`。
 - **`Permission` 仅支持 `|`（逻辑或）组合**：任一 checker 返回 `True` 即通过检查。常用内置权限：`MESSAGE`、`NOTICE`、`REQUEST`、`METAEVENT`、`USER(*session_ids, perm=...)`、`SUPERUSER`。
 
 > **注意**：`SUPERUSER` 严格匹配 `"{adapter}:{user_id}"`（例如 `SUPERUSERS=["webhook:ops_root"]`），不会无前缀跨适配器放行。
@@ -149,7 +149,7 @@ async def handle_scale(
 
 ### 常用快捷参数依赖（`opsmesh.params`）
 
-- 事件信息：`EventType()`、`EventMessage()`、`EventPlainText()`、`EventTargeted()`
+- 事件信息：`EventType()`、`EventMessage()`、`EventPlainText()`、`EventToMe()`
 - 命令参数：`Command()`、`RawCommand()`、`CommandArg()`、`CommandStart()`、`CommandWhitespace()`
 - Shell / 正则：`ShellCommandArgs()`、`ShellCommandArgv()`、`RegexMatched()`、`RegexStr(...)`、`RegexGroup()`、`RegexDict()`
 - 多轮交互：`Arg(key)`、`ArgStr(key)`、`ArgPlainText(key)`、`Received(id)`、`LastReceived()`

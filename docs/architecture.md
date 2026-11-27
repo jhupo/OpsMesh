@@ -34,7 +34,7 @@ flowchart TB
     subgraph L2["2. 协议适配与网关层 (opsmesh.adapters / internal.adapter)"]
         AD["Adapter (协议编解码 / _invoke / 传输委托)"]
         GW["Gateway (id / connect / disconnect / invoke / send)"]
-        EV["Event (UTC time / is_targeted) & Message / MessageSegment"]
+        EV["Event (UTC time / is_tome) & Message / MessageSegment"]
     end
 
     subgraph L1["1. 传输与生命周期层 (opsmesh.drivers / internal.driver)"]

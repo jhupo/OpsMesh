@@ -89,7 +89,7 @@ class _Event(Event):
     def get_message(self) -> _Msg:
         return _Msg(self.text)
 
-    def is_targeted(self) -> bool:
+    def is_tome(self) -> bool:
         return True
 
 

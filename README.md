@@ -35,7 +35,7 @@ OpsMesh 基于优秀的开源项目 **[NoneBot2 v2.5.0](https://github.com/noneb
 | :--- | :--- | :--- |
 | **核心抽象定位** | 面向 IM 聊天机器人的 `Bot` 抽象 | 面向通用协议实例的 **`Gateway`**（`gateway.id`、`gateway.connect()`、`gateway.disconnect()`） |
 | **出站动作接口** | `bot.call_api` / `adapter._call_api` / `MockApiException` | **`gateway.invoke`** / **`adapter._invoke`** / **`MockInvokeResult`** / **`ActionNotAvailable`**，配套 `@Gateway.before_invoke` / `@Gateway.after_invoke` |
-| **事件标准模型** | `is_tome()` 无时间字段，续接默认写死 `"message"` | 统一 UTC `Event.time` / `get_time()`、语义中立的 **`is_targeted()`** 与 `targeted()` 规则；多轮续接默认沿用 `event.get_type()`，原生支持非消息事件续接 |
+| **事件标准模型** | 无统一事件时间字段，续接默认写死 `"message"` | 统一 UTC `Event.time` / `get_time()`，保留直觉语义 `is_tome()` 与 `to_me()` 规则；多轮续接默认沿用 `event.get_type()`，原生支持非消息事件续接 |
 | **依赖栈与运行环境** | 兼容 Python 3.9+、`exceptiongroup`、Pydantic v1/v2 双兼容层 | 原生 **Python 3.11+**（原生 `except*`）与 **纯 Pydantic v2**（彻底移除 500+ 行 v1 兼容垫片） |
 | **DI 与权限语义** | 保留无注解按参数名盲猜兼容与无前缀 `SUPERUSER` 兼容 | 强制**显式类型注解 DI**，严格 **`{adapter}:{user_id}`** 作用域 `SUPERUSER`，统一 `on_command` 默认 `block=True` 防穿透 |
 | **工程稳健性修复** | 存在部分类变量共享与异常清理边界问题 | `Driver._adapters` 实例级隔离、`Lifespan.__aenter__` 启动失败自动回滚 `shutdown()`、`@Gateway.on_disconnect` 依赖栈正确析构序、顶层 `opsmesh.register_adapter()` |
@@ -98,7 +98,7 @@ from opsmesh.adapters import Gateway, Message
 from opsmesh.params import ArgPlainText, CommandArg
 from opsmesh.permission import SUPERUSER
 from opsmesh.plugin import PluginMetadata
-from opsmesh.rule import targeted
+from opsmesh.rule import to_me
 
 
 class DeployConfig(BaseModel):
@@ -114,7 +114,7 @@ __plugin_meta__ = PluginMetadata(
 )
 
 cfg = get_plugin_config(DeployConfig)
-deploy = on_command("deploy", rule=targeted(), permission=SUPERUSER)
+deploy = on_command("deploy", rule=to_me(), permission=SUPERUSER)
 
 
 @deploy.handle()

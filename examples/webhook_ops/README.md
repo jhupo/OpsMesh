@@ -10,7 +10,7 @@ examples/webhook_ops/
 ├── pyproject.toml           # 插件声明（启用内置 single_session 与本地 plugins/）
 ├── adapter.py               # 自定义 WebhookAdapter / WebhookGateway / WebhookEvent / WebhookMessage
 └── plugins/
-    ├── ops_deploy.py        # /deploy 交互式多轮命令（SUPERUSER + targeted + Depends + got/reject）
+    ├── ops_deploy.py        # /deploy 交互式多轮命令（SUPERUSER + to_me + Depends + got/reject）
     └── alert_observer.py    # notice 告警事件监听器（MatcherGroup + gateway.invoke）
 ```
 

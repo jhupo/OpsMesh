@@ -16,7 +16,7 @@
 - **通用框架核心模型统一**（基于 NoneBot2 v2.5.0 演进）：
   - `Bot` 重构为 `Gateway`（`gateway.id`、`gateway.connect()`、`gateway.disconnect()`）；
   - `call_api` / `_call_api` 重构为 `invoke` / `_invoke`，配套 `@Gateway.before_invoke` / `@Gateway.after_invoke`、`@Gateway.on_connect` / `@Gateway.on_disconnect`、`MockInvokeResult`、`ActionNotAvailable` 与 `Config.invoke_timeout`；
-  - `Event` 内置 UTC `time` 字段与 `get_time()` 方法，抽象方法统一为语义中立的 `is_targeted()`（对应规则 `targeted()` 与依赖 `EventTargeted()`）；
+  - `Event` 内置 UTC `time` 字段与 `get_time()` 方法，保留 `is_tome()`（对应规则 `to_me()` 与依赖 `EventToMe()`）；
   - 多轮会话续接 `Matcher.update_type` 默认沿用 `event.get_type()`，原生支持非 `"message"` 类型事件续接；
   - `on_command` 默认 `block=True`，与 `on_message`、`on_shell_command` 及文本模式响应器保持一致。
 - **全面原生化 Python 3.11+ 与 Pydantic v2**：

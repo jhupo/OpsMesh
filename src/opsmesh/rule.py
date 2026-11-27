@@ -52,7 +52,7 @@ from opsmesh.consts import (
 from opsmesh.exception import ParserExit
 from opsmesh.internal.rule import Rule as Rule
 from opsmesh.log import logger
-from opsmesh.params import Command, CommandArg, CommandWhitespace, EventTargeted
+from opsmesh.params import Command, CommandArg, CommandWhitespace, EventToMe
 from opsmesh.typing import T_State
 
 T = TypeVar("T")
@@ -717,28 +717,28 @@ def regex(regex: str, flags: int | re.RegexFlag = 0) -> Rule:
     return Rule(RegexRule(regex, flags))
 
 
-class TargetedRule:
-    """检查事件是否直接指向当前网关实例。"""
+class ToMeRule:
+    """检查事件是否与当前网关实例有关。"""
 
     __slots__ = ()
 
     def __repr__(self) -> str:
-        return "Targeted()"
+        return "ToMe()"
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, TargetedRule)
+        return isinstance(other, ToMeRule)
 
     def __hash__(self) -> int:
         return hash((self.__class__,))
 
-    async def __call__(self, is_targeted: bool = EventTargeted()) -> bool:
-        return is_targeted
+    async def __call__(self, to_me: bool = EventToMe()) -> bool:
+        return to_me
 
 
-def targeted() -> Rule:
-    """匹配直接指向当前网关实例的事件。"""
+def to_me() -> Rule:
+    """匹配与当前网关实例有关的事件。"""
 
-    return Rule(TargetedRule())
+    return Rule(ToMeRule())
 
 
 class IsTypeRule:
